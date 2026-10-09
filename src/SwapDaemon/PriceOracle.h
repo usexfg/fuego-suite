@@ -133,7 +133,7 @@ private:
   std::deque<CompletedSwapTrade> m_trades;
   size_t   m_twapMaxTrades;    // default 20
   uint64_t m_twapMaxAgeSec;    // default 604800 (7 days)
-  double   m_floorThreshold;   // default 0.50
+  double   m_floorThreshold;   // fractional tolerance, default 0.20 (+/-20%)
   double   m_maxBootstrapDrift; // default 0.50 (±50%)
   double   m_liveXfgUsd;        // live pool price, 0.0 = use seed
 

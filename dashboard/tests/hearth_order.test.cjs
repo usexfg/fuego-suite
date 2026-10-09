@@ -43,7 +43,7 @@ test('limit order units, tick and expiry follow wallet RPC contract', () => {
   assert.throws(() => HearthOrder.limit(0, '1', '0.01', '-1'), /Expiry/);
 });
 
-test('the Hearth preview executes the immutable validated wallet request', async () => {
+test('the Hearth preview never exposes an execution method', async () => {
   const originalDocument = global.document;
   const originalApp = global.App;
   const nodes = new Map();
@@ -59,32 +59,22 @@ test('the Hearth preview executes the immutable validated wallet request', async
   node('order-amount').value = '2.5';
   node('order-price').value = '0.10';
   node('order-expiry').value = '123456';
-  const sent = [];
   global.document = { getElementById: node };
   global.App = {
-    showToast() {},
-    async walletRpc(method, params) {
-      sent.push({ method, params });
-      return { tx_hash: 'a'.repeat(64) };
-    }
+    showToast() {}
   };
   try {
     await HearthOrder._ui.showOrderPreview();
     assert.match(node('order-modal-details').innerHTML, /2.5 HEAT/);
-    // Changing the form after preview must not alter the signed request.
-    node('order-amount').value = '100';
-    await HearthOrder._ui.executeOrder();
-    assert.equal(sent.length, 1);
-    assert.equal(sent[0].method, 'place_limit_order');
-    assert.equal(sent[0].params.amount, 25000000);
-    assert.equal(sent[0].params.expiration, 123456);
+    assert.match(node('order-modal-details').innerHTML, /inspection only/);
+    assert.equal(HearthOrder._ui.executeOrder, undefined);
   } finally {
     global.document = originalDocument;
     global.App = originalApp;
   }
 });
 
-test('quoted AMM preview uses HEAT to buy XFG and rechecks before wallet submission', async () => {
+test('quoted AMM preview is read-only and uses the live daemon quote', async () => {
   const originalDocument = global.document;
   const originalApp = global.App;
   const originalChart = global.klinecharts;
@@ -112,9 +102,7 @@ test('quoted AMM preview uses HEAT to buy XFG and rechecks before wallet submiss
   };
   global.XfgArchive = { async load() {} };
   global.setInterval = () => 1;
-  const sent = [];
   const quotes = [];
-  let quoteOutput = 12500000;
   global.App = {
     COIN: 10000000,
     on() {},
@@ -123,17 +111,14 @@ test('quoted AMM preview uses HEAT to buy XFG and rechecks before wallet submiss
     async daemonPost(path, params) {
       if (path === '/amm_quote') {
         quotes.push(params);
-        return { status: 'OK', expected_output: quoteOutput };
+        return { status: 'OK', expected_output: 12500000 };
       }
       if (path === '/get_limit_orders') return { status: 'OK', orders: [] };
       if (path === '/amm_pool_info') return { status: 'OK', reserve_xfg: 1, reserve_heat: 1, spot_price: 1, height: 1 };
       if (path === '/heat_metrics') return { status: 'OK', heat_supply: 0, total_burned_xfg: 0 };
       throw new Error(path);
     },
-    async walletRpc(method, params) {
-      sent.push({ method, params });
-      return { tx_hash: 'a'.repeat(64) };
-    }
+    async walletRpc() { return { available_balance: 0 }; }
   };
   try {
     HearthOrder._ui.init();
@@ -141,18 +126,10 @@ test('quoted AMM preview uses HEAT to buy XFG and rechecks before wallet submiss
     node('order-amount').value = '2.5';
     await HearthOrder._ui.showOrderPreview();
     assert.match(node('order-modal-details').innerHTML, /1.25 XFG/);
-    await HearthOrder._ui.executeOrder();
-    assert.equal(quotes.length, 2);
+    assert.match(node('order-modal-details').innerHTML, /inspection only/);
+    assert.equal(quotes.length, 1);
     assert.deepEqual(quotes[0], { input_amount: 25000000, direction: 1 });
-    const swaps = () => sent.filter(request => request.method === 'amm_swap');
-    assert.equal(swaps().length, 1);
-    assert.equal(swaps()[0].params.expected_output, 12500000);
-    assert.equal(swaps()[0].params.min_output, 12500000);
-
-    await HearthOrder._ui.showOrderPreview();
-    quoteOutput = 12400000;
-    await HearthOrder._ui.executeOrder();
-    assert.equal(swaps().length, 1, 'worsened quote must not reach wallet RPC');
+    assert.equal(HearthOrder._ui.executeOrder, undefined);
   } finally {
     global.document = originalDocument;
     global.App = originalApp;

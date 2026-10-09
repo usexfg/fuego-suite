@@ -12,6 +12,7 @@
 #include "SwapDaemon/SwapTypes.h"
 #include "SwapDaemon/SwapStateMachine.h"
 #include "SwapDaemon/SwapDaemon.h"
+#include "SwapDaemon/RpcServer.h"
 #include "Logging/ConsoleLogger.h"
 
 using namespace XfgSwap;
@@ -23,6 +24,11 @@ struct SwapDaemonTestAccess {
   }
   static bool preparePeerIdentity(SwapParams& params) {
     return SwapDaemon::preparePeerIdentity(params);
+  }
+};
+struct RpcServerTestAccess {
+  static std::string dispatch(RpcServer& server, const std::string& request) {
+    return server.dispatch(request);
   }
 };
 }
@@ -498,6 +504,88 @@ static bool test_uint256_amount_survives_database_restart() {
   return true;
 }
 
+static bool test_swap_id_stays_inside_database() {
+  std::cout << "  test_swap_id_stays_inside_database... ";
+  namespace fs = std::filesystem;
+  const fs::path dir = fs::temp_directory_path() /
+      ("xfg-swap-id-boundary-" + std::to_string(
+          std::chrono::steady_clock::now().time_since_epoch().count()));
+  SwapDatabase db(dir.string());
+  SwapParams params{};
+  params.swapId = "../outside";
+  params.pair = SwapPair::ETH;
+  params.role = SwapRole::BOB;
+  params.xfgAmount = 10000000;
+  params.ctrAmount = 1;
+  SwapStateMachine loaded;
+  const bool ok = !db.saveSwap(SwapStateMachine(params)) &&
+      !db.loadSwap(params.swapId, loaded) && !db.deleteSwap(params.swapId) &&
+      !fs::exists(dir / "outside.json") &&
+      isValidSwapId("safe-ID_1") && !isValidSwapId("../outside") &&
+      !isValidSwapId("with.dot");
+  fs::remove_all(dir);
+  if (!ok) { std::cout << "FAIL\n"; return false; }
+  std::cout << "PASS\n";
+  return true;
+}
+
+static bool test_rpc_status_record_excludes_persistence_secrets() {
+  std::cout << "  test_rpc_status_record_excludes_persistence_secrets... ";
+  namespace fs = std::filesystem;
+  const fs::path dir = fs::temp_directory_path() /
+      ("xfg-swap-public-status-" + std::to_string(
+          std::chrono::steady_clock::now().time_since_epoch().count()));
+  Logging::ConsoleLogger logger(Logging::ERROR);
+  SwapDaemon daemon("127.0.0.1", 1, dir.string(), logger, "testnet", "testnet");
+  daemon.database().setEncryptionKey("status-test-key");
+
+  SwapParams params{};
+  params.swapId = "public-status-1";
+  params.pair = SwapPair::ETH;
+  params.role = SwapRole::BOB;
+  params.xfgAmount = 10000000;
+  params.ctrAmount = AtomicAmount("1000000000000000000");
+  Crypto::generate_keys(params.ourSwapPubKey, params.ourSwapSecKey);
+  const bool saved = daemon.database().saveSwap(SwapStateMachine(params));
+
+  RpcServer server(daemon, logger);
+  bool ok = saved;
+  try {
+    const std::string listResponse = RpcServerTestAccess::dispatch(
+        server, R"({"jsonrpc":"2.0","id":41,"method":"list_swaps","params":{}})");
+    const Common::JsonValue root = Common::JsonValue::fromString(listResponse);
+    const Common::JsonValue& record = root("result")("swaps")[0];
+    const bool publicRecordOk = root("id").getInteger() == 41 &&
+        record("xfgAmountAtomic").getString() == "10000000" &&
+        record("ctrAmount").getString() == "1000000000000000000" &&
+        record.contains("ourSwapPubKey") &&
+        !record.contains("ourSwapSecKeyEnc") &&
+        !record.contains("adaptorSecretEnc") &&
+        !record.contains("musig2OurSecNonceEnc");
+    if (!publicRecordOk) std::cout << " [list=" << listResponse << "]";
+    ok = ok && publicRecordOk;
+
+    const std::string errorResponse = RpcServerTestAccess::dispatch(
+        server, R"({"jsonrpc":"2.0","id":77,"method":"bad\"method","params":{}})");
+    const Common::JsonValue errorRoot = Common::JsonValue::fromString(errorResponse);
+    const std::string errorMessage = errorRoot("error")("message").getString();
+    const bool escapedErrorOk = errorRoot("id").getInteger() == 77 &&
+        errorMessage == "Method not found: bad\\\"method";
+    if (!escapedErrorOk) {
+      std::cout << " [error=" << errorResponse << ", parsed-message="
+                << errorMessage << ", size=" << errorMessage.size() << "]";
+    }
+    ok = ok && escapedErrorOk;
+  } catch (const std::exception& error) {
+    std::cout << " [exception=" << error.what() << "]";
+    ok = false;
+  }
+  fs::remove_all(dir);
+  if (!ok) { std::cout << "FAIL\n"; return false; }
+  std::cout << "PASS\n";
+  return true;
+}
+
 static bool test_amount_protocol_rejects_downgrade_mismatch_and_replay() {
   std::cout << "  test_amount_protocol_rejects_downgrade_mismatch_and_replay... ";
   namespace fs = std::filesystem;
@@ -657,7 +745,7 @@ static bool test_expected_peer_key_is_not_a_completed_exchange() {
 
 int main() {
   std::cout << "=== SwapStateMachine SPV state tests ===\n\n";
-  int pass = 0, total = 16;
+  int pass = 0, total = 18;
   if (test_spv_waiting_to_confirmed())    ++pass;
   if (test_spv_waiting_stays_on_retry())  ++pass;
   if (test_spv_waiting_to_refunded())     ++pass;
@@ -671,6 +759,8 @@ int main() {
   if (test_legacy_claim_records_fail_closed()) ++pass;
   if (test_terminal_archive_masks_stale_active_record()) ++pass;
   if (test_uint256_amount_survives_database_restart()) ++pass;
+  if (test_swap_id_stays_inside_database()) ++pass;
+  if (test_rpc_status_record_excludes_persistence_secrets()) ++pass;
   if (test_amount_protocol_rejects_downgrade_mismatch_and_replay()) ++pass;
   if (test_non_evm_overflow_rejected_before_record_creation()) ++pass;
   if (test_expected_peer_key_is_not_a_completed_exchange()) ++pass;

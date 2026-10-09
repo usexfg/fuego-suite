@@ -45,6 +45,7 @@ struct Configuration {
 
   std::string containerFile;
   std::string containerPassword;
+  std::string containerPasswordFile;
   std::string logFile;
   std::string serverRoot;
 

@@ -9,6 +9,7 @@ type Config struct {
 	IsTestnet     bool
 	NodeRPCPort   int
 	NodeP2PPort   int
+	SwapdRPCPort  int
 	DataDir       string
 	CoinUnits     int64
 	StakeAmount   int64
@@ -25,6 +26,7 @@ var MainnetConfig = Config{
 	IsTestnet:     false,
 	NodeRPCPort:   18180,
 	NodeP2PPort:   10808,
+	SwapdRPCPort:  18902,
 	DataDir:       ".fuego",
 	CoinUnits:     10000000,
 	StakeAmount:   8000000000,
@@ -41,6 +43,7 @@ var TestnetConfig = Config{
 	IsTestnet:     true,
 	NodeRPCPort:   28280,
 	NodeP2PPort:   20808,
+	SwapdRPCPort:  18902,
 	DataDir:       ".fuego-testnet",
 	CoinUnits:     10000000,
 	StakeAmount:   40000000000,

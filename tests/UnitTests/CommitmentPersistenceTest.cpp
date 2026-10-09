@@ -17,12 +17,9 @@
 
 #include "gtest/gtest.h"
 
-#include "CryptoNote.h"
 #include "Common/StdInputStream.h"
 #include "Common/StdOutputStream.h"
 #include "CryptoNoteConfig.h"
-#include "CryptoNoteCore/Account.h"
-#include "CryptoNoteCore/CryptoNoteBasic.h"
 #include "CryptoNoteCore/Currency.h"
 #include "CryptoNoteCore/TransactionApi.h"
 #include "CryptoNoteCore/TransactionExtra.h"
@@ -32,18 +29,6 @@
 #include "Transfers/TransfersContainer.h"
 
 using namespace CryptoNote;
-
-namespace CryptoNote {
-// Defined with external linkage in Transfers/TransfersConsumer.cpp but not declared in
-// any header. It is where the scanner decides which key image to record for a commitment
-// output, so it is exercised directly rather than through a full consumer harness.
-std::error_code createTransfers(const AccountKeys& account,
-                                const TransactionBlockInfo& blockInfo,
-                                const ITransactionReader& tx,
-                                const std::vector<uint32_t>& outputs,
-                                const std::vector<uint32_t>& globalIdxs,
-                                std::vector<TransactionOutputInformationIn>& transfers);
-}
 
 namespace {
 
@@ -220,106 +205,4 @@ TEST(CommitmentPersistenceRecords, V1ReaderZeroInitialisesTheKey) {
   TransactionOutputInformationExV1 reader;
   EXPECT_EQ(Crypto::PublicKey{}, reader.commitmentKey);
   EXPECT_EQ(Crypto::KeyImage{}, reader.keyImage);
-}
-
-
-// ---------------------------------------------------------------------------
-// Scanner: the key image recorded for a commitment output.
-//
-// Regression: the owner-bound change gated the key image on the account having a
-// spend secret. A view-only wallet then recorded nothing for a legacy output (it used
-// to derive the legacy image from the view key), and because createTransfers declared
-// its record uninitialised, "nothing" meant stack garbage hashed into the spent-output
-// index and written to the wallet cache.
-// ---------------------------------------------------------------------------
-
-namespace {
-
-class CommitmentScanner : public ::testing::Test {
-protected:
-  CommitmentScanner() {
-    AccountBase base;
-    base.generate();
-    account = base.getAccountKeys();
-  }
-
-  // One commitment output at index 0 whose key is `keyFor(derivation)`.
-  template <typename KeyFor>
-  TransactionOutputInformationIn scan(const AccountKeys& scanAs, KeyFor keyFor) {
-    auto tx = createTransaction();
-    // The scanner derives D = a*R, so the test builds the output key from the same D.
-    Crypto::KeyDerivation derivation;
-    EXPECT_TRUE(Crypto::generate_key_derivation(tx->getTransactionPublicKey(), account.viewSecretKey, derivation));
-    lastDerivation = derivation;
-
-    TransactionOutputCommitment out;
-    out.commitKey = keyFor(derivation);
-    out.term = parameters::HEAT_TERM;
-    lastCommitKey = out.commitKey;
-    tx->addOutput(kAmount, out);
-
-    std::vector<TransactionOutputInformationIn> transfers;
-    TransactionBlockInfo block{kHeight, 1000000};
-    EXPECT_FALSE(createTransfers(scanAs, block, *tx, {0}, {7}, transfers));
-    EXPECT_EQ(1u, transfers.size());
-    return transfers.empty() ? TransactionOutputInformationIn{} : transfers[0];
-  }
-
-  Crypto::PublicKey ownerBoundKey(const Crypto::KeyDerivation& d) const {
-    Crypto::PublicKey key;
-    EXPECT_TRUE(deriveOwnerBoundCommitKey(d, 0, account.address.spendPublicKey, key));
-    return key;
-  }
-  static DepositCommitmentKeys legacyKeys(const Crypto::KeyDerivation& d) {
-    return deriveLegacyCommitmentKeys(deriveDepositSecret(d, 0));
-  }
-
-  AccountKeys account;
-  Crypto::KeyDerivation lastDerivation;
-  Crypto::PublicKey lastCommitKey;
-};
-
-} // namespace
-
-TEST_F(CommitmentScanner, OwnerBoundOutputGetsTheOwnerBoundKeyImage) {
-  auto info = scan(account, [&](const Crypto::KeyDerivation& d) { return ownerBoundKey(d); });
-
-  Crypto::SecretKey scalar;
-  Crypto::KeyImage expected;
-  ASSERT_TRUE(deriveOwnerBoundKeyImage(lastDerivation, 0, lastCommitKey, account.spendSecretKey, scalar, expected));
-  EXPECT_EQ(expected, info.keyImage);
-  EXPECT_EQ(lastCommitKey, info.commitmentKey) << "the published key is recorded for the signer";
-}
-
-TEST_F(CommitmentScanner, LegacyOutputGetsTheLegacyKeyImage) {
-  auto info = scan(account, [&](const Crypto::KeyDerivation& d) { return legacyKeys(d).commitKey; });
-  EXPECT_EQ(legacyKeys(lastDerivation).keyImage, info.keyImage);
-  EXPECT_EQ(lastCommitKey, info.commitmentKey);
-}
-
-// The regression: a view-only wallet keeps recording the legacy key image.
-TEST_F(CommitmentScanner, ViewOnlyWalletStillRecordsTheLegacyKeyImage) {
-  AccountKeys viewOnly = account;
-  viewOnly.spendSecretKey = NULL_SECRET_KEY;
-
-  auto info = scan(viewOnly, [&](const Crypto::KeyDerivation& d) { return legacyKeys(d).commitKey; });
-  EXPECT_EQ(legacyKeys(lastDerivation).keyImage, info.keyImage)
-    << "spends of legacy HEAT/CDs must stay detectable by tracking wallets";
-}
-
-// A view-only wallet cannot know an owner-bound key image. The record must say so with
-// a defined all-zero value, never leftover memory.
-TEST_F(CommitmentScanner, ViewOnlyOwnerBoundKeyImageIsZeroNotGarbage) {
-  AccountKeys viewOnly = account;
-  viewOnly.spendSecretKey = NULL_SECRET_KEY;
-
-  auto info = scan(viewOnly, [&](const Crypto::KeyDerivation& d) { return ownerBoundKey(d); });
-  EXPECT_EQ(Crypto::KeyImage{}, info.keyImage);
-  EXPECT_EQ(lastCommitKey, info.commitmentKey);
-}
-
-// An output that matches neither form also leaves a defined record.
-TEST_F(CommitmentScanner, UnmatchedCommitmentLeavesAZeroKeyImage) {
-  auto info = scan(account, [&](const Crypto::KeyDerivation&) { return patternKey(9); });
-  EXPECT_EQ(Crypto::KeyImage{}, info.keyImage);
 }

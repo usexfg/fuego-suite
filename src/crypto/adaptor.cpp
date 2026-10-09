@@ -275,5 +275,26 @@ bool extract_afk_secret(
   return extract_adaptor_secret(pre_sig, sig, adaptor_secret);
 }
 
-} // namespace Crypto
+bool verify_afk_completion(
+    const Hash &prefix_hash,
+    const PublicKey &pub,
+    const AdaptorSignature &pre_sig,
+    const EllipticCurveScalar &expected_secret,
+    const Signature &sig)
+{
+  EllipticCurveScalar extracted_secret;
+  if (!extract_adaptor_secret(pre_sig, sig, extracted_secret)) {
+    return false;
+  }
 
+  const auto* extracted = reinterpret_cast<const uint8_t*>(&extracted_secret);
+  const auto* expected = reinterpret_cast<const uint8_t*>(&expected_secret);
+  uint8_t difference = 0;
+  for (size_t i = 0; i < sizeof(EllipticCurveScalar); ++i) {
+    difference |= extracted[i] ^ expected[i];
+  }
+
+  return difference == 0 && check_signature(prefix_hash, pub, sig);
+}
+
+} // namespace Crypto

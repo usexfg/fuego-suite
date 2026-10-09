@@ -23,6 +23,7 @@
 #include <stdexcept>
 #include <charconv>
 #include <cctype>
+#include <limits>
 
 namespace XfgSwap {
 
@@ -112,6 +113,74 @@ void setLoopbackCors(const httplib::Request& req, httplib::Response& res) {
     res.set_header("Access-Control-Allow-Origin", origin);
     res.set_header("Vary", "Origin");
   }
+}
+
+Common::JsonValue buildPublicSwapRecord(SwapDaemon& daemon,
+                                        const SwapStateMachine& stateMachine) {
+  const SwapParams& params = stateMachine.params();
+  Common::JsonValue record(Common::JsonValue::OBJECT);
+  record.insert("swapId", params.swapId);
+  record.insert("pair", static_cast<int64_t>(static_cast<uint8_t>(params.pair)));
+  record.insert("pairName", std::string(swapPairToString(params.pair)));
+  record.insert("role", static_cast<int64_t>(static_cast<uint8_t>(params.role)));
+  record.insert("roleName", std::string(params.role == SwapRole::ALICE ? "ALICE" : "BOB"));
+  record.insert("xfgAmountAtomic", std::to_string(params.xfgAmount));
+  if (params.xfgAmount <= static_cast<uint64_t>((std::numeric_limits<int64_t>::max)())) {
+    record.insert("xfgAmount", static_cast<int64_t>(params.xfgAmount));
+  } else {
+    record.insert("xfgAmount", std::to_string(params.xfgAmount));
+  }
+  record.insert("ctrAmount", atomicAmountToString(params.ctrAmount));
+  record.insert("amountProtocolVersion", static_cast<int64_t>(params.amountProtocolVersion));
+  record.insert("state", static_cast<int64_t>(static_cast<uint8_t>(stateMachine.currentState())));
+  record.insert("stateName", std::string(swapStateToString(stateMachine.currentState())));
+  record.insert("createdAt", static_cast<int64_t>(stateMachine.createdAt()));
+  record.insert("updatedAt", static_cast<int64_t>(stateMachine.updatedAt()));
+  record.insert("recordVersion", static_cast<int64_t>(stateMachine.recordVersion()));
+  record.insert("xfgTimeoutHeight", static_cast<int64_t>(params.xfgTimeoutHeight));
+  record.insert("ctrTimeoutBlock", static_cast<int64_t>(params.ctrTimeoutBlock));
+  record.insert("requiredConfirmations",
+                static_cast<int64_t>(params.requiredConfirmations ? params.requiredConfirmations : 6));
+  record.insert("ctrLockTxId", params.ctrLockTxId);
+  record.insert("ctrClaimTxId", params.ctrClaimTxId);
+  record.insert("ctrRefundTxId", params.ctrRefundTxId);
+  record.insert("escrowClaimTxId", params.escrowClaimTxId);
+  record.insert("escrowRefundTxId", params.escrowRefundTxId);
+  record.insert("peerEndpoint", params.peerEndpoint);
+  record.insert("ourSwapPubKey", Common::podToHex(params.ourSwapPubKey));
+  record.insert("peerSwapPubKey", Common::podToHex(params.peerSwapPubKey));
+  record.insert("expectedPeerSwapPubKey", Common::podToHex(params.expectedPeerSwapPubKey));
+
+  int64_t confirmations = 0;
+  int64_t blockHeight = 0;
+  int64_t spvVerified = 0;
+  int64_t confirmed = 0;
+  if (!params.ctrLockTxId.empty()) {
+    IChainClient* client = daemon.getChainClient(params.pair);
+    if (client) {
+      ChainClientResult chainResult;
+      client->getTransactionDetails(params.ctrLockTxId, chainResult);
+      confirmations = static_cast<int64_t>(chainResult.confirmations);
+      blockHeight = static_cast<int64_t>(chainResult.blockHeight);
+      spvVerified = chainResult.spvVerified ? 1 : 0;
+      confirmed = chainResult.confirmed ? 1 : 0;
+      if (!chainResult.success && !chainResult.error.empty()) {
+        record.insert("spvError", chainResult.error);
+      }
+      uint64_t currentHeight = 0;
+      if (client->getCurrentHeight(currentHeight) &&
+          currentHeight <= static_cast<uint64_t>((std::numeric_limits<int64_t>::max)())) {
+        record.insert("currentHeight", static_cast<int64_t>(currentHeight));
+      }
+    } else {
+      record.insert("spvError", std::string("chain client not configured"));
+    }
+  }
+  record.insert("confirmations", confirmations);
+  record.insert("blockHeight", blockHeight);
+  record.insert("spvVerified", spvVerified);
+  record.insert("confirmed", confirmed);
+  return record;
 }
 
 } // namespace
@@ -257,7 +326,9 @@ std::string RpcServer::dispatch(const std::string& body) {
   // wallet RPC the local wallet already exposes).
 
   std::string result;
-  if (method == "initiate_swap") {
+  if (method == "status") {
+    result = m_daemon.buildStatusJson();
+  } else if (method == "initiate_swap") {
     result = handleInitiateSwap(params);
   } else if (method == "accept") {
     result = handleAccept(params);
@@ -277,9 +348,14 @@ std::string RpcServer::dispatch(const std::string& body) {
     return rpcError(-32601, "Method not found: " + method, id);
   }
 
-  // If the handler returned an error (starts with '{"error"'), pass through
-  if (result.find("\"error\"") != std::string::npos) {
-    return result;
+  try {
+    Common::JsonValue handlerResult = Common::JsonValue::fromString(result);
+    if (handlerResult.isObject() && handlerResult.contains("error")) {
+      handlerResult.set("id", static_cast<int64_t>(id));
+      return handlerResult.toString();
+    }
+  } catch (const std::exception&) {
+    return rpcError(-32603, "Internal error", id);
   }
 
   return rpcSuccess(result, id);
@@ -410,8 +486,8 @@ std::string RpcServer::handleInitiateSwap(const std::string& params) {
     // track the same swap).
     if (root.contains("swap_id") && !root("swap_id").getString().empty()) {
       swapParams.swapId = root("swap_id").getString();
-      if (swapParams.swapId.size() > 64) {
-        return rpcError(-32602, "swap_id too long (max 64 chars)");
+      if (!isValidSwapId(swapParams.swapId)) {
+        return rpcError(-32602, "swap_id must contain 1-64 ASCII letters, digits, hyphens, or underscores");
       }
     }
 
@@ -498,6 +574,9 @@ std::string RpcServer::handleAccept(const std::string& params) {  try {
       return rpcError(-32602, "Missing swap_id");
     }
     std::string swapId = root("swap_id").getString();
+    if (!isValidSwapId(swapId)) {
+      return rpcError(-32602, "Invalid swap_id");
+    }
 
     auto result = m_daemon.accept(swapId);
     if (!result.success) {
@@ -527,41 +606,7 @@ std::string RpcServer::handleListSwaps(const std::string& /*params*/) {
     if (m_daemon.database().loadSwap(id, sm)) {
       if (!first) oss << ",";
       first = false;
-      sm.setEncryptionKey("");
-      std::string json = sm.serialize();
-      Common::JsonValue rec = Common::JsonValue::fromString(json);
-      rec.insert("stateName", std::string(swapStateToString(sm.currentState())));
-      rec.insert("pairName", std::string(swapPairToString(sm.params().pair)));
-      const SwapParams& p = sm.params();
-      if (!p.ctrLockTxId.empty()) {
-        rec.insert("ctrLockTxId", p.ctrLockTxId);
-        rec.insert("requiredConfirmations", static_cast<int64_t>(p.requiredConfirmations ? p.requiredConfirmations : 6));
-        auto* client = m_daemon.getChainClient(p.pair);
-        if (client) {
-          ChainClientResult r;
-          client->getTransactionDetails(p.ctrLockTxId, r);
-          rec.insert("confirmations", static_cast<int64_t>(r.confirmations));
-          rec.insert("blockHeight", static_cast<int64_t>(r.blockHeight));
-          rec.insert("spvVerified", static_cast<int64_t>(r.spvVerified ? 1 : 0));
-          rec.insert("confirmed", static_cast<int64_t>(r.confirmed ? 1 : 0));
-          if (!r.success && !r.error.empty()) rec.insert("spvError", r.error);
-          uint64_t tip = 0;
-          if (client->getCurrentHeight(tip)) rec.insert("currentHeight", static_cast<int64_t>(tip));
-        } else {
-          rec.insert("confirmations", static_cast<int64_t>(0));
-          rec.insert("blockHeight", static_cast<int64_t>(0));
-          rec.insert("spvVerified", static_cast<int64_t>(false ? 1 : 0));
-          rec.insert("confirmed", static_cast<int64_t>(false ? 1 : 0));
-          rec.insert("spvError", std::string("chain client not configured"));
-        }
-      } else {
-        rec.insert("confirmations", static_cast<int64_t>(0));
-        rec.insert("blockHeight", static_cast<int64_t>(0));
-        rec.insert("spvVerified", static_cast<int64_t>(false ? 1 : 0));
-        rec.insert("confirmed", static_cast<int64_t>(false ? 1 : 0));
-        rec.insert("requiredConfirmations", static_cast<int64_t>(p.requiredConfirmations ? p.requiredConfirmations : 6));
-      }
-      oss << rec.toString();
+      oss << buildPublicSwapRecord(m_daemon, sm).toString();
     }
   }
   oss << R"(]})";
@@ -575,45 +620,16 @@ std::string RpcServer::handleSwapStatus(const std::string& params) {
       return rpcError(-32602, "Missing swap_id");
     }
     std::string swapId = root("swap_id").getString();
+    if (!isValidSwapId(swapId)) {
+      return rpcError(-32602, "Invalid swap_id");
+    }
 
     SwapStateMachine sm;
     if (!m_daemon.database().loadSwap(swapId, sm)) {
       return rpcError(-32000, "Swap not found: " + swapId);
     }
 
-    sm.setEncryptionKey("");
-    Common::JsonValue rec = Common::JsonValue::fromString(sm.serialize());
-    rec.insert("stateName", std::string(swapStateToString(sm.currentState())));
-    rec.insert("pairName", std::string(swapPairToString(sm.params().pair)));
-    const SwapParams& p = sm.params();
-    if (!p.ctrLockTxId.empty()) {
-      rec.insert("ctrLockTxId", p.ctrLockTxId);
-      rec.insert("requiredConfirmations", static_cast<int64_t>(p.requiredConfirmations ? p.requiredConfirmations : 6));
-      auto* client = m_daemon.getChainClient(p.pair);
-      if (client) {
-        ChainClientResult r;
-        client->getTransactionDetails(p.ctrLockTxId, r);
-        rec.insert("confirmations", static_cast<int64_t>(r.confirmations));
-        rec.insert("blockHeight", static_cast<int64_t>(r.blockHeight));
-        rec.insert("spvVerified", static_cast<int64_t>(r.spvVerified ? 1 : 0));
-        rec.insert("confirmed", static_cast<int64_t>(r.confirmed ? 1 : 0));
-        if (!r.success && !r.error.empty()) rec.insert("spvError", r.error);
-        uint64_t tip = 0;
-        if (client->getCurrentHeight(tip)) rec.insert("currentHeight", static_cast<int64_t>(tip));
-      } else {
-        rec.insert("confirmations", static_cast<int64_t>(0));
-        rec.insert("blockHeight", static_cast<int64_t>(0));
-        rec.insert("spvVerified", static_cast<int64_t>(false ? 1 : 0));
-        rec.insert("confirmed", static_cast<int64_t>(false ? 1 : 0));
-        rec.insert("spvError", std::string("chain client not configured"));
-      }
-    } else {
-      rec.insert("confirmations", static_cast<int64_t>(0));
-      rec.insert("blockHeight", static_cast<int64_t>(0));
-      rec.insert("spvVerified", static_cast<int64_t>(false ? 1 : 0));
-      rec.insert("confirmed", static_cast<int64_t>(false ? 1 : 0));
-      rec.insert("requiredConfirmations", static_cast<int64_t>(p.requiredConfirmations ? p.requiredConfirmations : 6));
-    }
+    Common::JsonValue rec = buildPublicSwapRecord(m_daemon, sm);
     return R"({"swap": )" + rec.toString() + "}";
   } catch (const std::exception& e) {
     return rpcError(-32602, std::string("Parameter error: ") + e.what());
@@ -627,6 +643,9 @@ std::string RpcServer::handleRefund(const std::string& params) {
       return rpcError(-32602, "Missing swap_id");
     }
     std::string swapId = root("swap_id").getString();
+    if (!isValidSwapId(swapId)) {
+      return rpcError(-32602, "Invalid swap_id");
+    }
 
     if (!m_daemon.refund(swapId)) {
       return rpcError(-32000, "Refund failed for swap: " + swapId);
@@ -674,17 +693,22 @@ std::string RpcServer::handleCheckTimeouts(const std::string& /*params*/) {
 }
 
 std::string RpcServer::rpcError(int code, const std::string& message, int id) {
-  std::ostringstream oss;
-  oss << R"({"jsonrpc":"2.0","error":{"code":)" << code
-      << R"(,"message":")" << message << R"("},"id":)" << id << "}";
-  return oss.str();
+  Common::JsonValue error(Common::JsonValue::OBJECT);
+  error.insert("code", static_cast<int64_t>(code));
+  error.insert("message", message);
+  Common::JsonValue response(Common::JsonValue::OBJECT);
+  response.insert("jsonrpc", std::string("2.0"));
+  response.insert("error", std::move(error));
+  response.insert("id", static_cast<int64_t>(id));
+  return response.toString();
 }
 
 std::string RpcServer::rpcSuccess(const std::string& result, int id) {
-  std::ostringstream oss;
-  oss << R"({"jsonrpc":"2.0","result":)" << result
-      << R"(,"id":)" << id << "}";
-  return oss.str();
+  Common::JsonValue response(Common::JsonValue::OBJECT);
+  response.insert("jsonrpc", std::string("2.0"));
+  response.insert("result", Common::JsonValue::fromString(result));
+  response.insert("id", static_cast<int64_t>(id));
+  return response.toString();
 }
 
 } // namespace XfgSwap

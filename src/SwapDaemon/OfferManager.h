@@ -42,7 +42,8 @@ public:
                const Crypto::SecretKey& makerSecretKey,
                const Crypto::PublicKey& makerPublicKey,
                Logging::ILogger& logger,
-               std::function<bool(uint8_t)> canPublishPair);
+               std::function<bool(uint8_t)> canPublishPair,
+               std::function<uint64_t(uint8_t)> currentRateNum);
 
   bool loadConfig(const std::string& jsonPath);
   bool loadConfigFromJson(const std::string& json);
@@ -61,7 +62,7 @@ public:
   const std::vector<OfferState>& getActiveOffers() const { return m_states; }
 
 private:
-  uint64_t compositeToRateNum(uint8_t pair);
+  uint64_t currentRateNum(uint8_t pair);
   void submitManagedOffer(OfferState& state, uint32_t currentHeight, uint64_t rateNum);
   void cancelManagedOffer(OfferState& state);
 
@@ -70,6 +71,7 @@ private:
   Crypto::PublicKey m_makerPublicKey;
   Logging::LoggerRef m_logger;
   std::function<bool(uint8_t)> m_canPublishPair;
+  std::function<uint64_t(uint8_t)> m_currentRateNum;
   std::vector<OfferState> m_states;
   uint32_t m_ttlBlocks = 60;
   bool m_running = false;

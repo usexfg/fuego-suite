@@ -471,7 +471,7 @@
                 <label class="form-label">Expiry Height</label>
                 <input type="text" class="form-input" id="order-expiry" placeholder="0 = none" value="0" style="width:100%;">
               </div>
-              <button class="btn btn-primary btn-execute" id="order-preview-btn" style="flex:0 0 auto;">Preview Buy XFG</button>
+              <button class="btn btn-primary btn-execute" id="order-preview-btn" style="flex:0 0 auto;">Inspect Buy XFG</button>
             </div>
           </div>
         </div>
@@ -484,20 +484,16 @@
     </div>
   </div>
 
-  <!-- Order Preview Modal -->
+  <!-- Read-only quote modal -->
   <div class="modal-overlay" id="order-modal">
     <div class="modal">
       <div class="modal-header">
-        <span>Confirm Order</span>
+        <span>Inspect Quote</span>
         <button class="modal-close" id="order-modal-close">&times;</button>
       </div>
       <div class="modal-body">
         <div id="order-modal-details" style="margin-bottom:16px;"></div>
-        <div style="display:flex;gap:8px;margin-bottom:12px;">
-          <button class="btn btn-secondary btn-sm" id="order-exec-btn" style="flex:1;">Execute via Wallet</button>
-          <button class="btn btn-secondary btn-sm" id="order-copy-btn" style="flex:1;">Copy RPC Request</button>
-        </div>
-        <div class="code-block" id="order-cli-cmd" style="display:none;"></div>
+        <p class="hearth-empty">Read-only dashboard. Execute in DeXFG Wallet or the Fuego terminal UI.</p>
       </div>
     </div>
   </div>

@@ -2030,6 +2030,9 @@ void WalletBurnDepositSecretCreatedEvent::process(CryptoNote::WalletLegacy* wall
 }
 
 std::error_code WalletLegacy::create_afk_lock(uint64_t amount, uint32_t timeout_hours, uint8_t pair, std::string& lockId, std::string& adaptorPoint, std::string& preSig, std::string& hashLock) {
+  if (!CryptoNote::parameters::AFK_SOFT_ORDER_EXECUTION_ENABLED) {
+    return make_error_code(CryptoNote::error::INVALID_ARGUMENT);
+  }
   std::unique_lock<std::mutex> lock(m_cacheMutex);
   throwIfNotInitialised();
 
@@ -2140,17 +2143,20 @@ std::error_code WalletLegacy::claim_afk_swap(const std::string& swapId, const st
     return make_error_code(CryptoNote::error::INVALID_ARGUMENT);
   }
 
-  Crypto::SecretKey s;
   Crypto::AdaptorSignature pre_sig;
   std::memcpy(&pre_sig, &it->second.preSig, sizeof(pre_sig));
 
-  if (!Crypto::extract_afk_secret(pre_sig, finalSig, s)) {
+  Crypto::EllipticCurveScalar expectedSecret;
+  std::memcpy(&expectedSecret, &it->second.secret, sizeof(expectedSecret));
+  Crypto::Hash zeroHash{};
+  if (!Crypto::verify_afk_completion(
+          zeroHash,
+          m_account.getAccountKeys().address.spendPublicKey,
+          pre_sig,
+          expectedSecret,
+          finalSig)) {
     return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
   }
-  // Secret s is required for full lock-UTXO claim; keep it in scope for future
-  // lock-spend path. Current path still spends from wallet balance after secret
-  // verification (proves counterparty completed the target-chain claim).
-  (void)s;
 
   // 2. Calculate payouts (Net 99% for Taker)
   uint64_t baseAmount = it->second.amount;

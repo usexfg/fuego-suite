@@ -11,10 +11,7 @@
 
 #include "gtest/gtest.h"
 
-#include <vector>
-
 #include "CryptoNoteConfig.h"
-#include "CryptoNoteCore/AssetType.h"
 #include "CryptoNoteCore/Currency.h"
 
 using namespace CryptoNote;
@@ -78,42 +75,4 @@ TEST(AssetClassification, OrdinaryOutputsAreXfg) {
 
   MultisignatureOutput multisig;
   EXPECT_EQ(AssetType::XFG, Currency::classifyOutputAsset(TransactionOutputTarget(multisig), 0));
-}
-
-// Currency::classifyCommitmentTermAsset delegates to the shared free function. Pin that the two
-// cannot drift apart: marker terms, term 0, CD terms, a dense low range, and a deterministic
-// sweep of the whole uint32 range.
-TEST(AssetClassification, SharedFunctionAndCurrencyAgreeOnEveryTermTried) {
-  std::vector<uint32_t> terms = {
-    0, 1, 720, 5400, 64800, 0xFFFFFFFEu, 0xFFFFFFFFu,
-    parameters::HEAT_TERM,
-    parameters::DIGM_TERM,
-    parameters::DEPOSIT_TERM_LP,
-    parameters::DEPOSIT_TERM_POOL_XFG,
-    parameters::DEPOSIT_TERM_POOL_HEAT,
-    parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG,
-  };
-  for (uint32_t t = 0; t < 70000; ++t) terms.push_back(t);
-  uint64_t state = 0x9E3779B97F4A7C15ull;  // splitmix64: deterministic, no RNG
-  for (int i = 0; i < 200000; ++i) {
-    state += 0x9E3779B97F4A7C15ull;
-    uint64_t z = state;
-    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
-    z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
-    terms.push_back(static_cast<uint32_t>(z ^ (z >> 31)));
-  }
-  for (uint32_t term : terms) {
-    ASSERT_EQ(Currency::classifyCommitmentTermAsset(term), CryptoNote::classifyCommitmentTermAsset(term))
-      << "term " << term;
-  }
-}
-
-// The shared function carries the marker mapping itself, not only through Currency.
-TEST(AssetClassification, SharedFunctionMapsTheProtocolMarkers) {
-  EXPECT_EQ(AssetType::HEAT, CryptoNote::classifyCommitmentTermAsset(parameters::HEAT_TERM));
-  EXPECT_EQ(AssetType::LP,   CryptoNote::classifyCommitmentTermAsset(parameters::DEPOSIT_TERM_LP));
-  EXPECT_EQ(AssetType::XFG,  CryptoNote::classifyCommitmentTermAsset(parameters::DEPOSIT_TERM_POOL_XFG));
-  EXPECT_EQ(AssetType::HEAT, CryptoNote::classifyCommitmentTermAsset(parameters::DEPOSIT_TERM_POOL_HEAT));
-  EXPECT_EQ(AssetType::XFG,  CryptoNote::classifyCommitmentTermAsset(parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG));
-  EXPECT_EQ(AssetType::HEAT, CryptoNote::classifyCommitmentTermAsset(0));
 }

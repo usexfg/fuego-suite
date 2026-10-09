@@ -62,6 +62,7 @@ std::string SwapDatabase::archiveFilePath(const std::string& swapId) const {
 
 bool SwapDatabase::saveSwapLocked(const SwapStateMachine& sm) {
   try {
+    if (!isValidSwapId(sm.params().swapId)) return false;
     // An archived terminal record wins over a stale active file left by a
     // crash between archive commit and active-file cleanup.
     if (!sm.isTerminal()) {
@@ -153,6 +154,7 @@ bool SwapDatabase::saveSwapLocked(const SwapStateMachine& sm) {
 
 bool SwapDatabase::loadSwapLocked(const std::string& swapId, SwapStateMachine& sm) {
   try {
+    if (!isValidSwapId(swapId)) return false;
     std::ifstream archived(archiveFilePath(swapId), std::ios::binary);
     if (archived.is_open()) return false;
     std::string path = swapFilePath(swapId);
@@ -238,6 +240,7 @@ std::vector<std::string> SwapDatabase::listSwaps() {
 }
 
 bool SwapDatabase::deleteSwap(const std::string& swapId) {
+  if (!isValidSwapId(swapId)) return false;
   std::lock_guard<std::mutex> lock(m_mutex);
   std::string path = swapFilePath(swapId);
   return std::remove(path.c_str()) == 0;

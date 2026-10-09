@@ -19,6 +19,7 @@
 #include "SwapDaemon/SwapTypes.h"
 #include "Common/StringTools.h"
 #include "crypto/crypto.h"
+#include "crypto/adaptor.h"
 #include "crypto/hash.h"
 
 using namespace XfgSwap;
@@ -120,6 +121,35 @@ static void testSoftOrderMakerGate() {
         "foreign makerPubKey does not pass soft-order gate");
 }
 
+static void testAfkCompletionBinding() {
+  std::cout << "AFK completion binding\n";
+  Crypto::PublicKey pub;
+  Crypto::SecretKey sec;
+  Crypto::generate_keys(pub, sec);
+
+  Crypto::Hash prefix{};
+  Crypto::AFKLockData lockData;
+  CHECK(Crypto::generate_afk_lock_data(prefix, pub, sec, lockData),
+        "AFK pre-signature generation succeeds");
+
+  Crypto::Signature validCompletion;
+  Crypto::complete_afk_signature(lockData.pre_sig, lockData.secret, validCompletion);
+  CHECK(Crypto::verify_afk_completion(prefix, pub, lockData.pre_sig,
+                                      lockData.secret, validCompletion),
+        "completion must reveal the stored adaptor secret");
+
+  Crypto::PublicKey unrelatedPub;
+  Crypto::SecretKey unrelatedSecret;
+  Crypto::generate_keys(unrelatedPub, unrelatedSecret);
+  Crypto::EllipticCurveScalar forgedSecret;
+  std::memcpy(&forgedSecret, &unrelatedSecret, sizeof(forgedSecret));
+  Crypto::Signature forgedCompletion;
+  Crypto::complete_afk_signature(lockData.pre_sig, forgedSecret, forgedCompletion);
+  CHECK(!Crypto::verify_afk_completion(prefix, pub, lockData.pre_sig,
+                                       lockData.secret, forgedCompletion),
+        "attacker-chosen adaptor completion is rejected");
+}
+
 static void testSecretEncryptRoundtrip() {
   std::cout << "secret encrypt/decrypt\n";
   Crypto::SecretKey secret;
@@ -201,6 +231,7 @@ int main() {
   testTimelock();
   testOfferRateMutation();
   testSoftOrderMakerGate();
+  testAfkCompletionBinding();
   testSecretEncryptRoundtrip();
   testCrashRestartSecrets();
 

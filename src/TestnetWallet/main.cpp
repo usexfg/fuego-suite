@@ -11,6 +11,7 @@
 #include "TestnetWallet/TestnetWallet.h"
 #include "TestnetWallet/Const.h"  // Testnet-specific constants (testnet RPC port 28280)
 #include "SimpleWallet/ClientHelper.h"
+#include "SimpleWallet/SwapKeyGen.h"
 
 #include "Common/CommandLine.h"
 #include "Common/PathTools.h"
@@ -29,6 +30,13 @@ using namespace Logging;
 
 int main(int argc, char* argv[])
 {
+  // Offline key generator for the swap config. Runs before any wallet,
+  // password, or node setup so it works on a bare machine.
+  if (SwapKeyGen::isRequested(argc, argv)) {
+    SwapKeyGen::print();
+    return 0;
+  }
+
   po::options_description desc_general("General options");
   command_line::add_arg(desc_general, command_line::arg_help);
   command_line::add_arg(desc_general, command_line::arg_version);

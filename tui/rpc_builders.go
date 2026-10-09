@@ -81,11 +81,11 @@ func BuildHeatDeposit(amountAtomic uint64, termEpochs uint32, mixin uint64) RpcC
 		Kind:   RpcWallet,
 		Method: "heat_deposit",
 		Params: map[string]interface{}{
-			"amount":       amountAtomic,
-			"term_epochs":  termEpochs,
-			"banking_fee":  uint64(0),
-			"fee":          uint64(0),
-			"mixin":        mixin,
+			"amount":      amountAtomic,
+			"term_epochs": termEpochs,
+			"banking_fee": uint64(0),
+			"fee":         uint64(0),
+			"mixin":       mixin,
 		},
 	}
 }
@@ -111,7 +111,7 @@ func BuildWithdrawDeposit(depositID uint64) RpcCall {
 // ── Hearth AMM + limit orders ────────────────────────────────────────────────
 
 // BuildAmmSwap builds amm_swap (direction 0=XFG→HEAT, 1=HEAT→XFG).
-func BuildAmmSwap(direction uint8, inputAmount, minOutput, mixin uint64) RpcCall {
+func BuildAmmSwap(direction uint8, inputAmount, expectedOutput, minOutput, mixin uint64) RpcCall {
 	if mixin == 0 {
 		mixin = DynamaxMixin
 	}
@@ -121,7 +121,7 @@ func BuildAmmSwap(direction uint8, inputAmount, minOutput, mixin uint64) RpcCall
 		Params: map[string]interface{}{
 			"direction":       direction,
 			"input_amount":    inputAmount,
-			"expected_output": uint64(0),
+			"expected_output": expectedOutput,
 			"min_output":      minOutput,
 			"fee":             uint64(0),
 			"mixin":           mixin,

@@ -25,6 +25,9 @@
 #include "SwapP2P.h"
 #include "FuegoRpcClient.h"
 #include "PriceOracle.h"
+#include "PriceWorker.h"
+#include "DefiLlamaFeed.h"
+#include "CoinGeckoFeed.h"
 #include "../Logging/ILogger.h"
 #include "../Logging/LoggerRef.h"
 #include "ChainRegistry.h"
@@ -460,6 +463,7 @@ public:
 
   // Access the price oracle for configuration.
   PriceOracle& priceOracle();
+  PriceWorker& priceWorker() { return m_priceWorker; }
 
   // Produce an XMR reserve proof via the configured monero-wallet-rpc
   // (taker side; the maker verifies with check_reserve_proof).
@@ -589,6 +593,11 @@ public:
   // Feed TWAP/oracle from a completed swap (local authenticated path only).
   void recordCompletedTrade(const SwapStateMachine& sm);
 
+  void refreshHearthPrice();
+  PairQuote currentPairQuote(SwapPair pair, bool refresh);
+  bool validateNewSwapRate(const SwapParams& params, std::string& reason,
+                           bool refresh);
+
   // Background tick thread — runs checkTimeouts + processSwap every 30 s
   void tickLoop();
 
@@ -600,6 +609,10 @@ public:
    FuegoRpcClient m_rpc;
    SwapDatabase m_db;
    PriceOracle m_oracle;
+  PricePolicy   m_pricePolicy;
+  DefiLlamaFeed m_defiLlamaFeed;
+  CoinGeckoFeed m_coinGeckoFeed;
+  PriceWorker   m_priceWorker;
    Logging::LoggerRef m_logger;
    ChainRegistry m_chainRegistry;
    struct ReadinessCacheEntry {

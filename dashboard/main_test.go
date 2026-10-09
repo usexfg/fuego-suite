@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -25,32 +26,28 @@ func testServerPort(t *testing.T, rawURL string) int {
 	return port
 }
 
-func TestSwapdRPCProxyAllowlistAndToken(t *testing.T) {
-	const token = "server-side-secret"
+func TestWalletRPCProxyRejectsTradingMethods(t *testing.T) {
 	var calls atomic.Int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
-		if r.URL.Path != "/" {
-			t.Errorf("path = %q, want /", r.URL.Path)
-		}
-		if got := r.Header.Get("X-Swap-Token"); got != token {
-			t.Errorf("token = %q, want injected token", got)
+		if r.URL.Path != "/json_rpc" {
+			t.Errorf("path = %q, want /json_rpc", r.URL.Path)
 		}
 		body, _ := io.ReadAll(r.Body)
-		if !strings.Contains(string(body), `"method":"list_chains"`) {
+		if !strings.Contains(string(body), `"method":"getbalance"`) {
 			t.Errorf("unexpected normalized body: %s", body)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","result":{"chains":[]},"id":1}`))
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","result":{"available_balance":0},"id":1}`))
 	}))
 	defer upstream.Close()
 
 	handler := localRPCProxyHandler(localRPCProxyConfig{
-		port: testServerPort(t, upstream.URL), path: "/", service: "xfg-swapd",
-		token: token, allowed: swapdAllowedMethods, limiter: newRateLimiter(time.Nanosecond),
+		port: testServerPort(t, upstream.URL), path: "/json_rpc", service: "walletd",
+		allowed: walletAllowedMethods, limiter: newRateLimiter(time.Nanosecond),
 	})
-	req := httptest.NewRequest(http.MethodPost, "/api/swapd-rpc",
-		strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"list_chains","params":{}}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/wallet",
+		strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"getbalance","params":{}}`))
 	res := httptest.NewRecorder()
 	handler.ServeHTTP(res, req)
 
@@ -60,28 +57,72 @@ func TestSwapdRPCProxyAllowlistAndToken(t *testing.T) {
 	if calls.Load() != 1 {
 		t.Fatalf("upstream calls = %d, want 1", calls.Load())
 	}
-	if strings.Contains(res.Body.String(), token) {
-		t.Fatal("control token leaked into proxy response")
+	for _, method := range []string{
+		"amm_swap", "place_limit_order", "cancel_limit_order",
+		"initiate_swap", "accept", "refund", "check_timeouts",
+	} {
+		forbidden := httptest.NewRequest(http.MethodPost, "/api/wallet",
+			strings.NewReader(`{"jsonrpc":"2.0","id":2,"method":"`+method+`","params":{}}`))
+		forbiddenRes := httptest.NewRecorder()
+		handler.ServeHTTP(forbiddenRes, forbidden)
+		if forbiddenRes.Code != http.StatusForbidden {
+			t.Fatalf("%s status = %d, want 403", method, forbiddenRes.Code)
+		}
+		if calls.Load() != 1 {
+			t.Fatalf("%s reached upstream", method)
+		}
 	}
 
-	forbidden := httptest.NewRequest(http.MethodPost, "/api/swapd-rpc",
-		strings.NewReader(`{"jsonrpc":"2.0","id":2,"method":"not_allowed","params":{}}`))
-	forbiddenRes := httptest.NewRecorder()
-	handler.ServeHTTP(forbiddenRes, forbidden)
-	if forbiddenRes.Code != http.StatusForbidden {
-		t.Fatalf("forbidden status = %d, want 403", forbiddenRes.Code)
-	}
-	if calls.Load() != 1 {
-		t.Fatal("forbidden method reached upstream")
-	}
-
-	oversized := httptest.NewRequest(http.MethodPost, "/api/swapd-rpc",
-		strings.NewReader(`{"jsonrpc":"2.0","id":3,"method":"list_chains","params":{}}`+
+	oversized := httptest.NewRequest(http.MethodPost, "/api/wallet",
+		strings.NewReader(`{"jsonrpc":"2.0","id":3,"method":"getbalance","params":{}}`+
 			strings.Repeat(" ", 1<<20)))
 	oversizedRes := httptest.NewRecorder()
 	handler.ServeHTTP(oversizedRes, oversized)
 	if oversizedRes.Code != http.StatusBadRequest || calls.Load() != 1 {
 		t.Fatalf("oversized request status = %d, upstream calls = %d", oversizedRes.Code, calls.Load())
+	}
+}
+
+func TestDashboardHasNoSwapControlRoute(t *testing.T) {
+	files := []string{"main.go", "static/js/app.js", "static/js/swapxfg.js"}
+	for _, path := range files {
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(body)
+		for _, forbidden := range []string{"/api/swapd-rpc", "App.swapRpc", "initiate_swap"} {
+			if strings.Contains(text, forbidden) {
+				t.Errorf("%s still contains %q", path, forbidden)
+			}
+		}
+	}
+}
+
+func TestSwapdStatusProxyIsGetOnly(t *testing.T) {
+	var calls atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if r.Method != http.MethodGet || r.URL.Path != "/" || r.URL.RawQuery != "" {
+			t.Fatalf("upstream request = %s %s?%s", r.Method, r.URL.Path, r.URL.RawQuery)
+		}
+		_, _ = w.Write([]byte(`{"network":"testnet","profile":"testnet"}`))
+	}))
+	defer upstream.Close()
+
+	handler := swapdStatusProxyHandler(newReverseProxy(upstream.URL))
+	post := httptest.NewRequest(http.MethodPost, "/api/swapd", strings.NewReader(`{"method":"refund"}`))
+	postResult := httptest.NewRecorder()
+	handler.ServeHTTP(postResult, post)
+	if postResult.Code != http.StatusMethodNotAllowed || calls.Load() != 0 {
+		t.Fatalf("POST status = %d, upstream calls = %d", postResult.Code, calls.Load())
+	}
+
+	get := httptest.NewRequest(http.MethodGet, "/api/swapd/anything?method=refund", nil)
+	getResult := httptest.NewRecorder()
+	handler.ServeHTTP(getResult, get)
+	if getResult.Code != http.StatusOK || calls.Load() != 1 {
+		t.Fatalf("GET status = %d, upstream calls = %d", getResult.Code, calls.Load())
 	}
 }
 
@@ -126,7 +167,7 @@ func TestOperatorMiddlewareRejectsCrossOriginAndSimplePosts(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, "/api/swapd-rpc", nil)
+			req := httptest.NewRequest(http.MethodPost, "/api/wallet", nil)
 			req.Host = tt.host
 			if tt.origin != "" {
 				req.Header.Set("Origin", tt.origin)

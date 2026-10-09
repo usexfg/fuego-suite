@@ -30,6 +30,7 @@ WALLET = os.environ.get("FUEGO_WALLET_DIR", "/Users/aejt/DEXFG/fuego-flutter-wal
 MATRIX = os.path.join(HERE, "..", "docs", "developer", "defillama-asset-matrix.json")
 ENDPOINT = "https://coins.llama.fi/prices/current/"
 TIMEOUT = 15
+MAX_TIMESTAMP = (1 << 63) - 1
 
 failures = []
 notes = []
@@ -37,6 +38,73 @@ notes = []
 
 def fail(msg):
     failures.append(msg)
+
+
+def is_finite_number(value):
+    if type(value) not in (int, float):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
+
+def is_timestamp(value):
+    return type(value) is int and 0 < value <= MAX_TIMESTAMP
+
+
+def validate_numeric_policy(policy):
+    if not isinstance(policy, dict):
+        return ["policies must be an object"]
+    errors = []
+    for field in ("maxProviderAgeSeconds", "maxClockSkewSeconds"):
+        value = policy.get(field)
+        if type(value) is not int or not 0 <= value <= MAX_TIMESTAMP:
+            errors.append("policies.%s must be a nonnegative int64" % field)
+    confidence = policy.get("minConfidence")
+    if not is_finite_number(confidence) or not 0 <= confidence <= 1:
+        errors.append("policies.minConfidence must be finite in [0,1]")
+    if "crossCheckTolerance" in policy:
+        tolerance = policy["crossCheckTolerance"]
+        if not is_finite_number(tolerance) or not 0 <= tolerance < 1:
+            errors.append("policies.crossCheckTolerance must be finite in [0,1)")
+    return errors
+
+
+def validate_feed_entry(entry, expected_symbol, policy, now):
+    errors = validate_numeric_policy(policy)
+    if not is_timestamp(now):
+        errors.append("current time must be a positive int64")
+    if errors:
+        return errors, None
+    if not isinstance(entry, dict):
+        return ["feed entry must be an object"], None
+
+    symbol = entry.get("symbol")
+    if not isinstance(symbol, str) or symbol.upper() != expected_symbol.upper():
+        errors.append("returned symbol %r, expected %s" % (symbol, expected_symbol))
+
+    price = entry.get("price")
+    if not is_finite_number(price) or price <= 0:
+        errors.append("non-finite or non-positive price %r" % price)
+
+    if "confidence" in entry:
+        confidence = entry["confidence"]
+        if not is_finite_number(confidence) or not 0 <= confidence <= 1:
+            errors.append("confidence %r must be finite in [0,1]" % confidence)
+        elif confidence < policy["minConfidence"]:
+            errors.append("confidence %r below %r" % (confidence, policy["minConfidence"]))
+
+    timestamp = entry.get("timestamp")
+    if not is_timestamp(timestamp):
+        errors.append("provider timestamp must be a positive int64")
+        return errors, None
+
+    age = now - timestamp
+    if age < -policy["maxClockSkewSeconds"]:
+        errors.append("provider timestamp is %ds in the future" % -age)
+    stale_age = age if age > policy["maxProviderAgeSeconds"] else None
+    return errors, stale_age
 
 
 # One row of XFG_SWAP_PAIR_CATALOG: name, id, key, asset, display, family, chainId,
@@ -92,11 +160,12 @@ def parse_cpp_catalog(path):
     block = block[:block.index("};")]
     assets = {}
     row = re.compile(
-        r'\{"([A-Z0-9]+)",\s*"([^"]*)",\s*"([^"]*)",\s*([0-9]+)ULL,\s*"([^"]*)",\s*(true|false),\s*(true|false)\}')
-    for sym, dl, pyth, div, divtext, priced, execable in row.findall(block):
+        r'\{"([A-Z0-9]+)",\s*"([^"]*)",\s*"([^"]*)",\s*"([^"]*)",\s*([0-9]+)ULL,\s*"([^"]*)",\s*(true|false),\s*(true|false)\}')
+    for sym, dl, pyth, exp, div, divtext, priced, execable in row.findall(block):
         assets[sym] = {
             "defiLlamaId": dl,
             "pythSymbol": pyth,
+            "expectedFeedSymbol": exp,
             "atomicDivisor": int(div),
             "atomicDivisorText": divtext,
             "priced": priced == "true",
@@ -105,7 +174,7 @@ def parse_cpp_catalog(path):
     binds = {}
     for pair, sym in re.findall(r"\{SwapPair::([A-Z_0-9]+),\s*&kAssets\[(\d+)\]\}", text):
         binds[pair] = sym
-    ordered = re.findall(r'\{"([A-Z0-9]+)",\s*"[^"]*",\s*"[^"]*",\s*[0-9]+ULL', block)
+    ordered = re.findall(r'\{"([A-Z0-9]+)",\s*"[^"]*",\s*"[^"]*",\s*"[^"]*",\s*[0-9]+ULL', block)
     for pair, idx in binds.items():
         binds[pair] = ordered[int(idx)]
     return assets, binds
@@ -114,6 +183,20 @@ def parse_cpp_catalog(path):
 def parse_registered_pairs(path):
     text = open(path, encoding="utf-8").read()
     return set(re.findall(r"registerChain\(SwapPair::([A-Z_0-9]+)", text))
+
+
+def parse_feed_meta(path):
+    text = open(path, encoding="utf-8").read()
+    block = text[text.index("kFeedMeta[] = {"):]
+    block = block[:block.index("};")]
+    out = {}
+    # Column order must match AssetDescriptor: symbol, defiLlamaId, pythSymbol,
+    # pythId, expectedFeedSymbol.
+    for sym, dl, pyth, pid, exp in re.findall(
+            r'\{"([A-Z0-9]+)",\s*"([^"]*)",\s*"([^"]*)",\s*"([^"]*)",\s*"([^"]*)"\}', block):
+        out[sym] = {"defiLlamaId": dl, "pythSymbol": pyth, "expectedFeedSymbol": exp,
+                    "pythId": pid}
+    return out
 
 
 def fetch(ids):
@@ -126,9 +209,16 @@ def fetch(ids):
 
 
 def main():
+    failures.clear()
+    notes.clear()
     matrix = json.load(open(MATRIX, encoding="utf-8"))
     pairs = matrix["pairs"]
     pol = matrix["policies"]
+    policy_errors = validate_numeric_policy(pol)
+    if policy_errors:
+        for error in policy_errors:
+            print("FAIL  %s" % error)
+        return 1
 
     catalog_path = os.path.join(XFGO, "src", "SwapDaemon", "SwapPairCatalog.h")
     if os.path.exists(catalog_path):
@@ -184,35 +274,25 @@ def main():
 
     cat_path = os.path.join(XFGO, "src", "SwapDaemon", "AssetCatalog.cpp")
     if os.path.exists(cat_path):
-        cat_assets, cat_binds = parse_cpp_catalog(cat_path)
+        # AssetCatalog.cpp no longer restates pair bindings; it derives them from
+        # SWAP_PAIR_CATALOG and keeps only feed metadata keyed by settlement asset.
+        feed_meta = parse_feed_meta(cat_path)
         for pr in pairs:
-            enum = pr["enum"]
-            sym = cat_binds.get(enum)
-            if sym is None:
-                fail("pair %d (%s) has no binding in AssetCatalog.cpp" % (pr["id"], enum))
+            sym = "GRAM" if pr["enum"] == "TON" else pr["settlementAsset"]
+            m2 = feed_meta.get(sym)
+            if m2 is None:
+                fail("AssetCatalog.cpp has no feed metadata for settlement asset %s (pair %d %s)"
+                     % (sym, pr["id"], pr["enum"]))
                 continue
-            if sym != pr["settlementAsset"]:
-                fail("pair %d (%s): AssetCatalog binds %s, matrix says settlement asset %s"
-                     % (pr["id"], enum, sym, pr["settlementAsset"]))
-            c = cat_assets.get(sym)
-            if c is None:
-                fail("AssetCatalog has no descriptor for symbol %s" % sym)
-                continue
-            if c["defiLlamaId"] != (pr["defiLlamaId"] or ""):
+            if m2["defiLlamaId"] != (pr["defiLlamaId"] or ""):
                 fail("pair %d (%s): AssetCatalog defiLlamaId %r != matrix %r"
-                     % (pr["id"], enum, c["defiLlamaId"], pr["defiLlamaId"]))
-            if c["priced"] != (pr["status"] != "unpriced"):
-                fail("pair %d (%s): AssetCatalog priced=%s but matrix status is %s"
-                     % (pr["id"], enum, c["priced"], pr["status"]))
-            if c["executable"] != (pr["status"] != "unexecutable"):
-                fail("pair %d (%s): AssetCatalog executable=%s but matrix status is %s"
-                     % (pr["id"], enum, c["executable"], pr["status"]))
-            if c["atomicDivisorText"] != pr["atomicDivisor"]:
-                fail("pair %d (%s): divisor text %s != matrix %s"
-                     % (pr["id"], enum, c["atomicDivisorText"], pr["atomicDivisor"]))
-        notes.append("AssetCatalog.cpp cross-checked: %d assets, %d pair bindings" % (len(cat_assets), len(cat_binds)))
+                     % (pr["id"], pr["enum"], m2["defiLlamaId"], pr["defiLlamaId"]))
+            if m2["expectedFeedSymbol"].upper() != pr["expectSymbol"].upper():
+                fail("pair %d (%s): AssetCatalog expectedFeedSymbol %r != matrix expectSymbol %r"
+                     % (pr["id"], pr["enum"], m2["expectedFeedSymbol"], pr["expectSymbol"]))
+        notes.append("AssetCatalog.cpp feed metadata cross-checked for %d assets" % len(feed_meta))
     else:
-        notes.append("AssetCatalog.cpp not found at %s, skipped catalog cross-check" % cat_path)
+        notes.append("AssetCatalog.cpp not found at %s, skipped feed metadata cross-check" % cat_path)
 
     registered = parse_registered_pairs(os.path.join(XFGO, "src", "SwapDaemon", "SwapDaemon.cpp"))
     matrix_registered = {p["enum"] for p in pairs if p.get("chainClient") == "wired-config-gated"}
@@ -255,8 +335,19 @@ def main():
         fail("live fetch failed: %s" % exc)
         body = {"coins": {}}
 
-    coins = body.get("coins", {})
-    now = int(time.time())
+    if not isinstance(body, dict) or not isinstance(body.get("coins"), dict):
+        fail("live response must contain a coins object")
+        coins = {}
+    else:
+        coins = body["coins"]
+    clock = time.time()
+    if not is_finite_number(clock) or not 0 < clock <= MAX_TIMESTAMP:
+        print("FAIL  current time must be finite and positive within int64")
+        return 1
+    now = int(clock)
+    if not is_timestamp(now):
+        print("FAIL  current time must be a positive int64")
+        return 1
 
     priced = 0
     for p in pairs:
@@ -274,28 +365,11 @@ def main():
             continue
         priced += 1
 
-        sym = str(entry.get("symbol", "")).upper()
-        want = p["expectSymbol"].upper()
-        if sym != want:
-            fail("pair %d (%s): %s returned symbol %s, expected %s" % (p["id"], p["enum"], cid, sym, want))
-
-        price = entry.get("price")
-        if not isinstance(price, (int, float)) or not math.isfinite(price) or price <= 0:
-            fail("pair %d (%s): non-finite or non-positive price %r" % (p["id"], p["enum"], price))
-
-        conf = entry.get("confidence")
-        if conf is not None and conf < pol["minConfidence"]:
-            fail("pair %d (%s): confidence %r below %r" % (p["id"], p["enum"], conf, pol["minConfidence"]))
-
-        ts = entry.get("timestamp")
-        if not isinstance(ts, (int, float)):
-            fail("pair %d (%s): missing provider timestamp" % (p["id"], p["enum"]))
-        else:
-            age = now - int(ts)
-            if age > pol["maxProviderAgeSeconds"]:
-                notes.append("pair %d (%s): provider data is %ds old, the %ds staleness gate would reject this pair right now" % (p["id"], p["enum"], age, pol["maxProviderAgeSeconds"]))
-            if age < -pol["maxClockSkewSeconds"]:
-                fail("pair %d (%s): provider timestamp is %ds in the future" % (p["id"], p["enum"], -age))
+        errors, stale_age = validate_feed_entry(entry, p["expectSymbol"], pol, now)
+        for error in errors:
+            fail("pair %d (%s): %s %s" % (p["id"], p["enum"], cid, error))
+        if stale_age is not None:
+            notes.append("pair %d (%s): provider data is %ds old, the %ds staleness gate would reject this pair right now" % (p["id"], p["enum"], stale_age, pol["maxProviderAgeSeconds"]))
 
     print("distinct DeFiLlama ids requested: %d" % len(distinct))
     print("pairs resolving live: %d of %d" % (priced, len(pairs)))

@@ -13,8 +13,9 @@
   // 2. Edit servers:     Replace the placeholder Electrum server addresses
   // 3. Fund addresses:   Send each chain's native token to the P2PKH address
   //                      shown in comments. The daemon needs funds for fees.
-  // 4. Add XFG key:      Set xfg_secret_key from your Fuego wallet
-  //                      (get it with: cat ~/.fuego/wallet.keys | grep secret)
+  // 4. Add XFG key:      Run `fire_wallet gen_swap_key` and paste the printed
+  //                      secret key into `xfg_secret_key` below. Use a
+  //                      dedicated swap key, not your wallet spend key.
   // 5. Run the daemon:   xfg-swapd --swap-config my-config.json --service
   //
   // ── EVM/Solana Light Client Setup ──
@@ -73,8 +74,13 @@
   "dcr_wif": "replace_with_your_dcr_wif",  // P2PKH address: D... (send DCR here)
 
   // ── XFG (Fuego) ─────────────────────────────────────────────────────────────
-  // Your XFG wallet's secret key. Get it from your wallet file or generate a
-  // new one with `fuego-wallet generate-key`.
+  // The XFG keypair the swap daemon signs offers and XFG swap outputs with.
+  //
+  // Generate a dedicated one (recommended — do NOT reuse your wallet spend key):
+  //   fire_wallet gen_swap_key
+  //
+  // It also derives the swap database's at-rest encryption key, so changing it
+  // later makes existing swap state unreadable. Back it up.
   "xfg_secret_key": "<your_xfg_secret_key_64_hex_chars>",
 
   // ── EVM Chains (Light Client — no full node required) ─────────────────────
@@ -111,7 +117,7 @@
   "poly_port": 443,
   "poly_wif": "<64_hex_private_key>",
 
-  // ROBINHOOD — Robinhood Chain L1 (chain ID 4663)
+  // ROBINHOOD — Robinhood Chain L2 (chain ID 4663)
   "rh_host": "rpc.robinhood.vercel.app",
   "rh_port": 443,
   "rh_priv_key": "<64_hex_private_key>",
@@ -119,7 +125,7 @@
   "avax_host": "api.avax.network",
   "avax_port": 443,
   "avax_priv_key": "<64_hex_private_key>",
-  // CRO — Cronos (chain ID 25)
+  // CRO — Crypto.com (chain ID 25)
   "cro_host": "evm.cronos.org",
   "cro_port": 443,
   "cro_priv_key": "<64_hex_private_key>",
@@ -128,7 +134,7 @@
   "bob_port": 443,
   "bob_priv_key": "<64_hex_private_key>",
   // UNICHAIN — Unichain (chain ID 130)
-  "uni_host": "sepolia.unichain.org",
+  "uni_host": "mainnet.unichain.org",
   "uni_port": 443,
   "uni_priv_key": "<64_hex_private_key>",
   // PLASMA — Plasma (chain ID 9745)
@@ -139,8 +145,8 @@
   "pulsechain_rpc_host": "rpc.pulsechain.com",
   "pulsechain_rpc_port": 443,
   "pulsechain_priv_key": "<64_hex_private_key>",
-  // MONAD — Monad (chain ID 185)
-  "monad_host": "rpc.testnet.monad.xyz",
+  // MONAD — Monad (chain ID 143)
+  "monad_host": "rpc.monad.xyz",
   "monad_port": 443,
   "monad_priv_key": "<64_hex_private_key>",
   // OPTIMISM — Optimism L2 (chain ID 10)

@@ -530,11 +530,6 @@ const HearthTest = (() => {
 
     document.getElementById('order-preview-btn').addEventListener('click', review);
     document.getElementById('order-modal-close').addEventListener('click', closeModal);
-    document.getElementById('order-exec-btn').addEventListener('click', commitBench);
-    document.getElementById('order-copy-btn').addEventListener('click', () => {
-      navigator.clipboard.writeText(document.getElementById('order-cli-cmd').textContent)
-        .then(() => Bench.toast('Command copied'), () => Bench.toast('Clipboard unavailable'));
-    });
 
     label();
     estimate();
@@ -604,21 +599,10 @@ const HearthTest = (() => {
         or committed; no vault is consulted.
       </p>`;
 
-    const cli = document.getElementById('order-cli-cmd');
-    cli.textContent = manner === 'limit'
-      ? `fire_wallet place_order ${side === 0 ? 'buy' : 'sell'} ${amt} ${p} ${document.getElementById('order-expiry').value || 4320}`
-      : `fire_wallet amm_swap ${side === 0 ? 0 : 1} ${Math.round(amt * Bench.COIN)}`;
-    cli.style.display = 'block';
-
     document.getElementById('order-modal').classList.add('active');
   }
 
   function closeModal() { document.getElementById('order-modal').classList.remove('active'); }
-
-  function commitBench() {
-    closeModal();
-    Bench.toast('Bench: no order was broadcast — demonstration only');
-  }
 
   // ── The bench walks forward on its own ─────────────────────────────────────
   function tick() {
@@ -638,6 +622,7 @@ const HearthTest = (() => {
 
   function init() {
     initThemeSwitcher();
+    if (typeof MaisonTypeface !== 'undefined') MaisonTypeface.init();
     onTheme(() => {
       if (chart) {
         try { chart.setStyles(ChartStyle.build(tokens(CHART_TOKENS))); }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -80,7 +81,7 @@ func TestBuildGetAndWithdrawDeposit(t *testing.T) {
 }
 
 func TestBuildAmmSwap_DynamaxMixin(t *testing.T) {
-	c := BuildAmmSwap(0, 1_000_000, 900_000, DefaultMixin())
+	c := BuildAmmSwap(0, 1_000_000, 950_000, 900_000, DefaultMixin())
 	mustWallet(t, c, "amm_swap")
 	if c.Params["direction"].(uint8) != 0 {
 		t.Fatal("direction")
@@ -90,6 +91,9 @@ func TestBuildAmmSwap_DynamaxMixin(t *testing.T) {
 	}
 	if c.Params["input_amount"].(uint64) != 1_000_000 {
 		t.Fatal("input_amount")
+	}
+	if c.Params["expected_output"].(uint64) != 950_000 {
+		t.Fatal("expected_output")
 	}
 }
 
@@ -229,6 +233,45 @@ func TestDefaultMixin_IsDynamax(t *testing.T) {
 	}
 }
 
+func TestSavePasswordCreatesExclusiveOwnerFile(t *testing.T) {
+	container := filepath.Join(t.TempDir(), "wallet.container")
+	password := "correct-horse-battery-staple"
+	if err := savePassword(container, password); err != nil {
+		t.Fatal(err)
+	}
+	passwordPath := passFile(container)
+	contents, err := os.ReadFile(passwordPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(contents) != password {
+		t.Fatal("password file contents changed")
+	}
+	info, err := os.Stat(passwordPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0600 {
+		t.Fatalf("password mode = %o, want 600", info.Mode().Perm())
+	}
+	if err := savePassword(container, "different-password-value"); err == nil {
+		t.Fatal("password file was replaced")
+	}
+	contents, err = os.ReadFile(passwordPath)
+	if err != nil || string(contents) != password {
+		t.Fatal("existing password file was modified")
+	}
+}
+
+func TestSavePasswordRejectsInvalidValues(t *testing.T) {
+	container := filepath.Join(t.TempDir(), "wallet.container")
+	for _, password := range []string{"", "short", " surrounded-by-space ", strings.Repeat("x", 1025)} {
+		if err := savePassword(container, password); err == nil {
+			t.Fatalf("accepted invalid password of length %d", len(password))
+		}
+	}
+}
+
 // Structural: PaymentGate registers the TUI method names (source of truth for unified wallet).
 func TestPaymentGateRegistersTuiMethods(t *testing.T) {
 	path := "../src/PaymentGate/PaymentServiceJsonRpcServer.cpp"
@@ -332,8 +375,16 @@ func TestWalletGreenHeatDepositSpendsHeatTerm(t *testing.T) {
 	if !strings.Contains(window, "termEpochs") {
 		t.Fatal("heatDepositV10 must take epoch terms")
 	}
-	if !strings.Contains(window, "signInputCommitmentSpend") {
-		t.Fatal("heatDepositV10 must spend HEAT via commitment inputs")
+	if !strings.Contains(window, "prepareHeatSpends") || !strings.Contains(window, "addAndSignInputs") {
+		t.Fatal("heatDepositV10 must prepare and sign HEAT commitment inputs")
+	}
+	helperStart := strings.Index(src, "WalletGreen::addAndSignInputs(")
+	if helperStart < 0 {
+		t.Fatal("WalletGreen::addAndSignInputs not found")
+	}
+	helperEnd := strings.Index(src[helperStart:], "WalletGreen::mintHeatV10(")
+	if helperEnd < 0 || !strings.Contains(src[helperStart:helperStart+helperEnd], "signInputCommitmentSpend") {
+		t.Fatal("addAndSignInputs must sign commitment spends")
 	}
 	// must not be a thin createDeposit wrapper
 	if strings.Contains(window, "createDeposit(") {
@@ -369,8 +420,8 @@ func TestWalletGreenAmmSwapDir1SpendsHeat(t *testing.T) {
 			t.Fatal("ammSwapV10 missing HEAT→XFG branch")
 		}
 	}
-	if !strings.Contains(body, "signInputCommitmentSpend") {
-		t.Fatal("ammSwapV10 HEAT→XFG must use commitment spends")
+	if !strings.Contains(body, "prepareHeatSpends") || !strings.Contains(body, "addAndSignInputs") {
+		t.Fatal("ammSwapV10 HEAT→XFG must prepare and sign commitment spends")
 	}
 	if !strings.Contains(body, "DEPOSIT_TERM_POOL_HEAT") {
 		t.Fatal("ammSwapV10 HEAT→XFG must deposit HEAT to pool")
@@ -380,7 +431,7 @@ func TestWalletGreenAmmSwapDir1SpendsHeat(t *testing.T) {
 	}
 }
 
-// Structural: menu exposes every in-scope feature (atomic swaps excluded).
+// Structural: menu exposes every in-scope feature.
 func TestMenuCoversInScopeFeatures(t *testing.T) {
 	needles := []string{
 		"Mint HEAT",
@@ -398,6 +449,8 @@ func TestMenuCoversInScopeFeatures(t *testing.T) {
 		"Lookup Alias",
 		"Register Alias",
 		"Send Transaction",
+		"Cross-chain Swap",
+		"Manage Cross-chain Swaps",
 	}
 	labels := make([]string, len(menu))
 	for i, m := range menu {
@@ -414,12 +467,6 @@ func TestMenuCoversInScopeFeatures(t *testing.T) {
 		}
 		if !found {
 			t.Errorf("menu missing %q; have: %s", n, joined)
-		}
-	}
-	// Atomic swaps not required as a managed feature
-	for _, l := range labels {
-		if l == "Active Swaps" {
-			t.Log("Active Swaps still listed but is no-op / out of scope")
 		}
 	}
 }

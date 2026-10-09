@@ -241,6 +241,10 @@ const bool FCI_PAYOUTS_ENABLED = false;
 // is the FEATURE_PURE_PTLC environment variable on fuego-swapd (cached at
 // first negotiation); this constant is the compile-time reference default.
 constexpr bool FEATURE_PURE_PTLC_DEFAULT = false;
+
+// The current AFK soft-order path locks XFG to the maker's wallet and requires
+// the maker to send a separate payout. It is not a trustless atomic lock.
+constexpr bool AFK_SOFT_ORDER_EXECUTION_ENABLED = false;
 const uint32_t CD_TRANSFER_MIN_REMAINING_TERM =
     1; // minimum term for transferred CD
 

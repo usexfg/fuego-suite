@@ -1,8 +1,9 @@
 #!/bin/bash
 
-# Build script for tview-based Fuego TUI
+# Compatibility build entry point for the supported Fuego TUI.
+set -euo pipefail
 
-echo "Building tview-based Fuego TUI..."
+echo "Building Fuego TUI..."
 
 # Check if Go is installed
 if ! command -v go &> /dev/null
@@ -17,27 +18,12 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 # Change to the script directory
 cd "$SCRIPT_DIR"
 
-# Clean any previous builds
-echo "Cleaning previous builds..."
-rm -f fuego-tui-tview
+go build -mod=vendor -o fuego_suite_tview .
 
-# Update dependencies
-echo "Updating dependencies..."
-go mod tidy
-
-# Build the tview-based TUI
-echo "Building tview-based TUI..."
-go build -o fuego_suite_tview tview_main.go config.go
-
-if [ $? -eq 0 ]; then
-    echo "Build successful! Binary created: fuego_suite_tview"
-    echo ""
-    echo "To run the tview-based TUI:"
-    echo "  ./fuego_suite_tview"
-    echo ""
-    echo "Note: Make sure the Fuego node and wallet binaries are built in ../build/src/"
-    echo "      or available in your PATH"
-else
-    echo "Build failed!"
-    exit 1
-fi
+echo "Build successful! Binary created: fuego_suite_tview"
+echo ""
+echo "To run the TUI:"
+echo "  ./fuego_suite_tview"
+echo ""
+echo "Make sure the Fuego node and wallet binaries are built in ../build/src/"
+echo "or available in PATH."

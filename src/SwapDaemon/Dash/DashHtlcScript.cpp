@@ -18,6 +18,7 @@
 #include <stdexcept>
 #include <cstring>
 #include <algorithm>
+#include "SwapDaemon/Crypto/ripemd160.h"
 #include <openssl/sha.h>
 #include <openssl/ripemd.h>
 #include <openssl/evp.h>
@@ -40,14 +41,7 @@ std::vector<uint8_t> DashHtlcScript::doubleSha256(const std::vector<uint8_t>& da
 }
 
 std::vector<uint8_t> DashHtlcScript::ripemd160(const std::vector<uint8_t>& data) {
-  std::vector<uint8_t> digest(RIPEMD160_DIGEST_LENGTH);
-  EVP_MD_CTX* ctx = EVP_MD_CTX_new();
-  EVP_DigestInit_ex(ctx, EVP_ripemd160(), nullptr);
-  EVP_DigestUpdate(ctx, data.data(), data.size());
-  unsigned int len = 0;
-  EVP_DigestFinal_ex(ctx, digest.data(), &len);
-  EVP_MD_CTX_free(ctx);
-  return digest;
+  return XfgSwap::ripemd160(data);
 }
 
 std::vector<uint8_t> DashHtlcScript::hash160(const std::vector<uint8_t>& data) {

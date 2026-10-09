@@ -1,19 +1,218 @@
+## Restore after concurrent branch switch (2026-10-04)
+
+**Agent**: opencode (space-bunny-free)
+**Status**: DONE -- restored onto `security/audit-fixes-2026-10`
+
+### What happened
+
+The working tree moved underneath this work: `/Users/aejt/xfgo` was switched from
+`keyderiv` to `merge/keyderiv-owner-bound` and then to
+`security/audit-fixes-2026-10` by a concurrent session, and this shell's cwd had
+silently reset to the wallet repo, so a verification step reported "file not found"
+for files that had existed minutes earlier. A concurrent session had preserved the
+uncommitted work as `a92028c90` ("WIP: preserve uncommitted keyderiv-era work before
+master merge"), reachable from `stash-dashboard-wip`, so nothing was lost.
+
+### How it was restored
+
+A wholesale replay was NOT safe: HEAD had **diverged** from `a92028c90`
+(`git merge-base --is-ancestor` fails), and the other session is mid security-audit
+work. Restoring the tree wholesale would have reverted their changes. So:
+
+- **Restored wholesale** (files HEAD holds only in an older, pre-pricing form, and
+  which their in-flight work does not touch -- their dirty set was
+  `Blockchain.cpp`, the `secp256k1` submodule and a new audit guide):
+  `PriceFeed.h`, `AssetCatalog.cpp`, `PricePolicy.cpp`, `PriceOracle.{h,cpp}`,
+  `test_price_policy.cpp`, `verify-defillama-assets.py`, both matrix docs.
+- **Restored as new files**: `DefiLlamaFeed.{h,cpp}`, `PythFeed.{h,cpp}`,
+  `test_defillama_feed.cpp`, `test_pyth_feed.cpp`, `test_price_oracle_defects.cpp`,
+  `probe-pyth-liveness.py`.
+- **Patched surgically, never replaced** (diverged and shared):
+  `OfferManager.{h,cpp}` (oracle injected), `SwapDaemon.cpp` (oracle passed to
+  OfferManager, uncomputable-rate log), `src/CMakeLists.txt` (2 sources into both
+  source lists, 3 test targets), this file.
+- **Deliberately NOT restored**: `src/SwapDaemon/Crypto/ripemd160.{cpp,h}` and
+  `tests/test_ripemd160.cpp`. Those are deleted at HEAD relative to `a92028c90`
+  because they are the other session's newer security work, not ours.
+
+`SwapPairCatalog.h` was already identical between the two trees, so the 46-pair
+catalog needed no action.
+
+### Verification note
+
+The shell's `grep -c` was used several times as a gate and silently returned grep's
+*exit status* rather than a match count, so a couple of intermediate "passing" checks
+were meaningless. Gate results below were re-run with explicit assertions.
+
+---
+
 # Source Change Log
 
 Every feature/fix requires a task list with sign-off. Agents record name, date, and status when completing work.
 
 ---
 
-## Key derivation branch audit and suite/Valise integration
+## Local master integration retention — 2026-10-08
 
-**Started:** 2026-10-03; resumed 2026-10-04
-**Owner:** Codex (GPT-6)
-**Status:** IN PROGRESS
+The audited branch no longer carried several paths still tracked by local
+`master`. They are retained before integration so the merge does not delete
+repository files.
 
-Audit covers the committed owner-bound commitment work, the branch's local
-asset-accounting and price-policy changes, and their integration with suite master.
-Valise's owner-bound crypto/scanner commits and suite pin are the dependent work.
-Existing Valise chart/history changes are preserved as local work.
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Restore every path that the branch merge would remove from local `master` | Codex | 2026-10-08 | DONE |
+| 2 | Verify the resulting merge has no tracked-file deletions | Codex | 2026-10-08 | DONE |
+
+| Gate | Result | Agent | Date |
+|------|--------|-------|------|
+| Merge deletion check | PASS — zero paths | Codex | 2026-10-08 |
+| All tasks done | PASS | Codex | 2026-10-08 |
+
+## AFK soft-order fail-closed boundary — 2026-10-08
+
+The AFK soft-order path cannot give the taker a unilateral XFG claim and its old
+completion check accepted an attacker-selected adaptor scalar. New soft-order
+execution stays disabled while recovery of existing records remains available.
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Disable new AFK requests, managed soft offers, and AFK lock creation | Codex | 2026-10-08 | DONE |
+| 2 | Bind completed AFK signatures to the stored adaptor secret and maker spend key | Codex | 2026-10-08 | DONE |
+| 3 | Publish the AFK capability in swap daemon status for execution clients | Codex | 2026-10-08 | DONE |
+| 4 | Add attacker-selected completion regression coverage | Codex | 2026-10-08 | DONE |
+
+| Gate | Result | Agent | Date |
+|------|--------|-------|------|
+| Swap daemon and wallet build | PASS | Codex | 2026-10-08 |
+| Production security gates | PASS — 22/22 | Codex | 2026-10-08 |
+| All tasks done | PASS | Codex | 2026-10-08 |
+
+## Live swap price policy integration — 2026-10-08
+
+`PriceWorker` now owns live DeFiLlama and CoinGecko feeds in the daemon, polls
+before service readiness, publishes synchronized snapshots, and stops with the
+daemon. New direct swaps must pass the fresh external reference derived from the
+Hearth XFG/USD price. Managed offers use the same checked rate and fail closed
+when it is unavailable. Completed-trade TWAP remains an additional guard once
+enough trades exist; the stale static-seed gate no longer conflicts with a live
+market quote.
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Construct the worker with both production feeds and wire its lifecycle | Codex | 2026-10-08 | DONE |
+| 2 | Serialize concurrent polls and lock all worker state reads | Codex | 2026-10-08 | DONE |
+| 3 | Gate direct initiation and acceptance on fresh pair quotes and amount guard | Codex | 2026-10-08 | DONE |
+| 4 | Price managed offers from policy-approved snapshots | Codex | 2026-10-08 | DONE |
+| 5 | Accept `XFG_SWAPD_RPC_TOKEN` without exposing the token in process arguments | Codex | 2026-10-08 | DONE |
+
+| Gate | Result | Agent | Date |
+|------|--------|-------|------|
+| `xfg-swapd` builds | PASS | Codex | 2026-10-08 |
+| Price worker tests | PASS — 36 checks | Codex | 2026-10-08 |
+| Price policy tests | PASS — 423 checks | Codex | 2026-10-08 |
+| All tasks done | PASS | Codex | 2026-10-08 |
+
+---
+
+## Phase 2h: full CMake build verified, and the swap test suite wired to ctest
+
+**Date**: 2026-10-04
+**Agent**: opencode (space-bunny-free)
+**Status**: DONE
+
+### The build was never actually blocked by disk
+
+The "not enough disk" caveat attached to phases 2c-2g was wrong. `build/release/` already
+held a cache configured for this host:
+
+    Boost_INCLUDE_DIR:PATH=/opt/homebrew/include      # Boost 1.89, arm64
+    OPENSSL_SSL_LIBRARY:/opt/homebrew/Cellar/openssl@3/3.6.4/lib/libssl.dylib
+
+`/usr/local/lib` has Boost **headers only and no libraries**, which is why ad-hoc
+`clang++` invocations exploded on Boost internals. Pointing at Homebrew was the whole fix;
+6.1 GB free was never the constraint. Disk went 6.2 -> 6.1 GB for a full `SwapDaemonLib`
+plus every pricing test.
+
+### What this unblocked
+
+`SwapDaemonLib` builds clean, which compiles **`SwapDaemon.cpp` and `OfferManager.cpp`** --
+the two files phases 2c-2g could only claim were unverified. The `m_oracle` argument
+passing into `OfferManager` and the `recordCompletedTrade` rate guard are now real compiled
+code rather than reviewed-but-unbuilt edits.
+
+### Cherry-pick
+
+`5fb22f6f4`, `6862bc215` and `614906bd0` were cherry-picked onto
+`merge/keyderiv-owner-bound-final` with no conflicts, after a concurrent session switched
+branches and left the CoinGecko and worker files absent from the working tree.
+
+### Gates
+
+    SwapDaemonLib              Built (exit 0)
+    test_price_policy          423 checks, 0 failures
+    test_coingecko_feed         61 checks, 0 failures
+    test_pyth_feed              48 checks, 0 failures
+    test_price_worker           36 checks, 0 failures
+    test_defillama_feed         29 checks, 0 failures
+    test_price_oracle_defects   27 checks, 0 failures
+    test_price_oracle_arb       PASS
+    ctest (7 pricing suites)   100% passed, 0.10 sec
+
+### Still outstanding
+
+The two funding gates and the status snapshot. The worker is still not constructed by
+`SwapDaemon`, which is now compilable, so that wiring is no longer blocked.
+
+## Phase 2g: bounded poll worker
+
+**Started**: 2026-10-04
+**Agent**: opencode (space-bunny-free)
+**Status**: DONE -- thread-safe, verified under ThreadSanitizer
+
+### What it is
+
+`PriceWorker` polls both feeds on its own thread and publishes immutable snapshots that
+readers copy out in microseconds. It exists because a DeFiLlama `/prices/current` call can
+block for the full read timeout, and the swap-progress thread must never wait on the
+network.
+
+### Design decisions worth recording
+
+- **Per-source interval floors, not one interval.** `PricePolicy::pollIntervalSec` is 30s,
+  which is 2 requests/minute -- inside CoinGecko's 3/minute keyless ceiling but with no
+  headroom. The secondary is therefore floored at `kSecondaryMinIntervalSec = 60` and uses
+  the larger of that and the policy value.
+- **No early retry on a rate-limited source.** A 429 leaves the source skipped until its
+  next due time. Retrying inside the window extends the block, which is the failure mode
+  that matters for CoinGecko specifically.
+- **A failing secondary never halts trading.** `pollOnce` returns true if *either* source
+  answered, and a cycle that only refetches one side carries the last good value forward
+  for the other. The quote degrades to `SINGLE_SOURCE`, which still permits managed offers
+  and new swaps.
+- **Bounded history**: a deque capped at `kMaxHistory = 8` snapshots.
+- **Explicit "never polled" flags** rather than seeding attempt timestamps with
+  `INT64_MIN`. Subtracting from that sentinel overflowed and made every due-check return
+  false, so nothing was ever polled -- caught by the first test run.
+
+### Two bugs the tests caught during development
+
+1. `pollOnce` initially fetched each source **twice per cycle**, which would have doubled
+   CoinGecko's request rate against a 3/minute ceiling. Rewritten so each source is fetched
+   at most once, asserted by call counters in the tests.
+2. The `INT64_MIN` sentinel above, which made the worker silently poll nothing.
+
+### Tests
+
+`tests/test_price_worker.cpp` drives the worker synchronously with stub feeds -- no thread,
+no network -- covering: exactly one fetch per source per cycle, the 60s secondary floor not
+being retried inside, the primary keeping its 30s interval, a primary outage not blanking a
+healthy secondary, bounded history, snapshot copies being immune to caller mutation,
+recovery resetting the failure counter, an absent secondary, and `start`/`stop` on an empty
+worker.
+
+A separate throwaway harness ran the worker on a live thread while a second thread called
+`snapshot()` in a tight loop: 3.5M concurrent reads during live polling, clean under
+**ThreadSanitizer** with no race reports.
 
 | # | Task | Owner | Date | Status |
 |---|------|-------|------|--------|
@@ -27,11 +226,500 @@ Existing Valise chart/history changes are preserved as local work.
 | 8 | Commit and merge reviewed keyderiv into local suite master | Codex | 2026-10-04 | TODO |
 | 9 | Correct and merge Valise's dependent work into local master | Codex | 2026-10-04 | TODO |
 
-| Gate | Sign-off |
-|------|----------|
-| Build compiles | Initial full suite build PASS; final corrections pending |
-| Tests pass | Initial 42 executables PASS; two live-chain suites skipped |
-| All tasks done | NO; final review and local merges pending |
+| Gate | Status | Agent | Date |
+|------|--------|-------|------|
+| Build compiles | PARTIAL | opencode | 2026-10-04 |
+| Tests pass | PASS | opencode | 2026-10-04 |
+| All tasks done | PARTIAL | opencode | 2026-10-04 |
+
+`test_price_worker`: **36 checks, 0 failures**. Prior suites unchanged:
+`test_coingecko_feed` 61, `test_pyth_feed` 48, `test_price_policy` 423,
+`test_defillama_feed` 29, `test_price_oracle_defects` 27, all 0 failures;
+`test_price_oracle_arb` PASS; `verify-defillama-assets.py` exit 0.
+
+Still outstanding: the two funding gates, the status snapshot, and a full build once disk
+allows. `SwapDaemon.cpp` still uncompiled on this host (x86_64 Boost on arm64), which means
+the worker is **not yet wired into SwapDaemon itself** -- it is built, tested and ready, but
+nothing constructs it in the daemon yet. That wiring is the remaining integration step.
+
+---
+
+## Phase 2f: CoinGecko replaces Pyth as the second price source
+
+**Started**: 2026-10-04
+**Agent**: opencode (space-bunny-free)
+**Status**: DONE -- live, corroborated quotes confirmed
+
+### Why the switch
+
+Phase 2e shipped a Pyth reader and proved Pyth cannot serve prices. CoinGecko was
+measured working on the same day, so it becomes the second source. Coverage:
+
+| | Pyth on-chain | CoinGecko |
+|---|---|---|
+| assets priced | 9 of 23 (14 revert) | **31 of 31** |
+| age of what answered | 47.7-640.8 days | 78-88 s |
+| requests | 1 batch | 1 batch |
+| confidence value | yes (a band) | **no** |
+
+CoinGecko also needs no second id table: its ids are the same `coingecko:*` strings
+DeFiLlama already uses, minus the prefix, so `kFeedMeta` stays one source of truth.
+
+### Rate limit is a hard design constraint
+
+Measured on 2026-10-04, keyless: 8 rapid requests returned
+`200, 200, 200, 429, 429, 429, 429, 429`. The tier allows **3 requests per minute**.
+Therefore:
+
+- One batched `/simple/price` call covers all 31 assets. A per-asset loop would 429 on
+  the third asset, so batching is correctness, not optimisation.
+- **No retry on 429.** Retrying inside the window extends the block.
+- `CG_API_KEY` is read from the environment when set and sent as `x-cg-pro-api-key`;
+  absent it, the keyless tier is used. A poll interval of 60 s leaves no headroom for a
+  second caller on the same host, which is why a key is worth having.
+
+### Behaviour that differs from the DeFiLlama reader
+
+- **No confidence.** `confidenceSupplied` stays false, so `PricePolicy`'s confidence
+  floor is skipped for this feed. Weaker than DeFiLlama's 0.99, and recorded as such
+  rather than faked.
+- **No per-asset symbol**, so identity cannot be checked against `expectedFeedSymbol`
+  the way the DeFiLlama parser does. CoinGecko keys the response by the id requested,
+  so a response key we did not ask for is refused instead of being priced. This is the
+  equivalent guard, not the same one.
+- `include_last_updated_at=true` is mandatory: without it there is no provider clock and
+  the policy rejects the observation.
+
+### Files
+
+`CoinGeckoFeed.h` / `.cpp` (new), `tests/test_coingecko_feed.cpp` (new, 61 checks).
+`AssetCatalog` registers `"coingecko"` as a feed name in `distinctSymbolsForFeed` and
+`bindingsForFeed`. No change to `PricePolicy` was needed: the cross-check compares by
+asset symbol and is already feed-agnostic. `src/CMakeLists.txt` gains the source in both
+source lists, the test target, and the `add_test` registration.
+
+`PythFeed` is **kept but left unconfigured** -- it is tested and fail-closed, so it is
+harmless, and it works again if Pyth resumes publishing. It is not the second source.
+
+### The ctest gap, and a correction
+
+Phase 2f claimed it had fixed this by adding four targets to `_TEST_DAEMON_TARGETS`.
+**That claim was wrong.** That loop only sets `RUNTIME_OUTPUT_DIRECTORY`; it never calls
+`add_test()`. `src/CMakeLists.txt` contained **zero** `add_test()` calls, so the entire
+`test_daemons` suite -- including pre-existing targets like `test_swap_pair_catalog` and
+`test_swap_hashlock`, not just mine -- was built and runnable by hand but invisible to
+`ctest` and therefore to CI.
+
+Fixed for real: a guarded `add_test()` loop over `_TEST_DAEMON_TARGETS`, checking `TARGET`
+and that the type is `EXECUTABLE` since the list also carries helper targets. `ctest -N`
+now reports **50 tests** where it previously reported none. The 7 pricing suites all pass
+through `ctest`.
+
+### Sign-off
+
+| Gate | Status | Agent | Date |
+|------|--------|-------|------|
+| Build compiles | PARTIAL | opencode | 2026-10-04 |
+| Tests pass | PASS | opencode | 2026-10-04 |
+| All tasks done | PARTIAL | opencode | 2026-10-04 |
+
+`test_coingecko_feed`: **61 checks, 0 failures**. `test_pyth_feed`: **48 checks,
+0 failures**. `test_price_policy`: **423 checks, 0 failures**. `test_defillama_feed`:
+**29 checks, 0 failures**. `test_price_oracle_defects`: **27 checks, 0 failures**.
+`test_price_oracle_arb`: **PASS**. `verify-defillama-assets.py`: exit 0.
+
+Live, both feeds in one process: DeFiLlama **31/31**, CoinGecko **31/31**, per-asset
+relative difference 0.001%-0.164%, ETH quote `ok` with both feeds and `single-source`
+without -- so the corroboration path is genuinely exercised.
+
+`SwapDaemon.cpp` remains uncompiled here: `/usr/local/include/boost` is x86_64-only on
+this arm64 host. Still outstanding: the bounded poll worker, the two funding gates, the
+status snapshot, and a full build once disk allows.
+
+### CoinGecko API key header corrected
+
+An operator-supplied key was measured rather than assumed, and the first guess was
+wrong. CoinGecko exposes two header names and a free-tier key works under only one:
+
+| Header | Result with a free-tier key |
+|---|---|
+| `x-cg-demo-api-key` | **12/12 requests succeeded** |
+| `x-cg-pro-api-key` | 2/12, then 429 |
+
+The reader originally sent `x-cg-pro-api-key`, so a free key would have silently counted
+against the keyless 3/minute bucket and the feed would have looked broken for a reason
+that had nothing to do with the code. CoinGecko does **not** validate keys on
+`/simple/price` -- a deliberately bogus key also returns HTTP 200 -- so this could never
+have been caught by checking status codes, only by bursting and counting.
+
+Verified through the real reader with the key supplied only via `CG_API_KEY`:
+
+- key present: 5/5 fetches succeeded, 31 assets each
+- key absent:  0/5, every one `HTTP 429 rate limited (keyless tier allows 3 requests/minute)`
+
+The key is read from the environment and is never written to the repository. It was
+shared in a chat transcript during this work and should be treated as exposed and
+rotated.
+
+---
+
+## Phase 2e: Pyth second source -- on-chain reader, verified ids, liveness probe
+
+**Started**: 2026-10-04
+**Agent**: opencode (space-bunny-free)
+**Status**: DONE (reader + ids + tests) -- **the source itself is NOT currently usable**
+
+### Headline finding: Pyth is not a live source today
+
+Every available read path was tested on 2026-10-04. None returns a fresh price:
+
+| Path | Result |
+|------|--------|
+| Hermes classic `/v2/price_feeds/latest` | HTTP 422. Root cause found: the deployment **ignores the `ids` filter entirely** -- `/v2/price_feeds?ids=<anything>` returns all 1881 feeds, including for 64 zeros. Only bulk metadata works. |
+| Hermes `/v2/updates/price_feed/latest` | HTTP 404, route absent. |
+| `hermes-stable.pyth.network` | Unreachable, DNS does not resolve. |
+| Pythnet RPC | Unreachable. |
+| **On-chain `eth_call getPriceUnsafe`** | Contract answers, but **14 of 23 ids revert** (never published on that chain) and the 9 that answer are **47.7 to 640.8 days stale** (median 130 days). |
+
+The on-chain case is the dangerous one: a contract that has stopped being written to still
+returns whatever it last stored. BTC reads $64,735 from 2026-07-23 and AVAX $35.92 from
+2025-01-01. Every one of the 9 would be rejected by the 600 s staleness gate.
+
+### Changes
+
+- `src/SwapDaemon/PythFeed.h` / `.cpp` (new): on-chain reader. One JSON-RPC batch with a
+  single `eth_call` per id, decoding the four ABI words of `getPriceUnsafe`
+  (`int64 price, uint64 conf, int32 expo, uint32 publishTime`). `parsePythBatch` is pure
+  (takes `now` as a parameter) and applies the shared `validateObservation` gate, so a
+  stale or unpublished feed yields `NO_DATA` rather than a months-old price. RPC url and
+  contract address are **required with no defaults** -- there is deliberately no fallback,
+  since guessing either would silently price the wrong asset.
+- `AssetDescriptor::pythId` added, and the catalog now carries **23 real Pythnet price ids**
+  resolved from live Hermes metadata. Every id was matched against its canonical
+  `Crypto.<TICKER>/USD` feed. The ETH/USD id `0xff61491a...0dace` independently matches the
+  value in Pyth's own documentation, and the Ethereum contract
+  `0x4305FB66699C3B2702D4d05CF36551390A4c69C6` was confirmed to hold code via `eth_getCode`.
+- `PricePolicy.cpp`: `validateObservation` un-`static`ed and declared in `PriceFeed.h`, so
+  the feed reader and the quote path cannot disagree about what "usable" means.
+- `scripts/probe-pyth-liveness.py` (new): re-runnable probe reporting each path, each
+  on-chain publishTime and its age, and exit 0 only when something is genuinely fresh.
+- `scripts/verify-defillama-assets.py`: catalog regex extended to 5 columns.
+
+### Two corrections the tests forced
+
+- **Function selector.** A hand-rolled Keccak gave `getPriceUnsafe(bytes32)` = `0x5f51bbd3`.
+  Validated against the two canonical Keccak-256 vectors, the repo's implementation gives
+  **`0x96834ad3`**. The wrong selector would have silently reverted every call.
+- **Confidence direction.** Pyth's `conf` is an absolute price band, so *smaller is better*,
+  while `PricePolicy::confidence` is a [0,1] quality score where *higher* is better
+  (DeFiLlama sends 0.99 directly) and `minConfidence` is 0.8. Passing Pyth's value
+  straight through would have failed every feed. Converted as `quality = 1 - band/price`.
+
+### Operational consequence
+
+None, provided the feed stays unconfigured: `PricePolicy` treats the secondary feed as
+optional, so a dead Pyth feed does not block trading. DeFiLlama alone yields
+`QuoteStatus::SINGLE_SOURCE` with managed offers and new swaps still allowed. What is lost
+is the cross-check, so `crossChecked` quotes are currently unobtainable.
+
+### Sign-off
+
+| Gate | Status | Agent | Date |
+|------|--------|-------|------|
+| Build compiles | PARTIAL | opencode | 2026-10-04 |
+| Tests pass | PASS | opencode | 2026-10-04 |
+| All tasks done | PARTIAL | opencode | 2026-10-04 |
+
+`test_pyth_feed`: **48 checks, 0 failures**, using the real captured payload values
+(`price=190533915588 conf=106428258 expo=-8 publishTime=1786985890`) rather than a
+hand-typed hex string -- an earlier hand-typed literal was 254 chars instead of 256 and
+the parser correctly rejected it, which is the failure mode the encoding helper now
+prevents. `test_price_policy`: **276 checks, 0 failures**. `test_defillama_feed`: **29 checks,
+0 failures**. `test_price_oracle_defects`: **27 checks, 0 failures**.
+`test_price_oracle_arb`: **PASS**. `verify-defillama-assets.py`: exit 0. Live DeFiLlama
+fetch: 31/31 assets. `probe-pyth-liveness.py`: exit 1 with **0 fresh**.
+
+Still outstanding: the bounded poll worker, the two funding gates, the status snapshot, and
+a full build once disk allows.
+
+---
+
+## Phase 2d: PriceOracle defect fixes (wrong asset, invented divisor, dead band, dead live path)
+
+**Started**: 2026-10-01
+**Agent**: opencode (space-bunny-free)
+**Status**: DONE — 27 regression checks pass, pre-existing tests unaffected
+
+### Fixes
+
+1. **OPTIMISM priced off the wrong asset.** `getSeedRate(OPTIMISM)` returned `SEED_OP_USD / SEED_XFG_USD`, but Optimism locks native ETH — `HashedTimelock.lock` is payable with no ERC-20 argument, exactly like ARB and BASE. It now uses `SEED_ETH_USD`, and all six ETH-settling pairs (OPTIMISM, ARB, BASE, BOB, UNICHAIN, ROBINHOOD) resolve to one rate.
+
+2. **`ctrDivisor()` invented a divisor.** The `default:` branch returned `1e8` for a pair with no descriptor, which silently mis-scales every amount comparison. It now returns `0.0` and callers treat that as "cannot convert".
+
+3. **A zero-rate trade poisoned the TWAP.** `recordCompletedSwap` accepted trades whose rate could not be computed. `getTwap` computes `weightedSum += rate * volume`, so such a trade was weighted as zero and dragged the average toward zero rather than being ignored. `recordCompletedSwap` now drops non-positive rates, and `SwapDaemon::recordCompletedTrade` logs the reason instead of silently recording a zero.
+
+4. **`OfferManager` never observed the live price.** The no-composite fallback called the static `PriceOracle::getSeedRate`, so managed offers were priced against a constant. `OfferManager` now holds a `PriceOracle&` (passed `m_oracle` from `SwapDaemon`) and the fallback calls `getEffectiveRate`, which applies the live Hearth XFG/USD when one has been published. A pair with no rate at all now logs and returns 0, which `tick` already handles.
+
+5. **The rate band was asymmetric and self-contradicting.** The code divided by `0.80` above but compared against a hardcoded `0.20` below, admitting a −80% quote, while the header documented `0.50` and an inline comment block argued both directions at once. `m_floorThreshold` is now a fractional tolerance (0.20) producing `ref/1.20 <= rate <= ref/0.80`, identical to `withinRateGuard`. `setFloorThreshold` now means tolerance and refuses values outside `(0, 1)` so a bad config cannot disable the band. The header comment was corrected.
+
+### Two further defects found while testing
+
+- **`setLiveXfgUsd` stored anything.** No validation at all, so a negative price was persisted. `getEffectiveRate` masked it by falling back to the seed, but every other reader of `getLiveXfgUsd()` would have seen it. Now refuses non-positive and non-finite values.
+- **The bootstrap window was wider than the band, making the band dead code.** `validateRate` returns from its bootstrap branch before reaching the band, and that branch used `m_maxBootstrapDrift = 0.50` — so a node with zero recorded trades (the common case) accepted quotes ±50% off seed and never evaluated the ±20% guard at all. `m_maxBootstrapDrift` now defaults to the same `0.20`, so one tolerance governs both paths.
+
+**This last one tightens a live risk control and should be reviewed deliberately.** It was not in the original defect list; it was surfaced by the regression test and is arguably the reason the band fix above appeared inert.
+
+### Sign-off
+
+| Gate | Status | Agent | Date |
+|------|--------|-------|------|
+| Build compiles | PARTIAL | opencode | 2026-10-01 |
+| Tests pass | PASS | opencode | 2026-10-01 |
+| All tasks done | PARTIAL | opencode | 2026-10-01 |
+
+`test_price_oracle_defects`: **27 checks, 0 failures**. Pre-existing
+`test_price_oracle_arb`: **PASS, unmodified**. `test_price_policy`: **276 checks, 0 failures**.
+`test_defillama_feed`: **29 checks, 0 failures**. `verify-defillama-assets.py`: exit 0.
+`OfferManager.cpp` syntax-checks clean; `SwapDaemon.cpp` has 0 errors outside `/usr/local/include/boost`,
+which fails on this arm64 host for an unrelated reason (x86_64 Boost), so the translation unit was
+not fully compiled. Still outstanding: the Pyth second source, the bounded poll worker, the two
+funding gates, the status snapshot, and a full build once disk allows.
+
+---
+
+## Phase 2c: DeFiLlama HTTPS transport and /prices/current parser
+
+**Started**: 2026-10-01
+**Agent**: opencode (space-bunny-free)
+**Status**: DONE — transport verified against the live endpoint
+
+### Changes
+
+- `src/SwapDaemon/DefiLlamaFeed.h` (new): `DefiLlamaWanted` (id → asset map), the pure `parseDefiLlamaBody(body, wanted, policy, now)` entry point, and `DefiLlamaFeed : PriceFeed` with an overridable base URL for stub servers.
+- `src/SwapDaemon/DefiLlamaFeed.cpp` (new): one batched HTTPS GET of `/prices/current/<comma-joined ids>` via `httplib::SSLClient`, matching the existing `TonRpcClient` idiom. Certificate verification on, redirects not followed, connect and read timeouts from `PricePolicy` (4 s each), and a `maxResponseBytes` ceiling checked before the body is parsed. The parser is separated from the transport and takes `now` as a parameter so it needs neither clock nor network.
+- `src/SwapDaemon/tests/test_defillama_feed.cpp` (new): 29 assertions over canned bodies.
+- `src/CMakeLists.txt`: `DefiLlamaFeed.cpp` added to both source lists; `test_defillama_feed` added and registered.
+
+### Fail-closed on asset identity
+
+The parser refuses an entry unless the feed's reported `symbol` equals the asset's `expectedFeedSymbol`, **including when the field is absent**. An id that resolves to a different asset, or that reports nothing, is dropped rather than priced — this is the control that stops `coingecko:the-open-network` being quoted as TON. An earlier version only compared the symbol when present, which the test caught.
+
+### Live verification
+
+Built against the real endpoint: certificate-verified HTTPS succeeded, **31 of 31 requested assets parsed, 0 refused**, and the whole stack produced a real quote — ETH at 17,062.94 XFG per ETH, `rateNum` 170,629,386,029, `managedOffersAllowed` and `newSwapAllowed` both true. SIA was refused with `stale; atomic divisor 1e24 does not fit the uint64 amount model`. ETH reports `single-source` because the Pyth second source is not implemented yet, which is the intended labelling rather than a silent pass.
+
+### Sign-off
+
+| Gate | Status | Agent | Date |
+|------|--------|-------|------|
+| Build compiles | PARTIAL | opencode | 2026-10-01 |
+| Tests pass | PASS | opencode | 2026-10-01 |
+| All tasks done | PARTIAL | opencode | 2026-10-01 |
+
+`test_defillama_feed` compiles and runs: **29 checks, 0 failures** (linked against
+`/opt/homebrew/opt/openssl@3` for an arm64 OpenSSL; the `/usr/local/lib` copy is x86_64 only).
+`test_price_policy`: **276 checks, 0 failures**. `verify-defillama-assets.py`: exit 0.
+Still outstanding: the Pyth second source, the bounded poll worker, OfferManager repricing,
+the funding gates, the status snapshot, and the `PriceOracle` defects.
+
+---
+
+## Phase 2b: rebase pricing onto SWAP_PAIR_CATALOG (46 pairs)
+
+**Started**: 2026-10-01
+**Agent**: opencode (space-bunny-free)
+**Status**: DONE for the catalog and policy; HTTP transports and funding gates still outstanding
+
+### Changes
+
+- `src/SwapDaemon/AssetCatalog.cpp`: rewritten. It no longer restates pair bindings; pair identity, native asset, decimals and support are read from `SWAP_PAIR_CATALOG`. The file now holds only feed metadata (DeFiLlama id, Pyth symbol, expected feed symbol) keyed by settlement asset. Divisor is computed as `10^decimals` and clamped: `10^24` for SC does not fit `uint64`, so it stays 0 with `atomicDivisorText="1e24"` and `executable=false`.
+- `src/SwapDaemon/PriceFeed.h`: `pairIsStaged()` added; `assetCatalog()` returns `std::deque` so descriptors stay addressable while the table is being built.
+- `src/SwapDaemon/PricePolicy.cpp`: `buildPairQuote` now refuses STAGED pairs outright — a STAGED pair gets `UNEXECUTABLE` and `newSwapAllowed=false` regardless of how healthy the feed is.
+- `docs/developer/defillama-asset-matrix.json`: regenerated to 46 pairs / 33 settlement assets, schema 2.
+- `scripts/verify-defillama-assets.py`: the AssetCatalog check now validates feed metadata instead of a hand-written binding table, since those bindings no longer exist in that file.
+- `AGENTS.md` (wallet): rewritten around the X-macro catalog — 46 pairs, 25 ACTIVE / 17 ADAPTER / 4 STAGED, settlement-vs-ticker, 14 ETH pairs, and the full 46-row table.
+
+### New assets verified live
+
+17 pairs were added to the protocol catalog (LINEA, ZKSYNC, HYPEREVM, INK, RSK, GNOSIS, FLARE, KAIA, SCROLL, ABSTRACT, PLUME, SONEIUM, DOMA, BEAM, MOONRIVER, PEAQ, SEI). All were checked against DeFiLlama and Pyth rather than assumed unpriced:
+
+- **11 resolve in DeFiLlama**, 6 of them also on Pyth: HYPE `coingecko:hyperliquid`, RBTC `coingecko:rootstock`, XDAI `coingecko:xdai`, FLR `coingecko:flare-networks`, KAIA `coingecko:kaia`, PLUME `coingecko:plume`, BEAM `coingecko:beam-2`, MOVR `coingecko:moonriver`, SEI `coingecko:sei-network`.
+- **XDAI needed correction**: `coingecko:x-dai` does not resolve; the working id is `coingecko:xdai` at $0.9999. The first guess would have marked Gnosis unpriced for the wrong reason.
+- **BEAM was ambiguous** — both `coingecko:beam` ($0.0116) and `coingecko:beam-2` ($0.0024) report symbol BEAM. DeFiLlama's own chain registry maps the Beam chain to `gecko_id: beam-2`, which resolves the collision.
+- **RBTC confirms itself**: $84,944 against BTC's $84,969, i.e. correctly pegged rather than confused with BTC itself.
+- **PEAQ remains unpriced** — `coingecko:peaq` and `coingecko:peaq-network` both fail. GLEEC also remains unpriced.
+- **KMD now resolves** at $0.02, but was observed **6.6 hours stale**, so the 600 s gate rejects it almost always. Intermittent availability, not a reliable feed.
+- **Pyth Hermes has no price route** on the deployment tested: `/v2/price_feeds` and `/v2/price_feeds/{id}` serve metadata, while `/v2/price_feeds/latest?ids=` returns 422 for every parameter encoding tried and `/v2/updates/price_feed/latest` 404s. Pyth must be read on-chain, which means handling it as a pull oracle whose on-chain value can be arbitrarily old.
+
+### Bug found and fixed
+
+`CatalogIndex` stored `AssetDescriptor*` into a `std::vector` while still `emplace_back`-ing into it. Vector growth reallocates, so every previously stored pointer dangled — the test binary segfaulted on first use. Switched to `std::deque`, whose references are stable across `push_back`.
+
+### Sign-off
+
+| Gate | Status | Agent | Date |
+|------|--------|-------|------|
+| Build compiles | PARTIAL | opencode | 2026-10-01 |
+| Tests pass | PASS | opencode | 2026-10-01 |
+| All tasks done | PARTIAL | opencode | 2026-10-01 |
+
+`test_price_policy` compiles and runs: **276 checks, 0 failures**.
+`scripts/verify-defillama-assets.py` exits 0: 46 pairs, 31 distinct DeFiLlama ids requested,
+44 of 46 pairs priced live, chain clients 25 wired / 17 generic-adapter / 4 unwired.
+A full `SwapDaemonLib` link is still not attempted — free disk is ~9 GiB with no CMake cache.
+
+---
+
+## Security audit round 2: consensus economics and wallet files
+
+**Started**: 2026-10-08
+**Agent**: opencode (space-bunny-free)
+**Branch**: `security/audit-fixes-2026-10`
+**Status**: ANALYSIS ONLY — no source changes. R2-1 is CRITICAL and needs a design decision, not a patch (GATE-1: approval required before touching consensus economics).
+**Guide**: `docs/SECURITY_AUDIT_FIX_GUIDE.md` section 5 (round-2 scope)
+
+### Findings
+
+- **R2-1 (CRITICAL) — the treasury vault spend key is derivable from public data.**
+  `src/CryptoNoteConfig.h:306` hardcodes `VAULT_KEY_SEED[] = "xfgo_treasury_vault_v1"`, and
+  `src/Treasury/VaultKeys.cpp:19-45` derives the spend key as
+  `hash_to_scalar(keccak(genesisHash || VAULT_KEY_SEED))`. Both inputs are public: the genesis
+  hash is the public first block, and the seed ships in every release binary. Anyone can
+  recompute the vault spend key. The only other barrier, `VaultPolicy::isPermitted`
+  (`src/Treasury/VaultPolicy.cpp:41-100`), is a pure content predicate — CD_APY_POOL passes if
+  any `CommitmentSpend` declares `claimedInterest > 0`, LP_RESERVE if an AMM add/remove tag is
+  present, GENERAL_RESERVE if a mint-auth tag is present — and none of them require proof of
+  knowledge of the vault key. The vault spend public key is never used to create on-chain
+  outputs in the consensus path, so there is no ring signature to fall back on either. What the
+  vault holds is CD_APY_POOL (the sole backing for every CD interest claim, per the fee-pool
+  aggregate cap in `checkCommitmentSpendInput`), BONUS_VAULT, and the treasury reserves — i.e.
+  protocol revenue and the collateral behind every depositor's yield. Reaching a spend still
+  requires getting a transaction into a block, so this is not a free remote steal, but it
+  removes the only cryptographic barrier to draining it. Fixing this is a protocol change
+  (rotate the seed per deployment, or move vault authorization behind a real key), so it needs
+  an activation/migration plan rather than a one-line change.
+- **R2-2 (LOW) — wallet files use ChaCha8.** `src/Wallet/WalletGreen.cpp:2293` encrypts key
+  records with ChaCha8. The construction around it is sound: HMAC-SHA256 over `iv || ciphertext`
+  with a separately derived, domain-separated MAC key (`deriveMacKey`, label
+  `"fuego-wallet-hmac"`), verified with constant-time `CRYPTO_memcmp` and fail-closed at
+  `:2255`. Same reduced-round primitive concern as round-1 L-2, now also on the wallet-file
+  path. Cheap fix (ChaCha20-Poly1305) but needs a wallet-file format version bump.
+- **R2-3 (INFO) — the 69/11/20 epoch fee split strands integer dust.**
+  `src/CryptoNoteCore/Blockchain.cpp:5082-5084` computes three independent floor divisions of the
+  same `epochSwapFees`. Because 69 + 11 + 20 = 100 the shares can never exceed the total, so
+  this is not inflation — but up to 2 atomic units per epoch are left unallocated rather than
+  routed. If exact conservation is intended, give the remainder to `cdShare` explicitly.
+- **R2-4 (PROCESS, high hazard) — domain skill documentation is stale and would cause a
+  regression if trusted.** `~/.config/opencode/skills/fuego-currency/SKILL.md` documents an
+  80/20 swap-fee split and a 60/40 treasury split. The code is 69/11/20
+  (`CryptoNoteConfig.h:260,265,285`); 60/40 applies only to the treasury *sub*-allocation
+  (`TREASURY_LP_PCT`, `TREASURY_RESERVE_PCT`). An agent trusting that skill could "correct"
+  working revenue routing back to 80/20. Worth fixing before it misleads anyone.
+- **R2-5 (LOW, follow-up) — early return from mutating epoch work.**
+  `processBlockEpochWork` returns `false` mid-way at `Blockchain.cpp:5104` (bonus-vault
+  overflow guard) after epoch accounting has begun. On the cache-rebuild path (`:1233-1236`)
+  that `false` only logs and returns, leaving the node serving a partially-rebuilt cache. This
+  is the M-1 pattern again. Practically unreachable — the guard needs `bonusHeat` near
+  `UINT64_MAX` — so it is hardening, not an active bug. The `pushBlock` path at `:5044`
+  propagates the `false`; whether that caller unwinds cleanly was not traced.
+
+### Verified sound in this scope
+
+Fee split cannot over-allocate (69+11+20=100, all floor). Epoch CD denominator correctly
+excludes CDs created in the closing block. Wallet-file AEAD uses proper key separation and
+constant-time tag verification. `MINT_BURN` 50/50 and treasury 60/40 sub-allocation match
+`AGENTS.md`.
+
+### Task List
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Verify fee-split constants against code, not skill docs | opencode | 2026-10-08 | DONE |
+| 2 | Audit treasury vault key derivation (R2-1) | opencode | 2026-10-08 | DONE |
+| 3 | Audit epoch fee split arithmetic (R2-3) | opencode | 2026-10-08 | DONE |
+| 4 | Audit wallet-file encryption + MAC (R2-2) | opencode | 2026-10-08 | DONE |
+| 5 | Audit epoch-work failure paths (R2-5) | opencode | 2026-10-08 | DONE |
+| 6 | Decide R2-1 remediation approach | — | — | **TODO (needs owner decision)** |
+| 7 | Correct stale fuego-currency skill docs (R2-4) | — | — | **TODO** |
+| 8 | Trace pushBlock(:5044) epoch-failure unwind | — | — | **TODO** |
+
+### Sign-Off
+
+| Gate | Signed By | Date | Result |
+|------|-----------|------|--------|
+| R2-1 severity + evidence | opencode | 2026-10-08 | PASS (derivation traced end to end) |
+| Fee-split conservation | opencode | 2026-10-08 | PASS (cannot exceed total) |
+| Wallet-file AEAD construction | opencode | 2026-10-08 | PASS (key separation + constant-time verify) |
+| R2-1 fix implemented | — | — | **NOT STARTED — GATE-1 approval required** |
+
+---
+
+
+## Security audit round 1 fixes: H-1, M-1, M-2, M-3
+
+**Started**: 2026-10-08
+**Agent**: opencode (space-bunny-free)
+**Branch**: `security/audit-fixes-2026-10`
+**Status**: IN PROGRESS — all four code fixes land and compile; regression tests not yet written; round 2 audit (economics, wallet files) not started
+**Guide**: `docs/SECURITY_AUDIT_FIX_GUIDE.md`
+
+### Changes
+
+- **H-1 (HIGH) — remote daemon crash on intra-tx duplicate key image.** `checkTransactionInputs` tested every input only against *chain* state, so a transaction spending the same key image twice passed validation and then failed in the connect-path rollback, which erased earlier inputs with a type-blind `boost::get<KeyInput>` and threw an uncaught `boost::bad_get` on the first non-`KeyInput` element. Reachable from any P2P peer or mempool submission. Fixed three ways: a read-only pre-pass in `checkTransactionInputs` that rejects duplicate key images across all five key-image-carrying input types (`KeyInput`, `CommitmentSpend`, `CommitmentTransfer`, `SwapEscrow`, `Unified`); a single unified spentKeys insert loop in `pushTransaction` that tracks what it inserted and erases exactly that on failure; and a `try/catch` barrier at the connect call site so any remaining malformed input is a rejected block, not a `std::terminate`. `popTransaction` was verified to be type-guarded already, so the unwind path is safe.
+- **M-1 (MEDIUM) — ignored connect return left partial state on an accepted block.** `pushTransaction`'s `bool` was discarded at the block-assembly call site, so a transaction that failed *after* mutating indices (spentKeys, multisig/escrow usage flags, vault UTXOs, supply counters) still produced an accepted block with permanently burned key images and frozen outputs. Fixed by (a) propagating the return into the block-rejection path, (b) tracking the first loop's spentKeys inserts and rolling them back on every later failure exit, and (c) adding a read-only pre-pass that resolves every fallible lookup (escrow funding tx, escrow usage entry, commitment key-image collision) *before* the mutating loop runs — so the mutating loop can no longer fail partway through and strand earlier mutations. Deliberately chosen over a sprawling undo ledger: an undo path in a rollback-sensitive consensus function carries its own divergence risk, which would be worse than the bug being fixed.
+- **M-2 (MEDIUM) — `SwapEscrow` was missing the Ed25519 subgroup check.** Every other spendable input type rejects key images outside the prime-order subgroup; swap-escrow did not. It was contained by dual marking (spentKeys + escrow usage entry), but must not rely on that alone. Added the identical `scalarmultKey(keyImage, L) == I` guard used by `check_tx_input`, `checkCommitmentSpendInput`, `checkCommitmentTransferInput` and `core::handle_incoming_tx`.
+- **M-3 (MEDIUM) — path traversal in walletd export.** `exportWallet` and `exportWalletKeys` joined the RPC-supplied `exportFilename` onto the wallet directory with no validation: `..` segments escaped at open time and an *absolute* name made `boost::filesystem::operator/` discard the base entirely, so `exportWalletKeys` could be steered into writing plaintext secret keys anywhere the process could write. Added `isConfinedExportFileName` (rejects empty, over-long, any separator in either flavour, `.`/`..`, absolute paths, and anything whose parsed filename differs from the input) and applied it at both sites. Authenticated-RPC reachability caps this at MEDIUM.
+- `docs/SECURITY_AUDIT_FIX_GUIDE.md` (new): full findings register including the four prior "CRITICAL" crypto claims that were **false positives** and must not be "fixed" (`crypto-ops.c` `sc_check`/`signum`/`sc_mulsub` — branchless, public inputs, and the `signum` claim of "division by -a" is factually wrong).
+
+### Task List
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Map master worktree, define audit partitions | opencode | 2026-10-08 | DONE |
+| 2 | Audit crypto primitives (RNG, zeroize, nonce, point validation) | opencode | 2026-10-08 | DONE |
+| 3 | Audit consensus (key images, supply, mint/burn, reorg, AMM/CD) | opencode | 2026-10-08 | DONE |
+| 4 | Audit swaps (SwapDaemon, adaptor crate, contracts, timelocks) | opencode | 2026-10-08 | DONE |
+| 5 | Audit network surface (P2p, HTTP, Rpc, deserialization, auth) | opencode | 2026-10-08 | DONE |
+| 6 | Audit wallets (key handling, zeroization, encryption) | opencode | 2026-10-08 | DONE |
+| 7 | Audit Go/Rust (swapxfg/app, tui, fuego-swapd-adaptor) | opencode | 2026-10-08 | DONE |
+| 8 | FP-check triage of all findings | opencode | 2026-10-08 | DONE |
+| 9 | H-1 intra-tx duplicate key image + type-aware rollback + barrier | opencode | 2026-10-08 | DONE |
+| 10 | M-1 propagate connect return + rollback + read-only pre-pass | opencode | 2026-10-08 | DONE |
+| 11 | M-2 SwapEscrow domain check | opencode | 2026-10-08 | DONE |
+| 12 | M-3 export filename confinement | opencode | 2026-10-08 | DONE |
+| 13 | L-1..L-4 (dead Unified arm, ChaCha8, Rust Debug, sodium_memzero) | opencode | — | **TODO** |
+| 14 | INFO batch (delete dead oaes code, popen hardening, contract notes) | opencode | — | **TODO** |
+| 15 | Regression tests for H-1/M-1/M-2/M-3 | opencode | — | **TODO** |
+| 16 | Round 2 audit: consensus economics + wallet file handling | opencode | — | **TODO** |
+
+### Sign-Off
+
+| Gate | Signed By | Date | Result |
+|------|-----------|------|--------|
+| `cmake` configure regenerate | opencode | 2026-10-08 | PASS (stale cache fixed — see below) |
+| `CryptoNoteCore` target builds | opencode | 2026-10-08 | PASS (no new warnings) |
+| `PaymentGate` target builds | opencode | 2026-10-08 | PASS |
+| `core_tests` / `ctest` | — | — | **PENDING** |
+| H-1 crafted-block harness (rejected, daemon alive, state clean) | — | — | **PENDING** |
+| M-3 traversal probe (`../`, absolute, `a/../../x`, empty) | — | — | **PENDING** |
+
+### Not verified
+
+Everything checkable so far is checked; the two gates that matter most are
+not. Nothing has been run at runtime. The rejection and rollback paths in
+`pushTransaction` are consensus-critical and are exercised here only by the
+compiler — `core_tests` has not been run, no crafted block has been pushed,
+and no traversal filename has been probed against a live walletd. Task 15
+must land before any of this is called fixed.
+
+### Incidental
+
+`build/release` was configured from an older commit and still listed
+`src/CryptoNoteCore/AssetType.cpp`, which no longer exists, so any build failed
+at the compile step with `no such file or directory` before touching real work.
+Re-running `cmake ../..` in `build/release` regenerated the file list and the
+build proceeded. Not a source change; noting it so the next person does not
+read it as a regression.
 
 ---
 
@@ -3020,185 +3708,298 @@ testnet needs a reset. Mainnet v11 (1,111,111) is not active.
 | Tests pass (tasks 13-15) | PASS: core 202/202, hearth 31/31, auction 57/57, p2p 115/115 |
 | All tasks done | NO — tasks 7b and 16 open |
 
+---
+
+## Fix: `--generate-spv-config` segfault (OpenSSL 3 legacy RIPEMD160) + JSONC swap configs
+
+**Start date:** 2026-10-06
+**Agent:** Sisyphus (space-bunny-free)
+
+Closes the two pre-existing defects recorded in the previous entry.
+
+### 1. `xfg-swapd --generate-spv-config` segfaulted (SIGSEGV)
+
+`KmdHtlcScript::ripemd160()` called `EVP_DigestInit_ex(ctx, EVP_ripemd160(), nullptr)`.
+RIPEMD-160 moved to OpenSSL's **legacy provider** in 3.0, so `EVP_ripemd160()`
+yields a stub: init silently fails, and the following `EVP_DigestUpdate` /
+`EVP_DigestFinal_ex` dereference a NULL `ctx->digest`. Reproduced standalone
+against OpenSSL 3.0.2 with a 12-line program, then bisected to `hash160` by
+instrumenting `generateSpvConfig()`.
+
+Five call sites shared the defect — `KmdHtlcScript`, `ZecHtlcScript`,
+`DogeHtlcScript`, `BchHtlcScript`, `DashHtlcScript` — so this was not limited to
+the config generator: any path deriving a P2PKH address for those chains was
+affected.
+
+Replaced with a self-contained RIPEMD-160 (`SwapDaemon/Crypto/ripemd160.{h,cpp}`)
+that all five now delegate to. Carrying the algorithm keeps address derivation
+identical on every OpenSSL (1.1.1 → 4.x) and every platform.
+
+Two bugs were caught **by testing the implementation rather than trusting it**:
+- the right line was rotating right instead of left (7/8 vectors failed);
+- the padded tail was a single 64-byte block, overflowing the buffer whenever
+  56..63 bytes remained (the 62-byte vector caught it).
+
+Clean under `-fsanitize=address,undefined`. Pinned by `test_ripemd160` against
+all 8 published reference vectors.
+
+### 2. `swap_config.example.json` could not be loaded at all
+
+The example and the `--generate-spv-config` output are JSONC — `//` guidance is
+the point of an annotated template — but `loadChainClientConfig` fed them
+straight to a strict jsoncpp reader: `Config file is not valid JSON`. The
+documented quickstart was unusable end to end.
+
+Added a string-aware comment stripper. String-awareness is required: a naive
+`//` strip would corrupt `"https://rpc.example"` values. Newlines are preserved
+so parse errors still report the right line. The example now parses and fails
+later, on an actionable `pulsechain_priv_key must be 64 hex chars, got 20` for
+an unfilled placeholder — the correct behaviour for a template.
+
+### Task List
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Reproduce RIPEMD-160 crash standalone against OpenSSL 3.0.2 | Sisyphus | 2026-10-06 | DONE |
+| 2 | Bisect to `hash160` via instrumentation in `generateSpvConfig()` | Sisyphus | 2026-10-06 | DONE |
+| 3 | Implement `ripemd160.{h,cpp}`; verify 8/8 official vectors under ASan+UBSan | Sisyphus | 2026-10-06 | DONE |
+| 4 | Route all 5 `EVP_ripemd160` call sites through it; add to 2 CMake targets | Sisyphus | 2026-10-06 | DONE |
+| 5 | Add `test_ripemd160` regression test | Sisyphus | 2026-10-06 | DONE |
+| 6 | String-aware JSONC comment stripping in `loadChainClientConfig` | Sisyphus | 2026-10-06 | DONE |
+| 7 | Re-apply `fire_wallet gen_swap_key` pointers lost during work | Sisyphus | 2026-10-06 | DONE |
+| 8 | Full verification + this entry | Sisyphus | 2026-10-06 | DONE |
+
+### Verification
+| Check | Result |
+|-------|--------|
+| `test_ripemd160` | PASS — 8/8 published vectors |
+| `test_spv_config_wiring` | PASS — 10/10 |
+| `--generate-spv-config` | PASS — exit 0, real addresses (`5Kho…`/`19…`, `6uwh…`/`LV7…`, `7KYy…`/`R9r…`, `5KG7…`/`1du…`) |
+| Generated config reloads through the real loader | PASS |
+| `swap_config.example.json` parses | PASS — reaches field validation |
+| `//` inside a JSON string preserved | PASS — `{"btc_mode":"//notacomment"}` loads |
+| `fire_wallet` / `test_wallet gen_swap_key` | PASS — exit 0, no wallet file, no node |
+| `fire_wallet` key accepted by `xfg-swapd` | PASS — `Loaded XFG wallet key for offer signing` |
+| Control: invalid key rejected | PASS — `Invalid xfg_secret_key in swap config` |
+| ASan + UBSan on ripemd160 | PASS — no findings |
+
+### Still broken, NOT fixed here (all reproduced on a clean stashed HEAD)
+
+1. **`test_swap_state_machine_spv` does not link** —
+   `undefined reference to Common::Console::setTextColor`. Its `target_link_libraries`
+   is identical to targets that link fine, so the missing symbol is pulled in
+   transitively only by this test's includes. Predates this work.
+2. **`test_sol_e2e` is not an automated test** — it requires six CLI arguments
+   and exits non-zero without them. Do not count it in CI.
+3. **Decred addresses use the wrong version byte.** `DCR_P2PKH_VERSION = 0x07`
+   yields `4Cxi…`; Decred mainnet P2PKH is `0x073f` and starts `Ds`. This is in
+   the base58/version layer, independent of the RIPEMD-160 fix, and will produce
+   unusable DCR addresses. **Not touched — fixing it needs the correct Decred
+   base58 alphabet and version constants verified against a dcrdata address.**
 
 ---
 
-## Claude audit pass: keyderiv and suite master (reviewed merge candidate)
+## Feature: Maison typeface selector — 2026-09-28
 
-**Started**: 2026-10-03
-**Agent**: Claude (Sonnet 5.5), via okoc, fuego-guardian and cryptonote-privacy-audit
-**Status**: DONE: reviewed, corrected, validated from a clean checkout, and folds in Codex's concurrent edits
-(below). Fast-forwarded onto the local `master` by ref update; **not pushed**.
-**Scope**: `keyderiv` (906729440, v11 P0 owner-bound spend/view-key derivation) plus the
-then-uncommitted tree (committed as e89b3ea12: Section B asset classification, aggregate
-input-total overflow guard, DeFiLlama/Pyth price policy, docs), merged with the suite master
-`origin/master` a36eccb5b. Local `master` (ea6950d8f) was 21 commits behind it. The merge had
-7 textual conflicts and several that git could not see (below).
+### What changed
 
-### Findings and what was done
+Four candidate faces are now selectable from the nav while the maison register
+is active. Each is a separate `@font-face` family rather than a re-declaration
+of one, so the browser cannot serve a face cached against the wrong weight.
 
-| ID | Sev | Where | Finding | Disposition |
-|----|-----|-------|---------|-------------|
-| F-1 | HIGH | `TransfersContainer.h` | `commitmentKey` (added so the signer can pick owner-bound vs legacy) was never serialized. After any wallet save/reload it read as zero and `resolveCommitmentSpendKey` threw "matches neither derivation" for **every** cached HEAT/CD output, legacy ones included, until a full rescan. Both WalletGreen and WalletLegacy. | FIXED. Container storage v2 stores the key for Commitment outputs. v1/v0 caches still load through zero-initialised readers, and an unrecorded (all-zero) key resolves as legacy because those outputs were found by the legacy-only scanner. |
-| F-2 | MED | `TransfersConsumer.cpp` `createTransfers` | The commitment record was uninitialised, and a view-only wallet got no key image where it used to derive the legacy one from the view key. Garbage was hashed into the spent-output index and persisted. | FIXED. Record is value-initialised; new `deriveRecordedCommitmentKeyImage` (legacy derivable view-only, owner-bound needs the spend secret, otherwise zero). |
-| F-3 | LOW | `TransfersConsumer.cpp` `findMyOutputs` | `ambiguous` was checked only inside the branch where it is never set, so the real ambiguous return fell through to the legacy fallback. | FIXED (checked first). No unit test: the function is in an anonymous namespace. |
-| F-4 | MED | `TransactionExtra.cpp` `deriveCommitmentOutputKey` | A null recipient spend key silently produced the legacy (sender and view-key spendable) form. The all-zero encoding is a valid order-4 point, so it passed `check_key`; an unpopulated address would emit an exposed output, against the function's own contract. No wallet path needs it (pool outputs use `computePoolCommitKey`). | FIXED. Rejected. The test that locked the behaviour in was inverted. |
-| F-5 | DESIGN | scanner | Any sender can create a legacy-form commitment output to a post-v11 wallet. The scanner credits it as owned although the sender, who knows the scalar, can sweep it back (payment-reversal risk). The comment promising such outputs are surfaced as exposed is not implemented. | **OPEN.** Needs an owner decision: flag as exposed, or reject after the v11 height (rejecting strands honest old-wallet senders). |
-| F-6 | NOTE | tracking wallets | A view-only wallet cannot detect spends of owner-bound outputs (no key image). Inherent. | Documented. |
-| F-7 | HIGH if shipped | `Blockchain::classifyInputAsset` | The branch's Section B returned XFG for an unresolvable ring (mixed asset, unrecognised term), contradicting its own header contract, with no explicit ring rejection. A poison decoy could choose the asset an input was credited as. It also duplicated master's `054cae35e`, which rejects mixed-asset rings inside `checkCommitmentSpendInput` / `checkCommitmentTransferInput`. | RESOLVED by adopting master's design wholesale. NOT merged: branch `AssetType.cpp`, `resolveCommitmentRingAsset`, the `classifyInputAsset`/`classifyOutputAsset` rewrite, and the `check_tx_outputs` tightening (master deliberately treats term 0 as plain HEAT; rejecting term 0 and `DIGM_TERM` stays an owner policy proposal). |
-| F-8 | LOW | `PricePolicy.cpp` `rateToNum` | Guarded against UINT64_MAX but converted with signed `llround`, so [2^63, 2^64) was out of range. | FIXED. |
-| F-9 | LOW | `buildPairQuote` | With `requireCorroboration` a single-source pair was priced from an empty observation and failed with a misleading reason (it failed closed). | FIXED. |
-| F-10 | MED | merge (invisible to git) | Master's pair catalog is 46 pairs; the branch's `AssetCatalog` bound 29. | FIXED. 17 bindings (7 ETH-native; 10 new native assets deliberately unpriced, since no feed id has been verified and `coingecko:beam` is the wrong Beam), a completeness test against `SWAP_PAIR_CATALOG` including divisor = 10^decimals, matrix JSON +17 rows, and the verify script now reads `SwapPairCatalog.h`. |
-| F-11 | MED | merge (invisible to git) | The branch deleted `dashboard/static/coin-icons/plsx.png`; master's `SwapPairCatalog.h` references it. | FIXED. Restored. The identical duplicate `pulsex.png` stays deleted. |
-| F-12 | LOW | docs | `docs/.mintignore` still named the old paths after the branch moved the docs. | FIXED. |
-| F-13 | LOW | docs | The matrix JSON said provider age 120 s; the shipped C++ default is 600 s. | FIXED, and the script now cross-checks it. |
+| Key | Family | Files | Character |
+|-----|--------|-------|-----------|
+| `saira` | Saira (already vendored) | — | the existing look, and the default |
+| `cormorant` | Cormorant (variable) | 1 | high-contrast serif, the maison signature |
+| `bitter` | Bitter (variable) | 1 | slab serif |
+| `sourceserif` | Source Serif 4 (variable) | 1 | warm serif |
+| `plex` | IBM Plex Sans | 3 (400/500/600) | technical sans |
 
-Kept from the branch because master lacks it: the aggregate input-total overflow guard
-(`get_inputs_money_amount`, `Currency::getTransactionAllInputsAmountChecked`, `check_tx_semantic`).
+The variable fonts carry 100–900 in a single file. IBM Plex Sans ships discrete
+400/500/600 because those are the only weights the interface asks for (600 ×31,
+500 ×5, 400 ×1).
 
-The three "v11 P0 Section B" entries earlier in this file describe the implementation that was
-**not** merged (F-7). The "Aggregate input-total uint64 overflow" entry still stands, but its
-`asset_classification_tests` count refers to the dropped API; that suite now has 7 cases: 5 over
-master's table and 2 that pin the shared free function.
+**Register and typeface are independent axes.** Every `data-typeface` rule is
+scoped `[data-theme="maison"][data-typeface="…"]`, so leaving maison makes the
+attribute inert rather than clearing it — which is what lets the choice survive a
+round trip. The control itself is `hidden` outside maison, because the other two
+registers pin their own face and a live-looking selector there would be a lie.
 
-### Verification of the tree before the Codex fold-in (2026-10-03)
+**`--font-mono` is deliberately untouched.** The depth ladder and the order
+columns depend on tabular figures aligning down the column; none of these
+candidates are monospaced, so IBM Plex Mono stays for all numerics.
 
-| Gate | Result |
-|------|--------|
-| Full `make -j8` on the merged tree, all 80 targets | PASS, exit 0 |
-| `commitment_owner_bound_tests` | PASS, 26 (primitives, shared resolver, scan-time key image) |
-| `commitment_persistence_tests` | PASS, 10 (container round trip, a real v1 stream, spent records, key-output layout, and the real `createTransfers`) |
-| `asset_classification_tests` / `input_amount_overflow_tests` / `alias_index_tests` | PASS, 5 / 7 / 10 |
-| `core_tests` | PASS, 202 of 202 |
-| `test_price_policy`, `test_swap_pair_catalog` | PASS, 269 checks / all |
-| Every built test executable | 42 PASS, 0 fail, 2 skipped (`test_sol_e2e`, `test_xmr_live_e2e`) |
+**TTF, not woff2.** `pyftsubset` is present but `brotli` is absent from that
+interpreter, so woff2 output is impossible in this toolchain. 2.6 MB for the
+curated six, served locally.
 
-Every new test was shown to fail when its defect was reinstated, and pass when restored:
-reverting the persistence, view-only and scanner fixes failed 6 of 10 persistence/scanner
-cases; reverting the null-key rejection, the legacy view-only gating and the unrecorded-key rule
-failed 3 owner-bound cases and 1 scanner case; reverting `llround`, the strict-corroboration
-refusal and one catalog binding failed 9 price-policy checks; removing the two overflow guards
-failed 4 overflow cases. The compile-relevant sources of this commit are the tree that was built
-and run; the only later source edit (the scanner tests) was built and run before the full build ended.
+**Boot script.** The typeface resolves inline before first paint, same as the
+register, so the face is in place rather than snapping in afterwards.
 
-### Verification of the combined tree (2026-10-04)
+### Harness improvements this required
 
-Built and run from a fresh linked worktree at tree `4ff78d7ee`, in a build directory of its own, so nothing
-reused the shared `build/release` that Codex rebuilt. The commit that carries this entry differs from that tree
-only in `CHANGELOG.agent.md`.
+- `El` had `setAttribute` as a no-op and no `getAttribute`/`removeAttribute`, so
+  no attribute-driven control could be tested at all. It now stores attributes
+  for real, still mirroring onto the instance for the harness's own reads.
+- A CSS-level gate: every `data-typeface` rule must be scoped to maison, name a
+  family that has an `@font-face`, and point at a file that is actually shipped.
+  The scope check was written twice — the first version searched text *before*
+  the rule body rather than the selector itself, and would have passed on an
+  unscoped rule. Verified by temporarily unscoping a rule and confirming it
+  fails.
 
-| Gate | Result |
-|------|--------|
-| Clean full `make -j6 -k`, Release | PASS, exit 0, 0 errors |
-| Every built test executable | 42 PASS, 0 fail, 2 skipped (`test_sol_e2e`, `test_xmr_live_e2e`) |
-| `core_tests` / `test_orderbook` | 202 of 202 / 44 of 44 |
-| `commitment_owner_bound_tests` / `commitment_persistence_tests` | PASS, 26 / 10 |
-| `asset_classification_tests` | PASS, 7 (the 5 over master's table plus the 2 that pin the shared function) |
-| `input_amount_overflow_tests` / `alias_index_tests` | PASS, 7 / 10 |
-| `test_price_policy` / `test_swap_pair_catalog` | PASS, 269 checks and 0 failures / all |
-| `scripts/verify-defillama-assets.py` | exit 0: 46 pairs and 33 assets agree with `SwapPairCatalog.h` and the matrix (its live-data lines are informational) |
-| `tests/docs/test_docs_fee_routing_alignment.py` | PASS, 7 of 7 (fails on `origin/master`) |
-| Offline docs check: nav pages exist and are not `.mintignore`d, internal links resolve (an approximation of Mintlify, not Mintlify) | 0 problems in 40 pages and 59 links; `origin/master` has 3 (the missing `fuego-dual-asset-architecture` page and two links to it) |
-| CI sanitizer targets rebuilt with `-fsanitize=address,undefined` (Debug) | `core_tests` and `test_orderbook` exit 0, no ASan reports |
-| The five gtest suites above under ASan+UBSan | all pass, no ASan reports |
-
-UBSan, run without halting as CI does, reported only two things, neither in code this merge added or changed:
-the `left shift of negative value` pattern in `src/crypto/crypto-ops.c`, and the uninitialised `m_testnet` read
-described under open items.
-
-The two new `AssetClassification` tests were mutation-checked in that worktree and reverted afterwards (worktree
-clean, 7 of 7 again). Making `Currency::classifyCommitmentTermAsset` drift from the shared function for terms
-1000 to 1009, a range no other test touches, fails only `SharedFunctionAndCurrencyAgreeOnEveryTermTried`.
-Removing the `SWRX` mapping from the shared function fails `ProtocolMarkerTermsMapToTheirAsset` and
-`SharedFunctionMapsTheProtocolMarkers`; the agreement test correctly still passes, since both sides share the table.
-
-### Not verified / open
-
-- **Valise (separate repo) was not touched.** Its 2026-10-04 review (F1 to F6) is open there.
-  Suite counterparts: F1 is this entry's F-4, fixed here. F6 (transaction key derived from the
-  public view key) is **not** present in the suite: `TransactionImpl` uses a random transaction
-  key and every deterministic derivation uses the view secret. F3/F4 do not apply (the suite
-  wallet has one shared view key and an explicit address set). F2's hazard has a suite analogue:
-  a wallet whose pre-owner-bound scanner ran past an owner-bound receipt never revisits it, and
-  loading a v1 container does not force a rescan. Low practical risk if releases are coordinated
-  (no commitment output can exist before v11), but it is open.
-- F-5 and F-6 above. No end-to-end send, scan, sign and node-verify run; no replay against a synced
-  node; no consensus harness exercising the mixed-ring rejection through a real `Blockchain`.
-- `findMyOutputs` ambiguity handling is untested (anonymous namespace). `createDeposit` is dead
-  code. `deriveCommitmentSecret` in `WalletTransactionSender.cpp` is now unused. The stored
-  burn-deposit-secret accessors remain declared but have no callers.
-- Mintlify `validate` and `broken-links` were **not run**: CI fetches `mint@latest` from npm and it is not
-  installed here, so the offline stand-in above is an approximation.
-  `tests/docs/test_docs_fee_routing_alignment.py` fails on a pristine `origin/master`: `docs.json` lists
-  `fuego-dual-asset-architecture`, which commit `ea6950d8f` moved into the Mintlify-ignored `docs/heat/`.
-  The restored root copy fixes it (7 of 7).
-- Pre-existing on master: `SwapPairCatalog.h` references `dot.png` and `rsk.png`, which do not exist
-  (`rootstock.png` does).
-- **Pre-existing on master, found by the sanitizer run, not fixed here:** `Currency::m_testnet` has no
-  initialiser and the `CurrencyBuilder` constructor reads it (two `if (m_currency.m_testnet)` blocks) before
-  `testnet(false)` runs at the end of that constructor. UBSan reports "load of value 32, which is not a valid
-  value for type 'bool'" (other runs: 160, 190). If the stray byte is non-zero the builder takes the testnet
-  branches, `minMixin(0)` and the testnet network-id string, and nothing later in the constructor undoes either
-  (`testnet(false)` resets only the deposit terms and the unlock window). Stack garbage is often zero, so this
-  mostly goes unnoticed. Also, every caller sets `testnet(...)` after construction, so with the field
-  initialised those two blocks only ever see `false`: a real testnet build never gets the testnet network-id
-  string from them, and `fuegoNetworkId` is set nowhere else. Not investigated further. Fix for the undefined
-  behaviour: `bool m_testnet = false;` in `Currency.h`. Left out of this merge because it is outside the
-  branch's scope and `Currency.h` is consensus-adjacent; it needs its own change and test run.
-- The CI sanitizer job runs on Ubuntu with `detect_leaks=1`. macOS ASan aborts on that option, so leak
-  detection was not run, and neither were the Windows, Ubuntu, AppImage, Docker, Termux or Raspberry Pi builds.
-- `Currency::classifyOutputAsset` keeps its own table for `TransactionOutputUnified` outputs (term 0 is XFG
-  there, HEAT for commitment outputs). It is identical to master. That type is only serialised and classified
-  on the output side (no input or validation code references it), and neither the shared function nor its
-  tests cover that branch.
-
-### Folded in from Codex (reviewed 2026-10-04)
-
-At 2026-10-04 01:36 another agent (Codex, per its own entry above) began editing the same
-checkout and rebuilt `libCryptoNoteCore.a` in the shared `build/release` at 01:39. On the owner's
-instruction its edits were reviewed and folded into this commit, from an immutable snapshot of the
-working tree taken at 01:56. Nothing of it was reverted.
-
-| Codex edit | Review result |
-|------------|---------------|
-| `AssetType.{h,cpp}` shared free function, with `Currency::classifyCommitmentTermAsset` delegating to it | Behaviour identical to master's table. Included, with the historical comment it dropped restored in `AssetType.cpp` and a test that pins agreement over about 270 000 terms. Nothing else uses the free function yet. |
-| `docs/fuego-dual-asset-architecture.mdx` restored at the docs root | Included. It corrects fee statements (the swap fee is 1% at initiation plus 1% at claim; the Hearth fee split is 70/30, not 100/0) and makes `tests/docs/test_docs_fee_routing_alignment.py` pass (7 of 7), which fails on master. The copy in `docs/heat/` is Mintlify-ignored and still has the old numbers. |
-| `docs/developer/defillama-asset-matrix.md` | Included. Adds the 46-pair update and the rows for pairs 29 to 45. |
-| `scripts/verify-defillama-assets.py` wording | Included. It now says the script audits identities and does not certify quote freshness, which is accurate. |
-| `docs/README-INTEGRATED-WALLET.md` and its `.mintignore` line | Included. Identical to master's file; its content is not preserved elsewhere in the branch. |
-| `dashboard/static/coin-icons/pulsex.png` | Included. Identical to master's file and byte-identical to `plsx.png`; nothing references it. Optional cleanup. |
-| `src/SwapDaemon/PulseChain/PulseChainClient.h` | Included. A two-line shim for the old include path. Master renamed the header to `pulse_chain_client.h` and nothing includes the old name, so it can be dropped. |
-| Its `CHANGELOG.agent.md` entry | Included unchanged above; its task statuses are its own. |
-
-Snapshots kept as hidden refs: `refs/backup/keyderiv-uncommitted-2026-10-03` (before the merge) and
-`refs/backup/keyderiv-worktree-2026-10-04-before-merge-commit` (with Codex's edits).
-
-### Handoff and state of the shared checkout
-
-This validation changed nothing in the shared checkout (`/Users/aejt/xfgo`). It still has `keyderiv` checked
-out at e89b3ea12 with the earlier merge staged (`MERGE_HEAD` present) and Codex's uncommitted edits in the
-working tree. All of them are contained in the merge commit; the one difference is that the working-tree
-`AssetType.cpp` lacks the restored explanatory comment. The validation used a linked worktree and build
-directories outside the repository, since removed. Codex's own entry above overlaps this one; the verification
-sections here are evidence for its tasks 2 to 5 and 7, but signing those off is Codex's.
+### Task List
 
 | # | Task | Owner | Date | Status |
 |---|------|-------|------|--------|
-| 1 | Snapshot uncommitted work to a hidden ref | Claude | 2026-10-03 | DONE |
-| 2 | Audit the committed owner-bound work and the uncommitted consensus, swap and docs work | Claude | 2026-10-03 | DONE |
-| 3 | Fix F-1 to F-4 with tests | Claude | 2026-10-03 | DONE |
-| 4 | Reconcile Section B with master's 054cae35e, keep the overflow guard | Claude | 2026-10-03 | DONE |
-| 5 | Fix F-8 to F-13, extend the catalog to 46 pairs | Claude | 2026-10-03 | DONE |
-| 6 | Full build, full test run, mutation-check every new test | Claude | 2026-10-03 | DONE |
-| 7 | Review Codex's concurrent edits and fold them in | Claude | 2026-10-04 | DONE |
-| 8 | Build and test the combined tree from a clean checkout (Release, plus the CI ASan/UBSan targets); mutation-check the new tests | Claude | 2026-10-04 | DONE |
-| 9 | Fast-forward local `master` to the merge commit that carries this entry (ref update, no checkout) | Claude | 2026-10-04 | DONE |
-| 10 | Push | Claude | 2026-10-04 | NOT DONE: not authorised |
-| 11 | Valise corrections (its F1 to F6) | Claude | 2026-10-04 | NOT STARTED in this entry: separate repo |
-| 12 | Initialise `Currency::m_testnet` (pre-existing UB, see open items) | unassigned | 2026-10-04 | TODO |
+| 1 | Stage 4 candidate families into `static/fonts` | opencode | 2026-09-28 | DONE |
+| 2 | `@font-face` for each, weighted correctly | opencode | 2026-09-28 | DONE |
+| 3 | Scope typeface rules to the maison register | opencode | 2026-09-28 | DONE |
+| 4 | `MaisonTypeface` module: apply, persist, observe register | opencode | 2026-09-28 | DONE |
+| 5 | Nav control on all 3 pages; visible in maison only | opencode | 2026-09-28 | DONE |
+| 6 | Resolve before first paint in all 3 boot scripts | opencode | 2026-09-28 | DONE |
+| 7 | Harness: real attributes + CSS typeface gate | opencode | 2026-09-28 | DONE |
+| 8 | Verify scope gate fails on an unscoped rule | opencode | 2026-09-28 | DONE |
+| 9 | Build, serve, confirm all 6 fonts 200 `font/ttf` | opencode | 2026-09-28 | DONE |
+| 10 | Visual review of each face in a real browser | — | — | **TODO** |
 
-| Gate | Sign-off |
-|------|----------|
-| Build compiles | PASS (2026-10-04): clean Release build of the merged tree in a fresh worktree, exit 0, 0 errors; ASan+UBSan build of the CI sanitizer targets and the five gtest targets, exit 0 |
-| Tests pass | PASS (2026-10-04): 42 of 42 runnable executables, 2 live-chain skipped; docs alignment 7 of 7; no ASan reports (UBSan: see open items) |
-| All tasks done | NO (tasks 10 to 12 open) |
+### Sign-Off
+
+| Gate | Signed By | Date | Result |
+|------|-----------|------|--------|
+| `go vet` | opencode | 2026-09-28 | PASS (clean) |
+| `go test ./...` | opencode | 2026-09-28 | PASS |
+| Node tests: hearth_order, swapxfg_pairs | opencode | 2026-09-28 | PASS (6/6, 4/4) |
+| Harness: 3 pages × 3 registers | opencode | 2026-09-28 | PASS (9/9) |
+| Every typeface rule scoped to maison | opencode | 2026-09-28 | PASS (verified to fail when unscoped) |
+| Every family used has an `@font-face` | opencode | 2026-09-28 | PASS |
+| Every `@font-face` url resolves on disk | opencode | 2026-09-28 | PASS (10/10 per sheet) |
+| Unknown typeface rejected, attribute cleaned up | opencode | 2026-09-28 | PASS |
+| Choice survives a register round trip | opencode | 2026-09-28 | PASS |
+| Braces balanced in both sheets | opencode | 2026-09-28 | PASS (352/352, 338/338) |
+| All 6 fonts 200 `font/ttf` from the release build | opencode | 2026-09-28 | PASS |
+| Visual review of each face in a real browser | — | — | **PENDING** |
+
+### Not verified
+
+Every checkable property is checked. What is not is the whole point of the
+feature: **nobody has looked at these faces rendered.** Cormorant at 9px in a
+depth ladder may be beautiful and illegible; Source Serif 4's optical sizing may
+need a word to look right at these sizes. Task 10 requires opening the page.
+
+### Open recommendation
+
+`dashboard/fonts/` — the 75 MB, 322-file upstream source drop, now tracked in
+git — is dead weight: the build reads only the six curated files in
+`static/fonts/`. Left as-is because the folder was added deliberately and
+untracking it is the owner's call, not mine. Recommend either dropping it from
+the index (history keeps it either way) or relocating it outside the repo.
+## Feature: Swap UI execution boundaries and runtime chain readiness — 2026-10-08
+
+The browser dashboard is a read-only monitoring and quote surface. DeXFG and
+the terminal UI are the execution clients for cross-chain swaps. Execution
+clients must consume `xfg-swapd`'s runtime chain catalog, reject network
+mismatches and unready adapters, preserve atomic amounts as decimal strings,
+and require a verified counterparty swap key before initiation.
+
+### Task List
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Remove all wallet and swap-daemon mutation routes and controls from the dashboard | Codex | 2026-10-08 | DONE |
+| 2 | Add runtime chain catalog, network/readiness gates, exact atomic amounts, initiation, status, accept, and refund to the TUI | Codex | 2026-10-08 | DONE |
+| 3 | Apply the same daemon contract and execution gates to DeXFG | Codex | 2026-10-08 | DONE |
+| 4 | Add regression tests for read-only dashboard and executable-client validation | Codex | 2026-10-08 | DONE |
+| 5 | Run dashboard, TUI, and DeXFG focused builds and tests | Codex | 2026-10-08 | DONE |
+| 6 | Run independent swap/security verification and resolve blocking findings | Codex | 2026-10-08 | DONE — three audit artifacts reviewed; AFK execution disabled after final adversarial pass |
+
+### Sign-off
+
+| Check | Status |
+|-------|--------|
+| Dashboard build compiles | PASS |
+| Dashboard tests pass | PASS — Go + 10 Node checks |
+| TUI build compiles | PASS |
+| TUI tests pass | PASS |
+| DeXFG analysis/tests pass | PASS — focused tests; analyzer has informational lints only |
+| Independent verification | PASS — dashboard, TUI, and swap contract audit findings resolved |
+| All tasks done | PASS |
+
+### Strategic checkpoint — implementation batch to DeXFG
+
+Objective and done condition: keep the browser dashboard read-only; make the
+TUI and DeXFG execute swaps only through a matching, ready `xfg-swapd`; retain
+decimal-string amounts, explicit confirmations, and safe lifecycle controls;
+finish focused builds/tests and an independent security review.
+
+User constraints and authorization boundaries: no file deletion, commit, push,
+or deployment without explicit permission. Preserve unrelated dirty work. Do
+not claim funded or live-chain coverage from local tests.
+
+Source revision, branch and local changes: branch
+`merge/keyderiv-owner-bound-final`, base `74dd62de1`; all work is uncommitted.
+`external/secp256k1`, `src/SwapDaemon/OfferManager.h`, and
+`src/SwapDaemon/SwapDaemon.h` had unrelated changes before this batch and must
+not be overwritten or stashed.
+
+Completed outcomes with verification:
+
+- Dashboard mutation routes and controls removed; `/api/swapd` is a GET-only
+  status proxy. `go test ./...` passes and Node reports 10/10 checks.
+- TUI uses runtime `list_chains`, exact decimal-string amounts, network/profile
+  and readiness gates, counterparty key binding, initiation/status/accept/refund,
+  wallet sync gating, owner-only password files, and quoted Hearth confirmation.
+  `go test ./...` passes; `go build -mod=vendor -o /private/tmp/fuego_suite_tui .`
+  passes.
+- Swap RPC validates IDs, blocks database path traversal, emits public status
+  records without persistence secrets, preserves exact XFG amounts, reports
+  network/profile, and reports configured EVM chain IDs.
+- `cmake --build build/release --target PaymentGateService SwapDaemon
+  test_swap_state_machine_spv test_price_policy -j4` passes. The swap-state/SPV
+  binary reports 18/18 and price policy reports 423 checks with zero failures.
+- The macOS resolver-macro collision was removed by renaming the price status
+  enum value from `NO_DATA` to `MISSING_DATA`.
+
+Outstanding work and known failures: DeXFG still needs the same runtime
+catalog, testnet launch, token handling, exact amounts, peer-key/role fields,
+and full lifecycle actions. Dashboard release assets may still contain an older
+executable bundle until the release binary/static tree is rebuilt and checked.
+No funded cross-chain test has run.
+
+Running process/tool identifiers: none.
+
+Artifacts and exact paths needed next:
+
+- `/private/tmp/fuego-tui-audit-20261008.jsonl`
+- `/private/tmp/fuego-swapd-ui-contract-20261008.jsonl`
+- `/private/tmp/fuego-dashboard-readonly-audit-20261008.jsonl`
+- `/Users/aejt/DEXFG/fuego-flutter-wallet`
+
+Next action, expected result and fallback: inspect the DeXFG dirty tree and
+current swap service, then apply its runtime contract and tests without touching
+unrelated changes. If that checkout is not writable, stage an exact patch under
+`/private/tmp` and request the narrow filesystem approval needed to apply it.
+
+---
+
+## Security fix: stop TUI swap RPC redirects — 2026-10-08
+
+The token-authenticated loopback client now returns redirect responses without
+following them. This prevents the custom `X-Swap-Token` header from being
+forwarded to a redirect target. A regression test verifies that a mutation
+redirect is reported as an unknown outcome and the target receives no request.
+The same test run exposed that the TUI's node-status model omitted the daemon's
+`network` field, so the new network-mismatch gate did not compile; the model now
+decodes the field returned by `/getinfo`.
+
+| Task | Owner | Date | Status |
+|------|-------|------|--------|
+| Disable automatic redirects for swap control RPC | Codex | 2026-10-08 | DONE |
+| Cover redirect refusal and mutation uncertainty | Codex | 2026-10-08 | DONE |
+| Decode node network identity used by the network gate | Codex | 2026-10-08 | DONE |
+
+| Gate | Result |
+|------|--------|
+| TUI tests | IN PROGRESS |
+| All tasks done | NO |
+
+---

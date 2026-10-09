@@ -1,3 +1,59 @@
+/* ── Maison typeface candidates ──
+   Four faces to try, kept as separate families so the browser does not cache a
+   wrong one per weight. The variable fonts carry 100–900 in a single file;
+   IBM Plex Sans ships discrete 400/500/600 because that is all the interface
+   asks for. TTF, not woff2: brotli is unavailable in the toolchain here, so
+   pyftsubset cannot emit woff2. Local delivery, so the size is tolerable.
+
+   --font-mono is deliberately untouched by any of these. The depth ladder and
+   the order columns depend on tabular figures aligning down the column, and
+   none of these candidates are monospaced. */
+@font-face {
+  font-family: 'Maison Cormorant';
+  src: url('../fonts/Cormorant-Variable.ttf') format('truetype');
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Maison Bitter';
+  src: url('../fonts/Bitter-Variable.ttf') format('truetype');
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Maison Source Serif';
+  src: url('../fonts/SourceSerif4-Variable.ttf') format('truetype');
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Maison Plex Sans';
+  src: url('../fonts/IBMPlexSans-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Maison Plex Sans';
+  src: url('../fonts/IBMPlexSans-Medium.ttf') format('truetype');
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Maison Plex Sans';
+  src: url('../fonts/IBMPlexSans-SemiBold.ttf') format('truetype');
+  font-weight: 600;
+  font-display: swap;
+}
+
+/* The register and the typeface are independent axes, so the typeface is scoped
+   to maison. Switching to fulltrade or reference drops the attribute and falls
+   back to the root family; switching back re-applies the stored choice. */
+[data-theme="maison"][data-typeface="cormorant"] { --font-sans: 'Maison Cormorant', Georgia, 'Times New Roman', serif; }
+[data-theme="maison"][data-typeface="bitter"]     { --font-sans: 'Maison Bitter', Georgia, serif; }
+[data-theme="maison"][data-typeface="sourceserif"]{ --font-sans: 'Maison Source Serif', Georgia, serif; }
+[data-theme="maison"][data-typeface="plex"]       { --font-sans: 'Maison Plex Sans', system-ui, -apple-system, sans-serif; }
+[data-theme="maison"][data-typeface="saira"]      { --font-sans: 'Saira', system-ui, -apple-system, sans-serif; }
+
 @font-face {
   font-family: 'Saira';
   font-style: normal;
@@ -552,6 +608,39 @@ html, body {
 /* ═══ THEME SELECTOR ═══════════════════════════════════════════════════
    A segmented control, not a dropdown: the three registers are peers, and
    switching between them should cost one click and no menu. */
+
+.typeface-switch {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-shrink: 0;
+}
+.typeface-switch[hidden] { display: none; }
+.typeface-label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--ink-30);
+  white-space: nowrap;
+}
+/* Native select, styled to the same inset well as the register buttons rather
+   than left as an OS widget — a stock control would break the register's
+   surface language on every platform. */
+.typeface-select {
+  height: 28px;
+  max-width: 190px;
+  padding: 0 var(--space-sm);
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  color: var(--ink-90);
+  background: var(--surface-inset);
+  border: var(--hair) solid var(--hairline);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+.typeface-select:hover { border-color: var(--hairline-lit); }
+.typeface-select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .theme-switch {
   display: flex;

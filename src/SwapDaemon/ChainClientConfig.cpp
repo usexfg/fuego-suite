@@ -82,6 +82,60 @@ static bool jsonGetBool(const std::string& json, const std::string& key,
   return defaultVal;
 }
 
+// Both `swap_config.example.json` and the output of
+// `xfg-swapd --generate-spv-config` are JSONC: they carry `//` guidance for
+// the operator, which is the whole point of an annotated template. The reader
+// below is strict JSON, so those files were rejected outright and the
+// documented quickstart could not be followed.
+//
+// String-aware by design — a `//` inside a quoted value such as
+// "https://rpc.example" must survive. Line breaks are preserved so parse
+// errors still point at the right line.
+static std::string stripJsonComments(const std::string& in) {
+  std::string out;
+  out.reserve(in.size());
+  bool inString = false;
+  bool inEscape = false;
+
+  for (size_t i = 0; i < in.size();) {
+    const char c = in[i];
+
+    if (inString) {
+      out += c;
+      ++i;
+      if (inEscape) {
+        inEscape = false;
+      } else if (c == '\\') {
+        inEscape = true;
+      } else if (c == '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (c == '"') {
+      inString = true;
+      out += c;
+      ++i;
+      continue;
+    }
+
+    if (c == '/' && i + 1 < in.size() && in[i + 1] == '/') {
+      while (i < in.size() && in[i] != '\n') ++i;
+      if (i < in.size()) {  // keep the newline for line numbering
+        out += '\n';
+        ++i;
+      }
+      continue;
+    }
+
+    out += c;
+    ++i;
+  }
+
+  return out;
+}
+
 static bool validateHex(const std::string& s, size_t expectedBytes,
                           const std::string& fieldName, std::string& errorMsg) {
   if (s.empty()) return true;  // optional fields allowed to be empty
@@ -158,7 +212,7 @@ bool loadChainClientConfig(const std::string& path,
   }
   std::ostringstream ss;
   ss << f.rdbuf();
-  const std::string json = ss.str();
+  const std::string json = stripJsonComments(ss.str());
 
   // Validate the file is actually parseable JSON. Previously the loader used
   // `string::find()` lookups that silently treat malformed JSON as missing

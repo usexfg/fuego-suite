@@ -34,6 +34,7 @@
 #include "CryptoNoteCore/Miner.h"
 #include "CryptoNoteCore/TransactionExtra.h"
 #include "CryptoNoteProtocol/ICryptoNoteProtocolQuery.h"
+#include "CryptoNoteConfig.h"
 
 #include "P2p/NetNode.h"
 #include "CryptoNoteCore/SwapOfferRelay.h"
@@ -1370,6 +1371,10 @@ bool RpcServer::on_cancel_swap_offer(const COMMAND_RPC_CANCEL_SWAP_OFFER::reques
 }
 
 bool RpcServer::on_request_swap(const COMMAND_RPC_REQUEST_SWAP::request& req, COMMAND_RPC_REQUEST_SWAP::response& res) {
+  if (!parameters::AFK_SOFT_ORDER_EXECUTION_ENABLED) {
+    res.status = "AFK soft-order execution is disabled until XFG payout is trustless";
+    return true;
+  }
   if (!m_swapRelay) {
     res.status = "Swap relay not running";
     return true;

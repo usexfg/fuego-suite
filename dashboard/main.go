@@ -31,8 +31,6 @@ type Config struct {
 	DaemonPort    int
 	WalletPort    int
 	SwapdPort     int
-	SwapdRPCPort  int
-	SwapdRPCToken string
 }
 
 func parseFlags() Config {
@@ -41,16 +39,11 @@ func parseFlags() Config {
 		DaemonPort:    18180,
 		WalletPort:    18183,
 		SwapdPort:     18900,
-		SwapdRPCPort:  18902,
-		SwapdRPCToken: os.Getenv("XFG_SWAPD_RPC_TOKEN"),
 	}
 	flag.IntVar(&cfg.DashboardPort, "port", cfg.DashboardPort, "Dashboard HTTP port")
 	flag.IntVar(&cfg.DaemonPort, "daemon-port", cfg.DaemonPort, "Fuegod RPC port")
 	flag.IntVar(&cfg.WalletPort, "wallet-port", cfg.WalletPort, "Walletd RPC port")
 	flag.IntVar(&cfg.SwapdPort, "swapd-port", cfg.SwapdPort, "Swap daemon status port")
-	flag.IntVar(&cfg.SwapdRPCPort, "swapd-rpc-port", cfg.SwapdRPCPort, "Swap daemon JSON-RPC port")
-	flag.StringVar(&cfg.SwapdRPCToken, "swapd-rpc-token", cfg.SwapdRPCToken,
-		"Swap daemon JSON-RPC token (prefer XFG_SWAPD_RPC_TOKEN)")
 	flag.Parse()
 	return cfg
 }
@@ -142,6 +135,19 @@ func newReverseProxy(target string) *httputil.ReverseProxy {
 
 func proxyHandler(proxy *httputil.ReverseProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		proxy.ServeHTTP(w, r)
+	}
+}
+
+func swapdStatusProxyHandler(proxy *httputil.ReverseProxy) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		r.URL.Path = "/"
+		r.URL.RawQuery = ""
+		r.Body = http.NoBody
 		proxy.ServeHTTP(w, r)
 	}
 }
@@ -364,7 +370,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 			w.Header().Set("Vary", "Origin")
 		}
 		if r.Method == http.MethodPost &&
-			(r.URL.Path == "/api/wallet" || r.URL.Path == "/api/swapd-rpc") &&
+			r.URL.Path == "/api/wallet" &&
 			r.Header.Get("X-Fuego-Operator") != "1" {
 			http.Error(w, "operator header required", http.StatusForbidden)
 			return
@@ -380,13 +386,9 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// ── Wallet RPC Proxy (browser-initiated execution) ────────────────────────────
-// The browser never sees the wallet access key. It POSTs order parameters,
-// the Go server proxies to walletd with the key.
-// Only explicitly allowlisted methods are proxied; everything else is rejected.
+// ── Read-only Wallet RPC Proxy ────────────────────────────────────────────────
 
 var walletAllowedMethods = map[string]bool{
-	// Read-only
 	"getbalance":            true,
 	"getaddress":            true,
 	"getaddresses":          true,
@@ -396,21 +398,6 @@ var walletAllowedMethods = map[string]bool{
 	"gettransferbytxid":     true,
 	"getunconfirmedbalance": true,
 	"getvalidateaddress":    true,
-	// Write (trading)
-	"place_limit_order":  true,
-	"cancel_limit_order": true,
-	"amm_swap":           true,
-}
-
-var swapdAllowedMethods = map[string]bool{
-	"initiate_swap":     true,
-	"accept":            true,
-	"get_reserve_proof": true,
-	"list_swaps":        true,
-	"swap_status":       true,
-	"refund":            true,
-	"check_timeouts":    true,
-	"list_chains":       true,
 }
 
 // Simple token-bucket rate limiter per IP.
@@ -438,16 +425,12 @@ func (rl *rateLimiter) allow(key string) bool {
 	return true
 }
 
-var (
-	walletRateLimiter = newRateLimiter(200 * time.Millisecond)
-	swapdRateLimiter  = newRateLimiter(200 * time.Millisecond)
-)
+var walletRateLimiter = newRateLimiter(200 * time.Millisecond)
 
 type localRPCProxyConfig struct {
 	port    int
 	path    string
 	service string
-	token   string
 	allowed map[string]bool
 	limiter *rateLimiter
 }
@@ -511,9 +494,6 @@ func localRPCProxyHandler(cfg localRPCProxyConfig) http.HandlerFunc {
 			return
 		}
 		proxyReq.Header.Set("Content-Type", "application/json")
-		if cfg.token != "" {
-			proxyReq.Header.Set("X-Swap-Token", cfg.token)
-		}
 		resp, err := http.DefaultClient.Do(proxyReq)
 		if err != nil {
 			http.Error(w, cfg.service+" unreachable", http.StatusBadGateway)
@@ -530,13 +510,6 @@ func walletProxyHandler(walletPort int) http.HandlerFunc {
 	return localRPCProxyHandler(localRPCProxyConfig{
 		port: walletPort, path: "/json_rpc", service: "walletd",
 		allowed: walletAllowedMethods, limiter: walletRateLimiter,
-	})
-}
-
-func swapdRPCProxyHandler(swapdRPCPort int, token string) http.HandlerFunc {
-	return localRPCProxyHandler(localRPCProxyConfig{
-		port: swapdRPCPort, path: "/", service: "xfg-swapd", token: token,
-		allowed: swapdAllowedMethods, limiter: swapdRateLimiter,
 	})
 }
 
@@ -641,13 +614,8 @@ func main() {
 	// Health check
 	mux.HandleFunc("/api/health", healthHandler(cfg.DaemonPort, cfg.WalletPort, cfg.SwapdPort))
 
-	// Wallet RPC proxy (browser-initiated execution — keys never touch browser)
+	// Read-only wallet account data. No browser route can submit transactions.
 	mux.HandleFunc("/api/wallet", walletProxyHandler(cfg.WalletPort))
-	if cfg.SwapdRPCPort > 0 {
-		// xfg-swapd owns cross-chain execution. Keep its optional control token
-		// out of browser JavaScript and inject it on this loopback-only hop.
-		mux.HandleFunc("/api/swapd-rpc", swapdRPCProxyHandler(cfg.SwapdRPCPort, cfg.SwapdRPCToken))
-	}
 
 	// Explicitly read-only daemon routes; no generic RPC pass-through.
 	mux.HandleFunc("/heat_metrics", proxyHandler(daemonProxy))
@@ -661,14 +629,9 @@ func main() {
 	if cfg.SwapdPort > 0 {
 		swapdTarget := fmt.Sprintf("http://127.0.0.1:%d", cfg.SwapdPort)
 		swapdProxy := newReverseProxy(swapdTarget)
-		mux.HandleFunc("/api/swapd", func(w http.ResponseWriter, r *http.Request) {
-			r.URL.Path = "/"
-			swapdProxy.ServeHTTP(w, r)
-		})
-		mux.HandleFunc("/api/swapd/", func(w http.ResponseWriter, r *http.Request) {
-			r.URL.Path = "/"
-			swapdProxy.ServeHTTP(w, r)
-		})
+		statusHandler := swapdStatusProxyHandler(swapdProxy)
+		mux.HandleFunc("/api/swapd", statusHandler)
+		mux.HandleFunc("/api/swapd/", statusHandler)
 	}
 
 	// Static files — resolved relative to the binary, not the working directory.

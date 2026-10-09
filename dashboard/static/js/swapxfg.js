@@ -3,10 +3,8 @@
 
 const SwapXFG = (() => {
   let oracleChart, oracleLineSeries;
-  let swapDirection = 0; // 0 = XFG→CTR, 1 = CTR→XFG
   let offers = [];
   let selectedOfferId = null;
-  let pendingInitiation = null;
   let chainHeight = 0;
   let oraclePrices = {}; // chainKey -> { price, spread } or rate
   let activeCategory = 'all';
@@ -126,21 +124,6 @@ const SwapXFG = (() => {
     return parsed <= UINT64_MAX ? parsed : 0n;
   }
 
-  function decimalToAtomic(value, decimals, label) {
-    const text = String(value || '').trim();
-    if (!/^[0-9]+(?:\.[0-9]+)?$/.test(text)) throw new Error(`${label} must be a positive decimal`);
-    const [whole, fraction = ''] = text.split('.');
-    if (fraction.length > decimals && /[1-9]/.test(fraction.slice(decimals))) {
-      throw new Error(`${label} supports at most ${decimals} decimal places`);
-    }
-    const atomicText = `${whole}${fraction.slice(0, decimals).padEnd(decimals, '0')}`.replace(/^0+(?=\d)/, '');
-    return parseAtomicText(atomicText, label);
-  }
-
-  function shellQuote(value) {
-    return `'${String(value).replace(/'/g, `'\\''`)}'`;
-  }
-
   function normalizeOffer(raw) {
     const pairKey = pairKeyFromIndex(raw.pair);
     const xfgAmountAtomic = parseStatusUint64(
@@ -224,10 +207,10 @@ const SwapXFG = (() => {
   // ── Init ──
 
   function init() {
+    if (typeof MaisonTypeface !== 'undefined') MaisonTypeface.init();
     initOracleChart();
     initChainSelect();
     initBridgeForm();
-    initSwapDirection();
     initOrdergraphShell();
     initFilterHandlers();
 
@@ -452,12 +435,10 @@ const SwapXFG = (() => {
   function updateSelectedChain() {
     const select = document.getElementById('to-chain-select');
     const info = CHAIN_INFO[select.value];
-    const button = document.getElementById('bridge-init-btn');
     if (!info) {
       setImageSource(document.getElementById('to-chain-icon'), FUEGO_ICON, '');
       document.getElementById('to-chain-name').textContent = 'No chain ready';
       document.getElementById('to-chain-ticker').textContent = 'Configure xfg-swapd';
-      button.disabled = true;
       updateEstimate();
       return;
     }
@@ -466,45 +447,14 @@ const SwapXFG = (() => {
     document.getElementById('to-chain-ticker').textContent = info.ready
       ? info.ticker
       : `${info.ticker} · ${info.implementation === 'staged' ? 'staged' : 'setup required'}`;
-    button.disabled = !info.ready;
-    button.title = info.ready ? '' : (info.readinessError || 'Chain is not ready for new swaps');
     updateEstimate();
   }
 
   function initBridgeForm() {
-    document.getElementById('bridge-amount').addEventListener('input', updateEstimate);
-    document.getElementById('ctr-amount').addEventListener('input', updateEstimate);
-    document.getElementById('bridge-init-btn').addEventListener('click', showInitiateModal);
-    document.getElementById('init-modal-close').addEventListener('click', () => {
-      pendingInitiation = null;
-      document.getElementById('init-modal').classList.remove('active');
-    });
-
-    document.getElementById('init-exec-btn').addEventListener('click', async () => {
-      if (!pendingInitiation) return;
-      const params = pendingInitiation;
-      pendingInitiation = null;
-      const button = document.getElementById('init-exec-btn');
-      button.disabled = true;
-      try {
-        if (!CHAIN_INFO[params.pair]?.ready) throw new Error('Chain readiness changed; review again');
-        const result = await App.swapRpc('initiate_swap', params);
-        const swapId = result?.swap_id || '';
-        if (!swapId) throw new Error('No swap ID returned; check daemon status before retrying');
-        App.showToast(`Swap initiated · ${swapId.substring(0, 16)}…`);
-        document.getElementById('init-modal').classList.remove('active');
-        loadOffersAndSwaps();
-      } catch (e) {
-        App.showToast(`Initiation uncertain: ${e.message}. Check swap status before retrying.`);
-      } finally {
-        button.disabled = false;
-      }
-    });
-
-    const copyBtn = document.getElementById('init-copy-btn');
-    if (copyBtn) copyBtn.addEventListener('click', () => {
-      App.copyToClipboard(document.getElementById('init-cli-cmd')?.textContent || '');
-    });
+    const xfgAmount = document.getElementById('bridge-amount');
+    const ctrAmount = document.getElementById('ctr-amount');
+    if (xfgAmount) xfgAmount.addEventListener('input', updateEstimate);
+    if (ctrAmount) ctrAmount.addEventListener('input', updateEstimate);
   }
 
   function formatAtomicUnits(amount, decimals) {
@@ -514,31 +464,6 @@ const SwapXFG = (() => {
     const whole = value / scale;
     const fraction = (value % scale).toString().padStart(decimals, '0').replace(/0+$/, '');
     return fraction ? `${whole}.${fraction}` : whole.toString();
-  }
-
-  function collectInitiationRequest() {
-    const chain = document.getElementById('to-chain-select').value;
-    const info = CHAIN_INFO[chain];
-    if (!info) throw new Error('Select a chain');
-    if (!info.ready) throw new Error(info.readinessError || `${info.name} is not ready for new swaps`);
-
-    const xfgAtomic = decimalToAtomic(
-      document.getElementById('bridge-amount').value, 7, 'XFG amount'
-    );
-    const ctrAtomic = parseAtomicText(
-      document.getElementById('ctr-amount').value, `${info.ticker} amount`,
-      info.family === 'evm' ? UINT256_MAX : UINT64_MAX
-    );
-    const peer = document.getElementById('peer-endpoint').value.trim();
-    if (!peer) throw new Error('Peer swap endpoint is required');
-    const peerKey = document.getElementById('peer-pubkey').value.trim();
-    if (!/^[0-9a-fA-F]{64}$/.test(peerKey)) {
-      throw new Error('Verified peer public key is required (64 hexadecimal characters)');
-    }
-    return {
-      chain, info, xfgAtomic, ctrAtomic, peer, peerKey,
-      role: swapDirection === 0 ? 'bob' : 'alice'
-    };
   }
 
   function updateEstimate() {
@@ -564,24 +489,6 @@ const SwapXFG = (() => {
     rate.textContent = selected && selected.rateXfgPerCtr > 0
       ? `Selected offer: 1 ${info.ticker} = ${selected.rateXfgPerCtr.toFixed(7)} XFG`
       : 'Enter the exact amount agreed with your counterparty';
-  }
-
-  function initSwapDirection() {
-    const dirBtn = document.getElementById('bridge-swap-dir');
-    if (!dirBtn) return;
-    dirBtn.addEventListener('click', () => {
-      swapDirection = swapDirection === 0 ? 1 : 0;
-      updateSwapDirectionUI();
-    });
-    updateSwapDirectionUI();
-  }
-
-  function updateSwapDirectionUI() {
-    const button = document.getElementById('bridge-swap-dir');
-    button.textContent = swapDirection === 0 ? '↓' : '↑';
-    button.title = swapDirection === 0
-      ? 'Our side funds XFG (Bob role)'
-      : 'Our side funds the counterparty asset (Alice role)';
   }
 
   async function loadWalletBalance() {
@@ -851,8 +758,7 @@ const SwapXFG = (() => {
             </div>
           </div>
           <div class="ob-actions">
-            <button type="button" class="btn btn-firegold btn-sm" data-act="accept" data-id="${escapeAttr(o.offerId)}">Prepare take</button>
-            <button type="button" class="btn btn-secondary btn-sm" data-act="fill" data-id="${escapeAttr(o.offerId)}">Prefill</button>
+            <button type="button" class="btn btn-firegold btn-sm" data-act="inspect" data-id="${escapeAttr(o.offerId)}">Inspect</button>
             <button type="button" class="btn btn-secondary btn-sm" data-act="copy" data-id="${escapeAttr(o.offerId)}">Copy ID</button>
           </div>
         </div>`;
@@ -871,8 +777,7 @@ const SwapXFG = (() => {
         e.stopPropagation();
         const id = btn.dataset.id;
         const act = btn.dataset.act;
-        if (act === 'accept') acceptOffer(id);
-        else if (act === 'fill') fillFormFromOffer(id);
+        if (act === 'inspect') selectOffer(id, true);
         else if (act === 'copy') App.copyToClipboard(id);
       });
     });
@@ -935,66 +840,8 @@ const SwapXFG = (() => {
         document.getElementById('ctr-amount').value = ctrAtomic.toString();
       }
     }
-    swapDirection = o.isSell ? 1 : 0;
-    updateSwapDirectionUI();
     updateEstimate();
-    App.showToast('Form filled from offer');
-  }
-
-  function acceptOffer(offerId) {
-    const o = offers.find(x => x.offerId === offerId);
-    if (!o) {
-      App.showToast('Offer not found in book');
-      return;
-    }
-    selectOffer(offerId, true);
-    fillFormFromOffer(offerId);
-    App.showToast('Offer prepared; enter the maker peer endpoint, then review the swap');
-  }
-
-  // ── Initiate Modal ──
-
-  function showInitiateModal() {
-    let request;
-    try {
-      request = collectInitiationRequest();
-    } catch (e) {
-      App.showToast(e.message);
-      return;
-    }
-    const amount = formatAtomicUnits(request.xfgAtomic, 7);
-    const ctrDisplay = formatAtomicUnits(request.ctrAtomic, request.info.decimals);
-    const rpcParams = {
-      pair: request.chain,
-      xfg_amount: request.xfgAtomic.toString(),
-      ctr_amount: request.ctrAtomic.toString(),
-      peer: request.peer,
-      role: request.role,
-      expected_peer_pubkey: request.peerKey
-    };
-    pendingInitiation = Object.freeze(rpcParams);
-
-    document.getElementById('init-modal-details').innerHTML = `
-      <div class="rf">
-        <div class="rf-head"><span class="rf-ref">SWAPXFG · TRANSFER REVIEW</span>
-          <span class="badge badge-firegold">${escapeHtml(request.info.name)}</span></div>
-        <div class="rf-grid">
-          <div><span class="rf-label">XFG amount</span><span class="rf-value">${escapeHtml(amount)} XFG</span></div>
-          <div><span class="rf-label">Counterparty amount</span><span class="rf-value">${escapeHtml(ctrDisplay)} ${escapeHtml(request.info.ticker)}</span></div>
-          <div><span class="rf-label">Our role</span><span class="rf-value">${request.role === 'bob' ? 'Fund XFG' : 'Fund counterparty asset'}</span></div>
-          <div><span class="rf-label">Peer endpoint</span><span class="rf-value">${escapeHtml(request.peer)}</span></div>
-          <div><span class="rf-label">Expected peer key</span><span class="rf-value">${escapeHtml(request.peerKey)}</span></div>
-        </div>
-      </div>
-      <p class="rf-note">Verify the peer key independently. The daemon will still enforce funding and timelock checks.</p>`;
-
-    const rpcBody = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initiate_swap', params: rpcParams });
-    const cli = document.getElementById('init-cli-cmd');
-    cli.textContent =
-      `curl --fail-with-body -sS -H 'Content-Type: application/json' -H 'X-Fuego-Operator: 1' -H ${shellQuote(`Origin: ${location.origin}`)} --data ${shellQuote(rpcBody)} ${shellQuote(`${location.origin}/api/swapd-rpc`)}`;
-    cli.hidden = false;
-
-    document.getElementById('init-modal')?.classList.add('active');
+    App.showToast('Offer loaded for inspection');
   }
 
   // ── Active Swaps ──

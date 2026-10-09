@@ -511,16 +511,35 @@ const char MINER_CONFIG_FILE_NAME[] = "miner_conf.json";
 // Fuego Development Fund ( @fuegoxfg ) receives network banking fees on HEAT
 // CDs and general donations
 //
+// ============================================================================
+// !! LAUNCH BLOCKER — MUST BE FIXED BEFORE v11 SHIPS !!
+// ============================================================================
 // TEMPORARY DEVELOPMENT PLACEHOLDER (2026-09): this address+view-key pair is a
 // throwaway dev wallet, not the real production dev fund. It exists so the
 // alias-registration fee's destination check (below) has a real, matching
-// key pair to derive-and-compare against during development. MUST be
-// replaced with the real Fuego Developer Fund address + its view secret key
-// before mainnet launch — the two constants must always come from the same
-// wallet, or every alias registration will fail the fee check.
+// key pair to derive-and-compare against during development.
+//
+// SECURITY (audit R2-4, 2026-10-08): a CryptoNote view secret key decrypts
+// EVERY incoming payment to the address it belongs to. The value below is in
+// the repository and in every release binary built from it. Unlike the vault
+// key finding (R2-1), this one is NOT gated behind an activation height: the
+// alias-fee destination check at Blockchain.cpp reads these constants on every
+// v10+ block that registers an alias, so the secret is live today.
+//
+// Required before v11 launches:
+//   1. Generate a real production dev-fund wallet.
+//   2. Replace BOTH constants below from that same wallet — mismatched pairs
+//      fail the fee check on every alias registration.
+//   3. Get the view secret out of source. The fee check needs it only to derive
+//      the expected stealth address; either inject it at build time or commit
+//      a precomputed expected-key constant and derive nothing from a secret.
+//   4. Never commit the production view secret, on any branch.
+// ============================================================================
 const char FUEGO_DEV_FUND_ADDRESS[] =
     "fire4c3EeknNCLob735kM2VbzF7caWU7WLcyZGD2U9Q3Pjg74tu7CdGK36zXNKrA5kbm1cbQV6"
     "EMD2cQ64c1xnAy9ot19mSowk";
+// !! LAUNCH BLOCKER — see the warning above. This is a live view secret key: !!
+// !! anyone holding it can decrypt payments sent to FUEGO_DEV_FUND_ADDRESS.   !!
 const char FUEGO_DEV_FUND_VIEW_SECRET_KEY_HEX[] =
     "1844735ad5affe443d78d694fe1be33129af4c880b91a0793b20f4680595b90a";
 

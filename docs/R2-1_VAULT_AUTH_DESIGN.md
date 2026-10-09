@@ -1,6 +1,9 @@
 # R2-1 Fix Design: Treasury Vault Authorization
 
-**Status:** PROPOSED — awaiting owner approval before implementation (GATE-1: consensus change)
+**Status:** PROPOSED — **DEFERRED, not urgent.** No HEAT, Hearth, CD, or atomic-swap
+transaction has ever occurred on mainnet, so the vault has never been funded with real value.
+There is nothing to steal today. This must be fixed **before the first such transaction lands**,
+not before the next release.
 **Branch:** `codex/treasury-vault-auth`
 **Finding:** R2-1 in `docs/SECURITY_AUDIT_FINDINGS.md`
 
@@ -49,13 +52,37 @@ interest claim, so this drains depositor yield as well as protocol revenue.
 **Prerequisite:** getting the transaction into a block. Not a free remote steal, but the only
 cryptographic barrier is absent.
 
-### Related finding, same class
+### Related finding — LAUNCH BLOCKER for the dev address
 
-`src/CryptoNoteConfig.h:519` hardcodes `FUEGO_DEV_FUND_VIEW_SECRET_KEY_HEX` — a live view
-secret key in source, self-described as a throwaway that "MUST be replaced before mainnet".
-A view key decrypts incoming funds, so this is not gated behind a future release. Separate from
-the vault issue but should be fixed in the same change: rotate the pair and move the constant
-out of source before mainnet.
+`src/CryptoNoteConfig.h:519` hardcodes `FUEGO_DEV_FUND_VIEW_SECRET_KEY_HEX` — a view secret key
+in source, self-described as a throwaway that "MUST be replaced before mainnet launch".
+
+> **MUST BE FIXED BEFORE v11 LAUNCH.** A CryptoNote view secret key decrypts every incoming
+> payment to the address it belongs to. This one is in the repository, in every release binary
+> built from it, and — unlike R2-1 — is not gated behind any activation height, because the
+> alias-registration fee destination check at `Blockchain.cpp:4794-4831` reads it on every
+> v10+ block that registers an alias.
+
+**Scope of the fix (owner deferred this; recording the requirement only):**
+
+1. Generate a real production dev-fund wallet; the current pair is a throwaway.
+2. Replace `FUEGO_DEV_FUND_ADDRESS` and `FUEGO_DEV_FUND_VIEW_SECRET_KEY_HEX` with the real pair,
+   keeping both constants from the same wallet (mismatched pairs fail the fee check on every
+   alias registration).
+3. Move the view secret out of source entirely — the fee check only needs it to *derive* the
+   expected output key. Either ship it as a build-time secret, or restructure the check to
+   compare against a precomputed expected-key constant instead of deriving from the secret.
+4. Never commit the production view secret, in any branch.
+
+**Why the current code needs the secret at all:** the check derives the stealth address from
+each output's public tx key and compares it to the output key, proving the fee went to the dev
+fund. That derivation needs `devViewSecretKey`. Restructuring it so only a derived *public*
+value is committed removes the secret from the trust boundary entirely — worth considering
+during the fix, but not required to close the exposure.
+
+**Interaction with R2-1:** both are "a secret that should not be in source". They are otherwise
+independent — the dev fund is a normal on-chain account, the vault is synthetic accounting. Fix
+the dev address before v11; fix the vault before the first CD/swap transaction.
 
 ## Why a key rotation alone is insufficient
 
@@ -129,9 +156,11 @@ already does for pre-v11 CD claims ("Pre-v11 blocks keep the ORIGINAL cap — re
 2. **Hard fork acceptable?** Option B requires one. Is a v12 activation already planned?
 3. **Rotate the dev-fund key now?** It is a live secret in source. Rotating changes consensus
    (the alias-fee destination check) and therefore also needs an activation height.
-4. **Is the vault actually funded on mainnet yet?** If no vault output has ever been created
-   with real value, the priority is the dev-fund rotation and the v12 design can be scheduled
-   rather than rushed.
+4. **Is the vault actually funded on mainnet yet?** — **ANSWERED 2026-10-08: no.** No HEAT,
+   Hearth, CD, or atomic-swap transaction has ever occurred on mainnet, so the vault has never
+   held real value. R2-1 is therefore schedulable, not urgent. The v12 authorization design can
+   be built into the activation that first enables these features rather than as a rushed
+   hotfix. The dev address is the one item that must be closed before v11 ships.
 
 ## Files this will touch
 

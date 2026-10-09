@@ -15,6 +15,9 @@ public:
   std::string chainName() const override { return m_chainName; }
   std::string readinessError() override;
   bool isReadyForNewSwap() override { return readinessError().empty(); }
+  uint64_t configuredChainId() const override {
+    return m_rpc ? m_rpc->expectedChainId() : 0;
+  }
   bool supportsPtlc() const override { return false; } // Phase 1: BRIDGE (HTLC on EVM, PTLC on XFG). Native Schnorr via EIP in Phase 4.
   // Pure PTLC (PointTimelock registry model) is available only when a
   // PointTimelock registry address has been wired via setPtlcRegistry().

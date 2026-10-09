@@ -57,6 +57,18 @@ inline bool parseAtomicAmount(const std::string& text, AtomicAmount& amount) {
   return true;
 }
 
+inline bool isValidSwapId(const std::string& swapId) {
+  if (swapId.empty() || swapId.size() > 64) return false;
+  for (const unsigned char c : swapId) {
+    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+        (c >= '0' && c <= '9') || c == '-' || c == '_') {
+      continue;
+    }
+    return false;
+  }
+  return true;
+}
+
 inline bool atomicAmountToUint64(const AtomicAmount& amount, uint64_t& out) {
   if (amount > (std::numeric_limits<uint64_t>::max)()) return false;
   out = amount.convert_to<uint64_t>();

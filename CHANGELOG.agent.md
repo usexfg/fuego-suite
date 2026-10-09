@@ -52,6 +52,52 @@ Every feature/fix requires a task list with sign-off. Agents record name, date, 
 
 ---
 
+## AFK soft-order fail-closed boundary — 2026-10-08
+
+The AFK soft-order path cannot give the taker a unilateral XFG claim and its old
+completion check accepted an attacker-selected adaptor scalar. New soft-order
+execution stays disabled while recovery of existing records remains available.
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Disable new AFK requests, managed soft offers, and AFK lock creation | Codex | 2026-10-08 | DONE |
+| 2 | Bind completed AFK signatures to the stored adaptor secret and maker spend key | Codex | 2026-10-08 | DONE |
+| 3 | Publish the AFK capability in swap daemon status for execution clients | Codex | 2026-10-08 | DONE |
+| 4 | Add attacker-selected completion regression coverage | Codex | 2026-10-08 | DONE |
+
+| Gate | Result | Agent | Date |
+|------|--------|-------|------|
+| Swap daemon and wallet build | PASS | Codex | 2026-10-08 |
+| Production security gates | PASS — 22/22 | Codex | 2026-10-08 |
+| All tasks done | PASS | Codex | 2026-10-08 |
+
+## Live swap price policy integration — 2026-10-08
+
+`PriceWorker` now owns live DeFiLlama and CoinGecko feeds in the daemon, polls
+before service readiness, publishes synchronized snapshots, and stops with the
+daemon. New direct swaps must pass the fresh external reference derived from the
+Hearth XFG/USD price. Managed offers use the same checked rate and fail closed
+when it is unavailable. Completed-trade TWAP remains an additional guard once
+enough trades exist; the stale static-seed gate no longer conflicts with a live
+market quote.
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Construct the worker with both production feeds and wire its lifecycle | Codex | 2026-10-08 | DONE |
+| 2 | Serialize concurrent polls and lock all worker state reads | Codex | 2026-10-08 | DONE |
+| 3 | Gate direct initiation and acceptance on fresh pair quotes and amount guard | Codex | 2026-10-08 | DONE |
+| 4 | Price managed offers from policy-approved snapshots | Codex | 2026-10-08 | DONE |
+| 5 | Accept `XFG_SWAPD_RPC_TOKEN` without exposing the token in process arguments | Codex | 2026-10-08 | DONE |
+
+| Gate | Result | Agent | Date |
+|------|--------|-------|------|
+| `xfg-swapd` builds | PASS | Codex | 2026-10-08 |
+| Price worker tests | PASS — 36 checks | Codex | 2026-10-08 |
+| Price policy tests | PASS — 423 checks | Codex | 2026-10-08 |
+| All tasks done | PASS | Codex | 2026-10-08 |
+
+---
+
 ## Phase 2h: full CMake build verified, and the swap test suite wired to ctest
 
 **Date**: 2026-10-04
@@ -3815,3 +3861,113 @@ git — is dead weight: the build reads only the six curated files in
 `static/fonts/`. Left as-is because the folder was added deliberately and
 untracking it is the owner's call, not mine. Recommend either dropping it from
 the index (history keeps it either way) or relocating it outside the repo.
+## Feature: Swap UI execution boundaries and runtime chain readiness — 2026-10-08
+
+The browser dashboard is a read-only monitoring and quote surface. DeXFG and
+the terminal UI are the execution clients for cross-chain swaps. Execution
+clients must consume `xfg-swapd`'s runtime chain catalog, reject network
+mismatches and unready adapters, preserve atomic amounts as decimal strings,
+and require a verified counterparty swap key before initiation.
+
+### Task List
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Remove all wallet and swap-daemon mutation routes and controls from the dashboard | Codex | 2026-10-08 | DONE |
+| 2 | Add runtime chain catalog, network/readiness gates, exact atomic amounts, initiation, status, accept, and refund to the TUI | Codex | 2026-10-08 | DONE |
+| 3 | Apply the same daemon contract and execution gates to DeXFG | Codex | 2026-10-08 | DONE |
+| 4 | Add regression tests for read-only dashboard and executable-client validation | Codex | 2026-10-08 | DONE |
+| 5 | Run dashboard, TUI, and DeXFG focused builds and tests | Codex | 2026-10-08 | DONE |
+| 6 | Run independent swap/security verification and resolve blocking findings | Codex | 2026-10-08 | DONE — three audit artifacts reviewed; AFK execution disabled after final adversarial pass |
+
+### Sign-off
+
+| Check | Status |
+|-------|--------|
+| Dashboard build compiles | PASS |
+| Dashboard tests pass | PASS — Go + 10 Node checks |
+| TUI build compiles | PASS |
+| TUI tests pass | PASS |
+| DeXFG analysis/tests pass | PASS — focused tests; analyzer has informational lints only |
+| Independent verification | PASS — dashboard, TUI, and swap contract audit findings resolved |
+| All tasks done | PASS |
+
+### Strategic checkpoint — implementation batch to DeXFG
+
+Objective and done condition: keep the browser dashboard read-only; make the
+TUI and DeXFG execute swaps only through a matching, ready `xfg-swapd`; retain
+decimal-string amounts, explicit confirmations, and safe lifecycle controls;
+finish focused builds/tests and an independent security review.
+
+User constraints and authorization boundaries: no file deletion, commit, push,
+or deployment without explicit permission. Preserve unrelated dirty work. Do
+not claim funded or live-chain coverage from local tests.
+
+Source revision, branch and local changes: branch
+`merge/keyderiv-owner-bound-final`, base `74dd62de1`; all work is uncommitted.
+`external/secp256k1`, `src/SwapDaemon/OfferManager.h`, and
+`src/SwapDaemon/SwapDaemon.h` had unrelated changes before this batch and must
+not be overwritten or stashed.
+
+Completed outcomes with verification:
+
+- Dashboard mutation routes and controls removed; `/api/swapd` is a GET-only
+  status proxy. `go test ./...` passes and Node reports 10/10 checks.
+- TUI uses runtime `list_chains`, exact decimal-string amounts, network/profile
+  and readiness gates, counterparty key binding, initiation/status/accept/refund,
+  wallet sync gating, owner-only password files, and quoted Hearth confirmation.
+  `go test ./...` passes; `go build -mod=vendor -o /private/tmp/fuego_suite_tui .`
+  passes.
+- Swap RPC validates IDs, blocks database path traversal, emits public status
+  records without persistence secrets, preserves exact XFG amounts, reports
+  network/profile, and reports configured EVM chain IDs.
+- `cmake --build build/release --target PaymentGateService SwapDaemon
+  test_swap_state_machine_spv test_price_policy -j4` passes. The swap-state/SPV
+  binary reports 18/18 and price policy reports 423 checks with zero failures.
+- The macOS resolver-macro collision was removed by renaming the price status
+  enum value from `NO_DATA` to `MISSING_DATA`.
+
+Outstanding work and known failures: DeXFG still needs the same runtime
+catalog, testnet launch, token handling, exact amounts, peer-key/role fields,
+and full lifecycle actions. Dashboard release assets may still contain an older
+executable bundle until the release binary/static tree is rebuilt and checked.
+No funded cross-chain test has run.
+
+Running process/tool identifiers: none.
+
+Artifacts and exact paths needed next:
+
+- `/private/tmp/fuego-tui-audit-20261008.jsonl`
+- `/private/tmp/fuego-swapd-ui-contract-20261008.jsonl`
+- `/private/tmp/fuego-dashboard-readonly-audit-20261008.jsonl`
+- `/Users/aejt/DEXFG/fuego-flutter-wallet`
+
+Next action, expected result and fallback: inspect the DeXFG dirty tree and
+current swap service, then apply its runtime contract and tests without touching
+unrelated changes. If that checkout is not writable, stage an exact patch under
+`/private/tmp` and request the narrow filesystem approval needed to apply it.
+
+---
+
+## Security fix: stop TUI swap RPC redirects — 2026-10-08
+
+The token-authenticated loopback client now returns redirect responses without
+following them. This prevents the custom `X-Swap-Token` header from being
+forwarded to a redirect target. A regression test verifies that a mutation
+redirect is reported as an unknown outcome and the target receives no request.
+The same test run exposed that the TUI's node-status model omitted the daemon's
+`network` field, so the new network-mismatch gate did not compile; the model now
+decodes the field returned by `/getinfo`.
+
+| Task | Owner | Date | Status |
+|------|-------|------|--------|
+| Disable automatic redirects for swap control RPC | Codex | 2026-10-08 | DONE |
+| Cover redirect refusal and mutation uncertainty | Codex | 2026-10-08 | DONE |
+| Decode node network identity used by the network gate | Codex | 2026-10-08 | DONE |
+
+| Gate | Result |
+|------|--------|
+| TUI tests | IN PROGRESS |
+| All tasks done | NO |
+
+---

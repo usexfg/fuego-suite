@@ -238,14 +238,14 @@ int main() {
           "absent confidence is not penalised");
 
     FeedResult negative = makeFeed("defillama", "BTC", -1.0, now - 5, now - 2, 0.99, true);
-    check(evaluateAsset(*btc, negative, nullptr, pol, now, out) == QuoteStatus::NO_DATA,
-          "negative price is NO_DATA");
+    check(evaluateAsset(*btc, negative, nullptr, pol, now, out) == QuoteStatus::MISSING_DATA,
+          "negative price is MISSING_DATA");
 
     FeedResult missing;
     missing.feedName = "defillama";
     missing.transportOk = true;
-    check(evaluateAsset(*btc, missing, nullptr, pol, now, out) == QuoteStatus::NO_DATA,
-          "asset absent from a reachable feed is NO_DATA");
+    check(evaluateAsset(*btc, missing, nullptr, pol, now, out) == QuoteStatus::MISSING_DATA,
+          "asset absent from a reachable feed is MISSING_DATA");
 
     const AssetDescriptor* gleec = assetForSymbol("GLEEC");
     check(evaluateAsset(*gleec, fresh, nullptr, pol, now, out) == QuoteStatus::UNPRICED,
@@ -289,7 +289,7 @@ int main() {
           "ARB pair prices off ETH, not the ARB governance token");
 
     PairQuote noHearth = buildPairQuote(1, primary, &secondary, 0.0, pol, now);
-    check(noHearth.status == QuoteStatus::NO_DATA, "missing Hearth price blocks the quote");
+    check(noHearth.status == QuoteStatus::MISSING_DATA, "missing Hearth price blocks the quote");
     check(!noHearth.managedOffersAllowed && !noHearth.newSwapAllowed, "missing Hearth price blocks funding");
 
     FeedResult sia = makeFeed("defillama", "SC", 0.00101, now - 5, now - 2, 0.99, true);
@@ -343,7 +343,7 @@ int main() {
     dead.transportOk = false;
     dead.transportReason = "tls handshake failed";
     PairQuote deadQ = buildPairQuote(1, dead, nullptr, 0.158, pol, now);
-    check(deadQ.status == QuoteStatus::NO_DATA && deadQ.reason == "tls handshake failed",
+    check(deadQ.status == QuoteStatus::MISSING_DATA && deadQ.reason == "tls handshake failed",
           "transport failure surfaces its reason and blocks funding");
   }
 
@@ -385,16 +385,16 @@ int main() {
       PricePolicy invalidFloor = pol;
       invalidFloor.minConfidence = threshold;
       checkBlockedQuote(buildPairQuote(1, primary, &secondary, 0.158, invalidFloor, now),
-                        QuoteStatus::NO_DATA, "invalid confidence floor");
+                        QuoteStatus::MISSING_DATA, "invalid confidence floor");
       PricePolicy invalidTolerance = pol;
       invalidTolerance.crossCheckTolerance = threshold;
       checkBlockedQuote(buildPairQuote(1, primary, &secondary, 0.158, invalidTolerance, now),
-                        QuoteStatus::NO_DATA, "invalid cross-check tolerance");
+                        QuoteStatus::MISSING_DATA, "invalid cross-check tolerance");
     }
     PricePolicy disabledCrossCheck = pol;
     disabledCrossCheck.crossCheckTolerance = 1.0;
     checkBlockedQuote(buildPairQuote(1, primary, &secondary, 0.158, disabledCrossCheck, now),
-                      QuoteStatus::NO_DATA, "tolerance one cannot disable corroboration checks");
+                      QuoteStatus::MISSING_DATA, "tolerance one cannot disable corroboration checks");
     PricePolicy exactCrossCheck = pol;
     exactCrossCheck.crossCheckTolerance = 0.0;
     check(buildPairQuote(1, primary, &primary, 0.158, exactCrossCheck, now).status == QuoteStatus::OK,
@@ -406,9 +406,9 @@ int main() {
     failedPrimary.transportOk = false;
     failedPrimary.transportReason = "fetch failed after a previous valid response";
     checkBlockedQuote(buildPairQuote(1, failedPrimary, &secondary, 0.158, pol, now),
-                      QuoteStatus::NO_DATA, "failed primary with usable asset data");
+                      QuoteStatus::MISSING_DATA, "failed primary with usable asset data");
     AssetPrice reused = primary.assets.at("ETH");
-    check(evaluateAsset(*assetForSymbol("ETH"), failedPrimary, &secondary, pol, now, reused) == QuoteStatus::NO_DATA &&
+    check(evaluateAsset(*assetForSymbol("ETH"), failedPrimary, &secondary, pol, now, reused) == QuoteStatus::MISSING_DATA &&
           !reused.ok && reused.observation.price == 0.0,
           "failed evaluation clears the caller's prior observation");
 
@@ -432,17 +432,17 @@ int main() {
     const int64_t invalidClock[] = {0, -1, std::numeric_limits<int64_t>::min()};
     for (int64_t clock : invalidClock) {
       checkBlockedQuote(buildPairQuote(1, primary, &secondary, 0.158, pol, clock),
-                        QuoteStatus::NO_DATA, "non-positive current clock");
+                        QuoteStatus::MISSING_DATA, "non-positive current clock");
     }
     for (int64_t timestamp : invalidClock) {
       FeedResult missingTime = primary;
       missingTime.assets["ETH"].observation.providerTimestamp = timestamp;
       checkBlockedQuote(buildPairQuote(1, missingTime, &secondary, 0.158, pol, now),
-                        QuoteStatus::NO_DATA, "non-positive provider timestamp");
+                        QuoteStatus::MISSING_DATA, "non-positive provider timestamp");
       missingTime = primary;
       missingTime.assets["ETH"].observation.fetchTimestamp = timestamp;
       checkBlockedQuote(buildPairQuote(1, missingTime, &secondary, 0.158, pol, now),
-                        QuoteStatus::NO_DATA, "non-positive receipt timestamp");
+                        QuoteStatus::MISSING_DATA, "non-positive receipt timestamp");
     }
     FeedResult futureReceipt = primary;
     futureReceipt.assets["ETH"].observation.fetchTimestamp = std::numeric_limits<int64_t>::max();
@@ -497,11 +497,11 @@ int main() {
     for (int64_t limit : {-1LL, std::numeric_limits<int64_t>::min()}) {
       PricePolicy invalidAge = pol;
       invalidAge.maxProviderAgeSec = limit;
-      check(validateObservation(observation, invalidAge, now, reason) == QuoteStatus::NO_DATA,
+      check(validateObservation(observation, invalidAge, now, reason) == QuoteStatus::MISSING_DATA,
             "negative provider age limit fails closed");
       PricePolicy invalidSkew = pol;
       invalidSkew.maxClockSkewSec = limit;
-      check(validateObservation(observation, invalidSkew, now, reason) == QuoteStatus::NO_DATA,
+      check(validateObservation(observation, invalidSkew, now, reason) == QuoteStatus::MISSING_DATA,
             "negative skew limit fails closed");
     }
     PricePolicy exactClock = pol;

@@ -22,6 +22,7 @@ public:
   // Optional explanation surfaced by the daemon catalog. Subclasses with a
   // preflight (notably generic EVM) override this without changing recovery.
   virtual std::string readinessError() { return ""; }
+  virtual uint64_t configuredChainId() const { return 0; }
 
   // Derived from the live client mode when creating a swap, then persisted
   // with the swap so confirmation policy survives daemon restarts.

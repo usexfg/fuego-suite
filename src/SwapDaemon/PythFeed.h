@@ -37,7 +37,7 @@ PythWanted pythWanted();
 
 // Decode one JSON-RPC batch response. Pure: no clock, no I/O.
 // A feed is only reported ok when its on-chain publishTime is inside the policy window,
-// so a contract that has stopped being written to yields NO_DATA rather than a
+// so a contract that has stopped being written to yields MISSING_DATA rather than a
 // months-old price. An error entry (for example "execution reverted", which is what an
 // id that was never published on that contract returns) is surfaced per asset.
 FeedResult parsePythBatch(const std::string& body,

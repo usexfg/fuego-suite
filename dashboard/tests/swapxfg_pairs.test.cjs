@@ -7,6 +7,7 @@ const vm = require('node:vm');
 const repo = path.resolve(__dirname, '../..');
 const catalogSource = fs.readFileSync(path.join(repo, 'src/SwapDaemon/SwapPairCatalog.h'), 'utf8');
 const dashboardSource = fs.readFileSync(path.join(repo, 'dashboard/static/js/swapxfg.js'), 'utf8');
+const dashboardHtml = fs.readFileSync(path.join(repo, 'dashboard/static/swapxfg.html'), 'utf8');
 const catalog = [...catalogSource.matchAll(/^\s*X\(([A-Z][A-Z0-9_]*),\s*(\d+),/gm)]
   .map(([, symbol, id]) => ({ symbol, id: Number(id) }));
 
@@ -29,7 +30,7 @@ function createDashboard() {
     }
   };
   const source = dashboardSource.replace('return { init };',
-    'return { applyChainCatalog, pairKeyFromIndex, collectInitiationRequest, normalizeOffer, formatAtomicUnits };');
+    'return { applyChainCatalog, pairKeyFromIndex, normalizeOffer, formatAtomicUnits };');
   const context = vm.createContext({ document, App: { COIN: 10000000 } });
   vm.runInContext(`${source}\nthis.dashboard = SwapXFG;`, context);
   return { dashboard: context.dashboard, select, document };
@@ -63,30 +64,18 @@ test('unready pairs are disabled in the swap selector', () => {
   }
 });
 
-test('EVM counterparty amounts remain exact beyond uint64 and require a bound peer key', () => {
-  const { dashboard, select, document } = createDashboard();
-  dashboard.applyChainCatalog([
-    { id: 1, symbol: 'ETH', name: 'Ethereum', family: 'evm', decimals: 18,
-      protocol: true, ready: true, assetTicker: 'ETH' },
-    { id: 9, symbol: 'BTC', name: 'Bitcoin', family: 'utxo', decimals: 8,
-      protocol: true, ready: true, assetTicker: 'BTC' }
-  ]);
-  select.value = 'ETH';
-  document.getElementById('bridge-amount').value = '1.0000001';
-  document.getElementById('ctr-amount').value = '18446744073709551616';
-  document.getElementById('peer-endpoint').value = '127.0.0.1:18901';
-  document.getElementById('peer-pubkey').value = 'a'.repeat(64);
-  const request = dashboard.collectInitiationRequest();
-  assert.equal(request.xfgAtomic.toString(), '10000001');
-  assert.equal(request.ctrAtomic.toString(), '18446744073709551616');
-  assert.equal(request.role, 'bob');
-  assert.equal(dashboard.formatAtomicUnits(request.ctrAtomic, 18), '18.446744073709551616');
-
-  select.value = 'BTC';
-  assert.throws(() => dashboard.collectInitiationRequest(), /supported atomic-unit range/);
-  select.value = 'ETH';
-  document.getElementById('peer-pubkey').value = '';
-  assert.throws(() => dashboard.collectInitiationRequest(), /public key is required/);
+test('dashboard preserves uint256 display precision without an execution surface', () => {
+  const { dashboard } = createDashboard();
+  assert.equal(
+    dashboard.formatAtomicUnits(18446744073709551616n, 18),
+    '18.446744073709551616'
+  );
+  for (const forbidden of ['App.swapRpc', 'initiate_swap', 'collectInitiationRequest']) {
+    assert.equal(dashboardSource.includes(forbidden), false, forbidden);
+  }
+  for (const forbidden of ['bridge-init-btn', 'peer-endpoint', 'peer-pubkey', 'init-exec-btn']) {
+    assert.equal(dashboardHtml.includes(forbidden), false, forbidden);
+  }
 });
 
 test('offer status prefers exact decimal strings over unsafe JSON numbers', () => {

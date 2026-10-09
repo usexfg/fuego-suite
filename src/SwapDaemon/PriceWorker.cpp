@@ -36,6 +36,7 @@ bool PriceWorker::secondaryDue(int64_t now) const {
 }
 
 bool PriceWorker::pollOnce(int64_t now) {
+  std::lock_guard<std::mutex> pollLock(m_pollMutex);
   // Each source is fetched AT MOST ONCE per cycle. Fetching twice would double the
   // CoinGecko request rate against a 3/minute keyless ceiling.
   bool fetchedPrimary = false;
@@ -105,6 +106,21 @@ bool PriceWorker::snapshot(PriceSnapshot& out) const {
   if (!m_latest) return false;
   out = *m_latest;
   return true;
+}
+
+size_t PriceWorker::historySize() const {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  return m_history.size();
+}
+
+uint32_t PriceWorker::consecutiveSecondaryFailures() const {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  return m_secondaryFailures;
+}
+
+uint64_t PriceWorker::cycles() const {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  return m_cycles;
 }
 
 void PriceWorker::start() {

@@ -69,6 +69,7 @@ void printUsage() {
     "  --status-port <port>    Status endpoint for monitoring (default: 18900)\n"
     "  --rpc-port <port>       JSON-RPC server for wallet integration (default: 18902)\n"
     "  --rpc-token <token>     Require X-Swap-Token header on all JSON-RPC calls\n"
+    "                           (or set XFG_SWAPD_RPC_TOKEN)\n"
     "  --swap-p2p-port <port>  Swap peer protocol listen port (default: 18901, 0=off)\n"
     "  --swap-p2p-bind <addr>  P2P bind address (default: 127.0.0.1)\n"
     "  --public-endpoint <h:p> Publicly reachable swap endpoint advertised to takers\n"
@@ -360,6 +361,11 @@ int main(int argc, char* argv[]) {
     ++argIdx;
   }
 
+  if (rpcToken.empty()) {
+    const char* envToken = std::getenv("XFG_SWAPD_RPC_TOKEN");
+    if (envToken != nullptr) rpcToken = envToken;
+  }
+
   // Set up logging
   Logging::ConsoleLogger consoleLogger(Logging::INFO);
   Logging::LoggerRef logger(consoleLogger, "xfg-swapd");
@@ -369,6 +375,7 @@ int main(int argc, char* argv[]) {
   }
 
   // Create swap daemon (with optional chain client config)
+  const std::string expectedNetwork = testnet ? "testnet" : "mainnet";
   XfgSwap::SwapDaemon daemon = [&]() -> XfgSwap::SwapDaemon {
     if (!swapConfigPath.empty()) {
       XfgSwap::ChainClientConfig chainCfg;
@@ -377,10 +384,17 @@ int main(int argc, char* argv[]) {
         std::cerr << "Error loading swap config: " << errMsg << std::endl;
         std::exit(1);
       }
+      if (chainCfg.network != expectedNetwork) {
+        std::cerr << "Error: swap config network " << chainCfg.network
+                  << " does not match selected " << expectedNetwork << std::endl;
+        std::exit(1);
+      }
       logger(Logging::INFO) << "Loaded chain client config from " << swapConfigPath;
-      return XfgSwap::SwapDaemon(host, port, dataDir, consoleLogger, chainCfg);
+      return XfgSwap::SwapDaemon(host, port, dataDir, consoleLogger, chainCfg,
+                                 expectedNetwork, expectedNetwork);
     }
-    return XfgSwap::SwapDaemon(host, port, dataDir, consoleLogger);
+    return XfgSwap::SwapDaemon(host, port, dataDir, consoleLogger,
+                               expectedNetwork, expectedNetwork);
   }();
 
   // Load maker wallet key for signing managed offers

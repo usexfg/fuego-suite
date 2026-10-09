@@ -28,7 +28,7 @@ const char* quoteStatusToString(QuoteStatus s) {
   switch (s) {
     case QuoteStatus::OK:             return "ok";
     case QuoteStatus::UNPRICED:       return "unpriced";
-    case QuoteStatus::NO_DATA:        return "no-data";
+    case QuoteStatus::MISSING_DATA:   return "no-data";
     case QuoteStatus::STALE:          return "stale";
     case QuoteStatus::LOW_CONFIDENCE: return "low-confidence";
     case QuoteStatus::DISPUTED:       return "disputed";
@@ -114,20 +114,20 @@ QuoteStatus validateObservation(const PriceObservation& o,
                                 const PricePolicy& p,
                                 int64_t now,
                                 std::string& reason) {
-  if (!validatePolicyLimits(p, reason)) return QuoteStatus::NO_DATA;
+  if (!validatePolicyLimits(p, reason)) return QuoteStatus::MISSING_DATA;
   if (now <= 0) {
     reason = "current time is not positive";
-    return QuoteStatus::NO_DATA;
+    return QuoteStatus::MISSING_DATA;
   }
-  if (!finitePositive(o.price)) { reason = "price not finite or not positive"; return QuoteStatus::NO_DATA; }
+  if (!finitePositive(o.price)) { reason = "price not finite or not positive"; return QuoteStatus::MISSING_DATA; }
 
   if (o.providerTimestamp <= 0) {
     reason = "provider timestamp missing";
-    return QuoteStatus::NO_DATA;
+    return QuoteStatus::MISSING_DATA;
   }
   if (o.fetchTimestamp <= 0) {
     reason = "fetch timestamp missing";
-    return QuoteStatus::NO_DATA;
+    return QuoteStatus::MISSING_DATA;
   }
   if (o.providerTimestamp < now && now - o.providerTimestamp > p.maxProviderAgeSec) {
     reason = "provider stamp older than maxProviderAgeSec";
@@ -178,17 +178,17 @@ QuoteStatus evaluateAsset(const AssetDescriptor& asset,
   if (!primary.transportOk) {
     outObservation.reason = primary.transportReason.empty() ? "primary feed transport failed"
                                                           : primary.transportReason;
-    return QuoteStatus::NO_DATA;
+    return QuoteStatus::MISSING_DATA;
   }
 
   auto pit = primary.assets.find(asset.symbol);
   if (pit == primary.assets.end()) {
     outObservation.reason = "asset absent from feed response";
-    return QuoteStatus::NO_DATA;
+    return QuoteStatus::MISSING_DATA;
   }
   if (!pit->second.ok) {
     outObservation.reason = pit->second.reason.empty() ? "asset rejected by feed" : pit->second.reason;
-    return QuoteStatus::NO_DATA;
+    return QuoteStatus::MISSING_DATA;
   }
 
   QuoteStatus st = validateObservation(pit->second.observation, policy, now, outObservation.reason);
@@ -266,7 +266,7 @@ PairQuote buildPairQuote(uint8_t pair,
   }
   switch (q.status) {
     case QuoteStatus::UNPRICED:     q.reason = "no feed id serves this asset"; break;
-    case QuoteStatus::NO_DATA: break;
+    case QuoteStatus::MISSING_DATA: break;
     case QuoteStatus::STALE:
     case QuoteStatus::LOW_CONFIDENCE:
     case QuoteStatus::DISPUTED:
@@ -293,7 +293,7 @@ PairQuote buildPairQuote(uint8_t pair,
   q.confidence = obs.observation.confidence;
 
   if (!finitePositive(xfgUsd)) {
-    q.status = QuoteStatus::NO_DATA;
+    q.status = QuoteStatus::MISSING_DATA;
     q.reason = "XFG/USD from Hearth unavailable or invalid";
     q.counterpartyUsdOk = false;
     q.managedOffersAllowed = false;
@@ -305,7 +305,7 @@ PairQuote buildPairQuote(uint8_t pair,
 
   RateResult rr = computeReferenceRate(q.counterpartyUsd, q.xfgUsd);
   if (!rr.ok) {
-    q.status = QuoteStatus::NO_DATA;
+    q.status = QuoteStatus::MISSING_DATA;
     q.reason = rr.reason;
     q.managedOffersAllowed = false;
     q.newSwapAllowed = false;

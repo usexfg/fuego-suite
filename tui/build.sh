@@ -1,18 +1,13 @@
 #!/bin/bash
 
 # Build script for Fuego TUI
-set -e
+set -euo pipefail
 
 echo "Building Fuego TUI..."
 cd "$(dirname "$0")"
 
-# Tidy dependencies
-echo "Tidying dependencies..."
-go mod tidy
-
-# Build the Bubble Tea version
 echo "Building Bubble Tea version..."
-go build -o fuego_suite main.go config.go
+go build -mod=vendor -o fuego_suite .
 
 echo "Build successful!"
 echo "TUI binary: $(pwd)/fuego_suite"

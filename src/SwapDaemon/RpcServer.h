@@ -32,6 +32,7 @@ class SwapDaemon;
 // Binds to 127.0.0.1 and exposes swap management methods.
 //
 // Methods:
+//   status          {}                                     → daemon network/profile/readiness status
 //   initiate_swap  {pair, xfg_amount, ctr_amount, peer, [role], [expected_peer_pubkey],
 //                   [our_swap_secret_key], [swap_id], [afk]}
 //                  → {swap_id, our_swap_pubkey}
@@ -42,6 +43,7 @@ class SwapDaemon;
 //   check_timeouts {}                                     → {processed, refunded: [...]}
 //   list_chains    {}                                     → {chains: [...]} catalog + readiness
 class RpcServer {
+  friend struct RpcServerTestAccess;
 public:
   // controlToken: when non-empty, every POST requires header
   // X-Swap-Token: <token> (or Authorization: Bearer <token>).

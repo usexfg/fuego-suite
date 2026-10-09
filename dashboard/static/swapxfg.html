@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DeXFG — Ordergraph &amp; Atomic Swaps</title>
+  <title>DeXFG — Read-only Swap Monitor</title>
   <link rel="stylesheet" href="/css/style.css">
   <script>
     // Resolve the register before first paint so the surface never flashes
@@ -88,8 +88,8 @@
   <div class="dexfg-page" id="main">
     <header class="dexfg-header">
       <h1>DeXFG — Cross-Maison Transfer</h1>
-      <p class="dexfg-lede">The ordergraph of discreet transfers. Adaptor signatures settle the exchange
-        without the counterparty learning anything further.</p>
+      <p class="dexfg-lede">Read-only chain readiness, offers, rates, and active-swap status. Start and
+        manage swaps in DeXFG Wallet or the Fuego terminal UI.</p>
     </header>
 
     <!-- 1. ORDERGRAPH (Cross-Chain Plot) -->
@@ -156,12 +156,12 @@
       </div>
     </section>
 
-    <!-- 2. SWAP AMOUNT FORM & COUNTERPARTY -->
+    <!-- 2. OFFER INSPECTOR -->
     <section class="dexfg-form-row">
       <div class="bridge-card grow-wide">
         <div class="card-header rule-head">
-          <span class="section-title">Transfer Console</span>
-          <span class="caps">Adaptor Signatures</span>
+          <span class="section-title">Offer Inspector</span>
+          <span class="caps">Read Only</span>
         </div>
 
         <div class="bridge-input-group" id="from-group" class="mt-md">
@@ -177,14 +177,10 @@
                 id="xfg-balance">—</div>
             </div>
           </div>
-          <input type="text" class="bridge-amount-input" id="bridge-amount" placeholder="0.00" inputmode="decimal">
+          <input type="text" class="bridge-amount-input" id="bridge-amount" placeholder="Select an offer" inputmode="decimal" readonly>
           <div class="bridge-balance">
             <span id="bridge-available">Available: —</span>
           </div>
-        </div>
-
-        <div class="bridge-swap-icon">
-          <button type="button" class="bridge-swap-btn" id="bridge-swap-dir" title="Switch direction" aria-label="Reverse transfer direction">↓</button>
         </div>
 
         <div class="bridge-input-group" id="to-group">
@@ -205,36 +201,24 @@
           <div class="bridge-balance">Exact counterparty amount</div>
         </div>
 
-        <div class="bridge-rate" id="bridge-rate">Select an amount to see the rate</div>
-        <div class="bridge-fee">Exact amounts come from the selected offer or your counterparty agreement; network fees are not estimated here.</div>
-
-        <button type="button" class="btn btn-block btn-firegold" id="bridge-init-btn">
-          Review / Initiate Swap
-        </button>
+        <div class="bridge-rate" id="bridge-rate">Select an offer to inspect its rate</div>
+        <div class="bridge-fee">This dashboard cannot start, accept, or refund a swap.</div>
       </div>
 
       <div class="card grow-narrow">
         <div class="card-header">
-          <span>Counterparty</span>
+          <span>Runtime Readiness</span>
         </div>
         <div class="card-body">
           <div class="form-group">
             <label class="form-label">Counterparty amount (atomic units)</label>
-            <input type="text" class="form-input" id="ctr-amount" inputmode="numeric" placeholder="Exact amount locked on the counterparty chain">
-          </div>
-          <div class="form-group">
-            <label class="form-label">Peer swap endpoint</label>
-            <input type="text" class="form-input" id="peer-endpoint" placeholder="host:18901">
-          </div>
-          <div class="form-group">
-            <label class="form-label">Verified peer public key (required)</label>
-            <input type="text" class="form-input" id="peer-pubkey" placeholder="Ed25519 public key of your swap partner">
+            <input type="text" class="form-input" id="ctr-amount" inputmode="numeric" placeholder="Select an offer" readonly>
           </div>
           <div style="font-size:12px;color:var(--text-muted);">
-            New swaps require a locally ready chain adapter. A selected offer fills
-            the amounts, but the peer endpoint still comes from the maker.
+            Chain availability comes directly from the local xfg-swapd catalog.
+            A ready status is a local preflight result, not proof of funded end-to-end testing.
           </div>
-          <p class="dexfg-note">Selecting an offer prefills amounts; its maker endpoint is still required.</p>
+          <p class="dexfg-note">Use DeXFG Wallet or the terminal UI for execution.</p>
           <div id="selected-offer-summary" class="selected-offer-summary" hidden></div>
         </div>
       </div>
@@ -252,7 +236,7 @@
         <div id="orderbook-list"></div>
         <div id="orderbook-empty" class="empty-state">
           <span class="empty-state-icon" aria-hidden="true">☰</span>
-          <span class="empty-state-text">No open orders. Post above, or await a peer.</span>
+          <span class="empty-state-text">No open offers reported by xfg-swapd.</span>
         </div>
       </div>
     </section>
@@ -311,50 +295,6 @@
             <div class="metric"><span class="metric-label">Anchor Chain</span><span class="metric-value"
                 id="spv-chain">—</span></div>
           </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Swap Modal -->
-  <div class="modal-overlay" id="init-modal">
-    <div class="modal">
-      <div class="modal-header">
-        <span>Review Transfer — DeXFG</span>
-        <button type="button" class="modal-close" id="init-modal-close">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div id="init-modal-details" class="mb-lg"></div>
-        <div class="progress-steps" id="init-progress" class="mb-lg">
-          <div class="step active">
-            <div class="step-dot">1</div>
-            <div class="step-label">Init</div>
-          </div>
-          <div class="step-line"></div>
-          <div class="step">
-            <div class="step-dot">2</div>
-            <div class="step-label">Escrow</div>
-          </div>
-          <div class="step-line"></div>
-          <div class="step">
-            <div class="step-dot">3</div>
-            <div class="step-label">Lock CTR</div>
-          </div>
-          <div class="step-line"></div>
-          <div class="step">
-            <div class="step-dot">4</div>
-            <div class="step-label">Claim</div>
-          </div>
-          <div class="step-line"></div>
-          <div class="step">
-            <div class="step-dot">5</div>
-            <div class="step-label">Done</div>
-          </div>
-        </div>
-        <div class="code-block mb-md" id="init-cli-cmd" hidden></div>
-        <div class="row gap-md">
-          <button type="button" class="btn btn-firegold flex-1" id="init-exec-btn">Execute via xfg-swapd</button>
-          <button type="button" class="btn btn-secondary flex-1" id="init-copy-btn">Copy CLI command</button>
         </div>
       </div>
     </div>

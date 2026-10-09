@@ -217,12 +217,12 @@
                 <div class="hint">0 means no expiry</div>
               </div>
 
-              <button type="button" class="btn btn-block btn-firegold" id="order-preview-btn">Review</button>
+              <button type="button" class="btn btn-block btn-firegold" id="order-preview-btn">Inspect Quote</button>
             </div>
 
             <div class="order-fee-notice">
               <span>Salon fee 1% · 70% CD yield · 30% house rebate</span>
-              <span id="order-estimate-sub">Live quote shown before submission</span>
+              <span id="order-estimate-sub">Read-only quote; execution is available in DeXFG Wallet and the terminal UI</span>
             </div>
           </div>
         </div>
@@ -246,16 +246,12 @@
   <div class="modal-overlay" id="order-modal">
     <div class="modal">
       <div class="modal-header">
-        <span>Review — Hearth</span>
+        <span>Quote — Hearth</span>
         <button type="button" class="modal-close" id="order-modal-close" aria-label="Close">&times;</button>
       </div>
       <div class="modal-body">
         <div id="order-modal-details" class="mb-md"></div>
-        <div class="row gap-md mb-sm">
-          <button type="button" class="btn btn-firegold flex-1" id="order-exec-btn">Commit via Vault</button>
-          <button type="button" class="btn btn-secondary flex-1" id="order-copy-btn">Copy Wallet RPC</button>
-        </div>
-        <div class="code-block" id="order-cli-cmd" hidden></div>
+        <p class="rf-note">Read-only dashboard. No wallet or swap-daemon control route is exposed.</p>
       </div>
     </div>
   </div>

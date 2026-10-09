@@ -158,7 +158,6 @@ const Hearth = (() => {
   let currentTf = '1h';
   let orderSide = 0;   // 0=buy, 1=sell
   let orderType = 'limit'; // limit, market (market uses AMM under the hood)
-  let pendingOrder = null;
   let indicators = { sma20: true, ema12: false, vol: true };
   let activeDrawTool = null;
   let currentSpotPrice = null;
@@ -354,7 +353,6 @@ const Hearth = (() => {
           document.querySelector('.type-chip[data-type="limit"]')?.click();
           document.getElementById('order-price').value = row.dataset.price;
           document.getElementById('order-amount').value = row.dataset.amount;
-          pendingOrder = null;
           updateOrderEstimate();
           App.showToast(`Prefilled ${row.dataset.amount} ${side === 0 ? 'HEAT' : 'XFG'} at ${row.dataset.price} HEAT/XFG`);
         });
@@ -463,33 +461,23 @@ const Hearth = (() => {
         }
         const amount = BigInt(userWalletBalance) * BigInt(percent) / 100n;
         document.getElementById('order-amount').value = HearthOrder.formatAtomic(amount);
-        pendingOrder = null;
         updateOrderEstimate();
       });
     });
 
     const amtInput = document.getElementById('order-amount');
     const priceInput = document.getElementById('order-price');
-    if (amtInput) amtInput.addEventListener('input', () => { pendingOrder = null; updateOrderEstimate(); });
-    if (priceInput) priceInput.addEventListener('input', () => { pendingOrder = null; updateOrderEstimate(); });
+    if (amtInput) amtInput.addEventListener('input', updateOrderEstimate);
+    if (priceInput) priceInput.addEventListener('input', updateOrderEstimate);
     const expiryInput = document.getElementById('order-expiry');
-    if (expiryInput) expiryInput.addEventListener('input', () => { pendingOrder = null; updateOrderEstimate(); });
+    if (expiryInput) expiryInput.addEventListener('input', updateOrderEstimate);
 
     const previewBtn = document.getElementById('order-preview-btn');
     if (previewBtn) previewBtn.addEventListener('click', showOrderPreview);
 
     const closeBtn = document.getElementById('order-modal-close');
     if (closeBtn) closeBtn.addEventListener('click', () => {
-      pendingOrder = null;
       document.getElementById('order-modal').classList.remove('active');
-    });
-
-    const execBtn = document.getElementById('order-exec-btn');
-    if (execBtn) execBtn.addEventListener('click', executeOrder);
-
-    const copyBtn = document.getElementById('order-copy-btn');
-    if (copyBtn) copyBtn.addEventListener('click', () => {
-      App.copyToClipboard(document.getElementById('order-cli-cmd').textContent);
     });
 
     updateOrderFields();
@@ -515,7 +503,7 @@ const Hearth = (() => {
     const btn = document.getElementById('order-preview-btn');
     if (!btn) return;
     const side = orderSide === 0 ? 'Acquire' : 'Release';
-    btn.textContent = `Review ${side} XFG`;
+    btn.textContent = `Inspect ${side} XFG`;
     btn.className = `btn btn-block ${orderSide === 0 ? 'btn-buy' : 'btn-sell'}`;
     updateOrderFields();
   }
@@ -524,8 +512,8 @@ const Hearth = (() => {
     const sub = document.getElementById('order-estimate-sub');
     if (!sub) return;
     sub.textContent = orderType === 'market'
-      ? 'Exact pool output is shown in a live quote before submission'
-      : 'A limit order is submitted on-chain; fill amount and timing are not guaranteed';
+      ? 'Exact pool output is shown in a live read-only quote'
+      : 'Standing-order terms are shown for inspection; nothing is submitted here';
   }
 
   async function showOrderPreview() {
@@ -534,7 +522,6 @@ const Hearth = (() => {
     const type = orderType;
     const previewBtn = document.getElementById('order-preview-btn');
     previewBtn.disabled = true;
-    pendingOrder = null;
     try {
       let plan;
       if (type === 'limit') {
@@ -552,7 +539,6 @@ const Hearth = (() => {
         }
         plan = HearthOrder.market(side, amount, quote);
       }
-      pendingOrder = Object.freeze({ ...plan, params: Object.freeze({ ...plan.params }) });
       const sideLabel = plan.side === 0 ? 'Acquire XFG' : 'Release XFG';
       const field = (label, value) =>
         `<div><span class="rf-label">${label}</span><span class="rf-value">${value}</span></div>`;
@@ -568,55 +554,16 @@ const Hearth = (() => {
       }
       html += '</div></div>';
       if (plan.type === 'market') {
-        html += '<p class="rf-note">The quote is checked again before submission. A worse pool quote requires a new review; a later block can still reject the transaction.</p>';
+        html += '<p class="rf-note">Live pool quote for inspection only. Execute in DeXFG Wallet or the Fuego terminal UI.</p>';
       } else {
-        html += '<p class="rf-note">This creates a standing on-chain order. Execution depends on available liquidity and the selected limit.</p>';
+        html += '<p class="rf-note">Standing-order terms for inspection only. No transaction can be submitted from this dashboard.</p>';
       }
       document.getElementById('order-modal-details').innerHTML = html;
-      const request = document.getElementById('order-cli-cmd');
-      request.textContent = JSON.stringify({
-        method: plan.type === 'limit' ? 'place_limit_order' : 'amm_swap',
-        params: plan.params
-      }, null, 2);
-      request.hidden = false;
       document.getElementById('order-modal').classList.add('active');
     } catch (e) {
       App.showToast(`Preview unavailable: ${e.message}`);
     } finally {
       previewBtn.disabled = false;
-    }
-  }
-
-  async function executeOrder() {
-    if (!pendingOrder) return;
-    const plan = pendingOrder;
-    const button = document.getElementById('order-exec-btn');
-    button.disabled = true;
-    try {
-      if (plan.type === 'market') {
-        const fresh = await App.daemonPost('/amm_quote', {
-          input_amount: plan.amount, direction: plan.direction
-        });
-        const current = HearthOrder.market(plan.side, HearthOrder.formatAtomic(plan.amount), fresh);
-        if (current.expected < plan.expected) {
-          pendingOrder = null;
-          document.getElementById('order-modal').classList.remove('active');
-          throw new Error('Pool price moved against this quote. Preview again.');
-        }
-      }
-      const result = await App.walletRpc(
-        plan.type === 'limit' ? 'place_limit_order' : 'amm_swap', plan.params);
-      if (!result || !/^[a-fA-F0-9]{64}$/.test(result.tx_hash || '')) {
-        throw new Error('Wallet did not return a transaction hash; check wallet status before retrying');
-      }
-      App.showToast(`Order sent · ${result.tx_hash.substring(0, 16)}…`);
-      pendingOrder = null;
-      document.getElementById('order-modal').classList.remove('active');
-      loadOrderbook();
-    } catch (e) {
-      App.showToast(`Order submission: ${e.message || 'Wallet unavailable'}`);
-    } finally {
-      button.disabled = false;
     }
   }
 
@@ -666,7 +613,7 @@ const Hearth = (() => {
     setInterval(refreshMetrics, 10000);
   }
 
-  return { init, showOrderPreview, executeOrder };
+  return { init, showOrderPreview };
 })();
 
 if (typeof module !== 'undefined' && module.exports) {

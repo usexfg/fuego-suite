@@ -107,6 +107,13 @@ bool extract_afk_secret(
     const Signature &sig,
     EllipticCurveScalar &adaptor_secret);
 
+bool verify_afk_completion(
+    const Hash &prefix_hash,
+    const PublicKey &pub,
+    const AdaptorSignature &pre_sig,
+    const EllipticCurveScalar &expected_secret,
+    const Signature &sig);
+
 // Adapt a pre-signature into a valid Schnorr signature.
 //
 // Given the adaptor secret t (where T = t*G was the adaptor point),

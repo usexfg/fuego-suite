@@ -100,7 +100,7 @@ struct RateResult {
 enum class QuoteStatus {
   OK,
   UNPRICED,        // no feed id serves this asset
-  NO_DATA,         // feed reachable but asset absent from the response
+  MISSING_DATA,    // feed reachable but asset absent from the response
   STALE,           // provider stamp or fetch too old
   LOW_CONFIDENCE,  // confidence below policy floor
   DISPUTED,        // two feeds disagree beyond tolerance

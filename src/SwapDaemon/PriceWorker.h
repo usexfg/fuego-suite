@@ -68,9 +68,9 @@ public:
   bool snapshot(PriceSnapshot& out) const;
 
   bool secondaryDue(int64_t now) const;
-  size_t historySize() const { return m_history.size(); }
-  uint32_t consecutiveSecondaryFailures() const { return m_secondaryFailures; }
-  uint64_t cycles() const { return m_cycles; }
+  size_t historySize() const;
+  uint32_t consecutiveSecondaryFailures() const;
+  uint64_t cycles() const;
 
 private:
   void loop();
@@ -81,6 +81,7 @@ private:
 
   std::atomic<bool> m_running{false};
   std::thread        m_thread;
+  std::mutex         m_pollMutex;
 
   mutable std::mutex                       m_mutex;
   std::shared_ptr<const PriceSnapshot>      m_latest;

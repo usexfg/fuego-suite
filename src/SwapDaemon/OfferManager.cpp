@@ -13,7 +13,6 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "OfferManager.h"
-#include "PriceOracle.h"
 #include "CryptoNoteCore/SwapOfferRelay.h"
 #include "Common/JsonValue.h"
 #include <fstream>
@@ -24,17 +23,17 @@
 namespace XfgSwap {
 
 OfferManager::OfferManager(CryptoNote::SwapOfferRelay& relay,
-                           PriceOracle& oracle,
                            const Crypto::SecretKey& makerSecretKey,
                            const Crypto::PublicKey& makerPublicKey,
                            Logging::ILogger& logger,
-                           std::function<bool(uint8_t)> canPublishPair)
+                           std::function<bool(uint8_t)> canPublishPair,
+                           std::function<uint64_t(uint8_t)> currentRateNum)
   : m_relay(relay),
-    m_oracle(oracle),
     m_makerSecretKey(makerSecretKey),
     m_makerPublicKey(makerPublicKey),
     m_logger(logger, "OfferManager"),
-    m_canPublishPair(std::move(canPublishPair)) {}
+    m_canPublishPair(std::move(canPublishPair)),
+    m_currentRateNum(std::move(currentRateNum)) {}
 
 bool OfferManager::loadConfig(const std::string& jsonPath) {
   std::ifstream f(jsonPath);
@@ -100,20 +99,13 @@ bool OfferManager::loadConfigFromJson(const std::string& json) {
   }
 }
 
-uint64_t OfferManager::compositeToRateNum(uint8_t pair) {
-  CryptoNote::CompositePrice cp = m_relay.getCompositePrice(pair);
-  if (cp.sourceCount == 0) {
-    // The relay had nothing. The old code returned the static seed, so managed offers
-    // were priced against a constant and never saw the live Hearth XFG price.
-    const double rate = m_oracle.getEffectiveRate(static_cast<SwapPair>(pair));
-    if (rate <= 0.0) {
-      m_logger(Logging::WARNING) << "OfferManager: no rate for pair="
-        << static_cast<int>(pair) << ", skipping this managed offer";
-      return 0;
-    }
-    return static_cast<uint64_t>(rate * 1e7);
+uint64_t OfferManager::currentRateNum(uint8_t pair) {
+  const uint64_t rateNum = m_currentRateNum ? m_currentRateNum(pair) : 0;
+  if (rateNum == 0) {
+    m_logger(Logging::WARNING) << "OfferManager: no policy-approved live rate for pair="
+      << static_cast<int>(pair) << ", skipping this managed offer";
   }
-  return static_cast<uint64_t>(cp.rate * 1e7);
+  return rateNum;
 }
 
 void OfferManager::submitManagedOffer(OfferState& state, uint32_t currentHeight, uint64_t rateNum) {
@@ -199,7 +191,7 @@ void OfferManager::tick(uint32_t currentHeight) {
       cancelManagedOffer(state);
       continue;
     }
-    uint64_t compositeRateNum = compositeToRateNum(state.config.pair);
+    uint64_t compositeRateNum = currentRateNum(state.config.pair);
     if (compositeRateNum == 0) continue;
 
     bool needsReprice = false;

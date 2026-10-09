@@ -206,6 +206,7 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
                         const std::string& dataDir, Logging::ILogger& logger)
   : m_rpc(fuegodHost, fuegodPort)
   , m_db(dataDir)
+  , m_priceWorker(&m_defiLlamaFeed, &m_coinGeckoFeed, m_pricePolicy)
   , m_logger(logger, "SwapDaemon") {
   // Chain clients not configured — processSwap() will warn if needed.
 }
@@ -216,6 +217,7 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
                         const std::string& profile)
   : m_rpc(fuegodHost, fuegodPort)
   , m_db(dataDir)
+  , m_priceWorker(&m_defiLlamaFeed, &m_coinGeckoFeed, m_pricePolicy)
   , m_logger(logger, "SwapDaemon")
   , m_network(network)
   , m_profile(profile) {
@@ -229,6 +231,7 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
                         const std::string& profile)
   : m_rpc(fuegodHost, fuegodPort)
   , m_db(dataDir)
+  , m_priceWorker(&m_defiLlamaFeed, &m_coinGeckoFeed, m_pricePolicy)
   , m_logger(logger, "SwapDaemon")
   , m_network(network)
   , m_profile(profile) {
@@ -703,6 +706,10 @@ void SwapDaemon::start(uint16_t p2pPort, const std::string& p2pBind) {
   // Migrate terminal swaps to archive so the tick loop never loads them.
   m_db.migrateTerminalSwaps();
 
+  refreshHearthPrice();
+  m_priceWorker.pollOnce(static_cast<int64_t>(std::time(nullptr)));
+  m_priceWorker.start();
+
   std::vector<std::string> swapIds = m_db.listSwaps();
   int recovered = 0;
   int autoRefunded = 0;
@@ -762,15 +769,19 @@ void SwapDaemon::start(uint16_t p2pPort, const std::string& p2pBind) {
 }
 
 void SwapDaemon::stop() {
-  if (!m_running.exchange(false)) return;
-  m_tickCv.notify_all();
-  if (m_tickThread.joinable()) {
-    m_tickThread.join();
+  const bool wasRunning = m_running.exchange(false);
+  if (wasRunning) {
+    m_tickCv.notify_all();
+    if (m_tickThread.joinable()) {
+      m_tickThread.join();
+    }
+    if (m_p2p) {
+      m_p2p->stop();
+      m_p2p.reset();
+    }
   }
-  if (m_p2p) {
-    m_p2p->stop();
-    m_p2p.reset();
-  }
+  m_priceWorker.stop();
+  if (!wasRunning) return;
   m_logger(Logging::INFO) << "SwapDaemon tick thread stopped";
 }
 
@@ -864,6 +875,62 @@ void SwapDaemon::recordCompletedTrade(const SwapStateMachine& sm) {
   }
 }
 
+void SwapDaemon::refreshHearthPrice() {
+  FuegoPrice livePrice;
+  if (!m_rpc.getFuegoPrice(livePrice) || livePrice.xfgSpotUsd <= 0.0) return;
+  m_oracle.setLiveXfgUsd(livePrice.xfgSpotUsd);
+  const uint64_t marketValueCents =
+      static_cast<uint64_t>(livePrice.xfgSpotUsd * 100.0);
+  if (marketValueCents > 0) m_rpc.setXfgMarketValue(marketValueCents);
+}
+
+PairQuote SwapDaemon::currentPairQuote(SwapPair pair, bool refresh) {
+  const int64_t now = static_cast<int64_t>(std::time(nullptr));
+  if (refresh) {
+    refreshHearthPrice();
+    m_priceWorker.pollOnce(now);
+  }
+
+  PriceSnapshot snapshot;
+  if (!m_priceWorker.snapshot(snapshot)) {
+    PairQuote unavailable;
+    unavailable.pair = static_cast<uint8_t>(pair);
+    unavailable.status = QuoteStatus::MISSING_DATA;
+    unavailable.reason = "price feeds have not produced a snapshot";
+    return unavailable;
+  }
+  return buildPairQuote(static_cast<uint8_t>(pair), snapshot.primary,
+                        &snapshot.secondary, m_oracle.getLiveXfgUsd(),
+                        m_pricePolicy, now);
+}
+
+bool SwapDaemon::validateNewSwapRate(const SwapParams& params,
+                                     std::string& reason, bool refresh) {
+  const PairQuote quote = currentPairQuote(params.pair, refresh);
+  if (!quote.newSwapAllowed || !quote.referenceRateOk) {
+    reason = quote.reason.empty() ? quoteStatusToString(quote.status) : quote.reason;
+    return false;
+  }
+
+  const auto* descriptor = swapPairDescriptor(params.pair);
+  if (!descriptor || descriptor->decimals > 38 || params.ctrAmount == 0) {
+    reason = "counterparty amount cannot be converted for the live price check";
+    return false;
+  }
+  long double divisor = 1.0L;
+  for (uint8_t i = 0; i < descriptor->decimals; ++i) divisor *= 10.0L;
+  const long double wholeCounterparty =
+      params.ctrAmount.convert_to<long double>() / divisor;
+  const long double wholeXfg = static_cast<long double>(params.xfgAmount) / 1.0e7L;
+  const double proposedRate = static_cast<double>(wholeXfg / wholeCounterparty);
+  if (!withinRateGuard(proposedRate, quote.referenceRate)) {
+    reason = "proposed rate is outside the live reference guard";
+    return false;
+  }
+  reason.clear();
+  return true;
+}
+
 void SwapDaemon::tickLoop() {
   while (m_running.load()) {
     // Wait for TICK_INTERVAL_SECS or until stop() wakes us
@@ -883,23 +950,13 @@ void SwapDaemon::tickLoop() {
       }
     }
 
+    refreshHearthPrice();
+
     // Auto-reprice managed offers
     if (m_offerManager) {
       uint32_t currentHeight = 0;
       m_rpc.getHeight(currentHeight);
       m_offerManager->tick(currentHeight);
-    }
-
-    // Fetch live XFG/USD from Hearth pool via fuegod RPC
-    // Feed it back to fuegod (PI controller removed — value is ignored)
-    {
-      FuegoPrice livePrice;
-      if (m_rpc.getFuegoPrice(livePrice) && livePrice.xfgSpotUsd > 0.0) {
-        m_oracle.setLiveXfgUsd(livePrice.xfgSpotUsd);
-        uint64_t marketValueCents = static_cast<uint64_t>(livePrice.xfgSpotUsd * 100.0);
-        if (marketValueCents > 0)
-          m_rpc.setXfgMarketValue(marketValueCents);
-      }
     }
 
     // Prune stale taker history
@@ -1082,6 +1139,12 @@ bool SwapDaemon::initiate(SwapParams& params) {
       << swapPairToString(params.pair) << ": chain client unavailable or not ready";
     return false;
   }
+  std::string liveRateReason;
+  if (!validateNewSwapRate(params, liveRateReason, true)) {
+    m_logger(Logging::ERROR) << "Cannot initiate new swap for "
+      << swapPairToString(params.pair) << ": " << liveRateReason;
+    return false;
+  }
   params.useSpvVerification = m_chainRegistry.getClient(params.pair)->usesSpvVerification();
   uint32_t currentHeight = 0;
   if (!m_rpc.getHeight(currentHeight)) {
@@ -1095,6 +1158,10 @@ bool SwapDaemon::initiate(SwapParams& params) {
 
   if (params.swapId.empty()) {
     params.swapId = generateSwapId();
+  }
+  if (!isValidSwapId(params.swapId)) {
+    m_logger(Logging::ERROR) << "Invalid swap ID";
+    return false;
   }
 
   // Set default XFG timeout (cooperative refund window: ~1 day)
@@ -1188,23 +1255,21 @@ bool SwapDaemon::initiate(SwapParams& params) {
     }
   }
 
-  // Validate price against TWAP
-  RateCheck rc = m_oracle.validateSwapAmounts(params.pair, params.xfgAmount, params.ctrAmount);
-  if (rc == RateCheck::BELOW_FLOOR) {
-    m_logger(Logging::ERROR)
-      << "Swap rate rejected: XFG priced >= 50% below TWAP floor. "
-      << PriceOracle::rateCheckToString(rc);
-    return false;
-  }
-  if (rc == RateCheck::ABOVE_MARKET) {
-    m_logger(Logging::WARNING)
-      << "Swap rate is significantly above market TWAP. Proceeding.";
-  }
-  if (rc == RateCheck::RATE_NO_DATA) {
-    m_logger(Logging::INFO)
-      << "No TWAP data yet (bootstrap mode). Seed rate: "
-      << PriceOracle::getSeedRate(params.pair) << " XFG per 1 "
-      << swapPairToString(params.pair);
+  // A current feed/Hearth quote already guarded this swap above. Once enough
+  // completed trades exist, retain the local TWAP as an additional market check.
+  if (m_oracle.getTwap(params.pair) > 0.0) {
+    const RateCheck rc =
+        m_oracle.validateSwapAmounts(params.pair, params.xfgAmount, params.ctrAmount);
+    if (rc == RateCheck::BELOW_FLOOR) {
+      m_logger(Logging::ERROR)
+        << "Swap rate rejected by completed-trade TWAP. "
+        << PriceOracle::rateCheckToString(rc);
+      return false;
+    }
+    if (rc == RateCheck::ABOVE_MARKET) {
+      m_logger(Logging::WARNING)
+        << "Swap rate is outside the completed-trade TWAP band. Proceeding.";
+    }
   }
 
   // ── PTLC negotiation ──
@@ -1358,6 +1423,12 @@ SwapDaemon::AcceptResult SwapDaemon::accept(const std::string& swapId) {
 
   if (!canStartNewSwap(sm.params().pair, nullptr, true)) {
     const std::string msg = "Counterparty chain is unavailable or not ready for new swaps";
+    m_logger(Logging::ERROR) << msg;
+    return {false, msg};
+  }
+  std::string liveRateReason;
+  if (!validateNewSwapRate(sm.params(), liveRateReason, true)) {
+    const std::string msg = "Live price policy rejected swap acceptance: " + liveRateReason;
     m_logger(Logging::ERROR) << msg;
     return {false, msg};
   }
@@ -4669,6 +4740,11 @@ bool SwapDaemon::getXmrReserveProof(const std::string& address, const std::strin
   }
 bool SwapDaemon::handleSwapRequest(const std::string& offerId, uint64_t amount,
                          const std::string& takerPubKey, const std::string& proofOfFunds) {
+  if (!CryptoNote::parameters::AFK_SOFT_ORDER_EXECUTION_ENABLED) {
+    m_logger(Logging::WARNING)
+      << "Ignoring AFK soft-order request because the XFG payout path is not trustless";
+    return false;
+  }
   m_logger(Logging::INFO) << "Received swap request for offer " << offerId << " amount " << amount;
 
   if (!CryptoNote::SwapOfferRelay::isValidSwapRequestInput(
@@ -4918,6 +4994,11 @@ void SwapDaemon::setMakerKeys(const Crypto::SecretKey& sk, const Crypto::PublicK
 }
 
 bool SwapDaemon::loadOfferConfig(const std::string& jsonPath) {
+  if (!CryptoNote::parameters::AFK_SOFT_ORDER_EXECUTION_ENABLED) {
+    m_logger(Logging::ERROR)
+      << "Managed soft orders are disabled until the AFK XFG payout path is trustless";
+    return false;
+  }
   if (!m_swapRelay) {
     m_logger(Logging::ERROR) << "Swap relay not set, cannot initialize OfferManager";
     return false;
@@ -4927,8 +5008,12 @@ bool SwapDaemon::loadOfferConfig(const std::string& jsonPath) {
     return false;
   }
   m_offerManager.reset(new OfferManager(
-    *m_swapRelay, m_oracle, m_makerSecretKey, m_makerPublicKey, m_logger.getLogger(),
-    [this](uint8_t pair) { return canStartNewSwap(static_cast<SwapPair>(pair), nullptr, true); }));
+    *m_swapRelay, m_makerSecretKey, m_makerPublicKey, m_logger.getLogger(),
+    [this](uint8_t pair) { return canStartNewSwap(static_cast<SwapPair>(pair), nullptr, true); },
+    [this](uint8_t pair) {
+      const PairQuote quote = currentPairQuote(static_cast<SwapPair>(pair), true);
+      return quote.managedOffersAllowed ? quote.rateNum : uint64_t{0};
+    }));
   if (!m_offerManager->loadConfig(jsonPath)) {
     m_offerManager.reset();
     return false;
@@ -4944,6 +5029,9 @@ std::string SwapDaemon::buildStatusJson() {
 
   json << "\"network\":" << Common::JsonValue(m_network).toString() << ",";
   json << "\"profile\":" << Common::JsonValue(m_profile).toString() << ",";
+  json << "\"afk_soft_orders_enabled\":"
+       << (CryptoNote::parameters::AFK_SOFT_ORDER_EXECUTION_ENABLED ? "true" : "false")
+       << ",";
 
   uint32_t height = 0;
   m_rpc.getHeight(height);
@@ -5009,7 +5097,16 @@ std::string SwapDaemon::buildChainCatalogJson() {
     entry.insert("assetTicker", std::string(descriptor.assetTicker));
     entry.insert("name", std::string(descriptor.displayName));
     entry.insert("family", std::string(swapChainFamilyToString(descriptor.family)));
-    entry.insert("chainId", static_cast<int64_t>(descriptor.chainId));
+    uint64_t chainId = descriptor.chainId;
+    if (IChainClient* client = getChainClient(descriptor.pair)) {
+      const uint64_t configuredChainId = client->configuredChainId();
+      if (configuredChainId != 0) chainId = configuredChainId;
+    }
+    if (chainId <= static_cast<uint64_t>((std::numeric_limits<int64_t>::max)())) {
+      entry.insert("chainId", static_cast<int64_t>(chainId));
+    } else {
+      entry.insert("chainId", std::to_string(chainId));
+    }
     // Keep blockTimeMs as the ordering-side value for old dashboard clients;
     // new clients can show both safety bounds explicitly.
     entry.insert("blockTimeMs", static_cast<int64_t>(descriptor.maxBlockTimeMs));

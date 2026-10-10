@@ -168,12 +168,6 @@ OAES_API OAES_RET oaes_free( OAES_CTX ** ctx );
 OAES_API OAES_RET oaes_set_option( OAES_CTX * ctx,
 		OAES_OPTION option, const void * value );
 
-OAES_API OAES_RET oaes_key_gen_128( OAES_CTX * ctx );
-
-OAES_API OAES_RET oaes_key_gen_192( OAES_CTX * ctx );
-
-OAES_API OAES_RET oaes_key_gen_256( OAES_CTX * ctx );
-
 // export key with header information
 // set data == NULL to get the required data_len
 OAES_API OAES_RET oaes_key_export( OAES_CTX * ctx,
@@ -199,10 +193,6 @@ OAES_API OAES_RET oaes_encrypt( OAES_CTX * ctx,
 // set m == NULL to get the required m_len
 OAES_API OAES_RET oaes_decrypt( OAES_CTX * ctx,
 		const uint8_t * c, size_t c_len, uint8_t * m, size_t * m_len );
-
-// set buf == NULL to get the required buf_len
-OAES_API OAES_RET oaes_sprintf(
-		char * buf, size_t * buf_len, const uint8_t * data, size_t data_len );
 
 OAES_API OAES_RET oaes_encryption_round( const uint8_t * key, uint8_t * c );
 

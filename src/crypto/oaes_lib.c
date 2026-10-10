@@ -55,6 +55,7 @@
 
 #include "oaes_config.h"
 #include "oaes_lib.h"
+#include "random.h"
 
 #ifdef OAES_HAVE_ISAAC
 #include "rand.h"
@@ -430,107 +431,6 @@ static OAES_RET oaes_inv_mix_cols( uint8_t word[OAES_COL_LEN] )
 	return OAES_RET_SUCCESS;
 }
 
-OAES_RET oaes_sprintf(
-		char * buf, size_t * buf_len, const uint8_t * data, size_t data_len )
-{
-	size_t _i, _buf_len_in;
-	char _temp[4];
-	
-	if( NULL == buf_len )
-		return OAES_RET_ARG2;
-
-	_buf_len_in = *buf_len;
-	*buf_len = data_len * 3 + data_len / OAES_BLOCK_SIZE + 1;
-	
-	if( NULL == buf )
-		return OAES_RET_SUCCESS;
-
-	if( *buf_len > _buf_len_in )
-		return OAES_RET_BUF;
-
-	if( NULL == data )
-		return OAES_RET_ARG3;
-
-	strcpy( buf, "" );
-	
-	for( _i = 0; _i < data_len; _i++ )
-	{
-		sprintf( _temp, "%02x ", data[_i] );
-		strcat( buf, _temp );
-		if( _i && 0 == ( _i + 1 ) % OAES_BLOCK_SIZE )
-			strcat( buf, "\n" );
-	}
-	
-	return OAES_RET_SUCCESS;
-}
-
-#ifdef OAES_HAVE_ISAAC
-static void oaes_get_seed( char buf[RANDSIZ + 1] )
-{
-        #if !defined(__FreeBSD__) && !defined(__OpenBSD__)
-	struct timeb timer;
-	struct tm *gmTimer;
-	char * _test = NULL;
-	
-	ftime (&timer);
-	gmTimer = gmtime( &timer.time );
-	_test = (char *) calloc( sizeof( char ), timer.millitm );
-	sprintf( buf, "%04d%02d%02d%02d%02d%02d%03d%p%d",
-		gmTimer->tm_year + 1900, gmTimer->tm_mon + 1, gmTimer->tm_mday,
-		gmTimer->tm_hour, gmTimer->tm_min, gmTimer->tm_sec, timer.millitm,
-		_test + timer.millitm, getpid() );
-	#else
-	struct timeval timer;
-	struct tm *gmTimer;
-	char * _test = NULL;
-	
-	gettimeofday(&timer, NULL);
-	gmTimer = gmtime( &timer.tv_sec );
-	_test = (char *) calloc( sizeof( char ), timer.tv_usec/1000 );
-	sprintf( buf, "%04d%02d%02d%02d%02d%02d%03d%p%d",
-		gmTimer->tm_year + 1900, gmTimer->tm_mon + 1, gmTimer->tm_mday,
-		gmTimer->tm_hour, gmTimer->tm_min, gmTimer->tm_sec, timer.tv_usec/1000,
-		_test + timer.tv_usec/1000, getpid() );
-	#endif
-		
-	if( _test )
-		free( _test );
-}
-#else
-static uint32_t oaes_get_seed(void)
-{
-        #if !defined(__FreeBSD__) && !defined(__OpenBSD__) && !defined(__ANDROID__)
-	struct timeb timer;
-	struct tm *gmTimer;
-	char * _test = NULL;
-	uint32_t _ret = 0;
-	
-	ftime (&timer);
-	gmTimer = gmtime( &timer.time );
-	_test = (char *) calloc( sizeof( char ), timer.millitm );
-	_ret = gmTimer->tm_year + 1900 + gmTimer->tm_mon + 1 + gmTimer->tm_mday +
-			gmTimer->tm_hour + gmTimer->tm_min + gmTimer->tm_sec + timer.millitm +
-			(uintptr_t) ( _test + timer.millitm ) + getpid();
-	#else
-	struct timeval timer;
-	struct tm *gmTimer;
-	char * _test = NULL;
-	uint32_t _ret = 0;
-	
-	gettimeofday(&timer, NULL);
-	gmTimer = gmtime( &timer.tv_sec );
-	_test = (char *) calloc( sizeof( char ), timer.tv_usec/1000 );
-	_ret = gmTimer->tm_year + 1900 + gmTimer->tm_mon + 1 + gmTimer->tm_mday +
-			gmTimer->tm_hour + gmTimer->tm_min + gmTimer->tm_sec + timer.tv_usec/1000 +
-			(uintptr_t) ( _test + timer.tv_usec/1000 ) + getpid();
-	#endif
-
-	if( _test )
-		free( _test );
-	
-	return _ret;
-}
-#endif // OAES_HAVE_ISAAC
 
 static OAES_RET oaes_key_destroy( oaes_key ** key )
 {
@@ -618,66 +518,6 @@ static OAES_RET oaes_key_expand( OAES_CTX * ctx )
 	return OAES_RET_SUCCESS;
 }
 
-static OAES_RET oaes_key_gen( OAES_CTX * ctx, size_t key_size )
-{
-	size_t _i;
-	oaes_key * _key = NULL;
-	oaes_ctx * _ctx = (oaes_ctx *) ctx;
-	OAES_RET _rc = OAES_RET_SUCCESS;
-	
-	if( NULL == _ctx )
-		return OAES_RET_ARG1;
-	
-	_key = (oaes_key *) calloc( sizeof( oaes_key ), 1 );
-	
-	if( NULL == _key )
-		return OAES_RET_MEM;
-	
-	if( _ctx->key )
-		oaes_key_destroy( &(_ctx->key) );
-	
-	_key->data_len = key_size;
-	_key->data = (uint8_t *) calloc( key_size, sizeof( uint8_t ));
-	
-	if( NULL == _key->data )
-	{
-		free( _key );
-		return OAES_RET_MEM;
-	}
-	
-	for( _i = 0; _i < key_size; _i++ )
-#ifdef OAES_HAVE_ISAAC
-		_key->data[_i] = (uint8_t) rand( _ctx->rctx );
-#else
-		_key->data[_i] = (uint8_t) rand();
-#endif // OAES_HAVE_ISAAC
-	
-	_ctx->key = _key;
-	_rc = _rc || oaes_key_expand( ctx );
-	
-	if( _rc != OAES_RET_SUCCESS )
-	{
-		oaes_key_destroy( &(_ctx->key) );
-		return _rc;
-	}
-	
-	return OAES_RET_SUCCESS;
-}
-
-OAES_RET oaes_key_gen_128( OAES_CTX * ctx )
-{
-	return oaes_key_gen( ctx, 16 );
-}
-
-OAES_RET oaes_key_gen_192( OAES_CTX * ctx )
-{
-	return oaes_key_gen( ctx, 24 );
-}
-
-OAES_RET oaes_key_gen_256( OAES_CTX * ctx )
-{
-	return oaes_key_gen( ctx, 32 );
-}
 
 OAES_RET oaes_key_export( OAES_CTX * ctx,
 		uint8_t * data, size_t * data_len )
@@ -893,9 +733,6 @@ OAES_CTX * oaes_alloc(void)
 
 #ifdef OAES_HAVE_ISAAC
 	{
-	  ub4 _i = 0;
-		char _seed[RANDSIZ + 1];
-		
 		_ctx->rctx = (randctx *) calloc( sizeof( randctx ), 1 );
 
 		if( NULL == _ctx->rctx )
@@ -904,13 +741,26 @@ OAES_CTX * oaes_alloc(void)
 			return NULL;
 		}
 
-		oaes_get_seed( _seed );
+		// Seed with OS entropy rather than the removed oaes_get_seed() (audit I-1).
+		// This branch is dead today (oaes_config.h leaves OAES_HAVE_ISAAC undefined),
+		// but it must stay compilable and correct in case it is ever enabled.
 		memset( _ctx->rctx->randrsl, 0, RANDSIZ );
-		memcpy( _ctx->rctx->randrsl, _seed, RANDSIZ );
+		generate_random_bytes( RANDSIZ, _ctx->rctx->randrsl );
 		randinit( _ctx->rctx, TRUE);
 	}
 #else
-		srand( oaes_get_seed() );
+		// Seed removal (audit I-1): oaes_key_gen_*, the only consumer of rand(),
+		// is gone, and the weak time+pid+heap seed that fed srand() is gone with it.
+		// oaes_alloc still calls oaes_set_option(OAES_OPTION_CBC, NULL) below, which
+		// fills the IV from rand(); without a seed that sequence is deterministic
+		// and identical on every call.
+		//
+		// This is not a CryptoNight input. slow-hash.c is the sole OAES consumer and
+		// it imports its key via oaes_key_import_data and runs ECB pseudo-rounds
+		// (aesb_pseudo_round), so the CBC IV is written and never read. Removing the
+		// seed therefore changes no hash output. Should anyone ever route real data
+		// through the CBC path, they must call RAND_bytes for the IV — do not
+		// reinstate srand() here.
 #endif // OAES_HAVE_ISAAC
 
 	_ctx->key = NULL;

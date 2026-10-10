@@ -5121,7 +5121,12 @@ bool SwapDaemon::loadOfferConfig(const std::string& jsonPath) {
   }
   m_offerManager.reset(new OfferManager(
     *m_swapRelay, m_makerSecretKey, m_makerPublicKey, m_logger.getLogger(),
-    [this](uint8_t pair) { return canStartNewSwap(static_cast<SwapPair>(pair), nullptr, true); },
+    // refresh=false: this is a per-block poll, not a user-initiated check. OfferManager
+    // asks once per offer per block, and refresh=true defeats both the 60s chain
+    // readiness cache and the 30s funding cache, putting two RPCs per offer on the tick
+    // thread. Every other call site is an explicit action (initiate, accept, AFK lock)
+    // and keeps its fresh check.
+    [this](uint8_t pair) { return canStartNewSwap(static_cast<SwapPair>(pair), nullptr, false); },
     [this](uint8_t pair) {
       const PairQuote quote = currentPairQuote(static_cast<SwapPair>(pair), true);
       return quote.managedOffersAllowed ? quote.rateNum : uint64_t{0};

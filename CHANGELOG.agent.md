@@ -385,6 +385,34 @@ funded on a stale number. Accepted.
 **NOTE -- `m_readinessMutex` now guards two caches.** No correctness issue, since neither
 hold is held across the RPC, but the name no longer describes what it protects.
 
+### Adversarial review, third pass -- over the second-pass fix
+
+**CRITICAL:** none. The `present`/`ok` split holds up: the cache-hit branch serves both
+outcomes, an absent entry still forces a fetch, and a cached failure keeps the
+"cannot prove" wording rather than an "insufficient" lie.
+
+**Behaviour change from the readiness fix, stated plainly.** Switching the OfferManager poll
+to `refresh = false` stops two RPCs per offer per block, but it also means a chain outage
+now withdraws offers up to **60 seconds late**, because `getChainReadiness` has a 60 s cache
+and `OfferManager::tick` calls `cancelManagedOffer` the moment `canPublishPair` goes false.
+Previously `refresh = true` withdrew within one tick.
+
+This is the intended design rather than a regression -- the 60 s cache exists precisely so a
+per-block poll does not hit the chain, and every other call site (initiate, accept, AFK
+lock) still force-refreshes, so no swap is ever started on a 60 s-old readiness answer.
+It is nonetheless a real trade and is recorded rather than glossed: RPC amplification on the
+tick thread versus up to 60 s of continued advertisement during an outage. An offer is an
+advertisement, not a commitment.
+
+**Accepted:** `initiate()` now issues two RPCs (its own fresh funding read plus a fresh
+chain readiness read) and overwrites the shared funding cache. Harmless -- single-threaded
+tick, and a fresher cache is only useful to the next reader.
+
+**Assumption worth recording:** `available` from `/getbalance` is taken as spendable because
+Monero/fuegod define it as balance minus locked outputs. `total` and `unlocked_balance` are
+deliberately not used. If a future wallet changed that definition, this gate would silently
+over-report -- the one-line change to make is in `getSpendableBalance`.
+
 ---
 
 ## Phase 2h: full CMake build verified, and the swap test suite wired to ctest

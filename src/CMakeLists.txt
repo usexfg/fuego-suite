@@ -515,6 +515,13 @@ add_executable(test_dcr_chain_client
 target_link_libraries(test_dcr_chain_client PRIVATE
     SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
 
+# At-rest secret encryption (audit L-2). Pins the ChaCha20-Poly1305 upgrade AND
+# that v1 (ChaCha8) records written by the previous code still decrypt, so a swap
+# interrupted across the upgrade can recover its adaptor secret.
+add_executable(test_swap_secret_encryption
+    SwapDaemon/tests/test_swap_secret_encryption.cpp)
+target_link_libraries(test_swap_secret_encryption PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
 # Production gate checklist (timelock, offer sig, soft-order, secret crash-restart)
 add_executable(test_production_gates
     SwapDaemon/tests/test_production_gates.cpp)
@@ -1093,6 +1100,7 @@ set(_TEST_DAEMON_TARGETS
     test_polygon_chain_client
     test_dcr_chain_client
     test_production_gates
+    test_swap_secret_encryption
     test_eth_protocol
     test_ring_collab
     test_bch_secret_reveal

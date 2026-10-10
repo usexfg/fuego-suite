@@ -296,30 +296,26 @@ std::string SwapStateMachine::serialize() const {
     return "";
   }
 
+  // Both pack paths delegate the on-disk layout to SwapSecretEncryption::encode,
+  // which owns the version byte and per-version field order. They used to
+  // hand-concatenate nonce||salt||ciphertext||tag here, which had no version
+  // marker and is what made the ChaCha20 upgrade a three-site edit with a
+  // real chance of the sites disagreeing.
+  auto packEncryptedBlob = [&](const std::vector<uint8_t>& encData, std::string& hexOut) -> bool {
+    hexOut = Common::toHex(encData.data(), encData.size());
+    return true;
+  };
+
   auto packEncrypted = [&](const Crypto::SecretKey& secret, std::string& hexOut) -> bool {
     SwapSecretEncryption::EncryptedSecret encrypted;
     if (!SwapSecretEncryption::encrypt(secret, m_encryptionKey, encrypted)) return false;
-    std::string encData;
-    encData.reserve(CHACHA8_NONCE_SIZE + SALT_SIZE + encrypted.ciphertext.size() + TAG_SIZE);
-    encData.insert(encData.end(), encrypted.nonce.begin(), encrypted.nonce.end());
-    encData.insert(encData.end(), encrypted.salt.begin(), encrypted.salt.end());
-    encData.insert(encData.end(), encrypted.ciphertext.begin(), encrypted.ciphertext.end());
-    encData.insert(encData.end(), encrypted.tag.begin(), encrypted.tag.end());
-    hexOut = Common::toHex(encData.data(), encData.size());
-    return true;
+    return packEncryptedBlob(SwapSecretEncryption::encode(encrypted), hexOut);
   };
 
   auto packEncryptedBytes = [&](const uint8_t* data, size_t len, std::string& hexOut) -> bool {
     SwapSecretEncryption::EncryptedSecret encrypted;
     if (!SwapSecretEncryption::encrypt(data, len, m_encryptionKey, encrypted)) return false;
-    std::string encData;
-    encData.reserve(CHACHA8_NONCE_SIZE + SALT_SIZE + encrypted.ciphertext.size() + TAG_SIZE);
-    encData.insert(encData.end(), encrypted.nonce.begin(), encrypted.nonce.end());
-    encData.insert(encData.end(), encrypted.salt.begin(), encrypted.salt.end());
-    encData.insert(encData.end(), encrypted.ciphertext.begin(), encrypted.ciphertext.end());
-    encData.insert(encData.end(), encrypted.tag.begin(), encrypted.tag.end());
-    hexOut = Common::toHex(encData.data(), encData.size());
-    return true;
+    return packEncryptedBlob(SwapSecretEncryption::encode(encrypted), hexOut);
   };
 
   if (hasEncryptionKey()) {
@@ -727,59 +723,85 @@ bool SwapStateMachine::hasEncryptionKey() const {
 void SwapStateMachine::decryptStoredSecret() {
   if (m_encryptionKey.empty()) return;
 
-  auto unpack = [&](const std::vector<uint8_t>& blob, Crypto::SecretKey& out) -> bool {
-    if (blob.size() < CHACHA8_NONCE_SIZE + SALT_SIZE + 32 + TAG_SIZE) return false;
+  // Single parse path. Previously three hand-inlined copies of this logic existed:
+  // the shared lambda hardcoded a 32-byte ciphertext length, so the 64-byte
+  // MuSig2 nonce needed its own duplicate. Both are gone.
+  auto unpack = [&](const std::vector<uint8_t>& blob, size_t plaintextLen,
+                    uint8_t* out) -> bool {
+    if (blob.empty() || plaintextLen == 0) return false;
     SwapSecretEncryption::EncryptedSecret encrypted;
-    std::memcpy(encrypted.nonce.data(), blob.data(), CHACHA8_NONCE_SIZE);
-    std::memcpy(encrypted.salt.data(),  blob.data() + CHACHA8_NONCE_SIZE, SALT_SIZE);
-    encrypted.ciphertext.assign(blob.begin() + CHACHA8_NONCE_SIZE + SALT_SIZE,
-                                blob.begin() + CHACHA8_NONCE_SIZE + SALT_SIZE + 32);
-    std::memcpy(encrypted.tag.data(), blob.data() + CHACHA8_NONCE_SIZE + SALT_SIZE + 32, TAG_SIZE);
-    return SwapSecretEncryption::decrypt(encrypted, m_encryptionKey, out);
+    if (!SwapSecretEncryption::decode(blob, plaintextLen, encrypted)) return false;
+    return SwapSecretEncryption::decrypt(encrypted, m_encryptionKey, out, plaintextLen);
   };
 
-  if (!m_params.encBlob.empty() && unpack(m_params.encBlob, m_params.adaptorSecret)) {
-    m_params.encBlob.clear();
+  // A secret that fails to decrypt must NOT be left silently un-decrypted: the
+  // old code kept the blob and carried on, so a corrupt or wrongly-keyed record
+  // left a zeroed secret that only tripped much later, far from the cause. The
+  // MuSig2 path already failed closed; this makes the rest consistent.
+  m_secretsFullyRecovered = true;
+  auto noteFailure = [&](const char* what) {
+    // Surfaced via secretsFullyRecovered() so SwapDaemon can log through its own
+    // logger and refuse to resume the swap. This class deliberately carries no
+    // logger of its own.
+    m_secretsFullyRecovered = false;
+    (void)what;
+  };
+
+  if (!m_params.encBlob.empty()) {
+    if (unpack(m_params.encBlob, SECRET_PLAINTEXT, m_params.adaptorSecret.data)) {
+      m_params.encBlob.clear();
+    } else {
+      noteFailure("adaptorSecret");
+      std::memset(&m_params.adaptorSecret, 0, sizeof(m_params.adaptorSecret));
+    }
   }
-  if (!m_params.encSecKeyBlob.empty() && unpack(m_params.encSecKeyBlob, m_params.ourSwapSecKey)) {
-    m_params.encSecKeyBlob.clear();
+  if (!m_params.encSecKeyBlob.empty()) {
+    if (unpack(m_params.encSecKeyBlob, SECRET_PLAINTEXT, m_params.ourSwapSecKey.data)) {
+      m_params.encSecKeyBlob.clear();
+    } else {
+      noteFailure("ourSwapSecKey");
+      std::memset(&m_params.ourSwapSecKey, 0, sizeof(m_params.ourSwapSecKey));
+    }
   }
-  if (!m_params.encXmrSpendBlob.empty() && unpack(m_params.encXmrSpendBlob, m_params.xmrSpendSec)) {
-    m_params.encXmrSpendBlob.clear();
+  if (!m_params.encXmrSpendBlob.empty()) {
+    if (unpack(m_params.encXmrSpendBlob, SECRET_PLAINTEXT, m_params.xmrSpendSec.data)) {
+      m_params.encXmrSpendBlob.clear();
+    } else {
+      noteFailure("xmrSpendSec");
+      std::memset(&m_params.xmrSpendSec, 0, sizeof(m_params.xmrSpendSec));
+    }
   }
-  if (!m_params.encXmrViewBlob.empty() && unpack(m_params.encXmrViewBlob, m_params.xmrViewSec)) {
-    m_params.encXmrViewBlob.clear();
+  if (!m_params.encXmrViewBlob.empty()) {
+    if (unpack(m_params.encXmrViewBlob, SECRET_PLAINTEXT, m_params.xmrViewSec.data)) {
+      m_params.encXmrViewBlob.clear();
+    } else {
+      noteFailure("xmrViewSec");
+      std::memset(&m_params.xmrViewSec, 0, sizeof(m_params.xmrViewSec));
+    }
   }
-  if (!m_params.encPeerXmrShareBlob.empty() && unpack(m_params.encPeerXmrShareBlob, m_params.peerXmrSpendShare)) {
-    m_params.encPeerXmrShareBlob.clear();
+  if (!m_params.encPeerXmrShareBlob.empty()) {
+    if (unpack(m_params.encPeerXmrShareBlob, SECRET_PLAINTEXT, m_params.peerXmrSpendShare.data)) {
+      m_params.encPeerXmrShareBlob.clear();
+    } else {
+      noteFailure("peerXmrSpendShare");
+      std::memset(&m_params.peerXmrSpendShare, 0, sizeof(m_params.peerXmrSpendShare));
+    }
   }
   if (!m_params.encRingNonceBlob.empty()) {
     Crypto::SecretKey ringNonceAsKey;
-    if (unpack(m_params.encRingNonceBlob, ringNonceAsKey)) {
+    if (unpack(m_params.encRingNonceBlob, SECRET_PLAINTEXT, ringNonceAsKey.data)) {
       std::memcpy(&m_params.ringOurRingNonceSec, &ringNonceAsKey, 32);
       m_params.encRingNonceBlob.clear();
+    } else {
+      noteFailure("ringOurRingNonceSec");
+      std::memset(&m_params.ringOurRingNonceSec, 0, sizeof(m_params.ringOurRingNonceSec));
     }
   }
   if (!m_params.encMusig2NonceBlob.empty()) {
     constexpr size_t MUSIG2_SEC_NONCE_SIZE = sizeof(Crypto::Musig2SecNonce);
-    bool decrypted = false;
-    if (m_params.encMusig2NonceBlob.size() >=
-        CHACHA8_NONCE_SIZE + SALT_SIZE + MUSIG2_SEC_NONCE_SIZE + TAG_SIZE) {
-      SwapSecretEncryption::EncryptedSecret encrypted;
-      std::memcpy(encrypted.nonce.data(), m_params.encMusig2NonceBlob.data(), CHACHA8_NONCE_SIZE);
-      std::memcpy(encrypted.salt.data(),
-                  m_params.encMusig2NonceBlob.data() + CHACHA8_NONCE_SIZE, SALT_SIZE);
-      encrypted.ciphertext.assign(
-          m_params.encMusig2NonceBlob.begin() + CHACHA8_NONCE_SIZE + SALT_SIZE,
-          m_params.encMusig2NonceBlob.begin() + CHACHA8_NONCE_SIZE + SALT_SIZE + MUSIG2_SEC_NONCE_SIZE);
-      std::memcpy(encrypted.tag.data(),
-                  m_params.encMusig2NonceBlob.data() + CHACHA8_NONCE_SIZE + SALT_SIZE + MUSIG2_SEC_NONCE_SIZE,
-                  TAG_SIZE);
-      decrypted = SwapSecretEncryption::decrypt(
-          encrypted, m_encryptionKey,
-          reinterpret_cast<uint8_t*>(&m_params.musig2.ourSecNonce),
-          MUSIG2_SEC_NONCE_SIZE);
-    }
+    bool decrypted =
+        unpack(m_params.encMusig2NonceBlob, MUSIG2_SEC_NONCE_SIZE,
+               reinterpret_cast<uint8_t*>(&m_params.musig2.ourSecNonce));
     if (decrypted) {
       m_params.encMusig2NonceBlob.clear();
     } else {

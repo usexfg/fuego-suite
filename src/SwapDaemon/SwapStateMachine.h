@@ -49,7 +49,12 @@ public:
   // encryption key. Must be called after setEncryptionKey on a deserialized
   // record that has adaptorSecretEnc / ourSwapSecKeyEnc data.
   // No-op if no encrypted data is present.
+  //
+  // A secret that fails to decrypt is zeroed and logged as unrecoverable; the
+  // swap can no longer be completed and must be refunded at its timelock. This
+  // used to fail silently, leaving a zeroed secret that only tripped much later.
   void decryptStoredSecret();
+  bool secretsFullyRecovered() const { return m_secretsFullyRecovered; }
 
   // Check if swap is in a terminal state
   bool isTerminal() const;
@@ -73,6 +78,7 @@ private:
   time_t m_updatedAt;
   uint64_t m_recordVersion = 0;
   std::string m_encryptionKey;
+  bool m_secretsFullyRecovered = true;
 };
 
 } // namespace XfgSwap

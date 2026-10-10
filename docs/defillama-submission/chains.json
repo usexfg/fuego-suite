@@ -1,0 +1,31 @@
+{
+  "_comment": [
+    "Sketch for a DefiLlama/DefiLlama-Chains entry for Fuego.",
+    "Fields marked null are NOT known yet and must not be guessed -- see README.md.",
+    "Verified 2026-10-04: none of the five declared seed-node hostnames resolve, and",
+    "explorer.usexfg.org resolves to GitHub Pages addresses with nothing served on 443."
+  ],
+  "name": "Fuego",
+  "chainId": null,
+  "rpc": [],
+  "explorers": [],
+  "infoURL": "https://usexfg.org",
+  "twitter": null,
+  "coingeckoId": null,
+  "symbol": "XFG",
+  "slug": "fuego",
+  "description": "Fuego is a CryptoNote privacy coin with on-chain Certificates of Deposit and the Hearth exchange.",
+  "status": "inactive",
+  "tokens": [
+    {
+      "name": "Fuego",
+      "address": "fire",
+      "symbol": "XFG",
+      "decimals": 7,
+      "coingeckoId": null,
+      "logoUrl": "https://raw.githubusercontent.com/usexfg/fuego-suite/master/images/xfg.png",
+      "_comment": "prefix 'fire' is the address prefix declared in the wallet's network_config.dart; decimals 7 is COIN = 10,000,000. coingeckoId is null because no CoinGecko listing exists."
+    }
+  ],
+  "bridge": null
+}

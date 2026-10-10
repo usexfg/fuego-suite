@@ -57,6 +57,59 @@ single source of truth.
 
 ---
 
+## Phase 2l: DeFiLlama submission pack (blocked on infrastructure)
+
+**Date**: 2026-10-04
+**Agent**: opencode (space-bunny-free)
+**Status**: PACK PREPARED -- cannot be submitted yet
+
+### What was measured
+
+DefiLlama knows 486 chains and has **no Fuego/XFG/HEAT entry**, so this is a full chain
+addition rather than a TVL protocol on an existing chain. DefiLlama requires a working
+public RPC **and** explorer per chain. Measured with confirmed outbound access
+(`api.llama.fi:443` reachable), every Fuego endpoint the wallet declares is unavailable:
+
+| Host | Declared in | DNS | Connect |
+|------|-------------|-----|---------|
+| `fuego.seednode1/2.com` | wallet `network_config.dart` | **no record** | n/a |
+| `node1/2.usexfg.org` | wallet `network_config.dart` | **no record** | n/a |
+| `fuego.communitynode.net` | wallet `network_config.dart` | **no record** | n/a |
+| `207.244.247.64:18180` | wallet `network_config.dart` | — | refused |
+| `explorer.usexfg.org` | wallet `explorerUrl` | resolves (GitHub Pages) | **:443 closed** |
+
+So there is currently nothing public for DefiLlama's infrastructure to call.
+
+### The one real API gap
+
+CD is the obvious TVL source. The blockchain snapshot serialises `cd_info`,
+`cd_yield_pool`, `cd_reserve` and `cd_expiry_by_epoch`, but **none of those is a node RPC
+method** -- they are snapshot keys. No public aggregate-CD read exists. `cd_reserve` is the
+protocol reserve, not user principal, so it must not be silently substituted for TVL.
+
+The README specifies a `get_cd_summary` method, returning atomic amounts as decimal
+**strings** so an 18-decimal value does not lose precision above 2^53.
+
+### What was delivered
+
+`docs/defillama-submission/`:
+- `README.md` -- the measured endpoint table, the API gap, four go-live requirements, and
+  the submission order.
+- `chains.json` -- the chain entry, with every unknown field explicitly `null` rather than
+  guessed. `rpc` and `explorers` are empty arrays because no endpoint works.
+- `adapter/index.ts` -- the adapter skeleton, **left un-stubbed**: the call site throws with
+  a named reason instead of guessing a method name. An adapter that invented one would
+  look finished and silently report 0 TVL, which is worse than an obvious gap.
+
+### The real argument for doing it
+
+Beyond TVL, `computeReferenceRate` divides the counterparty's USD price by `xfgUsd`, and
+`xfgUsd` comes from exactly one uncorroborated source: `m_rpc.getFuegoPrice()` (Hearth).
+Both feeds corroborate the counterparty side of every rate; the XFG side has no second
+source. A CoinGecko or DeFiLlama listing for XFG would close that gap, which is a stronger
+reason to pursue this than the TVL figure.
+
+**No RPC was invented and no URL was guessed.** The pack is honest about what is missing.
 ## Phase 2k: stale-primary fallback to the secondary feed
 
 **Date**: 2026-10-04
@@ -4272,9 +4325,9 @@ and require a verified counterparty swap key before initiation.
 |---|------|-------|------|--------|
 | 1 | Remove all wallet and swap-daemon mutation routes and controls from the dashboard | Codex | 2026-10-08 | DONE |
 | 2 | Add runtime chain catalog, network/readiness gates, exact atomic amounts, initiation, status, accept, and refund to the TUI | Codex | 2026-10-08 | DONE |
-| 3 | Apply the same daemon contract and execution gates to DeXFG | Codex | 2026-10-08 | DONE |
+| 3 | Apply the same daemon contract and execution gates to DeXFG | Codex | 2026-10-08 | IN PROGRESS |
 | 4 | Add regression tests for read-only dashboard and executable-client validation | Codex | 2026-10-08 | DONE |
-| 5 | Run dashboard, TUI, and DeXFG focused builds and tests | Codex | 2026-10-08 | DONE |
+| 5 | Run dashboard, TUI, and DeXFG focused builds and tests | Codex | 2026-10-08 | IN PROGRESS |
 | 6 | Run independent swap/security verification and resolve blocking findings | Codex | 2026-10-08 | DONE — three audit artifacts reviewed; AFK execution disabled after final adversarial pass |
 
 ### Sign-off
@@ -4285,9 +4338,9 @@ and require a verified counterparty swap key before initiation.
 | Dashboard tests pass | PASS — Go + 10 Node checks |
 | TUI build compiles | PASS |
 | TUI tests pass | PASS |
-| DeXFG analysis/tests pass | PASS — focused tests; analyzer has informational lints only |
+| DeXFG analysis/tests pass | IN PROGRESS — execution path is being brought to the daemon contract |
 | Independent verification | PASS — dashboard, TUI, and swap contract audit findings resolved |
-| All tasks done | PASS |
+| All tasks done | NO |
 
 ### Strategic checkpoint — implementation batch to DeXFG
 

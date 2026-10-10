@@ -511,6 +511,51 @@ int main() {
           "zero age and skew limits accept an exact current observation");
   }
 
+  // ---- stale primary falls back to a fresh secondary, as SINGLE_SOURCE
+  {
+    // The live feeds only go stale intermittently, so this is proved deterministically.
+    FeedResult freshPrimary = makeFeed("defillama", "ETH", 2700.0, now - 5, now - 2, 0.99, true);
+    FeedResult freshSecondary = makeFeed("coingecko", "ETH", 2701.0, now - 5, now - 2, 0.99, true);
+    FeedResult stalePrimary = freshPrimary;
+    stalePrimary.assets["ETH"].observation.providerTimestamp = now - 9000;
+    stalePrimary.assets["ETH"].observation.fetchTimestamp = now - 9000;
+
+    const PairQuote recovered = buildPairQuote(1, stalePrimary, &freshSecondary, 0.158, pol, now);
+    check(recovered.status == QuoteStatus::SINGLE_SOURCE,
+          "a stale primary is rescued by a fresh secondary");
+    check(recovered.reason.find("secondary feed") != std::string::npos,
+          "and says it was priced from the secondary");
+    check(recovered.referenceRateOk && recovered.rateNum > 0,
+          "and still produces a usable rate");
+    check(recovered.newSwapAllowed,
+          "and still permits the swap, because one fresh source is better than none");
+
+    // Without a secondary there is nothing to fall back to.
+    checkBlockedQuote(buildPairQuote(1, stalePrimary, nullptr, 0.158, pol, now),
+                      QuoteStatus::STALE, "a stale primary with no secondary stays stale");
+
+    // A future timestamp is NOT a coverage problem and must never be substituted away.
+    FeedResult futurePrimary = freshPrimary;
+    futurePrimary.assets["ETH"].observation.providerTimestamp = now + 100000;
+    checkBlockedQuote(buildPairQuote(1, futurePrimary, &freshSecondary, 0.158, pol, now),
+                      QuoteStatus::STALE,
+                      "a future provider stamp is surfaced, not papered over");
+
+    // Neither is a low-confidence primary.
+    FeedResult lowConf = freshPrimary;
+    lowConf.assets["ETH"].observation.confidence = 0.0;
+    checkBlockedQuote(buildPairQuote(1, lowConf, &freshSecondary, 0.158, pol, now),
+                      QuoteStatus::LOW_CONFIDENCE,
+                      "a low-confidence primary is surfaced, not papered over");
+
+    // Nor is a malformed one.
+    FeedResult nanConf = freshPrimary;
+    nanConf.assets["ETH"].observation.confidence = std::nan("");
+    checkBlockedQuote(buildPairQuote(1, nanConf, &freshSecondary, 0.158, pol, now),
+                      QuoteStatus::LOW_CONFIDENCE,
+                      "a malformed-confidence primary is surfaced, not papered over");
+  }
+
   std::printf("%d checks, %d failures\n", g_checks, g_failures);
   return g_failures == 0 ? 0 : 1;
 }

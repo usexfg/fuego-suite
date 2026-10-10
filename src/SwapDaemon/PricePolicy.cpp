@@ -192,7 +192,43 @@ QuoteStatus evaluateAsset(const AssetDescriptor& asset,
   }
 
   QuoteStatus st = validateObservation(pit->second.observation, policy, now, outObservation.reason);
-  if (st != QuoteStatus::OK) return st;
+  if (st != QuoteStatus::OK) {
+    // The primary is unusable -- usually stale. Measured 2026-10-04: DeFiLlama's per-coin
+    // stamps for long-tail assets run 927-10650s against a 600s gate, while CoinGecko is
+    // 3-26s old and agrees to several significant figures. Refusing to use a fresh, sane
+    // price because the primary is slow is a self-inflicted outage.
+    //
+    // A usable secondary is better than no price, but it is NOT corroboration: only one
+    // source passed validation, so this is reported SINGLE_SOURCE, never OK.
+    // ONLY when the primary is genuinely TOO OLD, decided from the observation rather
+    // than the status. Both "too old" and "ahead of the clock" return STALE, but they are
+    // opposite problems: an old price is a coverage gap a fresh source can fill, while a
+    // future timestamp is a broken clock or a bogus feed and must be surfaced, never
+    // substituted away. LOW_CONFIDENCE and malformed data are likewise correctness
+    // signals and are left alone.
+    const PriceObservation& pob = pit->second.observation;
+    const bool primaryTooOld =
+        pob.providerTimestamp > 0 && pob.fetchTimestamp > 0 &&
+        now - pob.providerTimestamp > policy.maxProviderAgeSec &&
+        now - pob.fetchTimestamp > policy.maxProviderAgeSec &&
+        pob.providerTimestamp <= now && pob.fetchTimestamp <= now;
+
+    if (st == QuoteStatus::STALE && primaryTooOld &&
+        secondary != nullptr && secondary->transportOk) {
+      const std::string primaryReason = outObservation.reason;
+      auto sit = secondary->assets.find(asset.symbol);
+      if (sit != secondary->assets.end() && sit->second.ok) {
+        std::string sreason;
+        if (validateObservation(sit->second.observation, policy, now, sreason) == QuoteStatus::OK) {
+          outObservation = sit->second;
+          outObservation.reason = "primary feed unusable (" + primaryReason +
+                                 "); priced from the secondary feed, uncorroborated";
+          return QuoteStatus::SINGLE_SOURCE;
+        }
+      }
+    }
+    return st;
+  }
 
   bool corroborated = false;
   if (secondary != nullptr && secondary->transportOk) {
@@ -271,7 +307,13 @@ PairQuote buildPairQuote(uint8_t pair,
     case QuoteStatus::LOW_CONFIDENCE:
     case QuoteStatus::DISPUTED:
     case QuoteStatus::UNEXECUTABLE: break;
-    case QuoteStatus::SINGLE_SOURCE: q.reason = "only one feed answered; not corroborated"; break;
+    // Keep a specific reason when evaluateAsset produced one. This switch used to
+    // overwrite unconditionally, which erased *why* a quote was single-source -- most
+    // visibly the "primary stale, priced from the secondary" case, whose explanation is
+    // exactly what an operator needs.
+    case QuoteStatus::SINGLE_SOURCE:
+      if (q.reason.empty()) q.reason = "only one feed answered; not corroborated";
+      break;
     case QuoteStatus::OK: break;
   }
 

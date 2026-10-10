@@ -57,6 +57,70 @@ single source of truth.
 
 ---
 
+## Phase 2k: stale-primary fallback to the secondary feed
+
+**Date**: 2026-10-04
+**Agent**: opencode (space-bunny-free)
+**Status**: DONE -- 443 checks, 0 failures
+
+### What the data showed
+
+Probing both feeds directly on 2026-10-04, per-asset age against the 600 s gate:
+
+    asset   defillama_age   coingecko_age   defillama_price   coingecko_price
+    KMD      ABSENT          99345           --                0.006595
+    PLS      10650           3               1.055e-05         1.05e-05
+    DCR      1529            3               17.44             17.44
+    CRO      1529            19              0.0611            0.06099
+    RBTC     1529            19              8.258e+04         8.27e+04
+
+DeFiLlama's per-coin stamps for long-tail assets routinely exceed the gate while
+CoinGecko is 3-26 s old and **agrees to several significant figures**. Because
+`evaluateAsset` required the primary to pass validation before consulting the secondary at
+all, a fresh and sane price was being thrown away because the *primary* was slow. That is a
+self-inflicted outage, not a safety property.
+
+KMD is worse: absent from DeFiLlama entirely, and CoinGecko's copy is ~27.6 h old. It is
+genuinely unpriceable and this change does not rescue it.
+
+### The change, and the three restrictions that make it safe
+
+A usable secondary now rescues a primary that failed, returning `SINGLE_SOURCE` and never
+`OK` -- only one source passed validation, so it is not corroboration.
+
+1. **Only a genuinely-old primary.** "Too old" and "ahead of the clock" both return
+   `STALE`, but they are opposite problems. An old price is a coverage gap; a future
+   timestamp is a broken clock or a bogus feed and must be surfaced. Gated on the
+   observation, not the status.
+2. **Never on `LOW_CONFIDENCE` or malformed data.** Those mean our own read is suspect;
+   substituting another source would hide it. Both are surfaced.
+3. **Never with no secondary**, in which case the original status stands.
+
+`buildPairQuote` also stopped overwriting the reason for every `SINGLE_SOURCE` with a
+generic string, which erased *why* a quote was uncorroborated -- most visibly the new
+"primary stale, priced from the secondary" explanation, which is exactly what an operator
+needs.
+
+### Honest measurement note
+
+A first attempt concluded the fallback raised coverage from 29 to 32 pairs. **That was
+wrong** -- it was feed-state variance between two runs, and instrumenting the reason string
+showed the fallback firing **0 times** at that instant, because DeFiLlama's staleness is
+intermittent. Rather than assert a benefit from a lucky sample, the fallback is now proved
+deterministically in `test_price_policy`: a stale primary with a fresh secondary yields
+`SINGLE_SOURCE` with a usable rate and `newSwapAllowed`; with no secondary it stays
+`STALE`; and future-stamp, low-confidence and malformed primaries are each surfaced rather
+than papered over.
+
+`test_price_policy`: **443 checks, 0 failures**. `ctest` over 9 suites: **100% passed**.
+
+### TOCTOU, restated
+
+Gate A proves the wallet holds the funds, then spends them later when the escrow is
+broadcast. Between those moments the balance can change, so the proof no longer holds at
+the point of use. The check shrinks the window; it does not close it. Closing it needs the
+wallet to *reserve* the amount so no other swap can consume it first. That is a walletd
+change (a new JSON-RPC reservation primitive) and is deliberately not started here.
 ## Restore after concurrent branch switch (2026-10-04)
 
 **Agent**: opencode (space-bunny-free)

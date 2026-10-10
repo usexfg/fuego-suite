@@ -98,3 +98,17 @@ target_link_libraries(key_image_uniqueness_tests PRIVATE
     gtest_main
 )
 add_test(NAME key_image_uniqueness_tests COMMAND key_image_uniqueness_tests)
+
+# Secure-zero primitive for secret material. sodium_memzero was declared in
+# crypto/crypto-util.h but never defined or called, so every secret wipe was a
+# plain memset the optimiser could delete once the buffer was dead.
+add_executable(secure_zero_tests
+    UnitTests/SecureZeroTest.cpp
+)
+target_include_directories(secure_zero_tests PRIVATE ${CMAKE_SOURCE_DIR}/external/gtest/include)
+target_link_libraries(secure_zero_tests PRIVATE
+    Crypto
+    gtest
+    gtest_main
+)
+add_test(NAME secure_zero_tests COMMAND secure_zero_tests)

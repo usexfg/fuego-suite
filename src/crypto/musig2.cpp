@@ -21,6 +21,7 @@
 
 #include "musig2.h"
 #include "crypto.h"
+#include "crypto-util.h"
 
 extern "C" {
 #include "crypto-ops.h"
@@ -368,7 +369,12 @@ bool musig2_partial_sign(
 
   // Securely erase the secret nonce — MUST NOT be reused. All-zero now marks
   // it consumed (see the guard above).
-  memset(&sec_nonce, 0, sizeof(Musig2SecNonce));
+  //
+  // sodium_memzero rather than memset: a memset on a buffer that is dead at
+  // return is a dead store the optimiser may delete, leaving 64 bytes of signing
+  // nonce recoverable from a core dump or a swapped page. A reused Musig2SecNonce
+  // is full key extraction.
+  sodium_memzero(&sec_nonce, sizeof(Musig2SecNonce));
 
   session.nonceSigned = true;
   return true;

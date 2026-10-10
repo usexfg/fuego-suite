@@ -516,9 +516,12 @@ int main() {
     // The live feeds only go stale intermittently, so this is proved deterministically.
     FeedResult freshPrimary = makeFeed("defillama", "ETH", 2700.0, now - 5, now - 2, 0.99, true);
     FeedResult freshSecondary = makeFeed("coingecko", "ETH", 2701.0, now - 5, now - 2, 0.99, true);
+    // fetchTimestamp is deliberately LEFT AT NOW, exactly as the real feeds populate it
+    // (it is our own clock at parse time). An earlier version of this test aged it too,
+    // which let a condition requiring a stale fetchTimestamp pass while it was false for
+    // every real feed -- the fallback then never fired in production.
     FeedResult stalePrimary = freshPrimary;
     stalePrimary.assets["ETH"].observation.providerTimestamp = now - 9000;
-    stalePrimary.assets["ETH"].observation.fetchTimestamp = now - 9000;
 
     const PairQuote recovered = buildPairQuote(1, stalePrimary, &freshSecondary, 0.158, pol, now);
     check(recovered.status == QuoteStatus::SINGLE_SOURCE,
@@ -554,6 +557,18 @@ int main() {
     checkBlockedQuote(buildPairQuote(1, nanConf, &freshSecondary, 0.158, pol, now),
                       QuoteStatus::LOW_CONFIDENCE,
                       "a malformed-confidence primary is surfaced, not papered over");
+  }
+
+  // ---- the fixture must match how real feeds populate the observation
+  {
+    FeedResult f = makeFeed("defillama", "ETH", 2700.0, now - 5, now - 2, 0.99, true);
+    const PriceObservation& o = f.assets.at("ETH").observation;
+    check(o.fetchTimestamp == now - 2,
+          "fixture fetchTimestamp is ~now, like a real feed at parse time");
+    check(o.providerTimestamp < o.fetchTimestamp,
+          "and the provider stamp is older than our own receipt");
+    check(now - o.fetchTimestamp < pol.maxProviderAgeSec,
+          "so any staleness test must rely on the provider stamp alone");
   }
 
   std::printf("%d checks, %d failures\n", g_checks, g_failures);

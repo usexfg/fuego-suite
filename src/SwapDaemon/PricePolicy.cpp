@@ -206,11 +206,17 @@ QuoteStatus evaluateAsset(const AssetDescriptor& asset,
     // future timestamp is a broken clock or a bogus feed and must be surfaced, never
     // substituted away. LOW_CONFIDENCE and malformed data are likewise correctness
     // signals and are left alone.
+    // Age is judged on the PROVIDER stamp alone. fetchTimestamp is our own clock at parse
+    // time, so it is always ~0s old; requiring it to be stale too made this condition
+    // false for every real feed, and the fallback never fired in production. The unit
+    // test had aged fetchTimestamp by hand, which hid exactly this.
+    //
+    // The future-timestamp guards stay on both fields: a stamp ahead of the clock is a
+    // broken clock or a bogus feed, never a coverage gap.
     const PriceObservation& pob = pit->second.observation;
     const bool primaryTooOld =
         pob.providerTimestamp > 0 && pob.fetchTimestamp > 0 &&
         now - pob.providerTimestamp > policy.maxProviderAgeSec &&
-        now - pob.fetchTimestamp > policy.maxProviderAgeSec &&
         pob.providerTimestamp <= now && pob.fetchTimestamp <= now;
 
     if (st == QuoteStatus::STALE && primaryTooOld &&

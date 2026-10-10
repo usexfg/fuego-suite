@@ -44,8 +44,21 @@ fn scalar_add(a: &Scalar, b: &Scalar) -> Scalar {
 
 // ─── Public types ────────────────────────────────────────────────────────────
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct AdaptorSecret(pub [u8; 32]);
+
+/// Redacted on purpose.
+///
+/// This is the swap preimage: revealing it is what unlocks the counterparty's
+/// side of an atomic swap. A derived `Debug` would put the raw scalar into any
+/// log line, panic message, or `assert_eq!` failure that happened to format it.
+/// Printing a redacted placeholder keeps `{:?}` usable for diagnostics without
+/// ever emitting the secret.
+impl std::fmt::Debug for AdaptorSecret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "AdaptorSecret([redacted])")
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AdaptorPubkey(PublicKey);
@@ -382,5 +395,33 @@ mod tests {
         let combined = nc_a.combine(&nc_b).unwrap();
         let combined_rev = nc_b.combine(&nc_a).unwrap();
         assert_eq!(combined.R, combined_rev.R);
+    }
+
+    #[test]
+    fn test_adaptor_secret_debug_is_redacted() {
+        // The preimage is the counterparty's unlock value. Formatting must never
+        // emit it, so assert on the absence of the hex rather than on an exact
+        // string -- that keeps this passing if the wording is ever tweaked.
+        let mut rng = StdRng::seed_from_u64(4242);
+        let secret = AdaptorSecret::random(&mut rng);
+        let rendered = format!("{:?}", secret);
+
+        let hex = hex::encode(secret.0);
+        assert!(
+            !rendered.contains(&hex),
+            "Debug output leaked the preimage: {}",
+            rendered
+        );
+        assert!(rendered.contains("redacted"), "expected a redaction marker: {}", rendered);
+    }
+
+    #[test]
+    fn test_adaptor_secret_debug_stays_redacted_across_secrets() {
+        // Guards against an implementation that leaks only for some values.
+        for seed in 0u64..64 {
+            let mut rng = StdRng::seed_from_u64(seed);
+            let secret = AdaptorSecret::random(&mut rng);
+            assert!(!format!("{:?}", secret).contains(&hex::encode(secret.0)));
+        }
     }
 }

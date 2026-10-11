@@ -1,3 +1,121 @@
+## Security audit remediation round 1 (I-1, L-2, L-3, L-4, L-5)
+
+**Started**: 2026-10-08
+**Agent**: opencode (space-bunny-free)
+**Branch**: `security/audit-fixes-round2`
+**Status**: DONE — 7 commits; one item (L-2b, wallet-file cipher) deferred by owner decision with migration detail recorded
+**Guide**: `docs/SECURITY_AUDIT_FIX_GUIDE.md`; register in `docs/SECURITY_AUDIT_FINDINGS.md`
+
+Every task received an adversarial review before implementation and again after. Three
+review passes found defects that reading alone would not have: a deleted-function landmine
+behind a clean build, two silently-broken crypto functions, a test that passed against a
+working exploit, an AEAD that authenticated nothing, and two places where my own plan was
+actively harmful.
+
+### Changes
+
+- **I-1 — deleted dead OAES exports.** `oaes_sprintf`, `oaes_key_gen/128/192/256` and both
+  `oaes_get_seed` overloads had no callers anywhere in the tree. Removing them also removes
+  the weak time+pid+heap seed that fed `srand()`. Two details a naive delete would miss: the
+  ISAAC branch in `oaes_alloc` called `oaes_get_seed`, and that branch is compiled out today,
+  so the delete compiled clean and would have broken the moment anyone enabled
+  `OAES_HAVE_ISAAC` — it now seeds from `generate_random_bytes()`. Separately,
+  `oaes_alloc` still calls `oaes_set_option(OAES_OPTION_CBC, NULL)`, which fills an IV from
+  `rand()`; with the seed gone that sequence is deterministic. Harmless for CryptoNight
+  (imports its key, runs ECB pseudo-rounds, never reads the CBC IV) and documented at the
+  call site so nobody reinstates `srand()`.
+- **L-4 — defined `sodium_memzero` / `sodium_compare`.** Both were declared in
+  `crypto-util.h` but never defined or called, so every secret wipe in the tree was a plain
+  `memset` the optimiser may delete. Promotes the volatile-pointer pattern the swap daemon
+  already used. `musig2.cpp`'s 64-byte secret-nonce wipe now routes through it. Getting
+  `sodium_compare` right took three attempts, all recorded in the code because all three
+  compiled cleanly: an inverted mask, `diff >> 31` (cannot see bits below 31, so unequal
+  buffers compared equal), and the textbook fold — which at `-O2` clang collapsed to
+  `d | (d>>1)` by rematerialising `d` per shift term, missing a lone bit 0. Caught by
+  disassembly, not by the test. Verified the wipe survives `-O2` (`strb wzr` at 0x38).
+- **L-3 — redacted `AdaptorSecret`'s `Debug`.** The swap preimage was `Debug`-printable, so
+  any `{:?}` would leak it. One of the two new tests passed against a *working leak*, because
+  it compared against contiguous hex while a `{:02x?}` leak emits `[0a, 1b, …]` with
+  brackets. Rewritten to normalise to hex digits first.
+- **L-2 — swap secret-at-rest to ChaCha20-Poly1305.** Replaces ChaCha8 (~quarter of
+  ChaCha20's margin) with a real AEAD via OpenSSL EVP. **The first implementation shipped
+  unauthenticated encryption**: `EVP_EncryptFinal_ex` does not append the Poly1305 tag on
+  OpenSSL 3 (it reports `finalLen == 0`), so the tag was never stored and records
+  round-tripped "successfully" while accepting a wrong key and tampered ciphertext, nonce and
+  salt. Four tests caught it; a first fix truncated the tag and broke 13 more. The tag comes
+  from `EVP_CTRL_AEAD_GET_TAG`, mirrored by `SET_TAG`. Also: the v1/v2 decoder choice is an
+  explicit stored version byte rather than a shape sniff (the planned heuristic would have
+  let a tampered record steer the decoder into the weaker cipher); version and salt are
+  AAD-bound so a v2 record relabelled as v1 is rejected; v1 is retained for reading only and
+  shares the KDF so swaps interrupted across the upgrade still recover; serialisation moved
+  into `encode`/`decode`, replacing three hand-inlined copies one of which hardcoded a
+  32-byte ciphertext length and mis-parsed the 64-byte MuSig2 nonce; and
+  `decryptStoredSecret` no longer leaves a failed decryption silently zeroed.
+- **L-5 — wiped wallet key buffers.** `decryptKeyPair`'s decrypted `buffer`,
+  `encryptKeyPair`'s plaintext `serializedKeys`, and `deinit()`'s `m_viewSecretKey` all died
+  without being wiped. All three now use `sodium_memzero`.
+- **Two consensus comment/formatting fixes.** `checkTransactionInputs` now names the input
+  type it rejects, and `Currency.cpp`'s `isTestnet()` block is re-indented
+  (whitespace-only, verified with `git diff --ignore-all-space`). See "A false finding" below.
+
+### Deferred
+
+- **L-2b — wallet-file cipher upgrade to ChaCha20-Poly1305.** Deferred by owner decision.
+  `EncryptedWalletRecord` is a fixed-size `#pragma pack(1)` struct (8+72+32) embedded
+  directly in `ContainerStoragePrefix`, so a wider record shifts every container offset;
+  this needs a legacy read path across ten `decryptKeyPair` call sites. The failure mode is
+  asymmetric — a bad version dispatch opens a wallet *empty* rather than failing loudly —
+  which is worse than the LOW cipher margin it closes. Full migration steps, including the
+  v1-fixture load test that must gate it, are in `docs/SECURITY_AUDIT_FINDINGS.md`.
+
+### A false finding, recorded because the process was wrong
+
+This audit raised a **CRITICAL** claim that "mainnet reports v12 from block 0 because
+`m_upgradeHeightV12` is never set". It was wrong. `CurrencyBuilder`'s constructor does set
+every upgrade height, including
+`upgradeHeightV12(parameters::UPGRADE_HEIGHT_V12) = 2666666`, so mainnet reaches v11 at
+1,111,111 and v12 at 2,666,666 as designed.
+
+The failure was methodological: I grepped for the setter outside `Currency.{h,cpp}` — where
+the call lives — concluded nothing set it, and then wrote a small program reproducing *my
+own premise* rather than the code's behaviour, and presented the output as verification. The
+"verify by executing" instinct was right; the model was not. The indentation fix above exists
+because that mangled block is what made the misreading possible.
+
+### Task List
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Task 1: delete dead OAES exports | opencode | 2026-10-08 | DONE |
+| 2 | Task 2: define `sodium_memzero`, route MuSig2 nonce wipe | opencode | 2026-10-08 | DONE |
+| 3 | Task 3: redact `AdaptorSecret` Debug | opencode | 2026-10-08 | DONE |
+| 4 | Task 4: swap secret-at-rest -> ChaCha20-Poly1305 | opencode | 2026-10-08 | DONE |
+| 5 | Task 6: name rejected input type; fix testnet indentation | opencode | 2026-10-08 | DONE |
+| 6 | Task 7: state recovery action on epoch-work rebuild failure | opencode | 2026-10-08 | DONE |
+| 7 | Task C: wipe wallet key buffers | opencode | 2026-10-08 | DONE |
+| 8 | Document L-2b deferral with migration detail | opencode | 2026-10-08 | DONE |
+| 9 | Task 5: wallet-file cipher upgrade | — | — | **DEFERRED (owner)** |
+
+### Sign-Off
+
+| Gate | Signed By | Date | Result |
+|------|-----------|------|--------|
+| Full build | opencode | 2026-10-08 | PASS (0 errors) |
+| `ctest` | opencode | 2026-10-08 | 50/54 PASS |
+| `core_tests` | opencode | 2026-10-08 | PASS 202/202, exit 0 |
+| `test_swap_secret_encryption` (new) | opencode | 2026-10-08 | PASS 31/31 |
+| `secure_zero_tests` (new) | opencode | 2026-10-08 | PASS 7/7 |
+| `cargo test` (adaptor crate) | opencode | 2026-10-08 | PASS 8/8 |
+| `sodium_memzero` survives `-O2` | opencode | 2026-10-08 | PASS (`strb wzr` at 0x38) |
+| Mutation checks on new tests | opencode | 2026-10-08 | PASS (all four detected) |
+| 4 pre-existing failures | opencode | 2026-10-08 | NOT MINE — reproduce on a stashed tree |
+
+The four failures are `test_sol_e2e`, `test_xmr_live_e2e` (arg-gated live-network harnesses
+CTest invokes bare) and `test_btc_htlc`, `test_ltc_htlc` (abort independently). Confirmed
+identical before and after every change in this branch.
+
+---
+
 ## Correct stale fuego-currency skill documentation (R2-4)
 
 **Started**: 2026-10-08

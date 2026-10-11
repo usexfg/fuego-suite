@@ -89,10 +89,10 @@ namespace CryptoNote
 			m_upgradeHeightV6 = 6;
 			m_upgradeHeightV7 = 17;
 			m_upgradeHeightV8 = 18;
-		m_upgradeHeightV9 = 19;
-		m_upgradeHeightV10 = 25;
-		m_upgradeHeightV11 = 30;
-		m_upgradeHeightV12 = 180;
+			m_upgradeHeightV9 = 19;
+			m_upgradeHeightV10 = 25;
+			m_upgradeHeightV11 = 30;
+			m_upgradeHeightV12 = 180;
 		m_bootstrapBlocks = TESTNET_BOOTSTRAP_BLOCKS;
 		m_difficultyTarget = 10;  // 10-second target for testnet (fast mining)
 

@@ -2665,7 +2665,19 @@ bool CryptoNote::Blockchain::checkTransactionInputs(const Transaction& tx, const
       }
       else
       {
-        logger(INFO, BRIGHT_WHITE) << "Transaction << " << transactionHash << " contains input of unsupported type.";
+        // Names the type so an operator can tell what arrived instead of only
+        // seeing "unsupported". TransactionInputUnified lands here: it is
+        // serialised (tag 0x5) and ring-size checked in core::handle_incoming_tx
+        // under BLOCK_MAJOR_VERSION_12, but full input validation is not wired
+        // up yet, so every Unified input is rejected here regardless of height.
+        //
+        // That asymmetry is deliberate for now -- fail closed beats half-valid.
+        // If Unified is ever enabled, its validation must land in the SAME
+        // change that stops rejecting it here, because the vault-consensus gate
+        // in pushTransaction already classifies Unified key images and runs
+        // before this rejection would have been reached.
+        logger(INFO, BRIGHT_WHITE) << "Transaction << " << transactionHash
+            << " contains input of unsupported type: " << typeid(txin).name();
         return false;
       }
     }
@@ -6032,6 +6044,11 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
           isVaultSpend = true; break;
         }
       } else if (inv.type() == typeid(TransactionInputUnified)) {
+        // Kept, though currently unreachable: Unified inputs are rejected by
+        // checkTransactionInputs, so this can never see one. Retained because it
+        // IS a vault-spend check -- deleting it as "dead code" would remove a
+        // protection at the moment Unified is enabled. The v11 gate below makes
+        // it inert before BLOCK_MAJOR_VERSION_12 (2,666,666).
         if (m_vault.isVaultKeyImage(boost::get<TransactionInputUnified>(inv).keyImage)) {
           isVaultSpend = true; break;
         }

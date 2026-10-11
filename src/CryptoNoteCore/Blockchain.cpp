@@ -1231,7 +1231,21 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
       }
 
       if (!processBlockEpochWork(block.bl, block.height, blockHash)) {
-        logger(ERROR, BRIGHT_RED) << "Cache rebuild replay epoch work failed at height " << b;
+        // Same fail-closed posture as the two sibling replay failures above
+        // (miner-tx and per-tx): log and abort the rebuild. Deliberately NOT
+        // clearing m_blocks here -- this runs inside the replay loop, so
+        // clearing mid-iteration would leave a half-built chain with no clean
+        // restart path, and the caller already treats a short rebuild as
+        // unusable.
+        //
+        // The distinction from its siblings is that epoch work mutates
+        // multi-accumulator state (fee pools, treasury, AMM reserves, TWAP),
+        // so a partial epoch leaves balances and APY wrong rather than merely
+        // truncated. Say so in the log: an operator seeing this must discard the
+        // node's cache, not treat it as a cosmetic warning.
+        logger(ERROR, BRIGHT_RED)
+          << "Cache rebuild epoch work failed at height " << b
+          << " -- epoch accounting is incomplete; discard this node's cache and resync";
         return;
       }
 

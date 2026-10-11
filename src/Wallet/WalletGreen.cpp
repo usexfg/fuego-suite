@@ -53,6 +53,7 @@
 #include "CryptoNoteCore/CommitmentIndex.h"
 #include "INode.h"
 #include "crypto/crypto.h"
+#include "crypto/crypto-util.h"
 #include "crypto/keccak.h"
 #include "Transfers/TransfersContainer.h"
 #include "WalletSerializationV1.h"
@@ -2266,6 +2267,11 @@ namespace CryptoNote
     serializer(publicKey, "publicKey");
     serializer(secretKey, "secretKey");
     serializer.binary(&creationTimestamp, sizeof(uint64_t), "creationTimestamp");
+
+    // `buffer` holds the decrypted secret key and dies at this return. Wipe it
+    // with a store the optimiser must keep -- a plain memset on a dead buffer is
+    // a dead store that may be deleted, leaving the key in freed heap.
+    sodium_memzero(buffer.data(), buffer.size());
   }
 
   void WalletGreen::decryptKeyPair(const EncryptedWalletRecord &cipher, PublicKey &publicKey, SecretKey &secretKey, uint64_t &creationTimestamp) const
@@ -2291,6 +2297,10 @@ namespace CryptoNote
 
     result.iv = iv;
     chacha8(serializedKeys.data(), serializedKeys.size(), key, result.iv, reinterpret_cast<char *>(result.data));
+
+    // `serializedKeys` holds the plaintext secret key from here on. Wipe it once
+    // the ciphertext and tag are complete, before the MAC work that can throw.
+    sodium_memzero(&serializedKeys[0], serializedKeys.size());
 
     // Compute HMAC-SHA256(macKey, iv || encryptedData) for AEAD
     uint8_t macKey[32];
@@ -2494,7 +2504,10 @@ namespace CryptoNote
     std::queue<WalletEvent> noEvents;
     std::swap(m_events, noEvents);
 
-    memset(m_viewSecretKey.data, 0, sizeof(m_viewSecretKey.data));
+    // View secret key and password: both are root key material and both die at
+    // the end of this scope. Plain memset on a dying member is a dead store the
+    // optimiser may delete.
+    sodium_memzero(m_viewSecretKey.data, sizeof(m_viewSecretKey.data));
     m_password.assign(m_password.capacity(), '\0');
     m_password.clear();
 

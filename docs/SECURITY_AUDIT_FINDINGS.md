@@ -14,13 +14,13 @@ Round 1 detail, fix recipes and verification steps live in
 
 ## Summary
 
-| Severity | Count | Fixed | Open / Decision |
-|----------|-------|-------|-----------------|
-| CRITICAL | 1 | 0 | 1 (R2-1, protocol change) |
+| Severity | Count | Fixed | Open / Deferred / Decision |
+|----------|-------|-------|---------------------------|
+| CRITICAL | 1 | 0 | 1 (R2-1, protocol change, deferred to v12) |
 | HIGH | 1 | 1 | 0 |
 | MEDIUM | 3 | 3 | 0 |
-| LOW | 7 | 0 | 7 |
-| INFO | 7 | 1 | 6 (5 dead-code/hygiene, 2 documented) |
+| LOW | 8 | 6 | 1 deferred (L-2b wallet cipher), 1 documented (L-1) |
+| INFO | 7 | 2 | 5 (dead-code/hygiene/notes) |
 | FP | 3 | — | n/a |
 
 **No fund-loss primitive was found in round 1's scoped paths.** Round 2 found one in the
@@ -34,11 +34,13 @@ treasury vault (R2-1), which is worse than anything round 1 turned up.
 | M-1 | MEDIUM | `pushTransaction` return ignored; partial connect state never rolled back | `Blockchain.cpp:3890`, `5969-6158` | **FIXED** |
 | M-2 | MEDIUM | `SwapEscrow` key image missing Ed25519 domain check | `Blockchain.cpp:6984` | **FIXED** |
 | M-3 | MEDIUM | Path traversal in `exportWallet` / `exportWalletKeys` (plaintext key write to arbitrary path) | `PaymentGate/WalletService.cpp:727` | **FIXED** |
-| L-1 | LOW | `TransactionInputUnified` rejected by validation but referenced by push | `Blockchain.cpp:2653`, `5993` | OPEN |
-| L-2 | LOW | ChaCha8 (reduced-round) for swap secret-at-rest encryption | `SwapDaemon/SwapSecretEncryption.cpp` | OPEN |
-| L-3 | LOW | Rust `AdaptorSecret` derives `Debug` (preimage logging footgun) | `fuego-swapd-adaptor/src/lib.rs:48` | OPEN |
-| L-4 | LOW | No working secure-zero primitive (`sodium_memzero` declared, never defined/used) | `crypto/crypto-util.h:31` | OPEN |
-| I-1 | INFO | `oaes_sprintf` / `oaes_key_gen_*` / weak `oaes_get_seed` — all dead and unreachable | `crypto/oaes_lib.c:433,621` | OPEN (delete) |
+| L-1 | LOW | `TransactionInputUnified` rejected by validation but referenced by push | `Blockchain.cpp:2653`, `5993` | DOCUMENTED (arm kept — it is a vault check) |
+| L-2 | LOW | ChaCha8 (reduced-round) for swap secret-at-rest encryption | `SwapDaemon/SwapSecretEncryption.cpp` | **FIXED** (v2 ChaCha20-Poly1305, v1 read path) |
+| L-2b | LOW | ChaCha8 for **wallet-file** key records | `Wallet/WalletGreen.cpp:2293` | **DEFERRED** — see below |
+| L-3 | LOW | Rust `AdaptorSecret` derives `Debug` (preimage logging footgun) | `fuego-swapd-adaptor/src/lib.rs:48` | **FIXED** |
+x (`sodium_memzero` declared, never defined/used) | `crypto/crypto-util.h:31` | **FIXED** |
+| L-5 | LOW | Wallet key buffers never wiped (plain `memset`, dead-store-eliminable) | `Wallet/WalletGreen.cpp:2260,2282,2497` | **FIXED** |
+| I-1 | INFO | `oaes_sprintf` / `oaes_key_gen_*` / weak `oaes_get_seed` — all dead and unreachable | `crypto/oaes_lib.c:433,621` | **FIXED** (deleted) |
 | I-2 | INFO | `popen("which tor")` etc. — fixed strings, no injection; PATH-hijack caveat | `FuegoTor/Fuegotor.cpp:329` | OPEN (optional) |
 | I-3 | INFO | `PointTimelock.sol` notes: permissionless `refund()`, id-squat, on-chain secret | `contracts/point-timelock/src/PointTimelock.sol` | DOCUMENTED |
 | I-4 | INFO | Mempool accepted intra-tx duplicate key images | `CryptoNoteCore/TransactionPool.cpp:335` | **FIXED** by H-1 |
@@ -58,7 +60,7 @@ barrier at the connect site. `popTransaction` was verified type-guarded already,
 | ID | Sev | Title | Location | Status |
 |----|-----|-------|----------|--------|
 | R2-1 | **CRITICAL** | Treasury vault spend key derivable from public data | `Treasury/VaultKeys.cpp:19`, `CryptoNoteConfig.h:306` | **DECISION** — in progress on `codex/treasury-vault-auth` |
-| R2-2 | LOW | Wallet files use ChaCha8 (AEAD around it is sound) | `Wallet/WalletGreen.cpp:2293` | OPEN |
+| R2-2 | LOW | Wallet files use ChaCha8 (AEAD around it is sound) | `Wallet/WalletGreen.cpp:2293` | **DEFERRED** — see L-2b |
 | R2-3 | INFO | 69/11/20 epoch fee split strands integer dust | `Blockchain.cpp:5082-5084` | OPEN |
 | R2-4 | PROCESS | `fuego-currency` skill doc stale (says 80/20; code is 69/11/20) | `~/.config/opencode/skills/fuego-currency/` | OPEN |
 | R2-5 | LOW | Early `return false` from mutating epoch work | `Blockchain.cpp:5104`, `:1233` | OPEN |
@@ -77,6 +79,66 @@ the fee-pool aggregate cap in `checkCommitmentSpendInput`), BONUS_VAULT, and tre
 Getting a spend on-chain still requires block inclusion, so it is not a free remote steal — but it
 is the only cryptographic barrier, and it is not one. Rotating the derivation is a protocol change
 needing an activation/migration plan, hence DECISION rather than a patch.
+
+## L-2b (deferred) — wallet-file cipher upgrade, and why it is not a field swap
+
+**Status:** DEFERRED by owner decision. This is the one open item from round 1's
+remediation plan, and it is deferred on a cost/risk basis rather than being hard.
+
+Wallet key records are encrypted with ChaCha8 (`WalletGreen.cpp:2293`). The
+surrounding construction is sound — HMAC-SHA256 over `iv || ciphertext` with a
+separately derived, domain-separated MAC key, constant-time `CRYPTO_memcmp` verify,
+fail-closed (`WalletGreen.cpp:2255`). Only the cipher margin is at issue, which is
+why this is LOW.
+
+**The blocker is the container format, not the cipher.** `EncryptedWalletRecord`
+(`WalletIndices.h:60-65`) is a fixed-size `#pragma pack(1)` struct:
+
+```
+struct EncryptedWalletRecord {
+  Crypto::chacha8_iv iv;                    //  8 bytes
+  uint8_t data[32 + 32 + 8];                // 72 bytes
+  uint8_t tag[32];                          // 32 bytes
+};                                           // 112 bytes, packed
+```
+
+It is embedded directly in `ContainerStoragePrefix`
+(`WalletGreen.h:310-314`), which is the first record in the wallet container.
+A 12-byte ChaCha20 nonce plus a 16-byte Poly1305 tag does not fit that shape, so
+growing the record changes the prefix size and **shifts every subsequent offset in
+the container**.
+
+**Precedent, and what it implies.** The HMAC tag was added to this same struct
+earlier; the codebase handled it by introducing parallel
+`LegacyEncryptedWalletRecord` / `LegacyContainerStoragePrefix`
+(`WalletGreen.cpp:104-114`). Doing the same again means a second full read path.
+`decryptKeyPair` has **10 call sites**, and `saveWalletCache` writes the new
+version only.
+
+**Required work when this is picked up:**
+
+1. Introduce a v2 record type (wider IV, Poly1305 tag) alongside the existing one;
+   do not mutate `EncryptedWalletRecord` in place.
+2. Dispatch on `ContainerStoragePrefix::version`, which is already threaded into
+   `decryptKeyPair` — the mechanism exists, it needs a new arm, not new plumbing.
+3. Extend the legacy path to cover all 10 `decryptKeyPair` call sites.
+4. **Ship a v1-format wallet fixture and assert it loads.** This is the critical
+   gate: a format bump that cannot read the format it replaced loses wallets.
+   A round-trip test that only exercises the new code does not prove this, and
+   that exact gap is why the equivalent swap-daemon change needed a v1 fixture.
+5. Zero-extend the 8-byte per-record IV counter to 12 bytes for v2, preserving
+   the counter's uniqueness (the nonce only needs to be unique, so a zero high
+   half is fine — but it must not become a repeating value across records).
+
+**Why defer rather than just do it:** the failure mode is asymmetric. If the
+version dispatch is wrong, a wallet does not fail to open — it can open
+*empty*, and the user believes their funds are gone. That is materially worse
+than the cipher-margin gap being closed, and it is user-funds-facing rather than
+protocol-facing. The cheap half of the wallet-side hardening (L-5, wiping the
+plaintext buffers) was done instead.
+
+**R2-2 in this file is the same finding** and is likewise updated to reflect the
+deferral of the cipher half.
 
 ## False positives — do not "fix" these
 

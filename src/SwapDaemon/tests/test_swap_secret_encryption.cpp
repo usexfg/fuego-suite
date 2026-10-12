@@ -17,6 +17,9 @@
 
 #include <cstdint>
 #include <cstring>
+#include <functional>
+#include <string>
+#include <vector>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -102,6 +105,47 @@ static void rejectsATamperedCiphertext() {
   Crypto::SecretKey out = secretWithTag(0xFF);
   CHECK(!SwapSecretEncryption::decrypt(enc, kKey, out),
         "a single flipped ciphertext bit must fail authentication");
+}
+
+// The tail, not the head, is what distinguishes a real AEAD from a MAC over a
+// prefix. A tag computed over only part of the buffer would leave the head
+// authenticated and the tail silently unchecked -- so tampering at index 0
+// (the single case that used to exist) proves nothing about the far end.
+//
+// This is also why the sweep is TAIL-SCOPED rather than every byte: the
+// CryptoNight KDF costs ~134 ms per encrypt+decrypt, so an exhaustive sweep of
+// all 76 field bytes costs ~10 s and a wrong-key sweep costs ~80 s. Both
+// measured, neither affordable in a suite that runs in 39 s total. Tail
+// positions cover the bug class at ~1/25th of the cost.
+static void rejectsATamperedTail() {
+  Crypto::SecretKey in = secretWithTag(0x1A);
+
+  struct Case { std::string name; std::function<void(SwapSecretEncryption::EncryptedSecret&)> f; };
+  std::vector<Case> cases;
+
+  cases.push_back(Case{"last ciphertext byte (== last tag byte)",
+                       [](SwapSecretEncryption::EncryptedSecret& e) { e.ciphertext.back() ^= 0x01; }});
+  // Every bit of that last byte, so a single-bit tag error cannot slip through.
+  for (int bit = 0; bit < 8; ++bit) {
+    const int b = bit;
+    cases.push_back(Case{std::string("last ciphertext byte, bit ") + std::to_string(b),
+                         [b](SwapSecretEncryption::EncryptedSecret& e) {
+                           e.ciphertext.back() ^= (uint8_t)(1 << b);
+                         }});
+  }
+  cases.push_back(Case{"last nonce byte",
+                       [](SwapSecretEncryption::EncryptedSecret& e) { e.nonce.back() ^= 0x01; }});
+  cases.push_back(Case{"last salt byte",
+                       [](SwapSecretEncryption::EncryptedSecret& e) { e.salt.back() ^= 0x01; }});
+
+  for (const auto& c : cases) {
+    SwapSecretEncryption::EncryptedSecret enc;
+    SwapSecretEncryption::encrypt(in, kKey, enc);
+    c.f(enc);
+    Crypto::SecretKey out = secretWithTag(0xFF);
+    CHECK(!SwapSecretEncryption::decrypt(enc, kKey, out),
+          std::string("tampering with the ").append(c.name).append(" must be rejected").c_str());
+  }
 }
 
 static void rejectsATamperedNonce() {
@@ -304,6 +348,7 @@ int main() {
   roundTripsAVariableLengthSecret();
   rejectsTheWrongKey();
   rejectsATamperedCiphertext();
+  rejectsATamperedTail();
   rejectsATamperedNonce();
   rejectsATamperedSalt();
   rejectsAVersionDowngrade();

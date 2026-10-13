@@ -80,6 +80,13 @@ Getting a spend on-chain still requires block inclusion, so it is not a free rem
 is the only cryptographic barrier, and it is not one. Rotating the derivation is a protocol change
 needing an activation/migration plan, hence DECISION rather than a patch.
 
+**Enforcement boundary is v11, not v12.** The vault's first funding source activates at v11: the
+Hearth AMM's `cdHearthFeeAccumulator` (70% of `HEARTH_FEE_BPS`), which accrues from the first
+on-chain Hearth fill at `HEARTH_TAG_CUTOFF_HEIGHT = UPGRADE_HEIGHT_V11 = 1111111`. CD deposits are
+v12 (`CD_ACTIVATION_HEIGHT = UPGRADE_HEIGHT_V12`), but both feed the same vault — so authorization
+must be enforced from v11 onward, and pre-v11 is the only legacy-derivation window. Design:
+`docs/R2-1_VAULT_AUTH_DESIGN.md` on `codex/treasury-vault-auth`.
+
 ## L-2b (deferred) — wallet-file cipher upgrade, and why it is not a field swap
 
 **Status:** DEFERRED by owner decision. This is the one open item from round 1's

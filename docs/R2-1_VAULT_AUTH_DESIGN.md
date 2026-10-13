@@ -109,6 +109,36 @@ attacker controls.
 authorization check, not the predictability of the key. This is why R2-1 was classified as a
 protocol change rather than a patch.
 
+## Verified exploit path (source-traced, 2026-10-13)
+
+An earlier draft of this doc proposed forging a ring signature over the vault key image. **That
+narrative was wrong and is retracted.** The vault is not inside the ring-signature system at all,
+so there is no key-image/ring-member binding constraint to defeat — and none is needed. The
+absence of *any* cryptographic check is the finding, established by tracing the code:
+
+| Step | Location | Fact |
+|---|---|---|
+| 1 | `Blockchain.cpp:648` | `m_vaultKeys = deriveVaultKeys(genesisHash)` — seed is public, genesis hash is public |
+| 2 | `Blockchain.cpp:653` | `m_vault.setSpendKey(m_vaultKeys.spendKey)` |
+| 3 | `VaultUtxoSet.cpp:48-51` | every vault UTXO key image is computed from that spend key |
+| 4 | `VaultUtxoSet.cpp:32-52`, `Blockchain.cpp:3204` | vault UTXOs are **synthetic** — index `(height << 32) \| counter`, output key `m_vaultKeys.viewPub`, never registered in the global output index |
+| 5 | `Blockchain.cpp:6139-6167` | the only gate on a vault spend is `VaultPolicy::isPermitted` |
+| 6 | `VaultPolicy.cpp:68-101` | that predicate inspects transaction-extra fields only — no signature, no pubkey, no key-knowledge test |
+
+Because step 4 puts vault UTXOs outside the output index, no ring signature covers them and
+`isPermitted` is the sole barrier. An attacker who recomputes `deriveVaultKeys` from the public
+seed reproduces the exact key images `isPermitted` looks for.
+
+**Falsifier — this finding is void if:** any code path verifies a signature against
+`m_vaultKeys.spendPub` before crediting a vault spend. Searched all `check_signature` call sites
+in `Blockchain.cpp` (dev-fund, alias-transfer, owner-bound paths) — none reference `m_vaultKeys`.
+If such a check is added later, this finding no longer applies.
+
+**What this does NOT prove:** no working end-to-end drain was constructed. A successful attack
+still needs a transaction that passes `isPermitted` for the target partition *and* achieves block
+inclusion. That the cryptographic barrier is absent is source-traced fact; the practical exploit
+is reasoned, not demonstrated.
+
 ## Proposed fix
 
 Make the vault spend require a cryptographic authorization that a content predicate cannot

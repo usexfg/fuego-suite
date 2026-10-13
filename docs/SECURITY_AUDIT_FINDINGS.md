@@ -80,6 +80,18 @@ Getting a spend on-chain still requires block inclusion, so it is not a free rem
 is the only cryptographic barrier, and it is not one. Rotating the derivation is a protocol change
 needing an activation/migration plan, hence DECISION rather than a patch.
 
+**Exploit path, source-traced (2026-10-13).** An earlier draft of the design doc claimed an
+attacker would forge a ring signature over the vault key image. **Retracted** — the vault is not
+inside the ring-signature system. `mintVaultChangeUtxo` (`Blockchain.cpp:3204`) creates synthetic
+UTXOs indexed `(height << 32) | counter` with output key `m_vaultKeys.viewPub`, never registered
+in the global output index, so no ring signature covers them. `deriveVaultKeys` at
+`VaultKeys.cpp:19` is reproducible from the public seed + public genesis hash, and that same key
+generates every vault key image (`VaultUtxoSet.cpp:48-51`) that `isPermitted` matches on. The sole
+gate is a content predicate. **Falsifier:** this finding is void if any path verifies a signature
+against `m_vaultKeys.spendPub` before crediting a spend — no such path exists today (all
+`check_signature` sites are dev-fund/alias/owner-bound). **Not proven:** no end-to-end drain was
+constructed; inclusion is still required.
+
 **Enforcement boundary is v11, not v12.** The vault's first funding source activates at v11: the
 Hearth AMM's `cdHearthFeeAccumulator` (70% of `HEARTH_FEE_BPS`), which accrues from the first
 on-chain Hearth fill at `HEARTH_TAG_CUTOFF_HEIGHT = UPGRADE_HEIGHT_V11 = 1111111`. CD deposits are

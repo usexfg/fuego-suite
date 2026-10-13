@@ -1,9 +1,9 @@
 # R2-1 Fix Design: Treasury Vault Authorization
 
-**Status:** PROPOSED — **DEFERRED, not urgent.** No HEAT, Hearth, CD, or atomic-swap
-transaction has ever occurred on mainnet, so the vault has never been funded with real value.
-There is nothing to steal today. This must be fixed **before the first such transaction lands**,
-not before the next release.
+**Status:** PROPOSED — **MUST LAND WITH v11.** The vault is funded by v11 epoch work
+(CD yield from the fee pool, Hearth AMM flat fees, swap-fee shares). v11 activates at
+block 1,111,111 on mainnet. If authorization is not fixed before that height, the
+vault is drainable from the moment it holds value.
 **Branch:** `codex/treasury-vault-auth`
 **Finding:** R2-1 in `docs/SECURITY_AUDIT_FINDINGS.md`
 
@@ -82,7 +82,7 @@ during the fix, but not required to close the exposure.
 
 **Interaction with R2-1:** both are "a secret that should not be in source". They are otherwise
 independent — the dev fund is a normal on-chain account, the vault is synthetic accounting. Fix
-the dev address before v11; fix the vault before the first CD/swap transaction.
+the dev address before v11; fix the vault **in the same v11 activation**.
 
 ## Why a key rotation alone is insufficient
 
@@ -120,13 +120,13 @@ consensus-derivable, and gate `isPermitted` on that signature:
 - Store the private key outside the repo (and outside any release artifact).
 - `VaultPolicy::isPermitted` verifies a signature over the transaction prefix under that public
   key, in addition to the existing content predicate.
-- Gate the whole thing behind a new `BLOCK_MAJOR_VERSION_12` so history stays valid.
+- Gate the whole thing behind `BLOCK_MAJOR_VERSION_11` so history stays valid.
 
 This restores the property the vault needs: the party that can move protocol funds is not
 knowable from chain data plus source code.
 
 **Cost:** a hard fork, plus an operational commitment to keeping the authority key offline.
-`VAULT_KEY_SEED` can stay as a legacy derivation for pre-v12 blocks, exactly as the codebase
+`VAULT_KEY_SEED` can stay as a legacy derivation for pre-v11 blocks, exactly as the codebase
 already does for pre-v11 CD claims ("Pre-v11 blocks keep the ORIGINAL cap — resync safety").
 
 ### Rejected alternatives
@@ -156,11 +156,11 @@ already does for pre-v11 CD claims ("Pre-v11 blocks keep the ORIGINAL cap — re
 2. **Hard fork acceptable?** Option B requires one. Is a v12 activation already planned?
 3. **Rotate the dev-fund key now?** It is a live secret in source. Rotating changes consensus
    (the alias-fee destination check) and therefore also needs an activation height.
-4. **Is the vault actually funded on mainnet yet?** — **ANSWERED 2026-10-08: no.** No HEAT,
-   Hearth, CD, or atomic-swap transaction has ever occurred on mainnet, so the vault has never
-   held real value. R2-1 is therefore schedulable, not urgent. The v12 authorization design can
-   be built into the activation that first enables these features rather than as a rushed
-   hotfix. The dev address is the one item that must be closed before v11 ships.
+4. **Is the vault actually funded on mainnet yet?** — No HEAT, Hearth, CD, or atomic-swap
+   transaction has has ever occurred on mainnet, so the vault has never held real value.
+   **However, the vault is a v11 feature** — it is funded by v11 epoch work. So the
+   authorization fix must be part of the v11 activation, not deferred to v12. The
+   window is: before block 1,111,111 on mainnet.
 
 ## Files this will touch
 

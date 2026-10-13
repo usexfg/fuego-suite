@@ -1,9 +1,22 @@
 # R2-1 Fix Design: Treasury Vault Authorization
 
-**Status:** PROPOSED — **MUST LAND WITH v11.** The vault is funded by v11 epoch work
-(CD yield from the fee pool, Hearth AMM flat fees, swap-fee shares). v11 activates at
-block 1,111,111 on mainnet. If authorization is not fixed before that height, the
-vault is drainable from the moment it holds value.
+**Status:** PROPOSED — **MUST LAND WITH v11.** The vault's first funding source activates
+at v11: the Hearth AMM's `cdHearthFeeAccumulator`, debited 70% of the 1% taker fee on every
+on-chain Hearth fill (`HEARTH_TAG_CUTOFF_HEIGHT = UPGRADE_HEIGHT_V11 = 1111111`). From the
+first such fill the vault holds value, so authorization must be enforced from v11 onward.
+
+Note the two funding paths have different activation heights, and the boundary matters for
+the legacy-derivation carve-out below:
+
+| Source | Activates | Enforced from |
+|---|---|---|
+| Hearth AMM `cdHearthFeeAccumulator` (70% of `HEARTH_FEE_BPS`) | v11 (1,111,111) | v11 |
+| CD yield / bonus vault (from CD deposits) | `CD_ACTIVATION_HEIGHT` = v12 (2,666,666) | v12 |
+| Swap-fee shares | per `SWAP_FEE_RATE_BPS` routing | v11 |
+
+Pre-v11 blocks keep the legacy `VAULT_KEY_SEED` derivation. From v11 on, every vault spend
+must carry an authorization signature — including spends of value that arrived via the v11
+Hearth accumulator alone, with no CD ever deposited.
 **Branch:** `codex/treasury-vault-auth`
 **Finding:** R2-1 in `docs/SECURITY_AUDIT_FINDINGS.md`
 

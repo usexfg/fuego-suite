@@ -12,6 +12,7 @@ public:
   SolChainClient(std::unique_ptr<SolRpcClient> rpc, const std::string& keypairBase58);
 
   std::string chainName() const override { return "SOL"; }
+  std::string readinessError() override;
   // On-chain ClaimPtlc + lockPtlc client paths landed (plan P3). Negotiation
   // flip (HTLC/BRIDGE -> PTLC) stays behind FEATURE_PURE_PTLC at P4.2 — do
   // not return true here until that flag lands.

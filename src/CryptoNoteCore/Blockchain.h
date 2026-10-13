@@ -36,6 +36,7 @@
 #include "CommitmentIndex.h"
 #include "HeatMintEngine.h"
 #include "DigmMintEngine.h"
+#include "FuegoCostIndex.h"
 #include "AmmPool.h"
 #include "OrderbookTypes.h"
 #include "../Common/FixedPoint.h"
@@ -137,6 +138,7 @@ namespace CryptoNote {
     uint64_t getCurrentEpochSwapFees() const { return m_currentEpochSwapFees; }
     uint64_t getTotalCdLocked() const { return m_totalCdLocked; }
     uint64_t getHeatSupply() const { return m_heatSupply; }
+    uint64_t getHeatPegUsdMicro() const;
     uint64_t getHeatOnDeposit() const { return m_heatOnDeposit; }
     uint64_t getDigmSupply() const { return m_digmSupply; }
     uint64_t getHeatCdFeePool() const { return m_heatCdFeePool; }
@@ -222,6 +224,55 @@ namespace CryptoNote {
       uint64_t heat = 0;
     };
     TreasuryLpValue getTreasuryLpValue() const;
+
+    // One coherent read of every public-accounting counter and vault partition
+    // from a single tip, taken under the blockchain state lock. Counters and
+    // the UTXOs that back them are separate values on purpose: an RPC handler
+    // that called the unlocked getters one at a time could read a counter from
+    // before a block and its backing from after it.
+    //
+    // Nothing here is a combined XFG+HEAT total, and no counter is summed with
+    // its backing. `xfgRemovedFromCirculation` is the aggregate burn tally; it
+    // covers XFG that left circulation, which is not the same set as XFG
+    // destroyed or retired from total supply, and the lifecycle fields below
+    // are not guaranteed to reconcile with it (the startup burn rescan rebuilds
+    // the aggregate and the Eternal Flame share but not the SWF components).
+    struct PublicAuditSnapshot {
+      uint32_t snapshotHeight = 0;
+      Crypto::Hash snapshotBlockHash;
+
+      uint64_t xfgRemovedFromCirculation = 0;
+      uint64_t eternalFlameBurnTotal = 0;
+      uint64_t swfCollateralPendingXfg = 0;
+      uint64_t swfXfgPermanentlyRetiredTotal = 0;
+
+      uint64_t treasuryLegacyCounterXfg = 0;
+      uint64_t treasuryPendingXfg = 0;
+      uint64_t treasuryHeatReserve = 0;
+      uint64_t bonusVaultCounterHeat = 0;
+      uint64_t vaultGeneralXfg = 0;
+      uint64_t vaultGeneralHeat = 0;
+      uint64_t vaultLpReserveXfg = 0;
+      uint64_t vaultLpReserveHeat = 0;
+
+      uint64_t cdYieldPendingXfg = 0;
+      uint64_t cdYieldClaimsCounterHeat = 0;
+      uint64_t cdApyPoolVaultHeat = 0;
+      uint64_t cdBaseClaimCapHeat = 0;
+
+      uint64_t poolReserveXfg = 0;
+      uint64_t poolReserveHeat = 0;
+      uint64_t poolTotalLpShares = 0;
+      uint64_t protocolLpShares = 0;
+      uint64_t protocolLpValueXfg = 0;
+      uint64_t protocolLpValueHeat = 0;
+
+      uint64_t swfHeatCounter = 0;
+      uint64_t vaultSwfXfg = 0;
+      uint64_t vaultSwfHeat = 0;
+    };
+    PublicAuditSnapshot getPublicAuditSnapshot();
+
     void addSwapFee(uint64_t amount);
     uint64_t getTreasuryBalance() const { return m_treasuryBalance; }
     const VaultUtxoSet& getVault() const { return m_vault; }
@@ -649,6 +700,9 @@ namespace CryptoNote {
     // Epoch state snapshots for popBlock reversal
     std::deque<std::pair<uint32_t, EpochStateSnapshot>> m_epochSnapshots;
 
+    std::deque<std::pair<uint32_t, FuegoCostIndex::Snapshot>> m_fciEpochSnapshots;
+    FuegoCostIndex m_fuegoCostIndex;
+
     // Orderbook state snapshot for popBlock reversal (v11+)
     struct OrderbookRollbackSnapshot {
       std::vector<Order> orders;
@@ -693,6 +747,7 @@ namespace CryptoNote {
     UpgradeDetector m_upgradeDetectorV9;
     UpgradeDetector m_upgradeDetectorV10;
     UpgradeDetector m_upgradeDetectorV11;
+    UpgradeDetector m_upgradeDetectorV12;
 
 
     bool m_blockchainIndexesEnabled;
@@ -745,6 +800,9 @@ namespace CryptoNote {
     void rebuildOrderbookFromUtxoSet(uint32_t height);
     bool pushTransaction(BlockEntry &block, const Crypto::Hash &transactionHash, TxIndex transactionIndex);
     bool processBlockEpochWork(const Block& block, uint32_t height, const Crypto::Hash& blockHash);
+    void processFciBlock(const Block& block, uint32_t height, uint32_t epochBlocks);
+    void rebuildFciState(uint32_t blockCount);
+    void rollbackFciBlock(uint32_t poppedHeight);
     void seedHearthPool();
     void accumulateTwap(const Block& block, uint32_t height);
     void popTransaction(const Transaction &transaction, const Crypto::Hash &transactionHash,

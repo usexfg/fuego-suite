@@ -70,7 +70,7 @@ const command_line::arg_descriptor<std::string> arg_fci_currency = {
 const command_line::arg_descriptor<double>      arg_fci_usd_rate = {
   "fci-usd-rate", "Exchange rate: 1 unit of fci-currency = N USD (default: 1.0)", 1.0, true};
 const command_line::arg_descriptor<std::string> arg_fci_oracle_path = {
-  "fci-oracle",   "Path to fci_oracle.json produced by the auto-fetch script", "", true};
+  "fci-oracle",   "Path to an operator-updated fci_oracle.json file", "", true};
 const command_line::arg_descriptor<uint32_t>    arg_fci_stale_warn = {
   "fci-stale-warn-days", "Days before daemon warns that oracle data may be stale", 30, true};
 
@@ -113,16 +113,19 @@ double getCurrencyUsdRate(const std::string& code) {
 }
 
 // Convert local-currency price to integer microUSD (µUSD = 0.000001 USD).
-// Returns 0 on invalid input (negative, zero, or unknown currency).
+// Returns 0 on invalid or unrepresentable input.
 uint32_t toMicroUsd(double localPrice, double usdRate) {
-  if (localPrice <= 0.0 || usdRate <= 0.0) return 0;
+  if (!std::isfinite(localPrice) || !std::isfinite(usdRate) ||
+      localPrice <= 0.0 || usdRate <= 0.0) return 0;
   double usd = localPrice * usdRate;
+  if (!std::isfinite(usd)) return 0;
   double raw = std::round(usd * 1000000.0);
-  if (raw > static_cast<double>(UINT32_MAX)) return UINT32_MAX; // clamp
+  if (!std::isfinite(raw)) return 0;
+  if (raw > static_cast<double>(UINT32_MAX)) return 0;
   return static_cast<uint32_t>(raw);
 }
 
-// Try to read FCI prices from a JSON file written by the auto-fetch script.
+// Try to read FCI prices from an operator-maintained JSON file.
 // Returns true if any fields were loaded. Overwrites only present fields;
 // CLI-explicit prices take priority and are NOT overwritten here.
 bool tryLoadOracleJson(const std::string& path, double usdRate,
@@ -141,7 +144,7 @@ bool tryLoadOracleJson(const std::string& path, double usdRate,
     if (ageDays > static_cast<double>(staleWarnDays)) {
       fprintf(stderr,
         "\033[33m[FCI WARNING] %s was last modified %.0f days ago. "
-        "Consider running fci-autofetch or updating manually.\033[0m\n",
+        "Update the file or revise the miner's configured prices.\033[0m\n",
         path.c_str(), ageDays);
     }
   }

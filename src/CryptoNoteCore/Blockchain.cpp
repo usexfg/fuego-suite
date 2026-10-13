@@ -642,6 +642,7 @@ private:
                          m_upgradeDetectorV9(currency, m_blocks, BLOCK_MAJOR_VERSION_9, logger),
                         m_upgradeDetectorV10(currency, m_blocks, BLOCK_MAJOR_VERSION_10, logger),
                         m_upgradeDetectorV11(currency, m_blocks, BLOCK_MAJOR_VERSION_11, logger),
+                        m_upgradeDetectorV12(currency, m_blocks, BLOCK_MAJOR_VERSION_12, logger),
                          m_commitmentIndex(currency),
                           m_aliasIndex() {
   m_vaultKeys = deriveVaultKeys(m_currency.genesisBlockHash());
@@ -890,6 +891,8 @@ bool CryptoNote::Blockchain::init(const std::string& config_folder, bool load_ex
     }
   }
 
+  rebuildFciState(static_cast<uint32_t>(m_blocks.size()));
+
   uint32_t lastValidCheckpointHeight = 0;
   if (!checkCheckpoints(lastValidCheckpointHeight)) {
     logger(WARNING, BRIGHT_MAGENTA) << "Invalid checkpoint found. Rollback blockchain to height=" << lastValidCheckpointHeight;
@@ -956,8 +959,22 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
     " expected=" << static_cast<int>(m_upgradeDetectorV10.targetVersion()) << ". Rollback blockchain to height=" << upgradeHeight;
     rollbackBlockchainTo(upgradeHeight);
     reinitUpgradeDetectors = true;
+  } else if (!checkUpgradeHeight(m_upgradeDetectorV11)) {
+    uint32_t upgradeHeight = m_upgradeDetectorV11.upgradeHeight();
+    logger(WARNING, BRIGHT_MAGENTA) << "Invalid block version at " << upgradeHeight + 1 << ": real=" << static_cast<int>(m_blocks[upgradeHeight + 1].bl.majorVersion) <<
+    " expected=" << static_cast<int>(m_upgradeDetectorV11.targetVersion()) << ". Rollback blockchain to height=" << upgradeHeight;
+    rollbackBlockchainTo(upgradeHeight);
+    reinitUpgradeDetectors = true;
+  } else if (!checkUpgradeHeight(m_upgradeDetectorV12)) {
+    uint32_t upgradeHeight = m_upgradeDetectorV12.upgradeHeight();
+    logger(WARNING, BRIGHT_MAGENTA) << "Invalid block version at " << upgradeHeight + 1 << ": real=" << static_cast<int>(m_blocks[upgradeHeight + 1].bl.majorVersion) <<
+    " expected=" << static_cast<int>(m_upgradeDetectorV12.targetVersion()) << ". Rollback blockchain to height=" << upgradeHeight;
+    rollbackBlockchainTo(upgradeHeight);
+    reinitUpgradeDetectors = true;
   }
-  if (reinitUpgradeDetectors && (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDetectorV4.init() || !m_upgradeDetectorV5.init() || !m_upgradeDetectorV6.init() || !m_upgradeDetectorV7.init() || !m_upgradeDetectorV8.init() || !m_upgradeDetectorV9.init() || !m_upgradeDetectorV10.init())) {
+  // V11 and V12 were previously missing from this list, so a rollback triggered
+  // by any version left their detectors stale.
+  if (reinitUpgradeDetectors && (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDetectorV4.init() || !m_upgradeDetectorV5.init() || !m_upgradeDetectorV6.init() || !m_upgradeDetectorV7.init() || !m_upgradeDetectorV8.init() || !m_upgradeDetectorV9.init() || !m_upgradeDetectorV10.init() || !m_upgradeDetectorV11.init() || !m_upgradeDetectorV12.init())) {
     logger(ERROR, BRIGHT_RED) << "Failed again to initialize upgrade detector";
     return false;
   }
@@ -1108,6 +1125,8 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
     m_blockOrderFills.clear();
     m_blockLpRemoveAmounts.clear();
     m_epochSnapshots.clear();
+    m_fciEpochSnapshots.clear();
+    m_fuegoCostIndex.reset();
     m_orderbookSnapshots.clear();
     m_blockTwapContributions.clear();
     m_blockSwapFeeContributions.clear();
@@ -1276,6 +1295,8 @@ bool CryptoNote::Blockchain::deinit() {
 bool CryptoNote::Blockchain::resetAndSetGenesisBlock(const Block& b) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   m_blocks.clear();
+  m_fciEpochSnapshots.clear();
+  m_fuegoCostIndex.reset();
   m_blockIndex.clear();
   m_indexManager.setReady(false);
   m_indexManager.clear();
@@ -1442,7 +1463,15 @@ uint64_t CryptoNote::Blockchain::coinsEmittedAtHeight(uint64_t height) {
   }
 
 uint8_t CryptoNote::Blockchain::getBlockMajorVersionForHeight(uint32_t height) const {
-  if (height > m_upgradeDetectorV11.upgradeHeight()) {
+  // Highest version first. V12 must be checked before V11: m_upgradeDetectorV12
+  // is constructed with UPGRADE_HEIGHT_V12, and if V11 is tested first a height
+  // above UPGRADE_HEIGHT_V12 would return BLOCK_MAJOR_VERSION_11 forever, so
+  // checkBlockVersion would reject every v12 block. That is the bug this
+  // ordering now prevents -- V12 was previously absent from this function
+  // entirely while Currency::blockMajorVersionAtHeight already returned 12.
+  if (height > m_upgradeDetectorV12.upgradeHeight()) {
+    return m_upgradeDetectorV12.targetVersion();
+  } else if (height > m_upgradeDetectorV11.upgradeHeight()) {
     return m_upgradeDetectorV11.targetVersion();
   } else if (height > m_upgradeDetectorV10.upgradeHeight()) {
     return m_upgradeDetectorV10.targetVersion();
@@ -3790,14 +3819,20 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
       logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " has at least one invalid output";
     }
 
-    // DIGM mint validation: ensure HEAT inputs cover DIGM outputs at peg rate
-    if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
+    // DIGM mint validation: lock HEAT → mint DIGM at 0.10 HEAT per DIGM.
+    // Disabled at v12+: DigmMintEngine::validateMint credits `spend.amount`
+    // from every TransactionInputCommitmentSpend as HEAT without a term check,
+    // so XFG/LP inputs debit nothing and DIGM mints unbounded. Re-enabling
+    // requires resolving each input's ring term first.
+    // Gated at V12, NOT V10: under a V10 guard this retroactively rejects
+    // already-mined v10/v11 blocks, and a node syncing from genesis could not
+    // get past them.
+    if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_12) {
       if (m_digmMintEngine.isDigmMint(transactions[i])) {
-        uint64_t heatLocked = 0, digmMinted = 0;
-        if (!m_digmMintEngine.validateMint(transactions[i], fee, heatLocked, digmMinted)) {
-          isTransactionValid = false;
-          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " DIGM mint validation failed: HEAT inputs do not cover DIGM outputs at 0.10 HEAT/DIGM peg";
-        }
+        isTransactionValid = false;
+        logger(INFO, BRIGHT_WHITE)
+          << "Transaction " << tx_id
+          << " rejected: DIGM mint disabled at v12 pending authenticated per-asset HEAT debit validation";
       }
     }
 
@@ -3877,16 +3912,26 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
       }
     }
 
-    if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
-      // v11+ HEAT mints are priced in validateSettlement.
+    if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_12) {
+      // v11+: HEAT mints are priced in validateSettlement.
 
-      // DIGM mint validation — lock HEAT → mint DIGM at 0.10 HEAT per DIGM
+      // v11 P0: DIGM mint is DISABLED until authenticated per-asset HEAT debit,
+      // exact peg arithmetic, and lock-collateral accounting are validated.
+      // The real defect: DigmMintEngine::validateMint sums `spend.amount` over
+      // EVERY TransactionInputCommitmentSpend as HEAT with no term check ("we
+      // assume commitment spends are validated elsewhere" -- they are not), so
+      // XFG/LP inputs would debit nothing and mint unlimited DIGM at the peg.
+      // (An earlier note here blamed a classifyCommitmentTermAsset /
+      // classifyInputAsset drift; that is stale -- classifyInputAsset now
+      // delegates to the same table, see Blockchain.cpp:7573-7576.)
+      //
+      // DIGM output creation without mint validation is still admitted by
+      // check_tx_outputs; isDigmMint() must reject all DIGM outputs.
       if (m_digmMintEngine.isDigmMint(transactions[i])) {
-        uint64_t heatLocked = 0, digmMinted = 0;
-        if (!m_digmMintEngine.validateMint(transactions[i], fee, heatLocked, digmMinted)) {
-          isTransactionValid = false;
-          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " DIGM mint validation failed";
-        }
+        isTransactionValid = false;
+        logger(INFO, BRIGHT_WHITE)
+          << "Transaction " << tx_id
+          << " rejected: DIGM mint disabled at v12 pending authenticated per-asset HEAT debit validation";
       }
     }
 
@@ -3997,6 +4042,7 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
   m_upgradeDetectorV9.blockPushed();
   m_upgradeDetectorV10.blockPushed();
   m_upgradeDetectorV11.blockPushed();
+  m_upgradeDetectorV12.blockPushed();
 
   update_next_comulative_size_limit();
 
@@ -5593,7 +5639,65 @@ bool CryptoNote::Blockchain::processBlockEpochWork(const Block& block, uint32_t 
     m_blockEpochDistributions.push_back({0, 0});  // No distribution on non-epoch blocks
   }
 
+  processFciBlock(block, height, static_cast<uint32_t>(epochDuration));
   return true;
+}
+
+void CryptoNote::Blockchain::processFciBlock(const Block& block,
+                                              uint32_t height,
+                                              uint32_t epochBlocks) {
+  if (epochBlocks == 0) return;
+
+  if (height > 0 && height % epochBlocks == 0) {
+    m_fciEpochSnapshots.push_back({height, m_fuegoCostIndex.snapshot()});
+    m_fuegoCostIndex.closeEpoch(height / epochBlocks, block.majorVersion,
+                                epochBlocks);
+    while (m_fciEpochSnapshots.size() > MAX_ROLLBACK_HISTORY)
+      m_fciEpochSnapshots.pop_front();
+  }
+
+  m_fuegoCostIndex.addCoinbaseVote(block.baseTransaction.extra);
+}
+
+uint64_t CryptoNote::Blockchain::getHeatPegUsdMicro() const {
+  std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
+  return m_fuegoCostIndex.heatPegUsdMicro();
+}
+
+void CryptoNote::Blockchain::rebuildFciState(uint32_t blockCount) {
+  m_fuegoCostIndex.reset();
+  m_fciEpochSnapshots.clear();
+  blockCount = std::min<uint32_t>(blockCount, static_cast<uint32_t>(m_blocks.size()));
+
+  const uint32_t epochBlocks = static_cast<uint32_t>(m_currency.isTestnet()
+      ? parameters::TESTNET_EPOCH_DURATION_BLOCKS
+      : parameters::EPOCH_DURATION_BLOCKS);
+  for (uint32_t height = 0; height < blockCount; ++height)
+    processFciBlock(m_blocks[height].bl, height, epochBlocks);
+}
+
+void CryptoNote::Blockchain::rollbackFciBlock(uint32_t poppedHeight) {
+  const uint32_t epochBlocks = static_cast<uint32_t>(m_currency.isTestnet()
+      ? parameters::TESTNET_EPOCH_DURATION_BLOCKS
+      : parameters::EPOCH_DURATION_BLOCKS);
+  if (epochBlocks == 0 || m_blocks.empty()) return;
+
+  if (poppedHeight > 0 && poppedHeight % epochBlocks == 0) {
+    if (!m_fciEpochSnapshots.empty() &&
+        m_fciEpochSnapshots.back().first == poppedHeight) {
+      const auto state = m_fciEpochSnapshots.back().second;
+      m_fciEpochSnapshots.pop_back();
+      m_fuegoCostIndex.restore(state);
+      const uint32_t firstHeight = poppedHeight - epochBlocks;
+      for (uint32_t height = firstHeight; height < poppedHeight; ++height)
+        m_fuegoCostIndex.addCoinbaseVote(m_blocks[height].bl.baseTransaction.extra);
+    } else {
+      rebuildFciState(poppedHeight);
+    }
+    return;
+  }
+
+  m_fuegoCostIndex.removeCoinbaseVote(m_blocks.back().bl.baseTransaction.extra);
 }
 
 void CryptoNote::Blockchain::accumulateTwap(const Block& block, uint32_t height) {
@@ -5700,6 +5804,7 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
   saveTransactions(transactions, height);
 
   uint32_t poppedHeight = m_blocks.back().height;
+  rollbackFciBlock(poppedHeight);
 
   // Reverse OOB limit-order fills BEFORE reversing settlement. The push path
   // settles transactions first and executes fills second, so rollback must
@@ -5956,6 +6061,7 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
   m_upgradeDetectorV9.blockPopped();
   m_upgradeDetectorV10.blockPopped();
   m_upgradeDetectorV11.blockPopped();
+  m_upgradeDetectorV12.blockPopped();
 
 
 }
@@ -7517,6 +7623,49 @@ CryptoNote::Blockchain::TreasuryLpValue CryptoNote::Blockchain::getTreasuryLpVal
   v.heat = static_cast<uint64_t>(
       ((uint128_t)m_protocolLpShares * m_ammPool.reserveHeat) / m_ammPool.totalLpShares);
   return v;
+}
+
+CryptoNote::Blockchain::PublicAuditSnapshot CryptoNote::Blockchain::getPublicAuditSnapshot() {
+  std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
+  PublicAuditSnapshot snap;
+
+  if (!m_blocks.empty()) {
+    snap.snapshotHeight = static_cast<uint32_t>(m_blocks.size()) - 1;
+    snap.snapshotBlockHash = m_blockIndex.getTailId();
+  }
+
+  snap.xfgRemovedFromCirculation = m_bankingIndex.getTotalBurnedXfg();
+  snap.eternalFlameBurnTotal = m_bankingIndex.getBurnedXfgAmount();
+  snap.swfCollateralPendingXfg = m_swfBurnedXfgPendingHeat;
+  snap.swfXfgPermanentlyRetiredTotal = m_bankingIndex.getPermanentlyBurnedXfg();
+
+  snap.treasuryLegacyCounterXfg = m_treasuryBalance;
+  snap.treasuryPendingXfg = m_treasuryLpPendingXfg;
+  snap.treasuryHeatReserve = m_treasuryHeatReserve;
+  snap.bonusVaultCounterHeat = m_bonusVaultBalance;
+  snap.vaultGeneralXfg = m_vault.partitionBalance(VaultPartition::GENERAL_RESERVE, AssetType::XFG);
+  snap.vaultGeneralHeat = m_vault.partitionBalance(VaultPartition::GENERAL_RESERVE, AssetType::HEAT);
+  snap.vaultLpReserveXfg = m_vault.partitionBalance(VaultPartition::LP_RESERVE, AssetType::XFG);
+  snap.vaultLpReserveHeat = m_vault.partitionBalance(VaultPartition::LP_RESERVE, AssetType::HEAT);
+
+  snap.cdYieldPendingXfg = m_cdYieldPool;
+  snap.cdYieldClaimsCounterHeat = m_feePoolBalance;
+  snap.cdApyPoolVaultHeat = m_vault.partitionBalance(VaultPartition::CD_APY_POOL, AssetType::HEAT);
+  snap.cdBaseClaimCapHeat = std::min(snap.cdYieldClaimsCounterHeat, snap.cdApyPoolVaultHeat);
+
+  snap.poolReserveXfg = m_ammPool.reserveXfg;
+  snap.poolReserveHeat = m_ammPool.reserveHeat;
+  snap.poolTotalLpShares = m_ammPool.totalLpShares;
+  snap.protocolLpShares = m_protocolLpShares;
+  const TreasuryLpValue lp = getTreasuryLpValue();
+  snap.protocolLpValueXfg = lp.xfg;
+  snap.protocolLpValueHeat = lp.heat;
+
+  snap.swfHeatCounter = m_swfHeatBalance;
+  snap.vaultSwfXfg = m_vault.partitionBalance(VaultPartition::SWF, AssetType::XFG);
+  snap.vaultSwfHeat = m_vault.partitionBalance(VaultPartition::SWF, AssetType::HEAT);
+
+  return snap;
 }
 
 void CryptoNote::Blockchain::addSwapFee(uint64_t amount) {

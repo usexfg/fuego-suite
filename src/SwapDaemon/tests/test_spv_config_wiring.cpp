@@ -355,6 +355,69 @@ static void test_generic_evm_config_rejects_unsafe_entries() {
   std::cout << "  PASS: test_generic_evm_config_rejects_unsafe_entries" << std::endl;
 }
 
+static void test_testnet_evm_config_requires_deployment_identity() {
+  const std::string validEntry = R"({
+    "network": "testnet",
+    "evm_chains": {
+      "eth": {
+        "rpc_url": "http://127.0.0.1:8545",
+        "private_key": "1111111111111111111111111111111111111111111111111111111111111111",
+        "address": "0x1111111111111111111111111111111111111111",
+        "htlc_registry": "0x2222222222222222222222222222222222222222",
+        "chain_id": 11155111
+      }
+    }
+  })";
+  const std::string validPath = writeTempConfig(validEntry);
+  ChainClientConfig validConfig;
+  std::string error;
+  expectConfig(loadChainClientConfig(validPath, validConfig, error),
+      "testnet EVM deployment config rejected");
+  expectConfig(validConfig.network == "testnet", "testnet network was not retained");
+  expectConfig(validConfig.evmChains.size() == 1, "testnet EVM entry missing");
+  expectConfig(validConfig.evmChains[0].chainId == 11155111,
+      "testnet EVM chain ID mismatch");
+  std::remove(validPath.c_str());
+
+  const std::string missingChainId = R"({
+    "network": "testnet",
+    "evm_chains": {
+      "eth": {
+        "rpc_url": "http://127.0.0.1:8545",
+        "private_key": "1111111111111111111111111111111111111111111111111111111111111111",
+        "address": "0x1111111111111111111111111111111111111111",
+        "htlc_registry": "0x2222222222222222222222222222222222222222"
+      }
+    }
+  })";
+  const std::string missingPath = writeTempConfig(missingChainId);
+  ChainClientConfig missingConfig;
+  error.clear();
+  expectConfig(!loadChainClientConfig(missingPath, missingConfig, error),
+      "testnet EVM config without chain ID accepted");
+  expectConfig(!error.empty(), "missing testnet chain ID had no error");
+  std::remove(missingPath.c_str());
+  std::cout << "  PASS: test_testnet_evm_config_requires_deployment_identity" << std::endl;
+}
+
+static void test_solana_inline_keypair_config() {
+  const std::string json = R"({
+    "sol_rpc_host": "127.0.0.1",
+    "sol_rpc_port": 8899,
+    "sol_program_id": "11111111111111111111111111111111",
+    "sol_keypair": "unit-test-keypair"
+  })";
+  const std::string path = writeTempConfig(json);
+  ChainClientConfig config;
+  std::string error;
+  expectConfig(loadChainClientConfig(path, config, error),
+      "Solana inline keypair config rejected");
+  expectConfig(config.solKeypairBase58 == "unit-test-keypair",
+      "Solana inline keypair not retained");
+  std::remove(path.c_str());
+  std::cout << "  PASS: test_solana_inline_keypair_config" << std::endl;
+}
+
 // =============================================================================
 // Main
 // =============================================================================
@@ -371,6 +434,8 @@ int main() {
   test_chain_clients_expose_spv_mode();
   test_generic_evm_config();
   test_generic_evm_config_rejects_unsafe_entries();
+  test_testnet_evm_config_requires_deployment_identity();
+  test_solana_inline_keypair_config();
   std::cout << "All SPV config wiring tests passed." << std::endl;
   return 0;
 }

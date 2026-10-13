@@ -2516,6 +2516,113 @@ struct COMMAND_RPC_GET_HEAT_METRICS {
   };
 };
 
+struct COMMAND_RPC_PUBLIC_AUDIT_BALANCES {
+  typedef EMPTY_STRUCT request;
+
+  struct treasury {
+    std::string legacy_counter_xfg;        // deprecated counter, not live holdings
+    std::string pending_xfg;               // unconverted treasury fee share (LP pairing source)
+    std::string heat_reserve;              // HEAT leg of the treasury LP position
+    std::string bonus_vault_counter_heat;  // 11% bonus vault counter
+    std::string vault_general_xfg;         // GENERAL_RESERVE partition UTXOs
+    std::string vault_general_heat;
+    std::string vault_lp_reserve_xfg;      // LP_RESERVE partition UTXOs
+    std::string vault_lp_reserve_heat;
+
+    void serialize(ISerializer &s) {
+      KV_MEMBER(legacy_counter_xfg)
+      KV_MEMBER(pending_xfg)
+      KV_MEMBER(heat_reserve)
+      KV_MEMBER(bonus_vault_counter_heat)
+      KV_MEMBER(vault_general_xfg)
+      KV_MEMBER(vault_general_heat)
+      KV_MEMBER(vault_lp_reserve_xfg)
+      KV_MEMBER(vault_lp_reserve_heat)
+    }
+  };
+
+  struct cd_yield {
+    std::string pending_xfg;            // accrued, still XFG, not yet converted
+    std::string claims_counter_heat;    // claims counter
+    std::string apy_pool_vault_heat;    // CD_APY_POOL partition UTXOs backing it
+    std::string base_claim_cap_heat;    // min(claims_counter, apy_pool_vault)
+
+    void serialize(ISerializer &s) {
+      KV_MEMBER(pending_xfg)
+      KV_MEMBER(claims_counter_heat)
+      KV_MEMBER(apy_pool_vault_heat)
+      KV_MEMBER(base_claim_cap_heat)
+    }
+  };
+
+  struct hearth {
+    std::string pool_reserve_xfg;       // whole shared pool, not protocol-owned
+    std::string pool_reserve_heat;
+    std::string pool_total_lp_shares;
+    std::string protocol_lp_shares;     // protocol's ownership of that pool
+    std::string protocol_lp_value_xfg;  // pro-rata value of those shares
+    std::string protocol_lp_value_heat;
+
+    void serialize(ISerializer &s) {
+      KV_MEMBER(pool_reserve_xfg)
+      KV_MEMBER(pool_reserve_heat)
+      KV_MEMBER(pool_total_lp_shares)
+      KV_MEMBER(protocol_lp_shares)
+      KV_MEMBER(protocol_lp_value_xfg)
+      KV_MEMBER(protocol_lp_value_heat)
+    }
+  };
+
+  struct swf {
+    std::string collateral_pending_xfg;  // left circulation, still in total supply
+    std::string heat_counter;            // SWF HEAT collateral counter, not UTXOs
+    std::string vault_swf_xfg;           // SWF partition UTXOs
+    std::string vault_swf_heat;
+
+    void serialize(ISerializer &s) {
+      KV_MEMBER(collateral_pending_xfg)
+      KV_MEMBER(heat_counter)
+      KV_MEMBER(vault_swf_xfg)
+      KV_MEMBER(vault_swf_heat)
+    }
+  };
+
+  struct response {
+    uint32_t snapshot_height;            // zero-based tip block height
+    std::string snapshot_block_hash;     // hash of the block at snapshot_height
+
+    std::string xfg_removed_from_circulation_total;
+    std::string eternal_flame_burn_total_xfg;
+    std::string swf_xfg_permanently_retired_total;
+
+    std::string note_xfg_removed_from_circulation;
+    std::string note_reconciliation;
+
+    treasury  treasury_accounts;
+    cd_yield  cd_yield_accounting;
+    hearth    hearth_pool;
+    swf       swf_accounts;
+    std::string status;
+
+    void serialize(ISerializer &s) {
+      KV_MEMBER(snapshot_height)
+      KV_MEMBER(snapshot_block_hash)
+      KV_MEMBER(xfg_removed_from_circulation_total)
+      KV_MEMBER(eternal_flame_burn_total_xfg)
+      KV_MEMBER(swf_xfg_permanently_retired_total)
+      KV_MEMBER(note_xfg_removed_from_circulation)
+      KV_MEMBER(note_reconciliation)
+      KV_MEMBER(treasury_accounts)
+      KV_MEMBER(cd_yield_accounting)
+      KV_MEMBER(hearth_pool)
+      KV_MEMBER(swf_accounts)
+      KV_MEMBER(status)
+    }
+  };
+};
+
+typedef COMMAND_RPC_PUBLIC_AUDIT_BALANCES COMMAND_RPC_GET_PUBLIC_AUDIT;
+
 struct COMMAND_RPC_AMM_QUOTE {
   struct request {
     uint64_t input_amount;

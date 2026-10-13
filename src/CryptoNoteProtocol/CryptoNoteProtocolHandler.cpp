@@ -400,7 +400,9 @@ int CryptoNoteProtocolHandler::handle_notify_new_transactions(int command, NOTIF
     {
       if (m_core.getCurrentBlockMajorVersion() >= BLOCK_MAJOR_VERSION_10) {
         if (arg.dandelion_stem) {
-          arg.hop_count++;
+          // hop_count is attacker-controlled; saturate rather than wrap.
+          arg.hop_count = parameters::dandelionAdvanceHop(
+            arg.hop_count, parameters::DandelionKind::Tx);
           bool stay_stem = parameters::dandelionShouldStayInStem(
             arg.hop_count, parameters::DandelionKind::Tx, Crypto::rand<uint32_t>() % 100);
 
@@ -1200,7 +1202,9 @@ int CryptoNoteProtocolHandler::handle_swap_offer(int command, COMMAND_SWAP_OFFER
 
   if (m_core.getCurrentBlockMajorVersion() >= BLOCK_MAJOR_VERSION_10) {
     if (arg.dandelion_stem) {
-      arg.hop_count++;
+      // hop_count is attacker-controlled; saturate rather than wrap.
+      arg.hop_count = parameters::dandelionAdvanceHop(
+        arg.hop_count, parameters::DandelionKind::SwapOffer);
       bool stay_stem = parameters::dandelionShouldStayInStem(
         arg.hop_count, parameters::DandelionKind::SwapOffer, Crypto::rand<uint32_t>() % 100);
 

@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -123,6 +125,48 @@ func TestSwapIdentityValidation(t *testing.T) {
 	}
 }
 
+func TestSwapControlTokenValidation(t *testing.T) {
+	valid := strings.Repeat("a", 64)
+	if got, err := validateSwapControlToken(valid + "\n"); err != nil || got != valid {
+		t.Fatalf("valid token rejected: %q, %v", got, err)
+	}
+	for _, token := range []string{"", strings.Repeat("a", 31), strings.Repeat("a", 257), strings.Repeat("a", 63) + " "} {
+		if _, err := validateSwapControlToken(token); err == nil {
+			t.Errorf("invalid control token accepted: %q", token)
+		}
+	}
+}
+
+func TestSwapControlTokenFileRequiresOwnerOnlyRegularFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("owner-only file verification is unavailable on Windows")
+	}
+	file, err := os.CreateTemp("", "xfg-swapd-token-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := file.Name()
+	defer os.Remove(path)
+	if _, err := file.WriteString(strings.Repeat("b", 64) + "\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if token, err := readSwapControlTokenFile(path); err != nil || token != strings.Repeat("b", 64) {
+		t.Fatalf("owner-only token file rejected: %q, %v", token, err)
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readSwapControlTokenFile(path); err == nil {
+		t.Fatal("world-readable token file accepted")
+	}
+}
+
 func TestSwapClientInitiateUsesRuntimeReadinessAndStringAmounts(t *testing.T) {
 	methods := make([]string, 0, 3)
 	client := NewSwapDaemonClient(18902, "secret", "testnet")
@@ -144,7 +188,7 @@ func TestSwapClientInitiateUsesRuntimeReadinessAndStringAmounts(t *testing.T) {
 		case "status":
 			return rpcHTTPResponse(`{"jsonrpc":"2.0","result":{"network":"testnet","profile":"testnet"},"id":1}`), nil
 		case "list_chains":
-			return rpcHTTPResponse(`{"jsonrpc":"2.0","result":{"chains":[{"id":1,"key":"ETH","symbol":"ETH","assetTicker":"ETH","name":"Ethereum","family":"EVM","chainId":11155111,"decimals":18,"implementation":"adapter","protocol":true,"configured":true,"ready":true,"readinessError":""}]},"id":1}`), nil
+			return rpcHTTPResponse(`{"jsonrpc":"2.0","result":{"chains":[{"id":1,"key":"eth","symbol":"ETH","assetTicker":"ETH","name":"Ethereum","family":"EVM","chainId":11155111,"decimals":18,"implementation":"adapter","protocol":true,"configured":true,"ready":true,"readinessError":""}]},"id":1}`), nil
 		case "initiate_swap":
 			if _, ok := call.Params["xfg_amount"].(string); !ok {
 				t.Fatalf("xfg_amount type is %T", call.Params["xfg_amount"])
@@ -160,7 +204,7 @@ func TestSwapClientInitiateUsesRuntimeReadinessAndStringAmounts(t *testing.T) {
 	})}
 
 	result, err := client.Initiate(context.Background(), SwapInitiateRequest{
-		Pair:               "ETH",
+		Pair:               "eth",
 		Role:               "alice",
 		XFGAmount:          "10000000",
 		CounterpartyAmount: "1000000000000000000",
@@ -175,6 +219,53 @@ func TestSwapClientInitiateUsesRuntimeReadinessAndStringAmounts(t *testing.T) {
 	}
 	if strings.Join(methods, ",") != "status,list_chains,initiate_swap" {
 		t.Fatalf("RPC order = %v", methods)
+	}
+}
+
+func TestSwapClientRejectsAliasAndInvalidInputsBeforeMutation(t *testing.T) {
+	client := NewSwapDaemonClient(18902, "", "mainnet")
+	methods := make([]string, 0, 2)
+	client.httpClient = &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		var call struct {
+			Method string `json:"method"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&call); err != nil {
+			t.Fatal(err)
+		}
+		methods = append(methods, call.Method)
+		switch call.Method {
+		case "status":
+			return rpcHTTPResponse(`{"jsonrpc":"2.0","result":{"network":"mainnet","profile":"mainnet"},"id":1}`), nil
+		case "list_chains":
+			return rpcHTTPResponse(`{"jsonrpc":"2.0","result":{"chains":[{"id":1,"key":"eth","symbol":"ETH","assetTicker":"ETH","name":"Ethereum","family":"EVM","chainId":1,"decimals":18,"implementation":"adapter","protocol":true,"configured":true,"ready":true,"readinessError":""}]},"id":1}`), nil
+		default:
+			t.Fatalf("unexpected method %q", call.Method)
+			return nil, nil
+		}
+	})}
+	request := SwapInitiateRequest{
+		Pair:               "ETH",
+		Role:               "alice",
+		XFGAmount:          "1",
+		CounterpartyAmount: "1",
+		Peer:               "maker.example:18901",
+		ExpectedPeerKey:    strings.Repeat("ab", 32),
+	}
+	if _, err := client.Initiate(context.Background(), request); err == nil {
+		t.Fatal("uppercase alias should not be accepted without runtime lookup")
+	}
+	if strings.Join(methods, ",") != "status,list_chains" {
+		t.Fatalf("canonical-key check called %v", methods)
+	}
+
+	methods = nil
+	request.Pair = "eth"
+	request.CounterpartyAmount = "0"
+	if _, err := client.Initiate(context.Background(), request); err == nil {
+		t.Fatal("zero counterparty amount accepted")
+	}
+	if len(methods) != 0 {
+		t.Fatalf("invalid amount made RPC calls: %v", methods)
 	}
 }
 

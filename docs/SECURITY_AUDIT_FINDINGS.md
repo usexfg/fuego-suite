@@ -16,7 +16,7 @@ Round 1 detail, fix recipes and verification steps live in
 
 | Severity | Count | Fixed | Open / Deferred / Decision |
 |----------|-------|-------|---------------------------|
-| CRITICAL | 1 | 0 | 1 (R2-1, protocol change, deferred to v12) |
+| CRITICAL | 1 | 0 | 1 (R2-1, protocol change, must land with v11) |
 | HIGH | 1 | 1 | 0 |
 | MEDIUM | 3 | 3 | 0 |
 | LOW | 8 | 6 | 1 deferred (L-2b wallet cipher), 1 documented (L-1) |

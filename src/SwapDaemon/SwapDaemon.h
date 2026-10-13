@@ -150,6 +150,7 @@ struct ChainClientConfig {
 
   // Solana keypair JSON file path (as produced by `solana-keygen new`)
   std::string solKeypairPath;
+  std::string solKeypairBase58;
 
   // BNB (Binance Smart Chain — EVM)
   std::string bscHost;

@@ -177,7 +177,7 @@ struct PairQuote {
   bool        newSwapAllowed = false;
 };
 
-// xfgUsd comes from Hearth's raw price plus the fixed HEAT peg, never from a
+// xfgUsd comes from Hearth's raw price plus the chain-derived HEAT peg, never from a
 // feed and never from the SEED_XFG_USD constant.
 PairQuote buildPairQuote(uint8_t pair,
                          const FeedResult& primary,

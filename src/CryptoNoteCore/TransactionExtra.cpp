@@ -129,7 +129,7 @@ namespace CryptoNote
 
         case TX_EXTRA_MINER_BASKET_VOTE:
         {
-          TransactionExtraMinerBasketVote vote;
+          TransactionExtraMinerBasketVote vote{};
           ar(vote, "vote");
           transactionExtraFields.push_back(vote);
           break;

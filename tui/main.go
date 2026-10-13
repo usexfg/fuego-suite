@@ -251,7 +251,7 @@ func (m *model) appendLog(s string) {
 	}
 }
 
-func initialModel() model {
+func initialModel(swapdToken string) model {
 	modeStr := "MAINNET"
 	if CurrentConfig.IsTestnet {
 		modeStr = "TESTNET"
@@ -270,7 +270,7 @@ func initialModel() model {
 		containerFile: cFile,
 		swapClient: NewSwapDaemonClient(
 			CurrentConfig.SwapdRPCPort,
-			os.Getenv("XFG_SWAPD_RPC_TOKEN"),
+			swapdToken,
 			expectedSwapNetwork(CurrentConfig.IsTestnet),
 		),
 	}
@@ -2431,6 +2431,7 @@ func main() {
 	isTestnet := flag.Bool("testnet", false, "Run TUI in Testnet mode")
 	nodePort := flag.Int("node-port", 0, "Override daemon RPC port (default: 18180 mainnet, 28280 testnet)")
 	swapdPort := flag.Int("swapd-rpc-port", 0, "Override xfg-swapd control RPC port (default: 18902)")
+	swapdTokenFile := flag.String("swapd-token-file", os.Getenv("XFG_SWAPD_RPC_TOKEN_FILE"), "Owner-only xfg-swapd control token file")
 	showVersion := flag.Bool("version", false, "Print version and exit")
 	showHelp := flag.Bool("help", false, "Print help and exit")
 	flag.Parse()
@@ -2459,9 +2460,26 @@ func main() {
 	if *showHelp {
 		fmt.Printf("Usage: fuego-tui [flags]\n")
 		fmt.Printf("  Features: mint HEAT, HEAT CDs, Hearth AMM/orders, cross-chain swaps, aliases, subaddresses, dynamax mixin (8–32).\n")
-		fmt.Printf("  Set XFG_SWAPD_RPC_TOKEN when xfg-swapd uses --rpc-token.\n\n")
+		fmt.Printf("  Use --swapd-token-file with the owner-only file passed to xfg-swapd.\n\n")
 		flag.PrintDefaults()
 		return
+	}
+
+	swapdTokenEnv := os.Getenv("XFG_SWAPD_RPC_TOKEN")
+	if *swapdTokenFile != "" && swapdTokenEnv != "" {
+		fmt.Fprintln(os.Stderr, "use either --swapd-token-file or XFG_SWAPD_RPC_TOKEN, not both")
+		os.Exit(2)
+	}
+	var swapdToken string
+	var tokenErr error
+	if *swapdTokenFile != "" {
+		swapdToken, tokenErr = readSwapControlTokenFile(*swapdTokenFile)
+	} else if swapdTokenEnv != "" {
+		swapdToken, tokenErr = validateSwapControlToken(swapdTokenEnv)
+	}
+	if tokenErr != nil {
+		fmt.Fprintln(os.Stderr, "invalid xfg-swapd control token:", tokenErr)
+		os.Exit(2)
 	}
 
 	fmt.Printf("=== %s TUI ===\n", CurrentConfig.NetworkName)
@@ -2470,7 +2488,7 @@ func main() {
 	fmt.Printf("Swap daemon control RPC: 127.0.0.1:%d\n", CurrentConfig.SwapdRPCPort)
 	fmt.Printf("Wallet binary candidates: %s\n", strings.Join(WalletBinaryCandidates(CurrentConfig.WalletBinary), ", "))
 
-	p := tea.NewProgram(initialModel())
+	p := tea.NewProgram(initialModel(swapdToken))
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)

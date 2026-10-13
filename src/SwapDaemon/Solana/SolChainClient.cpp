@@ -1,4 +1,8 @@
 #include "SolChainClient.h"
+#include <array>
+#include <cstring>
+#include <openssl/crypto.h>
+#include <openssl/evp.h>
 #include <stdexcept>
 #include "Common/StringTools.h"
 #include "../Crypto/Base58Std.h"
@@ -13,15 +17,50 @@ static bool isZeroSecret(const Crypto::SecretKey& s) {
   return true;
 }
 
+static bool hasMatchingSolanaPublicKey(const std::string& keypairBase58) {
+  try {
+    const std::vector<uint8_t> keypair = Base58Std::decode(keypairBase58);
+    if (keypair.size() != 64) return false;
+    EVP_PKEY* privateKey = EVP_PKEY_new_raw_private_key(
+        EVP_PKEY_ED25519, nullptr, keypair.data(), 32);
+    if (!privateKey) return false;
+    std::array<uint8_t, 32> derivedPublicKey{};
+    size_t derivedLength = derivedPublicKey.size();
+    const bool derived = EVP_PKEY_get_raw_public_key(
+        privateKey, derivedPublicKey.data(), &derivedLength) == 1;
+    EVP_PKEY_free(privateKey);
+    return derived && derivedLength == derivedPublicKey.size() &&
+        CRYPTO_memcmp(derivedPublicKey.data(), keypair.data() + 32,
+                      derivedPublicKey.size()) == 0;
+  } catch (const std::exception&) {
+    return false;
+  }
+}
+
 SolChainClient::SolChainClient(std::unique_ptr<SolRpcClient> rpc, const std::string& keypairBase58)
   : m_rpc(std::move(rpc)), m_keypairBase58(keypairBase58) {}
+
+std::string SolChainClient::readinessError() {
+  if (!m_rpc) return "Solana RPC client is not configured";
+  if (!m_rpc->hasValidProgramId()) return "Solana HTLC program ID is not configured";
+  if (!hasMatchingSolanaPublicKey(m_keypairBase58)) {
+    return "Solana keypair does not contain a matching public key";
+  }
+  SolAccountInfo programAccount{};
+  if (!m_rpc->getAccountInfo(m_rpc->programId(), programAccount) ||
+      !programAccount.executable) {
+    return "Solana HTLC program cannot be verified as deployed";
+  }
+  if (getReceiveAddress().empty()) return "Solana keypair is not configured";
+  return "";
+}
 
 std::string SolChainClient::getReceiveAddress() const {
   // The keypair (64 bytes base58) holds the secret key first, then the
   // public key. Return the public key as a base58 address.
   try {
     std::vector<uint8_t> raw = Base58Std::decode(m_keypairBase58);
-    if (raw.size() < 64) return "";
+    if (raw.size() != 64 || !hasMatchingSolanaPublicKey(m_keypairBase58)) return "";
     std::vector<uint8_t> pub(raw.begin() + 32, raw.begin() + 64);
     return Base58Std::encode(pub);
   } catch (const std::exception&) {

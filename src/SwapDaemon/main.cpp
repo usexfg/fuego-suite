@@ -36,6 +36,14 @@
 #include <chrono>
 #include <fstream>
 #include <sstream>
+#include <cctype>
+#include <cerrno>
+#include <stdexcept>
+#ifndef _WIN32
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 
 #include "Common/StringTools.h"
 
@@ -69,6 +77,7 @@ void printUsage() {
     "  --status-port <port>    Status endpoint for monitoring (default: 18900)\n"
     "  --rpc-port <port>       JSON-RPC server for wallet integration (default: 18902)\n"
     "  --rpc-token <token>     Require X-Swap-Token header on all JSON-RPC calls\n"
+    "  --rpc-token-file <file> Read the JSON-RPC token from an owner-only file\n"
     "                           (or set XFG_SWAPD_RPC_TOKEN)\n"
     "  --swap-p2p-port <port>  Swap peer protocol listen port (default: 18901, 0=off)\n"
     "  --swap-p2p-bind <addr>  P2P bind address (default: 127.0.0.1)\n"
@@ -123,6 +132,69 @@ std::string getDefaultDataDir() {
     return std::string(home) + "/.xfg-swapd";
   }
   return "./.xfg-swapd";
+}
+
+std::string validateRpcControlToken(std::string token) {
+  while (!token.empty() && (token.back() == '\n' || token.back() == '\r')) {
+    token.pop_back();
+  }
+  if (token.size() < 32 || token.size() > 256) {
+    throw std::runtime_error("rpc token must contain 32 to 256 characters");
+  }
+  for (const unsigned char character : token) {
+    if (!std::isalnum(character) && character != '-' && character != '_') {
+      throw std::runtime_error("rpc token contains an invalid character");
+    }
+  }
+  return token;
+}
+
+std::string readRpcControlTokenFile(const std::string& path) {
+#ifdef _WIN32
+  (void)path;
+  throw std::runtime_error("rpc-token-file requires a verified owner-only filesystem");
+#else
+  int descriptor = ::open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+  if (descriptor < 0) {
+    throw std::runtime_error("cannot open rpc-token-file");
+  }
+
+  try {
+    struct stat fileInfo{};
+    if (::fstat(descriptor, &fileInfo) != 0 || !S_ISREG(fileInfo.st_mode) ||
+        fileInfo.st_uid != ::geteuid() ||
+        (fileInfo.st_mode & (S_IRWXG | S_IRWXO)) != 0) {
+      throw std::runtime_error("rpc-token-file must be a regular owner-only file");
+    }
+
+    char buffer[258];
+    size_t total = 0;
+    while (total < sizeof(buffer)) {
+      const ssize_t count = ::read(descriptor, buffer + total, sizeof(buffer) - total);
+      if (count > 0) {
+        total += static_cast<size_t>(count);
+        continue;
+      }
+      if (count == 0) {
+        break;
+      }
+      if (errno != EINTR) {
+        throw std::runtime_error("cannot read rpc-token-file");
+      }
+    }
+    ::close(descriptor);
+    descriptor = -1;
+    if (total == sizeof(buffer)) {
+      throw std::runtime_error("rpc-token-file contains an invalid token");
+    }
+    return validateRpcControlToken(std::string(buffer, total));
+  } catch (...) {
+    if (descriptor >= 0) {
+      ::close(descriptor);
+    }
+    throw;
+  }
+#endif
 }
 
 // Generate a complete SPV config template with fresh keypairs for each chain.
@@ -257,6 +329,7 @@ int main(int argc, char* argv[]) {
   uint16_t p2pPort = 18901;
   std::string p2pBindAddr = "127.0.0.1";
   std::string rpcToken;
+  std::string rpcTokenFile;
   std::string publicEndpoint;
   bool testnet = false;
   bool serviceMode = false;
@@ -329,6 +402,12 @@ int main(int argc, char* argv[]) {
         return 1;
       }
       rpcToken = argv[argIdx];
+    } else if (opt == "--rpc-token-file") {
+      if (++argIdx >= argc) {
+        std::cerr << "Error: --rpc-token-file requires an argument" << std::endl;
+        return 1;
+      }
+      rpcTokenFile = argv[argIdx];
     } else if (opt == "--swap-p2p-port") {
       if (++argIdx >= argc) {
         std::cerr << "Error: --swap-p2p-port requires an argument" << std::endl;
@@ -361,9 +440,23 @@ int main(int argc, char* argv[]) {
     ++argIdx;
   }
 
-  if (rpcToken.empty()) {
+  if (!rpcToken.empty() && !rpcTokenFile.empty()) {
+    std::cerr << "Error: use either --rpc-token or --rpc-token-file, not both" << std::endl;
+    return 1;
+  }
+  if (rpcToken.empty() && rpcTokenFile.empty()) {
     const char* envToken = std::getenv("XFG_SWAPD_RPC_TOKEN");
     if (envToken != nullptr) rpcToken = envToken;
+  }
+  try {
+    if (!rpcTokenFile.empty()) {
+      rpcToken = readRpcControlTokenFile(rpcTokenFile);
+    } else if (!rpcToken.empty()) {
+      rpcToken = validateRpcControlToken(std::move(rpcToken));
+    }
+  } catch (const std::exception& error) {
+    std::cerr << "Error: " << error.what() << std::endl;
+    return 1;
   }
 
   // Set up logging

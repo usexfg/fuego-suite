@@ -76,3 +76,36 @@ TEST(AssetClassification, OrdinaryOutputsAreXfg) {
   MultisignatureOutput multisig;
   EXPECT_EQ(AssetType::XFG, Currency::classifyOutputAsset(TransactionOutputTarget(multisig), 0));
 }
+
+// The TransactionOutputUnified branch of classifyOutputAsset used to carry its own
+// copy of the term table, and that copy mapped term 0 to XFG while
+// classifyCommitmentTermAsset maps term 0 to HEAT. TransactionOutputUnified is
+// deserialization-reachable (tag 0x5) and check_tx_outputs does not reject it, so
+// the disagreement was reachable by a hand-built output rather than merely dead.
+// This test failed before the branch was changed to delegate to the shared table.
+TEST(AssetClassification, UnifiedOutputUsesTheSharedTable) {
+  const uint32_t terms[] = {
+    0, 1, 720, 5400, 64800,
+    parameters::HEAT_TERM,
+    parameters::DEPOSIT_TERM_LP,
+    parameters::DEPOSIT_TERM_POOL_XFG,
+    parameters::DEPOSIT_TERM_POOL_HEAT,
+    parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG,
+  };
+  for (uint32_t term : terms) {
+    TransactionOutputUnified unified;
+    memset(&unified, 0, sizeof(unified));
+    unified.term = term;
+    EXPECT_EQ(Currency::classifyCommitmentTermAsset(term),
+              Currency::classifyOutputAsset(TransactionOutputTarget(unified), term))
+      << "unified term " << term << ": unified and commitment outputs disagree";
+  }
+}
+
+// The specific value that diverged: term 0 is plain HEAT everywhere.
+TEST(AssetClassification, UnifiedTermZeroIsHeatNotXfg) {
+  TransactionOutputUnified unified;
+  memset(&unified, 0, sizeof(unified));
+  unified.term = 0;
+  EXPECT_EQ(AssetType::HEAT, Currency::classifyOutputAsset(TransactionOutputTarget(unified), 0));
+}

@@ -541,6 +541,10 @@ SolRpcClient::SolRpcClient(const std::string& host, uint16_t port,
   m_rpcUrl = m_host + ":" + std::to_string(m_port);
 }
 
+bool SolRpcClient::hasValidProgramId() const {
+  return base58Decode(m_programId).size() == 32;
+}
+
 // ---------------------------------------------------------------------------
 // HTTP POST over POSIX sockets (same pattern as EthRpcClient)
 // ---------------------------------------------------------------------------

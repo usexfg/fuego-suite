@@ -478,6 +478,16 @@ namespace CryptoNote
       uint64_t          timestamp;
       uint32_t          ttlBlocks;
       uint32_t          postedHeight;
+      // WIRE CONTRACT — do not change `uint8_t` to `bool` for consistency with
+      // COMMAND_SWAP_OFFER::request (which uses bool) or
+      // NOTIFY_NEW_TRANSACTIONS_request (which also uses bool). The KV format is
+      // name-keyed but TYPE-TAG-STRICT: uint8_t serializes with tag
+      // BIN_KV_SERIALIZE_TYPE_UINT8 (8) and bool with BIN_KV_SERIALIZE_TYPE_BOOL
+      // (11), and JsonValue::getBool() throws on a non-BOOL value. Changing the
+      // type therefore makes every COMMAND_ORDER_OPEN undecodable on remote
+      // peers: LevinProtocol::decode fails, notifyAdaptor throws
+      // "Failed to load_from_binary", and the connection is dropped — killing
+      // orderbook relay mesh-wide with no compile error and no test failure.
       uint8_t           dandelion_stem;
       uint32_t          hop_count;
 

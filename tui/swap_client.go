@@ -93,6 +93,22 @@ func NewSwapDaemonClient(port int, token, expectedNetwork string) *SwapDaemonCli
 	}
 }
 
+func validateSwapControlToken(token string) (string, error) {
+	token = strings.TrimRight(token, "\r\n")
+	if len(token) < 32 || len(token) > 256 {
+		return "", errors.New("swap daemon control token must contain 32 to 256 characters")
+	}
+	for _, character := range token {
+		if (character < 'a' || character > 'z') &&
+			(character < 'A' || character > 'Z') &&
+			(character < '0' || character > '9') &&
+			character != '-' && character != '_' {
+			return "", errors.New("swap daemon control token contains an invalid character")
+		}
+	}
+	return token, nil
+}
+
 func (c *SwapDaemonClient) call(ctx context.Context, method string, params any, result any, mutation bool) error {
 	body, err := json.Marshal(map[string]any{
 		"jsonrpc": "2.0",
@@ -180,7 +196,7 @@ func (c *SwapDaemonClient) ListReadyChains(ctx context.Context) ([]SwapChain, er
 	}
 	ready := make([]SwapChain, 0, len(response.Chains))
 	for _, chain := range response.Chains {
-		if chain.Protocol && chain.Ready {
+		if chain.Protocol && chain.Configured && chain.Ready {
 			ready = append(ready, chain)
 		}
 	}
@@ -191,13 +207,29 @@ func (c *SwapDaemonClient) ListReadyChains(ctx context.Context) ([]SwapChain, er
 }
 
 func (c *SwapDaemonClient) Initiate(ctx context.Context, request SwapInitiateRequest) (SwapInitiateResult, error) {
+	if request.Role != "alice" && request.Role != "bob" {
+		return SwapInitiateResult{}, errors.New("swap role must be alice or bob")
+	}
+	if err := validateAtomicAmount(request.XFGAmount, new(big.Int).SetUint64(^uint64(0))); err != nil {
+		return SwapInitiateResult{}, fmt.Errorf("invalid XFG amount: %w", err)
+	}
+	maxCounterpartyAmount := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1))
+	if err := validateAtomicAmount(request.CounterpartyAmount, maxCounterpartyAmount); err != nil {
+		return SwapInitiateResult{}, fmt.Errorf("invalid counterparty amount: %w", err)
+	}
+	if err := validatePeerEndpoint(request.Peer); err != nil {
+		return SwapInitiateResult{}, err
+	}
+	if err := validateExpectedPeerKey(request.ExpectedPeerKey); err != nil {
+		return SwapInitiateResult{}, err
+	}
 	chains, err := c.ListReadyChains(ctx)
 	if err != nil {
 		return SwapInitiateResult{}, err
 	}
 	ready := false
 	for _, chain := range chains {
-		if strings.EqualFold(chain.Key, request.Pair) {
+		if chain.Key == request.Pair {
 			ready = true
 			break
 		}
@@ -304,6 +336,20 @@ func parseCounterpartyAmount(text string, decimals int) (string, error) {
 	return parseDisplayAmount(text, decimals, max)
 }
 
+func validateAtomicAmount(value string, max *big.Int) error {
+	if !decimalDigits(value) {
+		return errors.New("amount must be an unsigned decimal string")
+	}
+	amount := new(big.Int)
+	if _, ok := amount.SetString(value, 10); !ok || amount.Sign() <= 0 {
+		return errors.New("amount must be greater than zero")
+	}
+	if max != nil && amount.Cmp(max) > 0 {
+		return errors.New("amount exceeds protocol range")
+	}
+	return nil
+}
+
 func decimalDigits(text string) bool {
 	if text == "" {
 		return false
@@ -365,15 +411,16 @@ func validateExpectedPeerKey(key string) error {
 }
 
 func validateSwapID(swapID string) error {
-	if swapID == "" || len(swapID) > 64 {
-		return errors.New("swap ID must contain 1-64 ASCII letters, digits, hyphens, or underscores")
+	if swapID == "" || len(swapID) > 128 {
+		return errors.New("swap ID must contain 1-128 ASCII letters, digits, periods, colons, hyphens, or underscores")
 	}
 	for _, char := range swapID {
 		if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') ||
-			(char >= '0' && char <= '9') || char == '-' || char == '_' {
+			(char >= '0' && char <= '9') || char == '.' || char == ':' ||
+			char == '-' || char == '_' {
 			continue
 		}
-		return errors.New("swap ID must contain 1-64 ASCII letters, digits, hyphens, or underscores")
+		return errors.New("swap ID must contain 1-128 ASCII letters, digits, periods, colons, hyphens, or underscores")
 	}
 	return nil
 }

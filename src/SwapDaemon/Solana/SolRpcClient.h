@@ -71,6 +71,9 @@ public:
   SolRpcClient(const std::string& host, uint16_t port,
                const std::string& programId);
 
+  bool hasValidProgramId() const;
+  const std::string& programId() const { return m_programId; }
+
   // ─── Basic queries ──────────────────────────────────────────────
 
   // Get current slot height.

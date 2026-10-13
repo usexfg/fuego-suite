@@ -1032,6 +1032,8 @@ if (${CMAKE_SYSTEM_NAME} STREQUAL "Linux" OR APPLE AND NOT ANDROID)
   # core_tests builds a real Blockchain (rebuildCache regression), which links
   # the DNS checkpoint lookup.
   target_link_libraries(core_tests PRIVATE -lresolv)
+  # public_audit_tests does the same for its source-to-field mapping assertions.
+  target_link_libraries(public_audit_tests PRIVATE -lresolv)
 endif ()
 
 # --------------------------

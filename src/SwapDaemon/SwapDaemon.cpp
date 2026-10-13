@@ -318,8 +318,8 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
   if (!chainCfg.solHost.empty()) {
     auto rpc = std::make_unique<SolRpcClient>(
         chainCfg.solHost, chainCfg.solPort, chainCfg.solProgramId);
-    std::string keypairBase58;
-    if (!chainCfg.solKeypairPath.empty()) {
+    std::string keypairBase58 = chainCfg.solKeypairBase58;
+    if (keypairBase58.empty() && !chainCfg.solKeypairPath.empty()) {
       keypairBase58 = loadSolKeypairBase58(chainCfg.solKeypairPath);
       if (!keypairBase58.empty()) {
         m_logger(Logging::INFO) << "Loaded SOL keypair from " << chainCfg.solKeypairPath;
@@ -1014,6 +1014,10 @@ SwapDaemon::ChainReadiness SwapDaemon::getChainReadiness(SwapPair pair, bool ref
   if (!CryptoNote::SwapOfferRelay::isExecutablePair(descriptor->id)) {
     result.error = descriptor->support == SwapPairSupport::STAGED
         ? "implementation is staged" : "pair is not executable";
+    return result;
+  }
+  if (m_network == "testnet" && descriptor->family != SwapChainFamily::EVM) {
+    result.error = "testnet counterparty support is implemented only for configured EVM deployments";
     return result;
   }
 

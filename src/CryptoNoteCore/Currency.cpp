@@ -583,18 +583,18 @@ double Currency::getBurnPercentage() const {
     }
     if (target.type() == typeid(TransactionOutputUnified)) {
       auto& unified = boost::get<TransactionOutputUnified>(target);
-      if (unified.term == parameters::HEAT_TERM)
-        return AssetType::HEAT;
-      if (unified.term == parameters::DEPOSIT_TERM_LP)
-        return AssetType::LP;
-      if (unified.term == parameters::DEPOSIT_TERM_POOL_XFG)
-        return AssetType::XFG;
-      if (unified.term == parameters::DEPOSIT_TERM_POOL_HEAT)
-        return AssetType::HEAT;
-      if (unified.term == parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG)
-        return AssetType::XFG;
-      // term 0 is an ordinary output (XFG); any finite term is a CD (HEAT).
-      return (unified.term > 0) ? AssetType::HEAT : AssetType::XFG;
+      // Delegate to the shared table rather than re-deriving it here. This branch
+      // used to carry its own copy that mapped term 0 to XFG while
+      // classifyCommitmentTermAsset maps term 0 to HEAT ("plain HEAT", see
+      // check_tx_outputs and AssetType.cpp). The two disagreed on the same value.
+      //
+      // TransactionOutputUnified is deserialization-reachable (tag 0x5) and
+      // check_tx_outputs does not reject it, so a hand-built output could pick
+      // either classification depending on which branch ran — the input side
+      // (classifyInputAsset -> classifyCommitmentTermAsset) is the shared table,
+      // so the unified output branch was the outlier. Delegating also picks up
+      // DIGM_TERM and every CD term for free.
+      return classifyCommitmentTermAsset(unified.term);
     }
     return AssetType::XFG;
   }

@@ -151,15 +151,38 @@ static_assert(DANDELION_SWAP_STEM_MAX_HOPS <= DANDELION_STEM_MAX_HOPS,
 // Identifies which relay path is asking — tx pool, or swap-offer gossip.
 // Single helper keeps the two from drifting on future tuning.
 enum class DandelionKind { Tx, SwapOffer };
+inline uint32_t dandelionMaxHops(DandelionKind kind) {
+  return kind == DandelionKind::Tx ? DANDELION_STEM_MAX_HOPS
+                                   : DANDELION_SWAP_STEM_MAX_HOPS;
+}
+inline uint32_t dandelionStayPct(DandelionKind kind) {
+  return kind == DandelionKind::Tx ? DANDELION_STEM_STAY_PCT
+                                   : DANDELION_SWAP_STEM_STAY_PCT;
+}
 inline bool dandelionShouldStayInStem(uint32_t hop_count, DandelionKind kind,
                                       uint32_t rand_0_99) {
-  const uint32_t max_hops = (kind == DandelionKind::Tx)
-                                ? DANDELION_STEM_MAX_HOPS
-                                : DANDELION_SWAP_STEM_MAX_HOPS;
-  const uint32_t stay_pct = (kind == DandelionKind::Tx)
-                                ? DANDELION_STEM_STAY_PCT
-                                : DANDELION_SWAP_STEM_STAY_PCT;
-  return hop_count < max_hops && rand_0_99 < stay_pct;
+  return hop_count < dandelionMaxHops(kind) &&
+         rand_0_99 < dandelionStayPct(kind);
+}
+
+// Advance a stem hop counter without wrapping.
+//
+// hop_count arrives on the wire from an untrusted peer. A bare `hop_count++`
+// on a wire value of UINT32_MAX wraps to 0, which is below max_hops and
+// therefore hands the sender a fresh stem budget on every pass — the hop bound
+// stops being a bound. Saturate at max_hops instead: dandelionShouldStayInStem
+// then sees hop_count == max_hops and correctly forces the STEM -> FLUFF
+// transition.
+//
+// SCOPE: this bounds hops only against the wrap. It does NOT authenticate
+// hop_count, which is a serialized wire field outside every signed digest, so
+// a hostile relay can still re-emit an offer with hop_count = 0 and obtain a
+// fresh budget. Truly bounding hops requires binding the field into the
+// signature (see the open finding in CHANGELOG.agent.md). This is
+// defence-in-depth, not a trust boundary.
+inline uint32_t dandelionAdvanceHop(uint32_t hop_count, DandelionKind kind) {
+  const uint32_t max_hops = dandelionMaxHops(kind);
+  return hop_count < max_hops ? hop_count + 1 : max_hops;
 }
 
 // HⲶ∆T CD denominations (atomic units, 7 decimal places)
@@ -206,9 +229,12 @@ const uint64_t HEARTH_MAX_BLOCK_PRICE_MOVE_PCT = 100;
 //
 // Phase 1: payouts disabled. All on-chain votes permanently recorded
 //          for auditable back-pay when Phase 2 (DIGM) activates.
-const uint32_t FCI_EPOCH_BLOCKS = 900; // same window as CD epoch
+const uint32_t FCI_EPOCH_BLOCKS = EPOCH_DURATION_BLOCKS;
 const uint32_t FCI_MIN_QUORUM = 351;   // 39% of 900 blocks
 const uint32_t FCI_TRIM_PCT = 25;      // 25% each tail discarded
+const uint32_t FCI_EPOCHS_PER_QUARTER = 18; // one quarter of the 72-epoch term
+const uint64_t FCI_INDEX_SCALE = 1000000ULL;
+const uint64_t FCI_HEAT_PEG_INITIAL_USD_MICRO = 1580000ULL;
 
 // Commodity basket — Day-0 USD baselines (microUSD, integer)
 //   Power: 1 kWh electric     $0.12    → 120,000 µUSD
@@ -229,9 +255,8 @@ const uint32_t FCI_WEIGHT_MILK = 10;  // 10% — milk/gallon
 const uint32_t FCI_WEIGHT_BREAD = 10; // 10% — bread/kg
 const uint32_t FCI_WEIGHT_EGGS = 10;  // 10% — eggs/dozen
 
-// Drift cap: FCI movement limited per epoch to ±0.25% of current value.
-// Prevents a sudden coordinated data-push from spiking the peg violently.
-const uint32_t FCI_MAX_DRIFT_BPS = 25; // 0.25% in basis points
+// A quarterly peg update can move at most 5.04% of the current reference.
+const uint32_t FCI_MAX_QUARTERLY_DRIFT_BPS = 504;
 
 // Phase 1: payouts disabled. Phase 2 will set this true and allocate DIGM.
 const bool FCI_PAYOUTS_ENABLED = false;
@@ -289,11 +314,9 @@ const uint64_t EPOCHS_PER_YEAR = 73; // 65700 blocks/yr / 900 blocks/epoch
 const uint64_t SWAP_FEE_TREASURY_SHARE_PCT =
     20; // 20% of epoch swap fees → Treasury Reserve
 
-// HEAT stablecoin peg reference (v11+: 1:1 Hearth pool bootstrap)
-const double HEAT_PEG_USD = 1.58; // HEAT peg reference in USD (launch constant)
-// TODO(Phase 2): Fuego Cost Index adjustment — when enabled, HEAT_PEG_USD
-// updates periodically via FCI oracle to preserve purchasing power. Until then,
-// HEAT is fixed at $1.58.
+// Initial HEAT USD peg reference. FCI tallies may accumulate before v12, but
+// the reported reference stays at this value until a v12 quarterly boundary.
+const double HEAT_PEG_USD = 1.58;
 
 // HEAT mint burn split
 const uint64_t MINT_BURN_EF_PCT =

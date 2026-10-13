@@ -138,8 +138,33 @@ struct COMMAND_ORDER_OPEN {
         uint64_t timestamp;
         uint32_t ttlBlocks;
         uint32_t postedHeight;
-        uint8_t  dandelion_stem;
-        uint8_t  hop_count;
+        uint8_t  dandelion_stem;   // WIRE CONTRACT: must stay uint8_t — see W1 below
+        uint32_t hop_count;        // NOTE: spec said uint8_t; implementation uses uint32_t
+
+        // IMPLEMENTATION DIVERGENCE — this spec block does not match the code.
+        //  1. `orderId` is `std::string`, not `char[64]`.
+        //  2. `makerPubKey`/`signature` are `Crypto::PublicKey`/`Crypto::Signature`,
+        //     not `char[32]`/`char[64]`.
+        //  3. Serialization uses positional `KV_MEMBER` (src/Serialization/ISerializer.h),
+        //     not named `s(field, "name")`.
+        //  4. `hop_count` is uint32_t here, not uint8_t.
+        //  5. The real handlers take a single `const request&` argument, not the
+        //     scoped parameter lists this spec shows from line 298 onward.
+        // See src/P2p/P2pProtocolDefinitions.h for the authoritative definition:
+        //   struct COMMAND_ORDER_OPEN { ... }   // uint8_t dandelion_stem, uint32_t hop_count
+
+        // W1. dandelion_stem MUST stay `uint8_t`. Do NOT "harmonise" it to bool.
+        //     The KV format is name-keyed but TYPE-TAG-STRICT: uint8_t serializes
+        //     with tag BIN_KV_SERIALIZE_TYPE_UINT8 (8) and bool with
+        //     BIN_KV_SERIALIZE_TYPE_BOOL (11), and JsonValue::getBool() throws on a
+        //     non-BOOL value. COMMAND_SWAP_OFFER::request and
+        //     NOTIFY_NEW_TRANSACTIONS_request both declare the same field as bool,
+        //     so the temptation is real. Changing the type makes every
+        //     COMMAND_ORDER_OPEN undecodable on peers: LevinProtocol::decode fails,
+        //     notifyAdaptor throws, the connection is dropped — orderbook relay dies
+        //     mesh-wide with no compile error and no test failure. The full
+        //     explanation lives at src/P2p/P2pProtocolDefinitions.h, COMMAND_ORDER_OPEN.
+
 
         void serialize(ISerializer& s) {
             s(orderId, "orderId");
@@ -263,6 +288,15 @@ HANDLE_NOTIFY(CryptoNote::COMMAND_ORDER_RESERVE_ACK, &m_swap_handler, &CryptoNot
 
 **File:** Same file — add handler methods that route to `SwapOfferRelay`:
 
+> **DIVERGENCE:** this entire section is aspirational and does not match the
+> shipped code. The real signatures take `(int command, request&, CryptoNoteConnectionContext&)`
+> and live in `src/CryptoNoteProtocol/CryptoNoteProtocolHandler.cpp`. The
+> `order.orderId.assign(arg.orderId, sizeof(arg.orderId))` and
+> `std::memcpy(order.makerPubKey.data, arg.makerPubKey, 32)` lines assume the
+> `char[64]`/`char[32]` wire fields ruled out in W1 above — the real fields are
+> `std::string` and `Crypto::PublicKey`. All four handler blocks that follow
+> also show wrong parameter lists. Read the source, not this section.
+
 ```cpp
 bool CryptoNoteProtocolHandler::handle_order_open(const COMMAND_ORDER_OPEN::request& arg) {
     Order order;
@@ -278,7 +312,11 @@ bool CryptoNoteProtocolHandler::handle_order_open(const COMMAND_ORDER_OPEN::requ
     std::memcpy(order.makerPubKey.data, arg.makerPubKey, 32);
     std::memcpy(order.signature.data, arg.signature, 64);
 
-    m_core.getSwapRelay().handleOrderOpen(order, arg.dandelion_stem);
+    // DIVERGENCE: this spec passed dandelion_stem as a second argument. The
+    // shipped signature is `bool handleOrderOpen(const COMMAND_ORDER_OPEN::request&)`
+    // — the stem flag is carried on the message itself and the handler relays,
+    // so the parameter has no reason to exist. See SwapOfferRelay.h.
+    m_core.getSwapRelay().handleOrderOpen(order);
     return true;
 }
 

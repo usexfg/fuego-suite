@@ -238,6 +238,7 @@ std::unordered_map<std::string, RpcServer::RpcHandler<RpcServer::HandlerFunction
   { "/get_epoch_history", { jsonMethod<COMMAND_RPC_GET_EPOCH_HISTORY>(&RpcServer::on_get_epoch_history), true } },
   { "/estimate_cd_yield", { jsonMethod<COMMAND_RPC_ESTIMATE_CD_YIELD>(&RpcServer::on_estimate_cd_yield), true } },
   { "/get_treasury_info", { jsonMethod<COMMAND_RPC_GET_TREASURY_INFO>(&RpcServer::on_get_treasury_info), true } },
+  { "/get_public_audit", { jsonMethod<COMMAND_RPC_GET_PUBLIC_AUDIT>(&RpcServer::on_get_public_audit), true } },
 
   // Wallet Auto-Rollover + Compound Interest
   { "/get_maturing_deposits", { jsonMethod<COMMAND_RPC_GET_MATURING_DEPOSITS>(&RpcServer::on_get_maturing_deposits), true } },
@@ -2750,6 +2751,66 @@ bool RpcServer::on_get_treasury_info(const COMMAND_RPC_GET_TREASURY_INFO::reques
   return true;
 }
 
+bool RpcServer::on_get_public_audit(const COMMAND_RPC_GET_PUBLIC_AUDIT::request& req,
+                                    COMMAND_RPC_GET_PUBLIC_AUDIT::response& res) {
+  const Blockchain::PublicAuditSnapshot snap = m_core.get_blockchain_storage().getPublicAuditSnapshot();
+
+  // Decimal strings, not JSON numbers: atomic XFG and HEAT amounts exceed
+  // 2^53-1, and any consumer that parses this with a double loses the low
+  // digits. Every amount in this response crosses the wire as a string.
+  const auto atomic = [](uint64_t amount) { return std::to_string(amount); };
+
+  res.snapshot_height = snap.snapshotHeight;
+  res.snapshot_block_hash = Common::podToHex(snap.snapshotBlockHash);
+
+  res.xfg_removed_from_circulation_total = atomic(snap.xfgRemovedFromCirculation);
+  res.eternal_flame_burn_total_xfg = atomic(snap.eternalFlameBurnTotal);
+  res.swf_xfg_permanently_retired_total = atomic(snap.swfXfgPermanentlyRetiredTotal);
+
+  res.note_xfg_removed_from_circulation =
+      "Total XFG removed from circulation: every XFG atom that has left spendable "
+      "circulation, including Eternal Flame burns, fee conversions, and XFG held as "
+      "pending SWF collateral. It is not a total-supply reduction and not a total "
+      "destruction figure. The permanently retired amount is reported separately as "
+      "swf_xfg_permanently_retired_total.";
+  res.note_reconciliation =
+      "The lifecycle amounts are not guaranteed to reconcile with "
+      "xfg_removed_from_circulation_total: the startup burn rescan rebuilds the "
+      "aggregate and the Eternal Flame share but not the SWF pending-collateral or "
+      "permanent-retirement counters. Treat them as independently sourced. Counters "
+      "and the vault UTXO balances that back them are separate values and are not "
+      "summed; there is no combined XFG+HEAT treasury total.";
+
+  res.treasury_accounts.legacy_counter_xfg = atomic(snap.treasuryLegacyCounterXfg);
+  res.treasury_accounts.pending_xfg = atomic(snap.treasuryPendingXfg);
+  res.treasury_accounts.heat_reserve = atomic(snap.treasuryHeatReserve);
+  res.treasury_accounts.bonus_vault_counter_heat = atomic(snap.bonusVaultCounterHeat);
+  res.treasury_accounts.vault_general_xfg = atomic(snap.vaultGeneralXfg);
+  res.treasury_accounts.vault_general_heat = atomic(snap.vaultGeneralHeat);
+  res.treasury_accounts.vault_lp_reserve_xfg = atomic(snap.vaultLpReserveXfg);
+  res.treasury_accounts.vault_lp_reserve_heat = atomic(snap.vaultLpReserveHeat);
+
+  res.cd_yield_accounting.pending_xfg = atomic(snap.cdYieldPendingXfg);
+  res.cd_yield_accounting.claims_counter_heat = atomic(snap.cdYieldClaimsCounterHeat);
+  res.cd_yield_accounting.apy_pool_vault_heat = atomic(snap.cdApyPoolVaultHeat);
+  res.cd_yield_accounting.base_claim_cap_heat = atomic(snap.cdBaseClaimCapHeat);
+
+  res.hearth_pool.pool_reserve_xfg = atomic(snap.poolReserveXfg);
+  res.hearth_pool.pool_reserve_heat = atomic(snap.poolReserveHeat);
+  res.hearth_pool.pool_total_lp_shares = atomic(snap.poolTotalLpShares);
+  res.hearth_pool.protocol_lp_shares = atomic(snap.protocolLpShares);
+  res.hearth_pool.protocol_lp_value_xfg = atomic(snap.protocolLpValueXfg);
+  res.hearth_pool.protocol_lp_value_heat = atomic(snap.protocolLpValueHeat);
+
+  res.swf_accounts.collateral_pending_xfg = atomic(snap.swfCollateralPendingXfg);
+  res.swf_accounts.heat_counter = atomic(snap.swfHeatCounter);
+  res.swf_accounts.vault_swf_xfg = atomic(snap.vaultSwfXfg);
+  res.swf_accounts.vault_swf_heat = atomic(snap.vaultSwfHeat);
+
+  res.status = CORE_RPC_STATUS_OK;
+  return true;
+}
+
 // Phase 5: Wallet Auto-Rollover + Compound Interest
 
 bool RpcServer::on_get_maturing_deposits(const COMMAND_RPC_GET_MATURING_DEPOSITS::request& req,
@@ -2900,7 +2961,9 @@ bool RpcServer::on_get_fuego_price(const COMMAND_RPC_GET_FUEGO_PRICE::request& /
     snprintf(buf, sizeof(buf), "%.8f", ratio);
     res.xfg_heat_ratio = buf;
 
-    const double heatPegUsd = parameters::HEAT_PEG_USD;
+    const double heatPegUsd = static_cast<double>(
+        m_core.get_blockchain_storage().getHeatPegUsdMicro()) /
+        parameters::FCI_INDEX_SCALE;
     snprintf(buf, sizeof(buf), "%.4f", heatPegUsd);
     res.heat_peg_usd = buf;
 

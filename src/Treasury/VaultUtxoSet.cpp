@@ -65,7 +65,11 @@ uint64_t VaultUtxoSet::partitionBalance(VaultPartition partition, AssetType asse
     uint64_t balance = 0;
     for (const auto& [idx, vo] : m_utxos) {
         if (!vo.spent && vo.partition == partition && vo.asset == asset) {
-            balance += vo.amount;
+            // Saturate rather than wrap. A wrapped balance would make
+            // `min(feePool, vaultAvailable)` in the CD-interest path far larger
+            // than the true balance, which is exactly the bound that is supposed
+            // to cap how much HEAT can leave the pool.
+            balance = vo.amount > UINT64_MAX - balance ? UINT64_MAX : balance + vo.amount;
         }
     }
     return balance;
@@ -165,7 +169,7 @@ std::vector<VaultOutput> VaultUtxoSet::selectUtxos(
     uint64_t collected = 0;
     for (const auto& vo : candidates) {
         selected.push_back(vo);
-        collected += vo.amount;
+        collected = vo.amount > UINT64_MAX - collected ? UINT64_MAX : collected + vo.amount;
         if (collected >= neededAmount) break;
     }
     return selected;
@@ -219,14 +223,22 @@ void VaultUtxoSet::serialize(ISerializer& s) {
             s(vo.amount, "vo_amount");
             uint8_t assetRaw = static_cast<uint8_t>(vo.asset);
             s(assetRaw, "vo_asset");
-            if (assetRaw > static_cast<uint8_t>(AssetType::HEAT)) {
-                return;
+            // Bound against the HIGHEST enumerator, not HEAT. AssetType is
+            // {XFG=0, HEAT=1, LP=2}, so an LP vault UTXO (assetRaw == 2) was
+            // rejected by `> HEAT`. Worse, this bare `return` left serialize()
+            // part-way through the vo_count records, so every field after
+            // treasury_vault (vault_utxo_counter, heat_supply, amm_pool,
+            // epoch_snapshots, vault_spent_by_tx) was read from the wrong
+            // offset. Dormant only because no caller passes LP today; it would
+            // silently corrupt the whole cache the moment one did.
+            if (assetRaw > static_cast<uint8_t>(AssetType::LP)) {
+                throw std::runtime_error("vault utxo asset out of range");
             }
             vo.asset = static_cast<AssetType>(assetRaw);
             uint8_t partRaw = static_cast<uint8_t>(vo.partition);
             s(partRaw, "vo_partition");
             if (partRaw > static_cast<uint8_t>(VaultPartition::BONUS_VAULT)) {
-                return;
+                throw std::runtime_error("vault utxo partition out of range");
             }
             vo.partition = static_cast<VaultPartition>(partRaw);
             s.binary(vo.txHash.data, sizeof(vo.txHash.data), "vo_txhash");

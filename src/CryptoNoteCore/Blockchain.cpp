@@ -2953,6 +2953,20 @@ bool CryptoNote::Blockchain::checkCommitmentSpendInput(const TransactionInputCom
     // No HEAT CD can exist below cdActivationHeight, so a ring whose youngest
     // member is older than that may be a legacy deposit: withdraw-only.
     uint32_t cdStartHeight = m_currency.cdActivationHeight();
+    // KNOWN OFF-BY-ONE (F2): currentHeight is m_blocks.size(), which at this point
+    // IS the height of the block being validated, so +1 selects the rule set for
+    // the NEXT block. At the v11 fork height the tightened v11 caps (finite-CD
+    // ring, CD-activation gate, fee-pool cap) therefore apply to a block still
+    // versioned v11 by its own height. The direction is conservative -- it applies
+    // stricter limits than the stock rule -- and it only bites on the single block
+    // at the activation height, but it is a fork at that height and it means
+    // validation and settlement can disagree (pushTransaction gates bonusByInput on
+    // block.bl.majorVersion).
+    //
+    // Fixing it properly means passing the block's own majorVersion into
+    // check_tx_input / checkCommitmentSpendInput. Those are shared with the mempool
+    // path, which has no block version yet, so it is not a one-line change --
+    // recorded rather than silently adjusted.
     uint32_t validatingBlockHeight = currentHeight + 1;
     uint8_t validatingBlockVersion = getBlockMajorVersionForHeight(validatingBlockHeight);
     if (validatingBlockVersion >= BLOCK_MAJOR_VERSION_11 &&
@@ -3945,6 +3959,23 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
 
   if (!checkCumulativeBlockSize(blockHash, cumulative_block_size, m_blocks.size())) {
     bvc.m_verification_failed = true;
+    // Unwind. Every other per-tx exit above pops first; this one did not, so a
+    // block rejected only for cumulative size left its transactions CONNECTED.
+    // The block is never pushed, so popTransactions would never run for it and
+    // the mutations were permanent for the life of the process:
+    //   - CD_APY_POOL vault UTXOs debited and change minted with nothing reversed,
+    //     so the pool drained without value being created,
+    //   - m_feePoolBalance decremented,
+    //   - key images left in spentKeys(), bricking a third party's pending CD
+    //     withdrawal and forking the node from the network,
+    //   - phantom TxIndex entries left in the index; a later KeyInput naming that
+    //     offset reaches transactionByIndex() -> m_blocks[H] with
+    //     m_blocks.size() == H -> SwappedVector::operator[] throws, and nothing
+    //     catches it on the block path, so the daemon terminates.
+    // Any peer could trigger this with a block that is valid in every respect
+    // except its cumulative size.
+    block.transactions.pop_back();
+    popTransactions(block, minerTransactionHash);
     return false;
   }
 

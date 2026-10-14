@@ -712,6 +712,11 @@ namespace CryptoNote {
 
     bool switch_to_alternative_blockchain(std::list<blocks_ext_by_hash::iterator> &alt_chain, bool discard_disconnected_chain);
     bool handle_alternative_block(const Block &b, const Crypto::Hash &id, block_verification_context &bvc, bool sendNewAlternativeBlockMessage = true);
+    // Lets the core tests exercise prevalidate_miner_transaction, which guards the
+    // coinbase against settlement tags. It was previously untested, which is how
+    // the coinbase blacklist drifted out of sync with isHeatwaveTag and admitted
+    // the retired legacy AMM LP tags.
+    friend class VaultCoreTestAccess;
     difficulty_type get_next_difficulty_for_alternative_chain(const std::list<blocks_ext_by_hash::iterator> &alt_chain, BlockEntry &bei);
     void pushToBankingIndex(const BlockEntry &block, uint64_t interest);
     bool prevalidate_miner_transaction(const Block &b, uint32_t height);

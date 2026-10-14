@@ -76,7 +76,7 @@ bool operator<(const Crypto::KeyImage& keyImage1, const Crypto::KeyImage& keyIma
 }
 }
 
-#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 15  // v15: block spot history, seed LP shares (forces replay)
+#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 16  // v16: retired legacy AMM LP settlement removed from pushTransaction/popTransaction (forces replay so no cache can carry reserves computed by the deleted branch)
 #define CURRENT_BLOCKCHAININDICES_STORAGE_ARCHIVE_VER 1
 
 namespace CryptoNote {
@@ -135,9 +135,15 @@ SwapCdShare swapCdShare(uint8_t direction, uint64_t output, uint64_t twap) {
   return share;
 }
 
-// Tags with no place before v11: HEAT and Hearth settlement, the legacy AMM
-// tags pushTransaction still settles into the pool, and the 0x08 burn tag.
-bool isHeatwaveTag(const CryptoNote::TransactionExtraField& f) {
+// Tags with no place before v11: HEAT and Hearth settlement, the retired legacy
+// AMM LP tags, and the 0x08 burn tag.
+}  // namespace
+
+// Declared in TransactionExtra.h so prevalidate_miner_transaction and the tests
+// share ONE settlement-tag list. See the comment there: the previous hand-written
+// coinbase blacklist had drifted from this function and let the retired legacy LP
+// tags through, which a miner could use to set AMM reserves network-wide.
+bool CryptoNote::isHeatwaveTag(const CryptoNote::TransactionExtraField& f) {
   using namespace CryptoNote;
   return f.type() == typeid(TransactionExtraHeatCommitment) ||
          f.type() == typeid(TransactionExtraHeatMintAuth) ||
@@ -160,7 +166,7 @@ bool isHeatwaveTag(const CryptoNote::TransactionExtraField& f) {
          f.type() == typeid(TransactionExtraCdBonusClaim);
 }
 
-bool carriesHeatwaveTag(const CryptoNote::Transaction& tx) {
+bool CryptoNote::carriesHeatwaveTag(const CryptoNote::Transaction& tx) {
   std::vector<CryptoNote::TransactionExtraField> fields;
   if (!CryptoNote::parseTransactionExtra(tx.extra, fields)) return false;
   for (const auto& f : fields) {
@@ -168,6 +174,8 @@ bool carriesHeatwaveTag(const CryptoNote::Transaction& tx) {
   }
   return false;
 }
+
+namespace {
 
 // XFG a block's transaction burns into the banking index: a 0x08 tag's
 // amount (historical), or from v11 a HEAT mint's declared burn, which
@@ -1772,16 +1780,23 @@ bool CryptoNote::Blockchain::prevalidate_miner_transaction(const Block& b, uint3
       return false;
     }
     for (const auto& field : extraFields) {
-      if (field.type() == typeid(TransactionExtraTreasuryFund) ||
-          field.type() == typeid(TransactionExtraHeatMintAuth) ||
-          field.type() == typeid(TransactionExtraAmmSwapAuth) ||
-          field.type() == typeid(TransactionExtraMarketBuyAuth) ||
-          field.type() == typeid(TransactionExtraMarketSellAuth) ||
-          field.type() == typeid(TransactionExtraHeatSendAuth) ||
-          field.type() == typeid(TransactionExtraLimitDeposit) ||
-          field.type() == typeid(TransactionExtraLimitWithdraw) ||
-          field.type() == typeid(TransactionExtraLpAddAuth) ||
-          field.type() == typeid(TransactionExtraLpRemoveAuth)) {
+      // Derived from isHeatwaveTag rather than restated as its own list. The two
+      // lists had already drifted: isHeatwaveTag names 19 settlement tags while
+      // this hand-maintained blacklist named 10, and it omitted the two RETIRED
+      // legacy LP tags (TransactionExtraAmmAddLiquidity / AmmRemoveLiquidity).
+      //
+      // That omission was exploitable. The coinbase is pushed at ~3569, BEFORE the
+      // settlement loop at ~3796, so validateSettlement -- which rejects the
+      // legacy tags for regular transactions -- never sees it. The legacy branch
+      // in pushTransaction then adds the tag's self-asserted amounts straight into
+      // m_ammPool.reserveXfg/reserveHeat/totalLpShares with no input backing and no
+      // overflow guard, letting one miner set AMM reserves for the whole network.
+      // m_ammPool IS serialized ("amm_pool"), so a corrupted cache persists those
+      // reserves.
+      //
+      // Deriving the set means any tag added to isHeatwaveTag is rejected here too,
+      // so the two lists cannot drift apart again.
+      if (isHeatwaveTag(field)) {
         logger(INFO, BRIGHT_RED) << "coinbase transaction carries a v11 settlement tag";
         return false;
       }
@@ -6425,8 +6440,6 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
 
       uint64_t authLpAddXfg = 0, authLpAddHeat = 0, authLpAddShares = 0;
       uint64_t authLpRemoveShares = 0;
-      bool processedLegacyLpAdd = false;
-      bool processedLegacyLpRemove = false;
       for (const auto& f : tx_extra_fields) {
         if (f.type() == typeid(TransactionExtraLpAddAuth)) {
           const auto& a = boost::get<TransactionExtraLpAddAuth>(f);
@@ -6438,54 +6451,36 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
           authLpRemoveShares = boost::get<TransactionExtraLpRemoveAuth>(f).lpSharesBurned;
         }
       }
-      for (const auto& field : tx_extra_fields) {
-        if (field.type() == typeid(TransactionExtraAmmAddLiquidity)) {
-          const auto& add = boost::get<TransactionExtraAmmAddLiquidity>(field);
-          // Use auth-tag amounts if present (prevents dual-tag mismatch)
-          uint64_t addXfg = add.amountXfg;
-          uint64_t addHeat = add.amountHeat;
-          if (authLpAddXfg > 0 || authLpAddHeat > 0) { addXfg = authLpAddXfg; addHeat = authLpAddHeat; }
-          uint64_t shares = ammMintLpShares(addXfg, addHeat,
-            m_ammPool.totalLpShares, m_ammPool.reserveXfg, m_ammPool.reserveHeat);
-          m_ammPool.reserveXfg += addXfg;
-          m_ammPool.reserveHeat += addHeat;
-          m_ammPool.totalLpShares += shares;
-          processedLegacyLpAdd = true;
-          // Track LP shares by global commitment output index for per-user fee claims
-          for (uint16_t o = 0; o < transaction.tx.outputs.size(); ++o) {
-            if (transaction.tx.outputs[o].target.type() == typeid(TransactionOutputCommitment)) {
-              const auto& co = boost::get<TransactionOutputCommitment>(transaction.tx.outputs[o].target);
-              if (co.term == parameters::DEPOSIT_TERM_LP) {
-                uint64_t gidx = transaction.m_global_output_indexes[o];
-                m_lpCommitmentShares[gidx] = shares;
-                m_lpCommitTxGidx[transactionHash] = gidx;
-                break;
-              }
-            }
-          }
-        } else if (field.type() == typeid(TransactionExtraAmmRemoveLiquidity)) {
-          const auto& rem = boost::get<TransactionExtraAmmRemoveLiquidity>(field);
-          uint64_t amountXfg = 0, amountHeat = 0;
-          ammGetWithdrawalAmounts(rem.lpSharesBurned, m_ammPool.totalLpShares,
-            m_ammPool.reserveXfg, m_ammPool.reserveHeat, amountXfg, amountHeat);
-          const uint64_t appliedXfg  = (m_ammPool.reserveXfg  >= amountXfg)  ? amountXfg  : 0;
-          const uint64_t appliedHeat = (m_ammPool.reserveHeat >= amountHeat) ? amountHeat : 0;
-          m_ammPool.reserveXfg  -= appliedXfg;
-          m_ammPool.reserveHeat -= appliedHeat;
-          if (m_ammPool.totalLpShares >= rem.lpSharesBurned) m_ammPool.totalLpShares -= rem.lpSharesBurned;
-          // Record actual deltas for exact popBlock reversal.
-          if (m_blockLpRemoveAmounts.empty() ||
-              m_blockLpRemoveAmounts.back().first != block.height) {
-            m_blockLpRemoveAmounts.push_back({block.height, {}});
-          }
-          m_blockLpRemoveAmounts.back().second.push_back({appliedXfg, appliedHeat});
-          processedLegacyLpRemove = true;
-        }
-      }
+      // The RETIRED legacy LP tags (TransactionExtraAmmAddLiquidity /
+      // TransactionExtraAmmRemoveLiquidity) used to be settled here, applying the
+      // tag's self-asserted amounts straight into m_ammPool. They were removed
+      // because that code is unreachable AND dangerous:
+      //   - unreachable for v11+ regular transactions: validateSettlement rejects
+      //     both tags ("legacy AMM LP tag is retired") under the same
+      //     majorVersion >= BLOCK_MAJOR_VERSION_11 gate, before pushTransaction runs.
+      //     Pre-v11 blocks never entered this branch either.
+      //   - unreachable for the coinbase: prevalidate_miner_transaction rejects
+      //     them via the isHeatwaveTag-derived check, and runs before
+      //     pushTransaction.
+      //   - dangerous: it took amounts with no input backing, and `+=` could wrap
+      //     (reserveXfg += UINT64_MAX yields reserveXfg - 1).
+      // Only the v11+ LpAddAuth / LpRemoveAuth path below settles LP now.
+      //
+      // CAVEAT (checked, not assumed): rebuildCache() replays blocks via
+      // pushTransaction WITHOUT running validateSettlement or
+      // prevalidate_miner_transaction, so a mined block carrying one of these tags
+      // would replay differently under this code. No such block exists: v11 is the
+      // HEATWAVE/HEARTH release and mainnet has never activated it (commit
+      // 35ef0b7b5: "Mainnet v11 is not active"), so no HEARTH, CD, HEAT, LP or
+      // atomic-swap transaction has ever been mined, and the deleted branch could
+      // never have run. Testnet has been at v11 since height 30 but its history is
+      // already scheduled for a reset by that same commit, so it is moot there too.
+      // The archive version bump below (15 -> 16) still forces a clean rebuild so
+      // no cache can carry reserves computed by the deleted branch.
 
-      // v11+ auth-only LP add (no legacy AmmAddLiquidity tag present)
+      // v11+ auth-only LP add
       if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11 &&
-          !processedLegacyLpAdd && (authLpAddXfg > 0 || authLpAddHeat > 0)) {
+          (authLpAddXfg > 0 || authLpAddHeat > 0)) {
         // The declared shares — validateSettlement held them to at most what
         // the deposit earns — so the reversal can remove exactly these.
         const uint64_t shares = authLpAddShares;
@@ -6508,9 +6503,9 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
                      << " HEAT → " << shares << " LP shares";
       }
 
-      // v11+ auth-only LP remove (no legacy AmmRemoveLiquidity tag present)
+      // v11+ auth-only LP remove
       if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11 &&
-          !processedLegacyLpRemove && authLpRemoveShares > 0) {
+          authLpRemoveShares > 0) {
         uint64_t amountXfg = 0, amountHeat = 0;
         ammGetWithdrawalAmounts(authLpRemoveShares, m_ammPool.totalLpShares,
           m_ammPool.reserveXfg, m_ammPool.reserveHeat, amountXfg, amountHeat);
@@ -6947,48 +6942,11 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
         m_ammPool.cdHearthFeeAccumulator = m_ammPool.cdHearthFeeAccumulator >= cd.heat
             ? m_ammPool.cdHearthFeeAccumulator - cd.heat : 0;
         break;
-      } else if (field.type() == typeid(TransactionExtraAmmAddLiquidity)) {
-        const auto& add = boost::get<TransactionExtraAmmAddLiquidity>(field);
-        // Compute shares BEFORE decrementing reserves to match pushTransaction's pre-deposit calculation.
-        // Mathematical proof: totalLpShares_new * amountXfg / reserveXfg_new = totalLpShares_original * amountXfg / reserveXfg_original
-        uint64_t shares = ammMintLpShares(add.amountXfg, add.amountHeat,
-          m_ammPool.totalLpShares, m_ammPool.reserveXfg, m_ammPool.reserveHeat);
-        if (m_ammPool.reserveHeat >= add.amountHeat) m_ammPool.reserveHeat -= add.amountHeat;
-        if (m_ammPool.reserveXfg >= add.amountXfg) m_ammPool.reserveXfg -= add.amountXfg;
-        if (m_ammPool.totalLpShares >= shares) m_ammPool.totalLpShares -= shares;
-        auto lpIt = m_lpCommitTxGidx.find(transactionHash);
-        if (lpIt != m_lpCommitTxGidx.end()) {
-          m_lpCommitmentShares.erase(lpIt->second);
-          m_lpCommitTxGidx.erase(lpIt);
-        }
-      } else if (field.type() == typeid(TransactionExtraAmmRemoveLiquidity)) {
-        const auto& rem = boost::get<TransactionExtraAmmRemoveLiquidity>(field);
-        // Restore the deltas recorded at settle. Recomputing from post-burn
-        // state is not the inverse of the forward path.
-        uint64_t amountXfg = 0, amountHeat = 0;
-        if (!m_blockLpRemoveAmounts.empty() &&
-            m_blockLpRemoveAmounts.back().first == height &&
-            !m_blockLpRemoveAmounts.back().second.empty()) {
-          amountXfg  = m_blockLpRemoveAmounts.back().second.back().first;
-          amountHeat = m_blockLpRemoveAmounts.back().second.back().second;
-          m_blockLpRemoveAmounts.back().second.pop_back();
-        } else {
-          // No record: clamp the burn to the live supply so a missing record
-          // can never inflate the reserves.
-          ammGetWithdrawalAmounts(std::min(rem.lpSharesBurned, m_ammPool.totalLpShares),
-            m_ammPool.totalLpShares, m_ammPool.reserveXfg, m_ammPool.reserveHeat,
-            amountXfg, amountHeat);
-        }
-        m_ammPool.totalLpShares += rem.lpSharesBurned;
-        m_ammPool.reserveHeat += amountHeat;
-        m_ammPool.reserveXfg += amountXfg;
       } else if (field.type() == typeid(TransactionExtraLpAddAuth)) {
-        // Auth-only LP add reversal (legacy-tag txs are reversed above).
+        // Auth-only LP add reversal. The legacy-tag path that used to be handled
+        // alongside this is gone, so there is no hasLegacy disambiguation left.
         const auto& a = boost::get<TransactionExtraLpAddAuth>(field);
-        bool hasLegacy = false;
-        for (const auto& f2 : tx_extra_fields)
-          if (f2.type() == typeid(TransactionExtraAmmAddLiquidity)) { hasLegacy = true; break; }
-        if (!hasLegacy && majorVersion >= BLOCK_MAJOR_VERSION_11 && (a.amountXfg > 0 || a.amountHeat > 0)) {
+        if (majorVersion >= BLOCK_MAJOR_VERSION_11 && (a.amountXfg > 0 || a.amountHeat > 0)) {
           // Exactly the shares the push minted (the declared ones). Recomputing
           // them from the post-deposit pool was off by rounding, and for the
           // first deposit used the proportional formula instead of the root.
@@ -7003,12 +6961,9 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
           }
         }
       } else if (field.type() == typeid(TransactionExtraLpRemoveAuth)) {
-        // Auth-only LP remove reversal (legacy-tag txs are reversed above).
+        // Auth-only LP remove reversal.
         const auto& a = boost::get<TransactionExtraLpRemoveAuth>(field);
-        bool hasLegacy = false;
-        for (const auto& f2 : tx_extra_fields)
-          if (f2.type() == typeid(TransactionExtraAmmRemoveLiquidity)) { hasLegacy = true; break; }
-        if (!hasLegacy && a.lpSharesBurned > 0 && majorVersion >= BLOCK_MAJOR_VERSION_11) {
+        if (a.lpSharesBurned > 0 && majorVersion >= BLOCK_MAJOR_VERSION_11) {
           uint64_t amountXfg = 0, amountHeat = 0;
           if (!m_blockLpRemoveAmounts.empty() &&
               m_blockLpRemoveAmounts.back().first == height &&

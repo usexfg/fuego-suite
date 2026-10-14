@@ -600,6 +600,15 @@ bool addLimitWithdrawToExtra(std::vector<uint8_t>& tx_extra,
                              const Crypto::Hash& outputsHash,
                              const Crypto::Signature& proof);
 bool addTreasuryFundToExtra(std::vector<uint8_t>& tx_extra, uint8_t asset, uint64_t amount);
+
+// True if the field is a HEAT/Hearth settlement tag -- one that changes pool,
+// treasury, orderbook or CD state. Declared here (defined in Blockchain.cpp) so
+// that `prevalidate_miner_transaction` and the tests share ONE list. It was
+// previously duplicated as a hand-maintained coinbase blacklist that had drifted
+// out of sync, which let the retired legacy LP tags through on the coinbase path.
+bool isHeatwaveTag(const TransactionExtraField& f);
+// True if any field of the transaction is a settlement tag.
+bool carriesHeatwaveTag(const Transaction& tx);
 Crypto::PublicKey computePoolCommitKey();
 Crypto::Hash hashOutput(const TransactionOutput& output);
 std::vector<std::string> get_messages_from_extra(const std::vector<uint8_t>& extra, const Crypto::PublicKey &txkey, const Crypto::SecretKey *recepient_secret_key);

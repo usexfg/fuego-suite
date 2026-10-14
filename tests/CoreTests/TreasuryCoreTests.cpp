@@ -1079,6 +1079,122 @@ void testSwapPriceBand() {
   TEST(!sell(rX / 2) && err.find("band") != std::string::npos);
 }
 
+// Regression: the coinbase blacklist must cover every settlement tag.
+//
+// prevalidate_miner_transaction used to keep its own hand-maintained list of
+// settlement tags. That list had drifted from isHeatwaveTag: it omitted the two
+// RETIRED legacy LP tags (TransactionExtraAmmAddLiquidity / AmmRemoveLiquidity).
+// The coinbase is pushed BEFORE the settlement loop, so validateSettlement -- which
+// rejects those tags for regular transactions -- never sees it, and the legacy
+// branch in pushTransaction would add the tag's self-asserted amounts straight into
+// m_ammPool reserves. m_ammPool is not persisted, so a corrupted reserve reproduces
+// on every resync.
+//
+// The blacklist is now derived from isHeatwaveTag, so this asserts the property
+// that makes it safe: every settlement tag is one the coinbase path rejects, so the
+// two lists cannot drift apart again.
+// Test-only access to Blockchain's private prevalidate_miner_transaction, declared
+// as a friend in Blockchain.h. The coinbase settlement-tag check had NO coverage,
+// which is how its blacklist drifted out of sync with isHeatwaveTag and admitted
+// the retired legacy AMM LP tags.
+namespace CryptoNote {
+class VaultCoreTestAccess {
+public:
+  static bool prevalidateCoinbase(Blockchain& chain, const Block& b, uint32_t height) {
+    return chain.prevalidate_miner_transaction(b, height);
+  }
+  static uint64_t ammReserveXfg(const Blockchain& chain) { return chain.m_ammPool.reserveXfg; }
+  static uint64_t ammReserveHeat(const Blockchain& chain) { return chain.m_ammPool.reserveHeat; }
+  static size_t coinbaseUnlockWindow(const Blockchain& chain) { return chain.m_currency.minedMoneyUnlockWindow(); }
+};
+} // namespace CryptoNote
+
+// Regression: a coinbase must not be able to create AMM pool state, at any version.
+//
+// prevalidate_miner_transaction kept a hand-maintained list of settlement tags that
+// had drifted from isHeatwaveTag: it omitted the two RETIRED legacy LP tags. The
+// coinbase is pushed BEFORE the settlement loop, so validateSettlement -- which
+// rejects those tags for regular transactions -- never saw it, and the (now deleted)
+// legacy branch in pushTransaction would apply the tag's self-asserted amounts
+// straight into m_ammPool. One miner could set AMM reserves network-wide; m_ammPool
+// is serialized, so a corrupted cache would persist it.
+//
+// This calls the REAL function, so it fails if the coinbase check regresses.
+void testCoinbaseRejectsEverySettlementTag() {
+  auto tagIn = [](const std::vector<uint8_t>& extra) {
+    std::vector<TransactionExtraField> fields;
+    if (!parseTransactionExtra(extra, fields)) return TransactionExtraField{};
+    return fields.empty() ? TransactionExtraField{} : fields[0];
+  };
+
+  TestChain t("coinbase_tags");
+  TEST(t.ok);
+  const uint64_t reserveXfgBefore = VaultCoreTestAccess::ammReserveXfg(t.chain);
+  const uint64_t reserveHeatBefore = VaultCoreTestAccess::ammReserveHeat(t.chain);
+
+  auto coinbaseWith = [&](const std::vector<uint8_t>& extra) {
+    // Must be a VALID coinbase apart from the extra, otherwise prevalidate returns
+    // false early (input count/type, blockIndex, unlockTime, outputs) and the
+    // settlement-tag check never runs -- which would make every assertion below
+    // pass for the wrong reason.
+    const uint32_t h = 1;
+    Block b{};
+    b.majorVersion = BLOCK_MAJOR_VERSION_11;
+    b.minorVersion = BLOCK_MINOR_VERSION_1;
+    b.timestamp = 1;
+    b.baseTransaction.inputs.push_back(BaseInput{h});
+    b.baseTransaction.unlockTime = h + VaultCoreTestAccess::coinbaseUnlockWindow(t.chain);
+    b.baseTransaction.outputs.push_back(keyOut(50 * parameters::COIN));
+    b.baseTransaction.extra = extra;
+    return b;
+  };
+
+  // Sanity: a coinbase with NO extra passes prevalidation, so the rejections below
+  // are attributable to the settlement tag and nothing else.
+  TEST(VaultCoreTestAccess::prevalidateCoinbase(t.chain, coinbaseWith({}), 1));
+
+  // The two tags the old blacklist MISSED. Each must now be refused at v11.
+  std::vector<uint8_t> lpAdd;
+  TEST(addAmmAddLiquidityToExtra(lpAdd, 1000 * parameters::COIN, 0));
+  TEST(!VaultCoreTestAccess::prevalidateCoinbase(t.chain, coinbaseWith(lpAdd), 1));
+
+  std::vector<uint8_t> lpRemove;
+  TEST(addAmmRemoveLiquidityToExtra(lpRemove, 500, 0, 0));
+  TEST(!VaultCoreTestAccess::prevalidateCoinbase(t.chain, coinbaseWith(lpRemove), 1));
+
+  // A tag the old blacklist DID list, to prove the derived check did not narrow it.
+  std::vector<uint8_t> fund;
+  TEST(addTreasuryFundToExtra(fund, 0, 50 * parameters::COIN));
+  TEST(!VaultCoreTestAccess::prevalidateCoinbase(t.chain, coinbaseWith(fund), 1));
+
+  std::vector<uint8_t> mint;
+  TEST(addHeatMintAuthToExtra(mint, 10 * parameters::COIN, 1 * parameters::COIN));
+  TEST(!VaultCoreTestAccess::prevalidateCoinbase(t.chain, coinbaseWith(mint), 1));
+
+  // The retired tags are still settlement tags, so they stay covered as the single
+  // shared list evolves.
+  TEST(isHeatwaveTag(tagIn(lpAdd)));
+  TEST(isHeatwaveTag(tagIn(lpRemove)));
+
+  // And the pool is untouched by prevalidation itself.
+  TEST(VaultCoreTestAccess::ammReserveXfg(t.chain) == reserveXfgBefore);
+  TEST(VaultCoreTestAccess::ammReserveHeat(t.chain) == reserveHeatBefore);
+
+  // The retired tags are still refused on the regular-transaction path too.
+  AssetFlows flows;
+  uint64_t fee = 0;
+  std::string err;
+  auto settles = [&](const std::vector<uint8_t>& extra) {
+    Blockchain::SettlementScratch scratch;
+    return t.chain.validateSettlement(
+      settlementTx({100 * parameters::COIN}, {keyOut(99 * parameters::COIN)}, extra),
+      1, scratch, flows, fee, err);
+  };
+  TEST(!settles(lpAdd));
+  TEST(!settles(lpRemove));
+}
+
+
 int main() {
   testCdInterestCompounding();
   testLegacyDepositWithdrawsForPrincipal();
@@ -1089,6 +1205,7 @@ int main() {
   testRebuildCacheKeepsHearthSeed();
   testSettleAssetFlows();
   testValidateSettlementBasics();
+  testCoinbaseRejectsEverySettlementTag();
   testValidateSettlementSwapCurve();
   testValidateSettlementLimitDeposit();
   testHeatwaveTagCutoffHeight();

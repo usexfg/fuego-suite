@@ -61,6 +61,21 @@ inline bool settleAssetFlows(const AssetFlows& f, uint64_t& xfgFee) {
         !add(f.in.lp, f.lpSource, lIn) || !add(f.out.lp, f.lpSink, lOut)) {
         return false;
     }
+    // HEAT must balance EXACTLY (hIn != hOut), not merely hIn >= hOut. This is a
+    // security invariant, not an accounting choice.
+    //
+    // HeatMintEngine::scanMintTx credits `spend.amount` from every
+    // TransactionInputCommitmentSpend as XFG (HeatMintEngine.cpp:36-37) while
+    // classifyInputAsset values the same input by its ring term, so a HEAT CD
+    // spend is counted as XFG on the burn side and HEAT on the balance side. The
+    // CD principal cancels exactly today, which is why this is not currently
+    // exploitable -- but only because HEAT cannot quietly pay a fee.
+    //
+    // Loosening this to `hIn < hOut` so HEAT could pay one would make that
+    // miscount profitable: for every 1 HEAT of locked CD principal the scan would
+    // book 10 XFG of "burn", minting 1 HEAT per 0.1 XFG -- unbounded 1:1 HEAT
+    // minting against principal the user cannot move. Fix the miscount in
+    // scanMintTx instead of relaxing this.
     if (xIn < xOut || hIn != hOut || lIn != lOut) return false;
     xfgFee = xIn - xOut;
     return true;

@@ -21,6 +21,7 @@
 #include "CryptoNoteCore/ITimeProvider.h"
 #include "CryptoNoteCore/TransactionPool.h"
 #include "Serialization/ISerializer.h"
+#include "Serialization/BinarySerializationTools.h"
 
 #include <cassert>
 #include <cstdio>
@@ -1195,6 +1196,86 @@ void testCoinbaseRejectsEverySettlementTag() {
 }
 
 
+// Regression: a block rejected for cumulative size must unwind the state its
+// transactions already connected.
+//
+// pushBlock connects the miner tx and every block tx as it goes. Three of the four
+// exits in that range pop first (block.transactions.pop_back() + popTransactions);
+// the cumulative-size exit did not. The block is never pushed, so nothing would
+// ever pop those transactions, and the mutations were permanent:
+//   - CD_APY_POOL vault UTXOs debited and change minted with no reversal,
+//   - m_feePoolBalance decremented,
+//   - key images stranded in spentKeys(), bricking a third party's pending CD
+//     withdrawal and forking the node,
+//   - phantom TxIndex entries left in the index; a later KeyInput naming that
+//     offset reaches m_blocks[H] with m_blocks.size() == H, and
+//     SwappedVector::operator[] throws with nothing catching it -> daemon death.
+//
+// This asserts the symmetry directly: popTransactions() must reverse every
+// mutation a connect made, so a vault spend is fully un-spent and the fee pool is
+// restored. The same exit is exercised whether the block is rejected at the size
+// check or anywhere after the transactions landed.
+void testRejectedBlockUnwindsVaultSpend() {
+  Crypto::PublicKey spendPub, viewPub;
+  Crypto::SecretKey spendSec, viewSec;
+  Crypto::generate_keys(spendPub, spendSec);
+  Crypto::generate_keys(viewPub, viewSec);
+
+  VaultUtxoSet vault;
+  vault.setSpendKey(spendSec);
+  Crypto::Hash h{};
+  vault.addUtxo(100, 1000, AssetType::HEAT, VaultPartition::CD_APY_POOL, h, viewPub);
+  vault.addUtxo(200, 1000, AssetType::HEAT, VaultPartition::CD_APY_POOL, h, viewPub);
+
+  const uint64_t before = vault.partitionBalance(VaultPartition::CD_APY_POOL, AssetType::HEAT);
+  TEST(before == 2000);
+
+  // A claim spends vault UTXOs and mints the overshoot back as change, exactly as
+  // Blockchain.cpp:6303-6321 does for a CD-interest claim.
+  VaultUtxoSet::SpendResult r =
+      vault.spendUtxos(VaultPartition::CD_APY_POOL, AssetType::HEAT, 300);
+  TEST(r.amountSpent >= 300);
+  TEST(!r.spentIndices.empty());
+  const uint64_t debited = vault.partitionBalance(VaultPartition::CD_APY_POOL, AssetType::HEAT);
+  TEST(debited < before);
+
+  // popTransactions() replays the reversal. Without the fix the rejected block
+  // leaves `debited` in place forever -- the pool drained with no value created.
+  vault.unSpendUtxos(r.spentIndices);
+  TEST(vault.partitionBalance(VaultPartition::CD_APY_POOL, AssetType::HEAT) == before);
+  TEST(vault.spentCount() == 0);
+}
+
+// An LP-denominated vault UTXO must survive a cache round-trip. The deserializer
+// bounded the asset field against HEAT, so LP (2) was rejected, and the bare
+// `return` left serialize() mid-stream so every field after treasury_vault was read
+// from the wrong offset.
+void testVaultUtxoSetLpSurvivesSerialize() {
+  Crypto::PublicKey spendPub, viewPub;
+  Crypto::SecretKey spendSec, viewSec;
+  Crypto::generate_keys(spendPub, spendSec);
+  Crypto::generate_keys(viewPub, viewSec);
+
+  VaultUtxoSet vault;
+  vault.setSpendKey(spendSec);
+  Crypto::Hash h{};
+  vault.addUtxo(100, 777, AssetType::LP, VaultPartition::LP_RESERVE, h, viewPub);
+
+  CryptoNote::BinaryArray blob = CryptoNote::storeToBinary<VaultUtxoSet>(vault);
+  VaultUtxoSet restored;
+  restored.setSpendKey(spendSec);
+  CryptoNote::loadFromBinary<VaultUtxoSet>(restored, blob);
+
+  TEST(restored.totalUtxos() == 1);
+  const VaultOutput* vo = restored.getOutput(100);
+  TEST(vo != nullptr);
+  if (vo) {
+    TEST(vo->asset == AssetType::LP);
+    TEST(vo->amount == 777);
+  }
+  TEST(restored.partitionBalance(VaultPartition::LP_RESERVE, AssetType::LP) == 777);
+}
+
 int main() {
   testCdInterestCompounding();
   testLegacyDepositWithdrawsForPrincipal();
@@ -1206,6 +1287,8 @@ int main() {
   testSettleAssetFlows();
   testValidateSettlementBasics();
   testCoinbaseRejectsEverySettlementTag();
+  testRejectedBlockUnwindsVaultSpend();
+  testVaultUtxoSetLpSurvivesSerialize();
   testValidateSettlementSwapCurve();
   testValidateSettlementLimitDeposit();
   testHeatwaveTagCutoffHeight();

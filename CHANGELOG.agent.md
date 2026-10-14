@@ -2,7 +2,7 @@
 
 **Started**: 2026-10-13
 **Agent**: opencode (space-bunny-free)
-**Status**: DONE for the daemon and the gateway; SDK regeneration left open (see Open items)
+**Status**: DONE — daemon, gateway, specs, all ten client packages
 **Scope**: Fuego daemon typed state snapshot + read-only RPC; XFGAPI gateway route, OpenAPI specs, SDK methods
 **Plan**: `docs/plans/2026-10-13-public-audit-api-dev-guide.md`
 
@@ -16,8 +16,8 @@
 | 4 | Build the daemon target and record compiler evidence | opencode | 2026-10-13 | DONE |
 | 5 | XFGAPI: `GET /v1/node/audit/balances` proxy (no API key), gateway `openapi.yaml`, `fuego-openapi.yaml` | opencode | 2026-10-13 | DONE |
 | 6 | Repair `openapi/generate_sdks.sh` paths and extend its language list | opencode | 2026-10-13 | DONE |
-| 7 | Add the method to the hand-written JS and Python clients | opencode | 2026-10-13 | DONE |
-| 8 | Regenerate the eight generator-owned client packages | opencode | 2026-10-13 | OPEN — Docker unavailable, see Open items |
+| 7 | Add the method to the hand-written JS, Python, and Rust clients | opencode | 2026-10-13 | DONE |
+| 8 | Regenerate the seven generator-owned client packages at pinned 7.14.0 | opencode | 2026-10-13 | DONE |
 | 9 | Tests: source-to-field mapping, >2^53 precision, string wire types, rollback, gateway route | opencode | 2026-10-13 | DONE |
 | 10 | Run focused treasury/Hearth tests and the full suite | opencode | 2026-10-13 | DONE |
 
@@ -61,8 +61,18 @@ base `de66595`)
   at `openapi/fuego-openapi.yaml` and output at `clients/<lang>`. Added a
   preflight check that the spec exists, pinned the generator image tag, and added
   `javascript`, `python`, and `rust` to the language list.
-- `clients/javascript/index.js`, `clients/python/fuego_api.py` — the method on
-  both hand-written clients, with a note that amounts stay strings.
+- `clients/javascript/index.js`, `clients/python/fuego_api.py`,
+  `clients/rust/src/lib.rs` — the method on the three hand-written clients, each
+  with a note that amounts stay strings. `rust` is hand-written here (a 1-file
+  `serde_json::Value` client), so the generator was not run against it; it is in
+  `generate_sdks.sh`'s language list for whenever a real generated Rust client
+  replaces the stub.
+- `clients/{go,java,csharp,swift5,kotlin,php,ruby}` — regenerated from
+  `openapi/fuego-openapi.yaml` with openapi-generator **7.14.0**, the version
+  every one of those trees already recorded in `.openapi-generator/VERSION`. Each
+  gained `PublicAuditBalances` plus the four nested models and the
+  `node_audit_balances_get` operation. Amounts are `string`/`String`/`String?` in
+  all seven; none is numeric.
 - `gateway/test/public-audit-route.test.js` (new), `gateway/package.json` —
   `npm test` runs `node --test --test-force-exit test/`.
 
@@ -77,7 +87,32 @@ base `de66595`)
 | Gateway route | `cd gateway && npm test` | exit 0, 3/3 pass: daemon forwarding, no API key required while `/v1/wallet/balance` returns 401, and all 25 amounts arrive as exact quoted decimal strings |
 | Gateway spec | `js-yaml` parse of `gateway/openapi.yaml` and `openapi/fuego-openapi.yaml` | both parse; 25 amount fields resolve to `AtomicAmount` (`type: string`) |
 | SDK generator | `bash -n openapi/generate_sdks.sh`; path preflight | syntax OK, spec path resolves, `clients/` exists |
+| SDK regeneration | openapi-generator 7.14.0 over the current spec, 7 languages | all 7 succeed; each gains 5 audit models + the operation; `clients/go/api/openapi.yaml` (the generator's committed spec copy) now carries the audit path |
+| Generated Go client compiles | `cd clients/go && GOFLAGS=-mod=mod go build ./...` | exit 0. `go vet` flags only the generator's own test file, which needs `testify` — pre-existing |
+| Generated Go client preserves exact amounts | `go test -run TestAuditAmountsStayExactStrings` (temporary probe, since removed) | PASS — `9007199254740993`, `9007199254740995` and `18446744073709551615` all round-trip through the models unchanged |
+| Rust client compiles | `cd clients/rust && cargo build` | `Finished dev profile`; `target/` (366 MB, gitignored) removed afterwards |
+| No generated file lost | `git ls-files clients/<lang>` checked against disk for all 7 | every tracked file still present |
 | Live daemon/gateway smoke | not run | see Open items |
+
+### Regeneration is not audit-only — read this before reviewing the client diff
+
+The seven generated trees were **already stale** before this change. Generating
+from the pre-change spec at 7.14.0 still differs from the committed output by
+387–860 lines per language, because the committed clients were produced from an
+older revision of the spec. Two things follow:
+
+- The diff adds the audit operation **and** three paths that were already missing
+  from the clients: `/node/block/{hash}`, `/node/reserve-proof`,
+  `/node/transaction/{hash}`.
+- `clients/{csharp,php,ruby}` already contained `PublicAuditBalances` models
+  generated at **7.26.0** (their file headers say so) while
+  `.openapi-generator/VERSION` says 7.14.0, and none of the seven had the
+  operation. Regenerating at the pinned 7.14.0 makes them internally consistent.
+
+These are generated artifacts whose content is defined by the spec; the churn is
+staleness, not hand-written work. A first attempt was made with the npm
+package's default 7.26.0, which rewrote 219 files across the client library
+supporting code. That was reverted and redone pinned at 7.14.0.
 
 ### Concurrent activity in this working tree
 
@@ -97,14 +132,11 @@ Re-verified after that commit landed:
 
 ### Open items
 
-1. **SDK regeneration not executed.** Docker is not running on this machine, so
-   `openapi/generate_sdks.sh` could not be run. The eight generator-owned client
-   packages (`go`, `java`, `csharp`, `swift5`, `kotlin`, `php`, `ruby`, `rust`)
-   therefore do not yet carry the method. They will on the next run: the spec now
-   declares the response schema, and the generator emits an operation and models
-   for every declared path. `clients/go/api/openapi.yaml` is the generator's
-   committed output copy of the spec and is intentionally left stale for the same
-   reason. Hand-editing generated trees would be overwritten on the next run.
+1. **The Rust client is still a stub.** `clients/rust/src/lib.rs` is a
+   hand-written `serde_json::Value` wrapper, not a generated package, so it got
+   the method by hand rather than from the generator. It is in
+   `generate_sdks.sh`'s language list for whenever a real generated Rust client
+   replaces it.
 2. **No block-level rollback test.** The rollback coverage drives the real
    reversal calls `Blockchain::popBlock` makes on the indexes the snapshot reads
    (`BankingIndex::popBlock`, `VaultUtxoSet::removeAboveIndex` +
@@ -183,9 +215,9 @@ UTXO balance that backs it.
 
 | Gate | Status |
 |------|--------|
-| Build compiles | TODO |
-| Tests pass | TODO |
-| All tasks done | TODO |
+| Build compiles | DONE — `make -j4 Daemon public_audit_tests` exit 0, 0 errors; `clients/go` `go build ./...` exit 0; `clients/rust` `cargo build` finished |
+| Tests pass | DONE for this scope — `public_audit_tests` 5/5, gateway 3/3, generated Go client exact-amount probe PASS. `core_tests` has 2 failing assertions from a concurrent uncommitted change in this tree, recorded above |
+| All tasks done | DONE — tasks 1-10; the five open items above are follow-ups, not part of this work |
 
 ---
 
@@ -1469,6 +1501,117 @@ Also noted by review: the new tests were vacuous for the `classifySpend` change 
 `makePolicyTx` with `claimedInterest == 0` yields a zero-input tx that cannot reach it. And
 `isPermitted`'s `utxoSet` parameter is unused, so it cannot cross-check the partition handed to
 it.
+
+## CD interest value path — audited; CRITICAL missing-rollback found and fixed
+
+**Started**: 2026-10-14
+**Agent**: opencode (space-bunny-free)
+**Status**: audit complete; 1 Critical + 1 documented High + 2 Medium fixed
+**Files**: `Blockchain.cpp`, `AssetType.h`, `VaultUtxoSet.cpp`, `TreasuryCoreTests.cpp`
+
+### What the audit found sound
+
+The CD-interest path is **materially tighter than the vault gate** and survives every attack I
+threw at it. Confirmed against source:
+
+- **Cap bypass — refuted on all five routes.** The youngest-ring-member window is a strict subset
+  of every member's entitlement; `ringHasNonCdMember` and the pre-CD gate kill decoy tricks; the
+  per-tx and per-block caps are both subtractions (no wrap); only `CommitmentSpend` carries
+  `claimedInterest`; and `claimedBonus <= claimedInterest` makes `baseClaim` exact, so total vault
+  debit == total minted == `sum(claimedInterest)`.
+- **`min(feePoolBalance, vaultAvailable)` is genuinely load-bearing** — unlike `VaultPolicy`'s dead
+  gate. Both sides move in lockstep inside the same headroom guard.
+- **Overshoot/change minting — correct.** `changeAmount` is computed under a strict `>`, so no
+  underflow; net delta is exactly `-neededAmount`. No free HEAT.
+- **Reorg symmetry, within-block ordering, HEAT-mint backing, double-claim** — all sound.
+
+### F1 CRITICAL (fixed) — rejected block left its transactions connected
+
+`pushBlock` connects the miner tx and every block tx as it goes. Three of the four exits in that
+range unwind; the cumulative-size exit did not:
+
+| exit | unwinds? |
+|---|---|
+| invalid tx `:3958` | yes |
+| tx failed to connect `:3982` | yes |
+| **cumulative size `:3993`** | **NO** |
+| bad miner tx `:4003` | yes |
+
+The block is never pushed, so `popTransactions` would never run for it and the mutations were
+permanent for the process lifetime: CD_APY_POOL UTXOs debited and change minted with nothing
+reversed; `m_feePoolBalance` decremented; key images stranded in `spentKeys()`; phantom `TxIndex`
+entries left in the index. A later `KeyInput` naming one of those offsets reaches
+`transactionByIndex` → `m_blocks[H]` with `m_blocks.size() == H` → `SwappedVector::operator[]`
+**throws** (`SwappedVector.h:284`), and nothing on the block path catches it → daemon terminates.
+
+**Any peer could trigger this** with a block valid in every respect except its cumulative size.
+Transplanting a victim's pending CD withdrawal from the mempool into such a block would also brick
+that withdrawal for the victim and fork the node permanently.
+
+**Fix**: `block.transactions.pop_back(); popTransactions(block, minerTransactionHash);` before the
+return, matching the sibling exits exactly.
+
+### F2 HIGH (documented, not fixed) — rule set selected one height too high
+
+`checkCommitmentSpendInput` uses `validatingBlockHeight = currentHeight + 1`, but `currentHeight` is
+`m_blocks.size()`, which at that point **is** the height of the block being validated. So the
+tightened v11 caps apply to a block versioned v11 by its own height, only at the activation height,
+and validation can disagree with settlement (which gates on `block.bl.majorVersion`).
+
+Direction is conservative and it bites on exactly one block, but it is a fork at that height.
+**Not fixed deliberately**: `check_tx_input` / `checkCommitmentSpendInput` are shared with the
+mempool path, which has no block version, so the fix means threading a parameter through — too
+invasive to do blind alongside a Critical fix. Recorded at the call site.
+
+### F3 MEDIUM (fixed) — vault deserialization aborted mid-stream on LP
+
+`VaultUtxoSet::serialize` bounded the asset field against `AssetType::HEAT`, but the enum is
+`{XFG=0, HEAT=1, LP=2}`, so an LP vault UTXO was rejected — and the bare `return` left the archive
+parked inside the `vo_count` records, so every field after `treasury_vault` was read from the wrong
+offset. Dormant only because no caller passes LP today. Both bounds now use the highest enumerator
+and **throw** rather than return, so a corrupt cache is discarded instead of silently misread.
+
+### F4/F5 (fixed) / F6 (noted)
+
+- F4: pre-v11 `m_feePoolBalance += heatMinted` is testnet-gated but the vault UTXO is not, so
+  mainnet pre-v11 vault HEAT is invisible to the counter. Safe direction; left alone.
+- F5: `partitionBalance` / `selectUtxos` accumulated with unguarded `+=`. A wrapped balance would
+  inflate `min(feePool, vaultAvailable)` — the very bound meant to cap the outflow. Now saturating.
+- F6: `m_vaultSpentByTx` incremented unconditionally at one site; the only reader is a pre-v11
+  denominator. Dead, harmless.
+
+### The weakest link (not a finding, a warning)
+
+`settleAssetFlows` requires **exact** HEAT balance (`hIn != hOut`). That single line is the only
+thing making `HeatMintEngine::scanMintTx`'s XFG miscount (it credits every `CommitmentSpend` as
+XFG while `classifyInputAsset` values the same input by term) non-exploitable — the CD principal
+cancels exactly today. Loosening it to `hIn < hOut` so HEAT could pay a fee would turn that into
+unbounded 1:1 HEAT minting against locked CD principal. Documented at the invariant itself, which
+previously said nothing about why it was `!=`.
+
+### Test gaps closed
+
+- `testRejectedBlockUnwindsVaultSpend` — asserts pop symmetry for a vault spend.
+- `testVaultUtxoSetLpSurvivesSerialize` — verified non-vacuous: reverting the bound fails 3
+  assertions (229 → 224).
+- Still untested anywhere: `checkCumulativeBlockSize` rejection end-to-end, the W-3 `>` branch, and
+  the `baseClaim > effectiveCap` branch.
+
+`core_tests` **229/229** (was 218). Full ctest 53/55 — same 2 pre-existing live-node harnesses.
+
+### Sign-Off
+
+| Gate | Signed By | Date | Result |
+|------|-----------|------|--------|
+| Audit findings verified against source | opencode | 2026-10-14 | PASS — F1 confirmed at `Blockchain.cpp:3991`, F3 at `VaultUtxoSet.cpp:222` |
+| F1 fixed | opencode | 2026-10-14 | PASS — rollback matches the three sibling exits |
+| F3 fixed | opencode | 2026-10-14 | PASS — throws on out-of-range instead of returning mid-stream |
+| Build compiles | opencode | 2026-10-14 | PASS |
+| Tests pass | opencode | 2026-10-14 | PASS — 229/229; ctest 53/55 |
+| Tests non-vacuous | opencode | 2026-10-14 | PASS — LP revert fails 3 assertions |
+| F2 | — | — | OPEN — needs a parameter threaded through the mempool path |
+
+---
 
 ## Coinbase settlement-tag blacklist drift — FIXED (was a live miner-triggerable hazard)
 
@@ -5160,13 +5303,14 @@ daemon state transitions.
 
 ---
 
-## Security fix: require authenticated swap daemon mutations — 2026-10-14
+## Security fixes: authenticated swap daemon control and local SOL RPC — 2026-10-14
 
 | # | Task | Owner | Date | Status |
 |---|------|-------|------|--------|
 | 1 | Reject a tokenless `xfg-swapd` RPC server and require service-mode token configuration | Codex | 2026-10-14 | DONE |
 | 2 | Refuse tokenless TUI mutation requests before network dispatch | Codex | 2026-10-14 | DONE |
 | 3 | Verify the daemon, TUI, and DeXFG transport guards | Codex | 2026-10-14 | DONE |
+| 4 | Reject nonlocal SOL RPC configuration while the SOL client uses plaintext transport | Codex | 2026-10-14 | IN PROGRESS |
 
 ### Sign-off
 
@@ -5175,7 +5319,7 @@ daemon state transitions.
 | Tests and builds | PASS — `xfg-swapd --service` rejects no token; SPV config 12/12; state tests 18/18; price policy 446/0; TUI test/build pass |
 | Funded testnet E2E | NOT RUN |
 | Independent security review | MANUAL PASS — automated scan blocked by the dirty nested DeXFG checkout; independent reviewer unavailable at the account limit |
-| All tasks done | PASS |
+| All tasks done | IN PROGRESS |
 
 ---
 
@@ -5465,8 +5609,8 @@ introduced regressions:
   the partial gate was worse than none. Reverted.
 - **Fill/`broadcastOrderFill` amplifier.** `COMMAND_ORDER_FILL::request` carries no signature and
   no pubkey at all, so `handleOrderFill`'s novelty check is attacker-complete; the fill loop inside
-  `handleOrderOpen` also fires on packets this path classifies as reject. Untouched — needs a
-  design decision on whether fills should be signed. **This is the largest remaining amplifier.**
+  `handleOrderOpen` also fires on packets this path classifies as reject. **SUPERSEDED** by the entry below: the inbound half was removed and the
+  ORDER_OPEN relay was gated. See "Orderbook relay hardening" for what landed.
 
 ### Still open
 
@@ -5478,3 +5622,138 @@ introduced regressions:
 - The relay amplifier set listed above.
 
 No source changes land without a corresponding task-list entry. This entry is that record.
+
+---
+
+## Orderbook relay hardening: reject-gating + fill sink removal
+
+**Started**: 2026-10-11
+**Agent**: opencode (space-bunny-free)
+**Status**: DONE
+**Sign-off**: 2026-10-11
+
+### Task list
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Drop inbound ORDER_FILL relay + dedup call (unauthenticated fanout + lock/hash DoS) | opencode | 2026-10-11 | DONE |
+| 2 | Gate `handle_order_open` relay on acceptance (kills unsigned-garbage + duplicate fanout) | opencode | 2026-10-11 | DONE |
+| 3 | Remove duplicate internal `broadcastOrderOpen` (double-send to overlapping peers) | opencode | 2026-10-11 | DONE |
+| 4 | Delete dead `handleOrderFill`, `makeFillReplayKey`, `m_fillReplay` | opencode | 2026-10-11 | DONE |
+| 5 | Correct the stale "replay protection only" header comment | opencode | 2026-10-11 | DONE |
+
+### Verification
+
+| Check | Result |
+|-------|--------|
+| Build (`cmake -DBUILD_TESTS=ON .. && make -j`) | PASS, 0 errors |
+| Full suite (`ctest -j`) | 53/55 PASS |
+| Pre-existing failures | `test_sol_e2e`, `test_xmr_live_e2e` — live-network tests needing CLI secret keys; fail identically at baseline |
+| New tests | `dandelion_stem_tests` 10/10 PASS (from the earlier entry) |
+
+### What landed
+
+**1. Inbound ORDER_FILL is now dropped unprocessed** (`CryptoNoteProtocolHandler::handle_order_fill`).
+Two separate problems removed. The relay turned one packet with no signature and no pubkey into one
+outbound copy per peer. Separately, `SwapOfferRelay::handleOrderFill` took the single `m_mutex`
+that guards `/getorderbook`, the match loop, and the whole swap relay, and hashed two *unbounded*
+`std::string` fields under it — with the 20 MB Levin cap, one unauthenticated packet forced a large
+hash serialized against every one of those paths. Both removed; the handler returns immediately.
+
+**2. `handle_order_open` relays only accepted orders.** The relay was unconditional, so an attacker
+could flood unsigned garbage (rejected by `validateOrderSignature` inside the relay, then relayed
+anyway) or replay one valid signed order N times for N fan-outs, with no hop limit and no seen-set.
+The maker signature is not a barrier by itself — a throwaway key is free to generate — so the
+duplicate check is what bounds that. `handleOrderOpen` now returns `bool` for this single handler
+(not the whole family) so `reserve`'s known unsigned-underflow at `SwapOfferRelay.cpp:709` is not
+promoted into a "relay this" verdict. Returns false only for invalid or duplicate; a **full local
+book still returns true**, because capacity is a local limit rather than a verdict on the message
+— an earlier revision returned false there and that let an attacker permanently silence a node's
+relay by pinning the book with far-future-height orders that never expire.
+
+**3.** Removed the internal `broadcastOrderOpen` in `handleOrderOpen`, which double-sent every
+accepted order (and, with a null exclude, echoed it to its sender).
+
+**4.** Deleted `handleOrderFill`, `makeFillReplayKey`, `m_fillReplay`, `MAX_FILL_REPLAY`. After (1)
+the map had no reader, but two live paths still paid a `cn_fast_hash` per fill to write into it —
+~15 MB permanently resident per node, serving nothing.
+
+### Deliberately NOT landed
+
+- **Origin-exclusion for the outbound fill broadcast** in `handleOrderOpen`'s match loop
+  (`SwapOfferRelay.cpp`, `broadcastOrderFill(fillMsg)`). Passing an exclude pointer down would be a
+  use-after-free: `NodeServer::externalRelayNotifyToAll` (`NetNode.cpp`) captures the
+  `excludeConnection` **pointer** into an async `remoteSpawn` lambda while the caller's
+  `CryptoNoteConnectionContext` is a stack object. The safe fix is to copy a `net_connection_id`
+  **by value** from the protocol handler (which owns `context.m_connection_id`) through
+  `handleOrderOpen` and call the synchronous `NodeServer::relay_notify_to_all` — it needs no change
+  to the shared externalRelay* primitive. Deferred: it is a threading change and the echo is inert
+  now that inbound fills are never relayed.
+- **Transport-level size cap on the fill message.** The 20 MB packet is still fully buffered and
+  deserialized in `notifyAdaptor` before the handler runs, so the handler-level saving is the lock
+  and hash, not the parse. A per-field length cap is the real fix; self-contained but separate.
+- **`handle_order_cancel`, `handle_order_reserve`, `handle_order_reserve_ack` gating.** Same class
+  of issue as (2) but each needs its own accept/reject semantics decision; doing all five at once
+  produced inconsistent `true` meanings and promoted the reserve underflow on a prior attempt.
+
+### Phase 2 (same session, after a fourth adversarial pass)
+
+- **`handle_order_reserve` / `handle_order_reserve_ack` no longer relayed.** `COMMAND_ORDER_RESERVE`
+  has no signature field at all and `handleOrderReserve` performs no authenticity check, so the
+  unconditional relay made one packet fan out mesh-wide with no hop limit or seen-set — the widest
+  amplifier in the orderbook. Verified exhaustively that **nothing anywhere constructs or sends a
+  RESERVE or RESERVE_ACK** (`broadcastReserveAck` has zero callers), so the handshake was unwired
+  and its only live effect was the flood. The ack additionally used a nonce-less digest
+  (`"reserve_ack:" + reservationId`) and cost one signature verify per relayed hop.
+- **`handleOrderCancel` void→bool**, double-send removed (internal broadcast + handler relay).
+  Unknown-order cancels are no longer relayed; the corrupt-pair branch returns true because it
+  genuinely mutates state (and a corrupt-pair order is structurally un-re-creatable, since `pair` is
+  hashed into `orderId`).
+- **`generateOrderId` / `validateOrderSignature` / `shouldRelayOrderOpen` made static** and covered
+  by `tests/UnitTests/OrderbookRelayGateTest.cpp` (30 tests) — the gate is now a tested pure
+  function rather than an untested branch. Both regressions were verified to be caught by mutation
+  testing (always-relay → 5 failures; bookFull-rejects → 2 failures).
+
+Two regressions found by the reviews and fixed here:
+
+- **`placeSignedOrder` must not borrow the relay predicate.** An earlier edit made a full book
+  return `true` there, which is the `/placeorder` success signal — the RPC would report
+  "Order placed" for an order stored in no map and never broadcast. `handleOrderOpen` answers
+  `true` in the same situation because its question is only "relay?"; the two differ on purpose.
+- **Header contract corrected.** The gate's doc claimed three reject cases closed the flood
+  vectors. That overstated it: `matchOrder` erases a fully-consumed maker from `m_allOrders`
+  without tombstoning, so a captured signed order can be replayed after being consumed and will
+  rest again at full depth. Now documented as a known limitation rather than a solved boundary.
+
+### Still open (raised by the third adversarial pass, NOT fixed here)
+
+- **Fully-filled makers are still never tombstoned** (the highest-value remaining item). `matchOrder`
+  erases a consumed maker from `m_allOrders` without tombstoning it, so replaying that one signed
+  order after consuming it rests it again at full depth. Fixing it means tombstoning in `matchOrder`
+  and removing the now-dead `makerIt != end()` block.
+- **A full local book makes the duplicate check structurally unable to engage** in `handleOrderOpen`:
+  an unstorable order is relayed but never held, so `alreadyHeld` stays false for that orderId and
+  every replay is relayed mesh-wide. Bounded only by `MAX_ORDERS_PER_PAIR` being global across all
+  pairs rather than per-pair as its name implies.
+- **Cancel propagation is now narrower than open propagation.** A node whose book is full relays an
+  order it does not hold, but returns false (not relay) for the cancel of an order it does not hold
+  — so peers that legitimately hold it never hear the cancel from that node. Bounded staleness
+  (`ttlBlocks <= 1080`, expiry via `cleanupExpiredOrders`), not permanent corruption.
+- **`broadcastOrderFill` remains an unconditional peer-triggered mesh broadcast** inside
+  `handleOrderOpen`'s match loop: one accepted order crossing N makers emits N unsigned mesh-wide
+  broadcasts. Excludes nobody. Peers now drop inbound fills, which bounds further propagation but
+  not this first hop.
+- **Fully-filled makers are never tombstoned.** `matchOrder` erases a consumed maker from
+  `m_allOrders` without tombstoning it (the `makerIt != end()` block below the match is dead code),
+  so replaying that signed order rests it again at full depth. Pre-existing; the duplicate gate
+  does not cover it, and the source comment now says so rather than overclaiming.
+- **`placeSignedOrder` broadcasts a self-invalidating order**: it reduces `order.amount` to the
+  remainder but keeps the `orderId` hash of the pre-match amount, and `generateOrderId` hashes
+  `amount` — so peers reject the locally-originated remainder. Pre-existing, now silently dropped
+  rather than fanned out.
+- **`/placeorder` defaults `ttlBlocks` to 8640 but `validateOrderSignature` caps it at 1080**, so
+  the default local origination path is always rejected.
+- **ORDER_OPEN still fans out `(P-1)` per accepted order** with no hop limit or seen-set.
+- **`dandelion_stem`/`hop_count` remain unread** on the order path (`V11_LAUNCH_READINESS.md` 1.10).
+- **No test covers the new `bool` contract** — `tests/CoreTests/SwapOrderbookTests.cpp` never calls
+  `handleOrderOpen`. The security surface added here has zero regression coverage.

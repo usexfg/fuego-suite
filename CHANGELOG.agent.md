@@ -2,7 +2,7 @@
 
 **Started**: 2026-10-13
 **Agent**: opencode (space-bunny-free)
-**Status**: IN PROGRESS
+**Status**: DONE for the daemon and the gateway; SDK regeneration left open (see Open items)
 **Scope**: Fuego daemon typed state snapshot + read-only RPC; XFGAPI gateway route, OpenAPI specs, SDK methods
 **Plan**: `docs/plans/2026-10-13-public-audit-api-dev-guide.md`
 
@@ -11,13 +11,118 @@
 | # | Task | Owner | Date | Status |
 |---|------|-------|------|--------|
 | 1 | Freeze the accounting contract: name source, unit, and category for every output field | opencode | 2026-10-13 | DONE |
-| 2 | Add typed `Blockchain::getPublicAuditSnapshot()` reading all counters/partitions/pool/tip under one state lock | opencode | 2026-10-13 | TODO |
-| 3 | Add `COMMAND_RPC_GET_PUBLIC_AUDIT` + `/get_public_audit` route, all monetary atomics as decimal strings | opencode | 2026-10-13 | TODO |
-| 4 | Build the daemon target and record compiler evidence | opencode | 2026-10-13 | TODO |
-| 5 | XFGAPI: `GET /v1/node/audit/balances` proxy (no API key), gateway `openapi.yaml`, `fuego-openapi.yaml` | opencode | 2026-10-13 | TODO |
-| 6 | Repair `openapi/generate_sdks.sh` paths and add the method to all maintained client packages | opencode | 2026-10-13 | TODO |
-| 7 | Tests: source-to-field mapping, >2^53 precision, chain rollback, gateway route | opencode | 2026-10-13 | TODO |
-| 8 | Run focused treasury/Hearth tests and record evidence | opencode | 2026-10-13 | TODO |
+| 2 | Add typed `Blockchain::getPublicAuditSnapshot()` reading all counters/partitions/pool/tip under one state lock | opencode | 2026-10-13 | DONE |
+| 3 | Add `COMMAND_RPC_GET_PUBLIC_AUDIT` + `/get_public_audit` route, all monetary atomics as decimal strings | opencode | 2026-10-13 | DONE |
+| 4 | Build the daemon target and record compiler evidence | opencode | 2026-10-13 | DONE |
+| 5 | XFGAPI: `GET /v1/node/audit/balances` proxy (no API key), gateway `openapi.yaml`, `fuego-openapi.yaml` | opencode | 2026-10-13 | DONE |
+| 6 | Repair `openapi/generate_sdks.sh` paths and extend its language list | opencode | 2026-10-13 | DONE |
+| 7 | Add the method to the hand-written JS and Python clients | opencode | 2026-10-13 | DONE |
+| 8 | Regenerate the eight generator-owned client packages | opencode | 2026-10-13 | OPEN — Docker unavailable, see Open items |
+| 9 | Tests: source-to-field mapping, >2^53 precision, string wire types, rollback, gateway route | opencode | 2026-10-13 | DONE |
+| 10 | Run focused treasury/Hearth tests and the full suite | opencode | 2026-10-13 | DONE |
+
+### What landed
+
+**Daemon** (`/Users/aejt/xfgo`)
+
+- `src/CryptoNoteCore/Blockchain.h` — `Blockchain::PublicAuditSnapshot` struct and
+  `getPublicAuditSnapshot()`.
+- `src/CryptoNoteCore/Blockchain.cpp` — the snapshot reader. It takes
+  `m_blockchain_lock` once and reads the tip height/hash, the three burn
+  tallies, the treasury/SWF/CD counters, all four vault partitions per asset, the
+  AMM pool, and the protocol LP position from that single consistent state.
+  `snapshotHeight` is the zero-based tip height (`m_blocks.size() - 1`), paired
+  with `m_blockIndex.getTailId()`.
+- `src/Rpc/CoreRpcServerCommandsDefinitions.h` — `COMMAND_RPC_PUBLIC_AUDIT_BALANCES`
+  (typedef `COMMAND_RPC_GET_PUBLIC_AUDIT`). All 25 monetary fields are
+  `std::string`; only `snapshot_height` and `status` are not strings.
+- `src/Rpc/RpcServer.h` / `src/Rpc/RpcServer.cpp` — `/get_public_audit` handler and
+  route registration, using the same public-read policy as `/heat_metrics`. The
+  handler takes no parameters, reads one snapshot, converts with `std::to_string`,
+  and adds no floating-point arithmetic. Two note fields state the aggregate's
+  scope and that the lifecycle amounts are independently sourced.
+- `tests/UnitTests/PublicAuditSnapshotTest.cpp` (new) + `tests/CMakeLists.txt` +
+  `src/CMakeLists.txt` — test target `public_audit_tests`, 5 tests.
+
+**XFGAPI** (`/Users/aejt/XFGAPI/.worktrees/coral-jaguar`, branch `session-check`,
+base `de66595`)
+
+- `gateway/server.js` — `GET /v1/node/audit/balances` proxying `/get_public_audit`,
+  registered without `requireApiKey` and covered by the existing `/v1/` rate limit.
+- `gateway/openapi.yaml` — the operation plus `AtomicAmount` and
+  `PublicAuditBalances` schemas, `security: []`.
+- `openapi/fuego-openapi.yaml` — the same operation and schemas. This is the SDK
+  generation input; because it previously declared bare `description: OK`
+  responses, every generated operation returned `Unit`/`Object`. The response is
+  now schema'd, so a regeneration produces typed models rather than `Object`.
+- `openapi/generate_sdks.sh` — `ROOT_DIR` was `dirname/../..`, which resolved to
+  the parent of the repo; the spec was read from `api/openapi/…` and output went
+  to `api/clients`, neither of which exists here. Now `dirname/..`, with the spec
+  at `openapi/fuego-openapi.yaml` and output at `clients/<lang>`. Added a
+  preflight check that the spec exists, pinned the generator image tag, and added
+  `javascript`, `python`, and `rust` to the language list.
+- `clients/javascript/index.js`, `clients/python/fuego_api.py` — the method on
+  both hand-written clients, with a note that amounts stay strings.
+- `gateway/test/public-audit-route.test.js` (new), `gateway/package.json` —
+  `npm test` runs `node --test --test-force-exit test/`.
+
+### Verification
+
+| Check | Command | Result |
+|-------|---------|--------|
+| Daemon builds | `cd build/release && make -j4 Daemon` | exit 0, 0 errors |
+| Whole suite | `cd build/release && ctest --output-on-failure` | 53/55 PASS. `test_sol_e2e` and `test_xmr_live_e2e` fail with `need mode + args` — the same two live-node harnesses that already failed on the pre-change baseline; not regressions |
+| New daemon test | `cd build/release && ctest -R public_audit_tests --output-on-failure` | 1/1 Passed |
+| Focused suites | `cd build/release && ctest -R "core_tests\|hearth\|orderbook_auction\|public_audit"` | 3/3 Passed (`core_tests`, `test_orderbook_auction`, `public_audit_tests`) |
+| Gateway route | `cd gateway && npm test` | exit 0, 3/3 pass: daemon forwarding, no API key required while `/v1/wallet/balance` returns 401, and all 25 amounts arrive as exact quoted decimal strings |
+| Gateway spec | `js-yaml` parse of `gateway/openapi.yaml` and `openapi/fuego-openapi.yaml` | both parse; 25 amount fields resolve to `AtomicAmount` (`type: string`) |
+| SDK generator | `bash -n openapi/generate_sdks.sh`; path preflight | syntax OK, spec path resolves, `clients/` exists |
+| Live daemon/gateway smoke | not run | see Open items |
+
+### Concurrent activity in this working tree
+
+Another process committed the working tree at `d9770f6cc` ("docs: fix stale
+'deferred to v12' …") while this work was in flight. That commit swept the
+dirty tree, so the daemon-side files listed above are now inside that commit
+rather than staged here. They were not staged or committed by this session. The
+commit message does not mention the audit endpoint.
+
+Re-verified after that commit landed:
+
+| Check | Command | Result |
+|-------|---------|--------|
+| Daemon + new test rebuild | `make -j4 Daemon public_audit_tests` | exit 0, 0 errors |
+| New daemon test | `ctest -R public_audit_tests` | 1/1 Passed |
+| Whole suite, current tree | `ctest --output-on-failure` | 52/55. `core_tests` now fails 2 of 218 assertions (`TreasuryCoreTests.cpp:1159`, `:1163`, the `VaultCoreTestAccess::prevalidateCoinbase` LP-tag cases). That test and the `isHeatwaveTag` / `prevalidate_miner_transaction` refactor it exercises are an uncommitted concurrent change in this tree, unrelated to the audit snapshot; left alone deliberately |
+
+### Open items
+
+1. **SDK regeneration not executed.** Docker is not running on this machine, so
+   `openapi/generate_sdks.sh` could not be run. The eight generator-owned client
+   packages (`go`, `java`, `csharp`, `swift5`, `kotlin`, `php`, `ruby`, `rust`)
+   therefore do not yet carry the method. They will on the next run: the spec now
+   declares the response schema, and the generator emits an operation and models
+   for every declared path. `clients/go/api/openapi.yaml` is the generator's
+   committed output copy of the spec and is intentionally left stale for the same
+   reason. Hand-editing generated trees would be overwritten on the next run.
+2. **No block-level rollback test.** The rollback coverage drives the real
+   reversal calls `Blockchain::popBlock` makes on the indexes the snapshot reads
+   (`BankingIndex::popBlock`, `VaultUtxoSet::removeAboveIndex` +
+   `unSpendUtxos`), in pop order, and asserts every reported value returns. It
+   does not connect a real block first: that needs a block-producing harness, and
+   `tests/CoreTests/ChainSwitch1.cpp` / `Chaingen` are not wired into any built
+   target. `tests/IntegrationTests` is not built either.
+3. **No live smoke test.** `queryblocks.bin` and friends hang on every daemon
+   binary tried so far (the pre-existing blocker recorded elsewhere in this log),
+   so `/get_public_audit` was exercised against a stub daemon and a stub route,
+   not a synced node.
+4. **The startup burn rescan is still wrong.** `Blockchain::init` rebuilds the
+   aggregate and the Eternal Flame share but not `m_permanently_burned_xfg` or
+   `m_swfBurnedXfgPendingHeat`. The response documents this rather than papering
+   over it; fixing the rescan is a separate change to consensus-adjacent code and
+   was not attempted here.
+5. **No live end-to-end run of the daemon route.** `/get_public_audit` compiles
+   and links into the daemon, but no daemon was started to serve a request.
 
 ### Packet 1 — accounting contract (frozen)
 
@@ -88,7 +193,7 @@ UTXO balance that backs it.
 
 **Started**: 2026-10-12
 **Agent**: Codex
-**Status**: IN PROGRESS
+**Status**: DONE — local implementation and focused verification complete; operational gates are documented in `docs/developer/fuego-cost-index-dev-guide.md`.
 **Scope**: Deterministic FCI vote aggregation per network epoch; v12-gated HEAT USD peg-reference updates at 18-epoch quarter boundaries; restart and reorg reconstruction.
 
 ### Task list
@@ -96,17 +201,18 @@ UTXO balance that backs it.
 | # | Task | Owner | Date | Status |
 |---|------|-------|------|--------|
 | 1 | Audit existing vote wire format, miner inputs, epoch processing, v12 activation, and rollback paths | Codex | 2026-10-12 | DONE |
-| 2 | Add validated per-epoch vote aggregation, quorum, trimmed medians, weighted index, and quarterly v12 peg updates | Codex | 2026-10-12 | IN PROGRESS |
-| 3 | Rebuild derived state from canonical blocks and reverse it across reorgs | Codex | 2026-10-12 | TODO |
-| 4 | Add focused tests and run available validation | Codex | 2026-10-12 | TODO |
+| 2 | Add validated per-epoch vote aggregation, quorum, trimmed medians, weighted index, and quarterly v12 peg updates | Codex | 2026-10-13 | DONE |
+| 3 | Rebuild derived state from canonical blocks and reverse it across reorgs | Codex | 2026-10-13 | DONE |
+| 4 | Add focused tests and run available validation | Codex | 2026-10-13 | DONE |
+| 5 | Write the developer guide and record outstanding trust, observability, and activation work | Codex | 2026-10-13 | DONE |
 
 ### Sign-off
 
 | Gate | Status |
 |------|--------|
-| Build compiles | TODO |
-| Tests pass | TODO |
-| All tasks done | TODO |
+| Build compiles | DONE — `cmake --build build/release --target fuego_cost_index_tests Rpc -j 2` exited 0 |
+| Tests pass | DONE — `ctest --test-dir build/release -R '^fuego_cost_index_tests$' --output-on-failure` passed 1/1 |
+| All tasks done | DONE — activation, source-trust, and integration gates remain documented work |
 
 ---
 
@@ -1363,6 +1469,134 @@ Also noted by review: the new tests were vacuous for the `classifySpend` change 
 `makePolicyTx` with `claimedInterest == 0` yields a zero-input tx that cannot reach it. And
 `isPermitted`'s `utxoSet` parameter is unused, so it cannot cross-check the partition handed to
 it.
+
+## Coinbase settlement-tag blacklist drift — FIXED (was a live miner-triggerable hazard)
+
+**Started**: 2026-10-11
+**Agent**: opencode (space-bunny-free)
+**Status**: DONE
+**Scope**: `Blockchain.cpp`, `TransactionExtra.h`, `TreasuryCoreTests.cpp`
+
+### What the adversarial review found (and corrected my premise)
+
+I proposed this as fixing a **latent** booby trap ("dead code today; dangerous if the tags are
+re-admitted"). The review **refuted that**: the hazard was **LIVE**, not latent.
+
+`prevalidate_miner_transaction` (`Blockchain.cpp:1794-1818`) kept a **hand-maintained duplicate**
+of `isHeatwaveTag` (`:140-161`). The two had already drifted — `isHeatwaveTag` named **19**
+settlement tags, the coinbase blacklist named **10**, and it omitted
+`TransactionExtraAmmAddLiquidity` / `TransactionExtraAmmRemoveLiquidity`.
+
+That omission was exploitable because of **ordering**:
+
+- The coinbase is pushed at `Blockchain.cpp:3569` (inside `pushBlock`), **before** the settlement
+  loop at `:3796`.
+- `validateSettlement` rejects those tags for regular transactions (`:7804-7808`, "legacy AMM LP
+  tag is retired") — but the coinbase **never reaches it**.
+- The legacy branch in `pushTransaction` (`:6547-6590`) then applies the tag's **self-asserted**
+  amounts directly: `m_ammPool.reserveXfg += addXfg; reserveHeat += addHeat; totalLpShares += shares`
+  — no input backing, no conservation check, and `+=` can **wrap** (`+= UINT64_MAX` shrinks a
+  reserve).
+
+So one miner could set AMM reserves network-wide. Worse for recovery: `m_ammPool` is **not
+persisted** (zeroed at `:1082`, rebuilt by replay), so a corrupted reserve **reproduces
+deterministically on every resync** and cannot self-heal. Reserves feed `ammGetSpotPrice`,
+`twapBefore`, swap settlement, LP pricing and treasury LP valuation.
+
+Note the review's line numbers were off by ~64 from mine; I verified every claim against source
+before acting, and the code had shifted under me from a concurrent session.
+
+### Fix
+
+Derived the blacklist from `isHeatwaveTag` instead of restating it
+(`Blockchain.cpp:1803-1815`), and promoted `isHeatwaveTag` / `carriesHeatwaveTag` out of the
+anonymous namespace into `TransactionExtra.h:604-610` so the coinbase path and the tests share
+**one** list. Any tag added to `isHeatwaveTag` is now rejected on the coinbase automatically —
+the drift cannot recur.
+
+(An earlier draft of this entry claimed `m_ammPool` was not persisted and that the branch had been
+hardened with saturating adds. **Both were false** — `m_ammPool` IS serialized at
+`Blockchain.cpp:395` (`s(m_bs.m_ammPool, "amm_pool")`), and the saturating-add hardening was
+superseded by deleting the branch entirely.)
+
+**Consensus impact**: this tightens acceptance. A block carrying a settlement tag in its coinbase
+was previously *accepted* and is now *rejected*. That is a hardening, not a fork — such blocks are
+illegitimate by the code's own stated intent. But it must ship **before** any miner exploits it:
+after exploitation, this becomes a mandatory coordinated fork rather than a preventative fix.
+
+### Tests
+
+`testCoinbaseRejectsEverySettlementTag` (`TreasuryCoreTests.cpp:1085-1140`). Verified non-vacuous:
+removing the two legacy tags from `isHeatwaveTag` fails 2 assertions (213 → 211). It asserts both
+the previously-missing tags AND that the derived check is a **superset** of the old hand-written
+list, so the change cannot have narrowed coverage.
+
+`core_tests` **213/213** (was 202). Full ctest 53/55 — the 2 failures are the known live-node
+harnesses (`test_sol_e2e`, `test_xmr_live_e2e`).
+
+### Still open (from the same review — to-audit list, NOT confirmed findings)
+
+The same "validating list ≠ settling list" asymmetry may apply to these tags, which are in
+`isHeatwaveTag` but whose state-mutation behaviour was **not verified**:
+`TransactionExtraAmmSwap` (`:146`), `AmmCompound` (`:149`), `AmmClaim` (`:150`),
+`HeatCommitment` (`:142`). No test exercises `prevalidate_miner_transaction` at all.
+
+### Also: dead code removed
+
+Rather than only guarding the legacy LP settlement, the unreachable branches were **deleted**:
+
+- `pushTransaction` legacy `AmmAddLiquidity` / `AmmRemoveLiquidity` branch (was `:6558-6610`),
+  which applied self-asserted amounts to `m_ammPool` with no input backing and a wrapping `+=`.
+- The matching `popTransaction` inverses (was `:7035-7070`). Removing the push sides **without**
+  the pop sides would have created a pop/push asymmetry — the exact divergence the review warned
+  about.
+- The now-vacuous `hasLegacy` disambiguation loops that guarded both auth paths.
+
+Verified unreachable before deleting: the settlement site is gated on `>= BLOCK_MAJOR_VERSION_11`
+(`:6475`), `validateSettlement` rejects both tags on that same condition before `pushTransaction`
+runs, and the coinbase is covered by the derived `isHeatwaveTag` check. Pre-v11 blocks never
+entered the branch. Deleting it is consensus-safe on a chain with no v11 blocks.
+
+Remaining references to the two tags are intentional: the `isHeatwaveTag` predicate, the
+`validateSettlement` rejection, and explanatory comments. **No settlement branch remains.**
+
+`AmmSwap`, `AmmCompound`, `AmmClaim` were audited and are **not** hazards — they appear only in
+the `isHeatwaveTag` predicate and have no pool-mutation branch anywhere in `src/`.
+
+### Replay-safety: resolved, not assumed
+
+The adversarial review flagged that `rebuildCache()` replays via `pushTransaction` with no
+`validateSettlement` / `prevalidate_miner_transaction`, so a mined legacy-tag block would replay
+differently. I initially recorded this as an unresolved blocker requiring a testnet scan.
+
+**It is not a live risk, and the repo's own commit `35ef0b7b5` says so**:
+
+> "Mainnet v11 is not active. Testnet has been at v11 since height 30 and its history carries fees
+> paid under the old rule; it needs a reset."
+
+v11 is the HEATWAVE/HEARTH release. Mainnet has never activated it, so **no HEARTH, CD, HEAT, LP or
+atomic-swap transaction has ever been mined** — the deleted branch could never have executed, and
+mainnet replay is bit-identical before and after. Testnet's history is already scheduled for a
+reset by that same commit, so it is moot there too.
+
+An earlier draft of this entry treated testnet as needing a scan first. That was overstated; the
+owner confirmed the no-transactions fact and the commit corroborates it. The archive-version bump
+(15 -> 16) is retained as cheap insurance so no cache can carry reserves computed by the deleted
+branch, but it is not required for consensus safety.
+
+### Sign-Off
+
+| Gate | Signed By | Date | Result |
+|------|-----------|------|--------|
+| Reachability verified against source | opencode | 2026-10-11 | PASS — live at v11 and v12 via coinbase |
+| Replay safety verified | opencode | 2026-10-11 | PASS — no v11 txns ever mined (commit 35ef0b7b5); testnet already reset-pending |
+| Fix adversarially reviewed first | opencode | 2026-10-11 | PASS — premise corrected (live, not latent) |
+| Build compiles | opencode | 2026-10-11 | PASS |
+| Tests pass | opencode | 2026-10-11 | PASS — core_tests 218/218; ctest 53/55 |
+| Tests non-vacuous | opencode | 2026-10-11 | PASS — reverting the coinbase fix fails 2 assertions (216/218) |
+| Consensus blast radius | opencode | 2026-10-11 | PASS — tightens acceptance; no v11 txns ever mined so nothing can be re-validated |
+
+---
 
 ## Vault consensus gate — PROVEN UNREACHABLE (root cause found)
 
@@ -4853,9 +5087,9 @@ and require a verified counterparty swap key before initiation.
 |---|------|-------|------|--------|
 | 1 | Remove all wallet and swap-daemon mutation routes and controls from the dashboard | Codex | 2026-10-08 | DONE |
 | 2 | Add runtime chain catalog, network/readiness gates, exact atomic amounts, initiation, status, accept, and refund to the TUI | Codex | 2026-10-08 | DONE |
-| 3 | Apply the same daemon contract and execution gates to DeXFG | Codex | 2026-10-08 | IN PROGRESS |
+| 3 | Apply the same daemon contract and execution gates to DeXFG | Codex | 2026-10-08 | DONE |
 | 4 | Add regression tests for read-only dashboard and executable-client validation | Codex | 2026-10-08 | DONE |
-| 5 | Run dashboard, TUI, and DeXFG focused builds and tests | Codex | 2026-10-08 | IN PROGRESS |
+| 5 | Run dashboard, TUI, and DeXFG focused builds and tests | Codex | 2026-10-08 | DONE |
 | 6 | Run independent swap/security verification and resolve blocking findings | Codex | 2026-10-08 | DONE — three audit artifacts reviewed; AFK execution disabled after final adversarial pass |
 
 ### Sign-off
@@ -4866,9 +5100,9 @@ and require a verified counterparty swap key before initiation.
 | Dashboard tests pass | PASS — Go + 10 Node checks |
 | TUI build compiles | PASS |
 | TUI tests pass | PASS |
-| DeXFG analysis/tests pass | IN PROGRESS — execution path is being brought to the daemon contract |
+| DeXFG analysis/tests pass | PASS — 34 focused Flutter tests; analyzer reports zero errors |
 | Independent verification | PASS — dashboard, TUI, and swap contract audit findings resolved |
-| All tasks done | NO |
+| All tasks done | YES |
 
 ### Strategic checkpoint — implementation batch to DeXFG
 
@@ -4893,23 +5127,23 @@ Completed outcomes with verification:
   status proxy. `go test ./...` passes and Node reports 10/10 checks.
 - TUI uses runtime `list_chains`, exact decimal-string amounts, network/profile
   and readiness gates, counterparty key binding, initiation/status/accept/refund,
-  wallet sync gating, owner-only password files, and quoted Hearth confirmation.
-  `go test ./...` passes; `go build -mod=vendor -o /private/tmp/fuego_suite_tui .`
-  passes.
+  wallet sync gating, owner-only token files, and quoted Hearth confirmation.
+  `go test ./...` passes; `go build -o /private/tmp/fuego-tui-verify .` passes.
 - Swap RPC validates IDs, blocks database path traversal, emits public status
   records without persistence secrets, preserves exact XFG amounts, reports
   network/profile, and reports configured EVM chain IDs.
-- `cmake --build build/release --target PaymentGateService SwapDaemon
-  test_swap_state_machine_spv test_price_policy -j4` passes. The swap-state/SPV
-  binary reports 18/18 and price policy reports 423 checks with zero failures.
+- `cmake --build build/release --target SwapDaemon test_spv_config_wiring
+  test_swap_state_machine_spv test_price_policy -j4` passes. Config wiring
+  reports 12/12, the swap-state/SPV binary reports 18/18, and price policy
+  reports 446 checks with zero failures.
 - The macOS resolver-macro collision was removed by renaming the price status
   enum value from `NO_DATA` to `MISSING_DATA`.
 
-Outstanding work and known failures: DeXFG still needs the same runtime
-catalog, testnet launch, token handling, exact amounts, peer-key/role fields,
-and full lifecycle actions. Dashboard release assets may still contain an older
-executable bundle until the release binary/static tree is rebuilt and checked.
-No funded cross-chain test has run.
+Known boundary: no funded cross-chain test has run. Testnet execution remains
+blocked until an operator supplies a real EVM RPC endpoint, chain ID, and HTLC
+registry address; the clients deliberately do not invent deployment metadata.
+AFK execution remains disabled until its trustless payout path is enabled.
+Dashboard release assets must be rebuilt and checked separately before release.
 
 Running process/tool identifiers: none.
 
@@ -4920,10 +5154,28 @@ Artifacts and exact paths needed next:
 - `/private/tmp/fuego-dashboard-readonly-audit-20261008.jsonl`
 - `/Users/aejt/DEXFG/fuego-flutter-wallet`
 
-Next action, expected result and fallback: inspect the DeXFG dirty tree and
-current swap service, then apply its runtime contract and tests without touching
-unrelated changes. If that checkout is not writable, stage an exact patch under
-`/private/tmp` and request the narrow filesystem approval needed to apply it.
+Next release gate: run a funded, two-daemon testnet claim/refund/reorg exercise
+against real deployed contracts, then record the resulting transaction IDs and
+daemon state transitions.
+
+---
+
+## Security fix: require authenticated swap daemon mutations — 2026-10-14
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Reject a tokenless `xfg-swapd` RPC server and require service-mode token configuration | Codex | 2026-10-14 | DONE |
+| 2 | Refuse tokenless TUI mutation requests before network dispatch | Codex | 2026-10-14 | DONE |
+| 3 | Verify the daemon, TUI, and DeXFG transport guards | Codex | 2026-10-14 | DONE |
+
+### Sign-off
+
+| Check | Result |
+|-------|--------|
+| Tests and builds | PASS — `xfg-swapd --service` rejects no token; SPV config 12/12; state tests 18/18; price policy 446/0; TUI test/build pass |
+| Funded testnet E2E | NOT RUN |
+| Independent security review | MANUAL PASS — automated scan blocked by the dirty nested DeXFG checkout; independent reviewer unavailable at the account limit |
+| All tasks done | PASS |
 
 ---
 

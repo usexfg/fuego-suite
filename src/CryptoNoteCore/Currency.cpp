@@ -152,6 +152,10 @@ namespace CryptoNote
 	}
 
 	uint32_t Currency::cdActivationHeight() const {
+		// DELIBERATE, and pinned by testCdActivationHeight(): CDs are a v12 feature
+		// on mainnet (CD_ACTIVATION_HEIGHT), but testnet opens them at its v11 height
+		// so they stay exercised there. Do not "align" this with the version -- doing
+		// so silently disables CD coverage on testnet.
 		return m_testnet ? m_upgradeHeightV11 : parameters::CD_ACTIVATION_HEIGHT;
 	}
 
@@ -199,38 +203,52 @@ namespace CryptoNote
 	}
 
 	uint8_t Currency::blockMajorVersionAtHeight(uint32_t height) const {
-		// Check from highest version to lowest
-		if (height >= upgradeHeight(BLOCK_MAJOR_VERSION_12)) {
+		// STRICTLY greater than the upgrade height, matching the consensus authority
+		// Blockchain::getBlockMajorVersionForHeight (`height > m_upgradeDetector*.upgradeHeight()`),
+		// which checkBlockVersion enforces. UpgradeDetector::upgradeHeight() returns the raw
+		// configured height, so the upgrade height itself is still the OLD version.
+		//
+		// This function used to use `>=`, which disagreed with consensus at exactly every
+		// upgrade height: consensus versions such a block as the previous version while this
+		// returned the new one. Consumers included getTransactionFee (:645, a consensus fee
+		// path) and Blockchain.cpp:7699. Benign only because minimumFee() is currently flat
+		// across v10/v11/v12 -- that is the sole reason the divergence had no effect.
+		//
+		// NOTE: tests/UnitTests/V10Upgrade/TestV10UpgradeDetector.cpp asserts the old `>=`
+		// behaviour, but that file is in no CMakeLists.txt and is not built.
+		//
+		// Check from highest version to lowest.
+		if (height > upgradeHeight(BLOCK_MAJOR_VERSION_12)) {
 			return BLOCK_MAJOR_VERSION_12;
 		}
-		else if (height >= upgradeHeight(BLOCK_MAJOR_VERSION_11)) {
+		else if (height > upgradeHeight(BLOCK_MAJOR_VERSION_11)) {
 			return BLOCK_MAJOR_VERSION_11;
 		}
-		else if (height >= upgradeHeight(BLOCK_MAJOR_VERSION_10)) {
+		else if (height > upgradeHeight(BLOCK_MAJOR_VERSION_10)) {
 			return BLOCK_MAJOR_VERSION_10;
 		}
-		else if (height >= upgradeHeight(BLOCK_MAJOR_VERSION_9)) {
+		else if (height > upgradeHeight(BLOCK_MAJOR_VERSION_9)) {
 			return BLOCK_MAJOR_VERSION_9;
 		}
-		else if (height >= upgradeHeight(BLOCK_MAJOR_VERSION_8)) {
+		else if (height > upgradeHeight(BLOCK_MAJOR_VERSION_8)) {
 			return BLOCK_MAJOR_VERSION_8;
 		}
-		else if (height >= upgradeHeight(BLOCK_MAJOR_VERSION_7)) {
+		else if (height > upgradeHeight(BLOCK_MAJOR_VERSION_7)) {
 			return BLOCK_MAJOR_VERSION_7;
 		}
-		else if (height >= upgradeHeight(BLOCK_MAJOR_VERSION_6)) {
+		else if (height > upgradeHeight(BLOCK_MAJOR_VERSION_6)) {
 			return BLOCK_MAJOR_VERSION_6;
 		}
-		else if (height >= upgradeHeight(BLOCK_MAJOR_VERSION_5)) {
+		else if (height > upgradeHeight(BLOCK_MAJOR_VERSION_5)) {
 			return BLOCK_MAJOR_VERSION_5;
 		}
-		else if (height >= upgradeHeight(BLOCK_MAJOR_VERSION_4)) {
+		else if (height > upgradeHeight(BLOCK_MAJOR_VERSION_4)) {
 			return BLOCK_MAJOR_VERSION_4;
 		}
-		else if (height >= upgradeHeight(BLOCK_MAJOR_VERSION_3)) {
+		else if (height > upgradeHeight(BLOCK_MAJOR_VERSION_3)) {
 			return BLOCK_MAJOR_VERSION_3;
 		}
-		else if (height >= upgradeHeight(BLOCK_MAJOR_VERSION_2)) {
+		else if (height > upgradeHeight(BLOCK_MAJOR_VERSION_2)) {
 			return BLOCK_MAJOR_VERSION_2;
 		}
 		else {

@@ -138,7 +138,7 @@ namespace CryptoNote {
     uint64_t getCurrentEpochSwapFees() const { return m_currentEpochSwapFees; }
     uint64_t getTotalCdLocked() const { return m_totalCdLocked; }
     uint64_t getHeatSupply() const { return m_heatSupply; }
-    uint64_t getHeatPegUsdMicro() const;
+    uint64_t getHearthstoneMicro() const;
     uint64_t getHeatOnDeposit() const { return m_heatOnDeposit; }
     uint64_t getDigmSupply() const { return m_digmSupply; }
     uint64_t getHeatCdFeePool() const { return m_heatCdFeePool; }
@@ -792,9 +792,20 @@ namespace CryptoNote {
     bool getBlockCumulativeSize(const Block& block, size_t& cumulativeSize);
     bool update_next_comulative_size_limit();
     bool check_tx_input(const KeyInput& txin, const Crypto::Hash& tx_prefix_hash, const std::vector<Crypto::Signature>& sig, uint32_t* pmax_related_block_height = NULL);
-    bool checkTransactionInputs(const Transaction& tx, const Crypto::Hash& tx_prefix_hash, uint32_t* pmax_used_block_height = NULL);
-    bool checkTransactionInputs(const Transaction& tx, uint32_t* pmax_used_block_height = NULL);
-    bool check_tx_outputs(const Transaction& tx, uint32_t height) const;
+    bool checkTransactionInputs(const Transaction& tx, const Crypto::Hash& tx_prefix_hash, uint32_t* pmax_used_block_height = NULL, uint8_t blockMajorVersion = 0);
+    bool checkTransactionInputs(const Transaction& tx, uint32_t* pmax_used_block_height = NULL, uint8_t blockMajorVersion = 0);
+    // `blockMajorVersion` must be the version of the block being validated (0 =
+    // derive from `height` for the mempool and block-template paths).
+    //
+    // This used to gate on `height >= upgradeHeight(V11)` while consensus authority
+    // is getBlockMajorVersionForHeight, which uses `height >`. At exactly
+    // UPGRADE_HEIGHT_V11 the two disagree, so v11 output rules -- the commitment-term
+    // whitelist, the CD-activation gate, the fee-pool deposit gate -- were applied to
+    // a block that checkBlockVersion still versions as v10 and that settlement
+    // (which keys off block.bl.majorVersion) treats as v10. That is the same
+    // validation-vs-settlement divergence the CD-interest off-by-one caused, one
+    // function over on the same block loop.
+    bool check_tx_outputs(const Transaction& tx, uint32_t height, uint8_t blockMajorVersion = 0) const;
     const TransactionEntry& transactionByIndex(TxIndex index);
     bool pushBlock(const Block &blockData, const Crypto::Hash &id, block_verification_context &bvc, uint32_t height);
      bool pushBlock(const Block &blockData, const std::vector<Transaction> &transactions, const Crypto::Hash &id, block_verification_context &bvc, uint32_t height);
@@ -815,7 +826,14 @@ namespace CryptoNote {
     void popTransactions(const BlockEntry &block, const Crypto::Hash &minerTransactionHash);
     bool validateInput(const MultisignatureInput &input, const Crypto::Hash &transactionHash, const Crypto::Hash &transactionPrefixHash, const std::vector<Crypto::Signature> &transactionSignatures);
     bool validateSwapEscrowInput(const TransactionInputSwapEscrow &input, const Crypto::Hash &transactionHash, const Crypto::Hash &transactionPrefixHash, const std::vector<Crypto::Signature> &transactionSignatures);
-    bool checkCommitmentSpendInput(const TransactionInputCommitmentSpend& txin, const Crypto::Hash& tx_prefix_hash, const std::vector<Crypto::Signature>& sig, uint32_t* pmax_related_block_height = nullptr);
+    // `blockMajorVersion` selects the rule set. Pass the version of the block being
+    // validated; pass 0 (the default) only from paths with no block in hand -- the
+    // mempool and the block template -- where the version is derived from the
+    // current height instead. Deriving from height inside a block's own validation
+    // was off by one: currentHeight is m_blocks.size(), which IS the height of the
+    // block being validated, so a +1 there applied the next height's rules to this
+    // block.
+    bool checkCommitmentSpendInput(const TransactionInputCommitmentSpend& txin, const Crypto::Hash& tx_prefix_hash, const std::vector<Crypto::Signature>& sig, uint32_t* pmax_related_block_height = nullptr, uint8_t blockMajorVersion = 0);
     bool checkCommitmentTransferInput(const TransactionInputCommitmentTransfer& txin, const Crypto::Hash& tx_prefix_hash, const std::vector<Crypto::Signature>& sig, uint32_t* pmax_related_block_height = nullptr);
     bool removeLastBlock();
     bool checkCheckpoints(uint32_t &lastValidCheckpointHeight);

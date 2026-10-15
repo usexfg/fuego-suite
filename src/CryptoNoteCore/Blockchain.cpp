@@ -708,7 +708,7 @@ bool CryptoNote::Blockchain::checkTransactionInputs(const CryptoNote::Transactio
   // would be refused after activation. The block-template path never
   // re-checks outputs, so this is the only mempool check they get.
   return checkTransactionInputs(tx, maxUsedBlock.height, maxUsedBlock.id) &&
-         check_tx_outputs(tx, getCurrentBlockchainHeight());
+         check_tx_outputs(tx, getCurrentBlockchainHeight(), getBlockMajorVersionForHeight(getCurrentBlockchainHeight()));
 }
 
 bool CryptoNote::Blockchain::checkTransactionInputs(const CryptoNote::Transaction& tx, BlockInfo& maxUsedBlock, BlockInfo& lastFailed) {
@@ -2553,12 +2553,12 @@ bool CryptoNote::Blockchain::haveTransactionKeyImagesAsSpent(const Transaction &
   return false;
 }
 
-bool CryptoNote::Blockchain::checkTransactionInputs(const Transaction& tx, uint32_t* pmax_used_block_height) {
+bool CryptoNote::Blockchain::checkTransactionInputs(const Transaction& tx, uint32_t* pmax_used_block_height, uint8_t blockMajorVersion) {
   Crypto::Hash tx_prefix_hash = getObjectHash(*static_cast<const TransactionPrefix*>(&tx));
-  return checkTransactionInputs(tx, tx_prefix_hash, pmax_used_block_height);
+  return checkTransactionInputs(tx, tx_prefix_hash, pmax_used_block_height, blockMajorVersion);
 }
 
-bool CryptoNote::Blockchain::checkTransactionInputs(const Transaction& tx, const Crypto::Hash& tx_prefix_hash, uint32_t* pmax_used_block_height) {
+bool CryptoNote::Blockchain::checkTransactionInputs(const Transaction& tx, const Crypto::Hash& tx_prefix_hash, uint32_t* pmax_used_block_height, uint8_t blockMajorVersion) {
   size_t inputIndex = 0;
   if (pmax_used_block_height) {
     *pmax_used_block_height = 0;
@@ -2646,7 +2646,7 @@ bool CryptoNote::Blockchain::checkTransactionInputs(const Transaction& tx, const
         }
 
         if (!isInCheckpointZone(getCurrentBlockchainHeight())) {
-          if (!checkCommitmentSpendInput(cin, tx_prefix_hash, tx.signatures[inputIndex], pmax_used_block_height)) {
+          if (!checkCommitmentSpendInput(cin, tx_prefix_hash, tx.signatures[inputIndex], pmax_used_block_height, blockMajorVersion)) {
             logger(INFO, BRIGHT_WHITE) << "CommitmentSpend ring signature check failed in tx " << transactionHash;
             return false;
           }
@@ -2779,7 +2779,8 @@ bool CryptoNote::Blockchain::check_tx_input(const KeyInput& txin, const Crypto::
 bool CryptoNote::Blockchain::checkCommitmentSpendInput(const TransactionInputCommitmentSpend& txin,
                                             const Crypto::Hash& tx_prefix_hash,
                                             const std::vector<Crypto::Signature>& sig,
-                                            uint32_t* pmax_related_block_height) {
+                                            uint32_t* pmax_related_block_height,
+                                            uint8_t blockMajorVersion) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
 
   // Subgroup check: reuse same L*I == I guard as check_tx_input.
@@ -2880,7 +2881,12 @@ bool CryptoNote::Blockchain::checkCommitmentSpendInput(const TransactionInputCom
         uint32_t maturityHeight = rolled
             ? memberHeight + 2 * ref.term
             : memberHeight + ref.term;
-        // overflow guard
+        // Overflow guard, plus maturity.
+        //
+        // `currentHeight < maturityHeight` (not <=): during block validation
+        // currentHeight is m_blocks.size(), the height of the block being validated,
+        // so a deposit maturing AT this height is spendable in it. Consistent with
+        // calculateCdInterest being called with the same currentHeight below.
         if (maturityHeight < memberHeight || currentHeight < maturityHeight) {
           logger(INFO) << "CommitmentSpend: ring member at index " << absIdx
                        << " is an immature deposit (matures at block "
@@ -2941,6 +2947,11 @@ bool CryptoNote::Blockchain::checkCommitmentSpendInput(const TransactionInputCom
     // The real spend cannot be identified from a ring signature. Requiring
     // every ring member to be a finite CD prevents a non-CD output from using
     // a CD decoy's accrual as an interest entitlement.
+    //
+    // Deliberately NOT version-gated. `claimedInterest` is a v11+ field: no HEAT CD
+    // existed before then, so no pre-v11 block can carry a positive claim and this
+    // branch is unreachable for one. Gating it would therefore be a no-op for
+    // replay safety while adding a second version boundary to keep in sync.
     if (ringHasNonCdMember) {
       logger(INFO) << "CommitmentSpend: positive interest claim requires a finite-CD ring";
       return false;
@@ -2953,22 +2964,31 @@ bool CryptoNote::Blockchain::checkCommitmentSpendInput(const TransactionInputCom
     // No HEAT CD can exist below cdActivationHeight, so a ring whose youngest
     // member is older than that may be a legacy deposit: withdraw-only.
     uint32_t cdStartHeight = m_currency.cdActivationHeight();
-    // KNOWN OFF-BY-ONE (F2): currentHeight is m_blocks.size(), which at this point
-    // IS the height of the block being validated, so +1 selects the rule set for
-    // the NEXT block. At the v11 fork height the tightened v11 caps (finite-CD
-    // ring, CD-activation gate, fee-pool cap) therefore apply to a block still
-    // versioned v11 by its own height. The direction is conservative -- it applies
-    // stricter limits than the stock rule -- and it only bites on the single block
-    // at the activation height, but it is a fork at that height and it means
-    // validation and settlement can disagree (pushTransaction gates bonusByInput on
-    // block.bl.majorVersion).
+    // Rule set for the block THIS transaction belongs to.
     //
-    // Fixing it properly means passing the block's own majorVersion into
-    // check_tx_input / checkCommitmentSpendInput. Those are shared with the mempool
-    // path, which has no block version yet, so it is not a one-line change --
-    // recorded rather than silently adjusted.
-    uint32_t validatingBlockHeight = currentHeight + 1;
-    uint8_t validatingBlockVersion = getBlockMajorVersionForHeight(validatingBlockHeight);
+    // blockMajorVersion is supplied by the block-validation path, which knows the
+    // block being validated. It used to be derived here as
+    // getBlockMajorVersionForHeight(currentHeight + 1), which was off by one:
+    // currentHeight is m_blocks.size(), and during a block's own validation that is
+    // the height of the block being validated, so +1 applied the NEXT height's rules
+    // to it. At the v11 fork height the tightened v11 caps (finite-CD ring,
+    // CD-activation gate, fee-pool cap) therefore applied to a block that its own
+    // height still versions as v10 -- conservative for value, but a fork at that
+    // height, and it disagreed with settlement, which gates bonusByInput on
+    // block.bl.majorVersion.
+    //
+    // Paths with no block in hand (mempool, block template) pass 0 and fall back to
+    // the height-derived version, which is correct there because they are judging a
+    // transaction against the chain tip rather than against a specific block.
+    uint8_t validatingBlockVersion = blockMajorVersion;
+    if (validatingBlockVersion == 0) {
+      // Mempool / block-template: the block a tx would land in is the NEXT one, at
+      // height m_blocks.size(). This must match checkTransactionSettlement, which
+      // resolves the same block's version as getBlockMajorVersionForHeight(
+      // m_blocks.size()) with NO +1. Using +1 here made the mempool internally
+      // inconsistent at an upgrade height -- lax settlement, strict input caps.
+      validatingBlockVersion = getBlockMajorVersionForHeight(currentHeight);
+    }
     if (validatingBlockVersion >= BLOCK_MAJOR_VERSION_11 &&
         youngestRingMemberHeight < cdStartHeight) {
       logger(INFO) << "CommitmentSpend: interest claim on a pre-CD deposit (youngest ring member at height "
@@ -3198,7 +3218,15 @@ void CryptoNote::Blockchain::mintVaultChangeUtxo(const VaultUtxoSet::SpendResult
                     << " (surplus of spent UTXO " << spendResult.changeSourceIndex << ")";
 }
 
-bool CryptoNote::Blockchain::check_tx_outputs(const Transaction& tx, uint32_t height) const {  for (TransactionOutput out : tx.outputs) {
+bool CryptoNote::Blockchain::check_tx_outputs(const Transaction& tx, uint32_t height, uint8_t blockMajorVersion) const {
+  // Resolve the rule set ONCE from the consensus authority when the caller did not
+  // supply the block's own version. getBlockMajorVersionForHeight uses `height >`;
+  // the old inline `height >= upgradeHeight(V11)` disagreed with it at exactly the
+  // activation height.
+  const uint8_t majorVersion = blockMajorVersion != 0
+      ? blockMajorVersion
+      : getBlockMajorVersionForHeight(height);
+  for (TransactionOutput out : tx.outputs) {
     if (out.target.type() == typeid(TransactionOutputCommitment)) {
       // v11+: commitment-output terms must be one of the recognized classes —
       // zero (plain HEAT), a CD term within [min, max], HEAT_TERM (mint), or a
@@ -3206,7 +3234,11 @@ bool CryptoNote::Blockchain::check_tx_outputs(const Transaction& tx, uint32_t he
       // Arbitrary terms are rejected so asset classification and lock
       // accounting cannot be spoofed.
       const auto& commitment = ::boost::get<TransactionOutputCommitment>(out.target);
-      if (height >= m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11)) {
+      // majorVersion, not `height >= upgradeHeight(V11)`: the consensus authority
+      // getBlockMajorVersionForHeight uses `height >`, so at exactly the activation
+      // height the height comparison applied v11 rules to a block that checkBlockVersion
+      // versions as v10 and that settlement treats as v10.
+      if (majorVersion >= BLOCK_MAJOR_VERSION_11) {
         const uint32_t term = commitment.term;
         bool validTerm =
             (term == 0) ||
@@ -3230,8 +3262,13 @@ bool CryptoNote::Blockchain::check_tx_outputs(const Transaction& tx, uint32_t he
         }
         // HEAT CDs open at their own activation height, after HEAT and Hearth
         // have run on their own.
+        //
+        // Gated on majorVersion, not `height < cdActivationHeight()`. cdActivationHeight()
+        // is UPGRADE_HEIGHT_V12, and getBlockMajorVersionForHeight treats an upgrade
+        // height as still on the OLD version (`height >`), so comparing heights
+        // admitted CD deposits one block before consensus versions the chain as v12.
         if (term >= m_currency.depositMinTerm() && term <= m_currency.depositMaxTerm() &&
-            height < m_currency.cdActivationHeight()) {
+            majorVersion < BLOCK_MAJOR_VERSION_12) {
           logger(INFO, BRIGHT_WHITE) << getObjectHash(tx)
               << " CD deposit rejected: CDs activate at height " << m_currency.cdActivationHeight();
           return false;
@@ -3809,12 +3846,17 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
       logger(INFO, BRIGHT_WHITE) << "Block " << blockHash << " can't contain transaction " << tx_id << " because it has invalid version " << transactions[i].version;
     }
 
-    if (!checkTransactionInputs(transactions[i])) {
+    // Pass the block's OWN majorVersion. Deriving it from the current height here
+    // was off by one during block validation: m_blocks.size() is the height of the
+    // block being validated, so a height-derived lookup applied the next height's
+    // rules to this block. Settlement already keys off block.bl.majorVersion, so the
+    // two now agree.
+    if (!checkTransactionInputs(transactions[i], NULL, block.bl.majorVersion)) {
       isTransactionValid = false;
       logger(INFO, BRIGHT_WHITE) << "Block " << blockHash << " has at least one transaction with wrong inputs: " << tx_id;
     }
 
-    if (!check_tx_outputs(transactions[i], block.height)) {
+    if (!check_tx_outputs(transactions[i], block.height, block.bl.majorVersion)) {
       isTransactionValid = false;
       logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " has at least one invalid output";
     }

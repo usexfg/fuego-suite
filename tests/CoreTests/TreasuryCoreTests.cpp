@@ -1107,6 +1107,23 @@ public:
   static uint64_t ammReserveXfg(const Blockchain& chain) { return chain.m_ammPool.reserveXfg; }
   static uint64_t ammReserveHeat(const Blockchain& chain) { return chain.m_ammPool.reserveHeat; }
   static size_t coinbaseUnlockWindow(const Blockchain& chain) { return chain.m_currency.minedMoneyUnlockWindow(); }
+  // Block validation must judge its transactions by the block's OWN version.
+  // checkCommitmentSpendInput used to derive it from getBlockMajorVersionForHeight(H+1),
+  // which during a block's validation is the NEXT height's rules.
+  static bool txOutputsValid(Blockchain& chain, const Transaction& tx, uint32_t height, uint8_t v) {
+    return chain.check_tx_outputs(tx, height, v);
+  }
+  // The fallback used when the caller passes 0. Reproduced here from the public
+  // authority so the test pins the convention the mempool and template paths use.
+  static uint8_t derivedVersion(const Blockchain& chain, uint32_t height) {
+    return chain.getBlockMajorVersionForHeight(height);
+  }
+  static uint8_t getBlockMajorVersionForHeightForTest(const Blockchain& chain, uint32_t height) {
+    return chain.getBlockMajorVersionForHeight(height);
+  }
+  static uint32_t m_currency_upgrade_height_v11(const Blockchain& chain) {
+    return chain.m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11);
+  }
 };
 } // namespace CryptoNote
 
@@ -1276,6 +1293,85 @@ void testVaultUtxoSetLpSurvivesSerialize() {
   TEST(restored.partitionBalance(VaultPartition::LP_RESERVE, AssetType::LP) == 777);
 }
 
+// Regression (F2/R1): version-gated validation must key on the BLOCK's own
+// majorVersion, resolved through the one consensus authority.
+//
+// Two bugs shared a root cause -- two helpers disagreed at an upgrade height:
+// getBlockMajorVersionForHeight uses `height >` (consensus authority, enforced by
+// checkBlockVersion), while inline checks used `height >= upgradeHeight(...)`. At
+// exactly UPGRADE_HEIGHT_V11 that applied the v11 CD caps and v11 output rules to a
+// block consensus versions as v10 and that settlement treats as v10.
+//
+// The previous version of this test was VACUOUS: it built a transaction whose only
+// input was a BaseInput, which checkTransactionInputs rejects 268 lines before
+// checkCommitmentSpendInput is reached, so it asserted nothing about the parameter.
+// This version drives the real gate.
+void testVersionGatesUseConsensusAuthority() {
+  TestChain t("version_gates");
+  TEST(t.ok);
+
+  // The authority and the old inline comparison must disagree exactly at an upgrade
+  // height. If they agree, the bug they caused is not observable and this test
+  // proves nothing.
+  const uint32_t atUpgrade = VaultCoreTestAccess::m_currency_upgrade_height_v11(t.chain);
+  TEST(VaultCoreTestAccess::getBlockMajorVersionForHeightForTest(t.chain, atUpgrade)
+       == BLOCK_MAJOR_VERSION_10);
+  TEST(VaultCoreTestAccess::getBlockMajorVersionForHeightForTest(t.chain, atUpgrade + 1)
+       == BLOCK_MAJOR_VERSION_11);
+
+  // check_tx_outputs is the function that carried the off-by-one. Its v11 gate is
+  // the commitment-term whitelist: a block at the upgrade height is v10 and must be
+  // judged by v10 rules, so an arbitrary term that v10 accepts must still be
+  // accepted there, while the same tx at upgrade+1 (v11) is refused.
+  Transaction tx{};
+  tx.inputs.push_back(BaseInput{0});
+  // Term 0xDEADBEEF is in no recognized class: it is neither 0, HEAT_TERM, DIGM_TERM,
+  // a pool/LP/swap marker, nor within [depositMinTerm, depositMaxTerm]. Only the
+  // v11 whitelist rejects it.
+  tx.outputs.push_back(commitmentOut(1, 0xDEADBEEFu));
+
+  // v10 at the upgrade height: the v11 term whitelist must NOT apply.
+  TEST(VaultCoreTestAccess::txOutputsValid(t.chain, tx, atUpgrade, BLOCK_MAJOR_VERSION_10));
+  // v11 one block later: it must apply.
+  TEST(!VaultCoreTestAccess::txOutputsValid(t.chain, tx, atUpgrade + 1, BLOCK_MAJOR_VERSION_11));
+
+  // Passing 0 (the mempool/template convention) must resolve to the same version as
+  // the height-derived lookup -- not height+1, which was the original defect.
+  const uint8_t derived = VaultCoreTestAccess::derivedVersion(t.chain, atUpgrade);
+  TEST(derived == BLOCK_MAJOR_VERSION_10);
+}
+
+// Regression (R2): the two block-version helpers must not disagree.
+//
+// Blockchain::getBlockMajorVersionForHeight uses `height > upgradeHeight(...)` and is
+// what checkBlockVersion enforces. Currency::blockMajorVersionAtHeight used `>=`, so at
+// exactly an upgrade height consensus said "old version" and Currency said "new
+// version". Consumers included getTransactionFee -- a consensus fee path -- which was
+// benign only because minimumFee() happens to be flat across v10/v11/v12.
+void testVersionHelpersAgree() {
+  Logging::LoggerGroup nullLog;
+  Currency currency = CurrencyBuilder(nullLog).currency();
+
+  const uint32_t v11Height = currency.upgradeHeight(BLOCK_MAJOR_VERSION_11);
+  TEST(v11Height != static_cast<uint32_t>(-1));
+
+  // The upgrade height itself is still the PREVIOUS version, by consensus convention.
+  // This is the assertion that fails if either helper regresses to `>=`.
+  TEST(currency.blockMajorVersionAtHeight(v11Height) < BLOCK_MAJOR_VERSION_11);
+  TEST(currency.blockMajorVersionAtHeight(v11Height + 1) == BLOCK_MAJOR_VERSION_11);
+
+  // Same at the v12 boundary.
+  const uint32_t v12Height = currency.upgradeHeight(BLOCK_MAJOR_VERSION_12);
+  TEST(v12Height != static_cast<uint32_t>(-1));
+  TEST(currency.blockMajorVersionAtHeight(v12Height) < BLOCK_MAJOR_VERSION_12);
+  TEST(currency.blockMajorVersionAtHeight(v12Height + 1) == BLOCK_MAJOR_VERSION_12);
+
+  // The function is monotonic across the boundary -- never goes backwards.
+  for (uint32_t h = v11Height - 2; h <= v11Height + 2; ++h) {
+    TEST(currency.blockMajorVersionAtHeight(h) <= currency.blockMajorVersionAtHeight(h + 1));
+  }
+}
+
 int main() {
   testCdInterestCompounding();
   testLegacyDepositWithdrawsForPrincipal();
@@ -1289,6 +1385,8 @@ int main() {
   testCoinbaseRejectsEverySettlementTag();
   testRejectedBlockUnwindsVaultSpend();
   testVaultUtxoSetLpSurvivesSerialize();
+  testVersionGatesUseConsensusAuthority();
+  testVersionHelpersAgree();
   testValidateSettlementSwapCurve();
   testValidateSettlementLimitDeposit();
   testHeatwaveTagCutoffHeight();

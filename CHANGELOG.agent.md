@@ -4,6 +4,76 @@ Every feature/fix requires a task list with sign-off. Agents record name, date, 
 
 ---
 
+## Dashboard Reference Theme Industrial Brutalist Gold Palette
+
+**Started**: 2026-10-15
+**Agent**: Antigravity (Gemini 3.8 Flash)
+**Status**: DONE
+
+### Changes
+- `dashboard/static/css/style.css` and `dashboard/static/css/hearthtest.css`:
+  - Updated the `[data-theme="reference"]` register to replace Tokyo Night red (`--dir-up`, `--bad`) with industrial gold (`#f5a623`, `#ffbe4d`, and matching alpha tokens).
+  - Maintained zero radius, zero shadow, flat surfaces, and high density per industrial brutalist doctrine.
+
+| Task | Owner | Date | Status |
+|------|-------|------|--------|
+| Update reference theme in style.css and hearthtest.css to gold-over-red | Antigravity | 2026-10-15 | DONE |
+
+### Sign-off
+
+| Gate | Status | Agent | Date |
+|------|--------|-------|------|
+| Code verified | PASS | Antigravity | 2026-10-15 |
+| All tasks done | PASS | Antigravity | 2026-10-15 |
+
+---
+
+
+
+## Fuego Cost Index (FCI) Consensus Engine & Multi-Staple Inflation Adjustment
+
+**Started**: 2026-10-15
+**Agent**: Antigravity (Gemini 3.8 Flash)
+**Status**: DONE
+
+### Changes
+- `CryptoNoteConfig.h`:
+  - Added rice (1 kg white rice, $1.50 baseline = 1,500,000 µUSD, 7% weight) as primary Asian inflation staple.
+  - Rebalanced consumer basket weights (Power 40%, Gas 30%, Milk 8%, Bread 8%, Eggs 7%, Rice 7% = 100%).
+  - Added quarterly publication quorum rule: published whenever energy (power + gas) AND at least one consumer good (milk, bread, eggs, or rice) updated during the quarter.
+  - Added testnet quorum constants (`TESTNET_FCI_EPOCH_BLOCKS = 10`, `TESTNET_FCI_MIN_QUORUM = 4`), quarter duration (`FCI_QUARTER_EPOCHS = 18`), and `FCI_BASELINE_HEAT_PEG_MICRO_USD` (1,580,000 µUSD).
+- `TransactionExtra.h` / `TransactionExtra.cpp`:
+  - Added rice (bit 5) to `TransactionExtraMinerBasketVote` bitmask and binary serialization/deserialization.
+- `MinerConfig.h` / `MinerConfig.cpp`:
+  - Added `--fci-rice` CLI option and `rice` field in `fci_oracle.json`.
+  - Added Asian staple currency support and hot-reloading parser.
+- `Miner.cpp`:
+  - Added rice vote injection into block miner coinbase extra.
+- `Blockchain.h` / `Blockchain.cpp`:
+  - Implemented `collectMinerBasketVote()` to extract and track miner price submissions from coinbase extra.
+  - Implemented `processFciEpochWork()` with 25% trimmed median calculation per commodity, 39% quorum threshold, quarterly publication rule, and ±0.25% drift cap.
+  - Added dynamic HEAT peg adjustment (`m_heatPegMicroUsd`) based on FCI movements.
+  - Added FCI state snapshotting to `EpochStateSnapshot`, rollback support in `popBlock()`, and persistence in `BlockCacheSerializer`.
+  - Bumped blockcache archive version to 16.
+- `RpcServer.h` / `RpcServer.cpp` / `CoreRpcServerCommandsDefinitions.h`:
+  - Added `/get_fci_metrics` endpoint returning current FCI index, HEAT peg, quarterly inflation rate, per-commodity medians, and epoch vote counts.
+  - Wired dynamic HEAT peg into `/get_fuego_price` endpoint.
+
+| Task | Owner | Date | Status |
+|------|-------|------|--------|
+| Add rice Asian staple to basket vote struct, serialization & miner config | Antigravity | 2026-10-15 | DONE |
+| Implement FCI trimmed median & epoch/quarterly publication quorum engine | Antigravity | 2026-10-15 | DONE |
+| Wire rollback handling and cache serialization for FCI state | Antigravity | 2026-10-15 | DONE |
+| Add /get_fci_metrics RPC endpoint and dynamic HEAT peg lookup | Antigravity | 2026-10-15 | DONE |
+
+### Sign-off
+
+| Gate | Status | Agent | Date |
+|------|--------|-------|------|
+| Build compiles | PASS | Antigravity | 2026-10-15 |
+| All tasks verified | PASS | Antigravity | 2026-10-15 |
+
+
 ## Mainline swap and operator-dashboard integration
 
 **Started**: 2026-10-01

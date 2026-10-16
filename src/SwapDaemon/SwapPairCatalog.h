@@ -44,7 +44,7 @@ enum class EvmTxEnvelope : uint8_t { NONE, LEGACY, EIP1559, SPECIAL };
   X(ARB,          4,  "arb",        "ETH",   "Arbitrum",        EVM,    42161,      250,      250, 18,  ACTIVE,  EIP1559, "arb.png",       "#28a0f0") \
   X(BASE,         5,  "base",       "ETH",   "Base",            EVM,     8453,     2000,     2000, 18,  ACTIVE,  EIP1559, "base.png",      "#0052ff") \
   X(KMD_SPV,      6,  "kmd",        "KMD",   "Komodo",          UTXO,       0,    60000,    60000,  8,  ACTIVE,  NONE,    "kmd.png",       "#2b6def") \
-  X(BNB,          7,  "bsc",        "BNB",   "BNB Chain",       EVM,       56,     3000,     3000, 18,  ACTIVE,  EIP1559, "bnb.png",       "#f3ba2f") \
+  X(BNB,          7,  "bsc",        "BNB",   "BSC Chain",       EVM,       56,     3000,     3000, 18,  ACTIVE,  EIP1559, "bnb.png",       "#f3ba2f") \
   X(DCR,          8,  "dcr",        "DCR",   "Decred",          UTXO,       0,   300000,   300000,  8,  ACTIVE,  NONE,    "dcr.png",       "#2970ff") \
   X(BTC,          9,  "btc",        "BTC",   "Bitcoin",         UTXO,       0,   600000,   600000,  8,  ACTIVE,  NONE,    "btc.png",       "#f7931a") \
   X(LTC,         10,  "ltc",        "LTC",   "Litecoin",        UTXO,       0,   150000,   150000,  8,  ACTIVE,  NONE,    "ltc.png",       "#bfbbbb") \
@@ -53,24 +53,24 @@ enum class EvmTxEnvelope : uint8_t { NONE, LEGACY, EIP1559, SPECIAL };
   X(ROBINHOOD,   13,  "rh",         "ETH",   "Robinhood Chain", EVM,     4663,     3000,     3000, 18,  ACTIVE,  EIP1559, "rhc.png",       "#3a2e8c") \
   X(AVAX,        14,  "avax",       "AVAX",  "Avalanche",       EVM,    43114,     2000,     2000, 18,  ACTIVE,  EIP1559, "avax.png",      "#e84142") \
   X(CRO,         15,  "cro",        "CRO",   "Cronos",          EVM,       25,     6000,     6000, 18,  ACTIVE,  LEGACY,  "cronos.png",    "#002d74") \
-  X(BOB,         16,  "bob",        "ETH",   "BOB",             EVM,    60808,     2000,     2000, 18,  ACTIVE,  EIP1559, "bob.png",       "#2d9cdb") \
+  X(BOB,         16,  "bob",        "ETH",   "Bank Of Bitcoin", EVM,    60808,     2000,     2000, 18,  ACTIVE,  EIP1559, "bob.png",       "#2d9cdb") \
   X(SIA,         17,  "sia",        "SC",    "Sia",             SIA,        0,    15000,    15000, 24,  STAGED,  NONE,    "sc.png",        "#00b8d4") \
   X(UNICHAIN,    18,  "uni",        "ETH",   "Unichain",        EVM,      130,     1000,     1000, 18,  ACTIVE,  EIP1559, "uni.png",       "#fc72ff") \
   X(PLASMA,      19,  "xpl",        "XPL",   "Plasma",          EVM,     9745,     2000,     2000, 18,  ACTIVE,  EIP1559, "xpl.png",       "#7b2ff2") \
   X(DOGE,        20,  "doge",       "DOGE",  "Dogecoin",        UTXO,       0,    60000,    60000,  8,  ACTIVE,  NONE,    "doge.png",      "#c2a633") \
   X(DASH,        21,  "dash",       "DASH",  "Dash",            UTXO,       0,   260000,   260000,  8,  ACTIVE,  NONE,    "dash.png",      "#008ce7") \
-  X(ZEC,         22,  "zec",        "ZEC",   "Zcash",           UTXO,       0,   150000,   150000,  8,  ACTIVE,  NONE,    "zec.png",       "#f4b728") \
+  X(ZCASH,       22,  "zec",        "ZEC",   "Zcash",           UTXO,       0,   150000,   150000,  8,  ACTIVE,  NONE,    "zec.png",       "#f4b728") \
   X(PULSECHAIN,  23,  "pls",        "PLS",   "PulseChain",      EVM,      369,     1000,     1000, 18,  ACTIVE,  LEGACY,  "plsx.png",      "#ff7b00") \
   X(ZANO,        24,  "zano",       "ZANO",  "Zano",            CRYPTONOTE, 0,   120000,   120000, 12,  STAGED,  NONE,    "zano.png",      "#8a2be2") \
   X(MONAD,       25,  "monad",      "MON",   "Monad",           EVM,      143,      500,      500, 18,  ACTIVE,  EIP1559, "monad.png",     "#836ef9") \
   X(OPTIMISM,    26,  "op",         "ETH",   "OP Mainnet",      EVM,       10,     2000,     2000, 18,  ACTIVE,  EIP1559, "op.jpg",        "#ff0420") \
-  X(TON,         27,  "ton",        "TON",   "TON",             TON,        0,     5000,     5000,  9,  STAGED,  NONE,    "ton.png",       "#0098ea") \
+  X(TON,         27,  "ton",        "GRAM",  "TON",             TON,        0,     5000,     5000,  9,  STAGED,  NONE,    "ton.png",       "#0098ea") \
   X(DOT,         28,  "dot",        "DOT",   "Polkadot",        SUBSTRATE,  0,     6000,     6000, 10,  STAGED,  NONE,    "dot.png",       "#e6007a") \
   X(LINEA,       29,  "linea",      "ETH",   "Linea",           EVM,    59144,     1000,     3000, 18,  ADAPTER, EIP1559, "linea.png",     "#61dfff") \
   X(ZKSYNC,      30,  "zksync",     "ETH",   "ZKsync Era",      EVM,      324,      500,     2000, 18,  ADAPTER, EIP1559, "zksync.png",    "#8c8dfc") \
   X(HYPEREVM,    31,  "hyperevm",   "HYPE",  "HyperEVM",        EVM,      999,     1000,     2000, 18,  ADAPTER, EIP1559, "hyperevm.png",  "#97fce4") \
   X(INK,         32,  "ink",        "ETH",   "Ink",             EVM,    57073,      250,     2000, 18,  ADAPTER, EIP1559, "ink.png",       "#7132f5") \
-  X(RSK,         33,  "rsk",        "RBTC",  "Rootstock",       EVM,       30,    15000,    60000, 18,  ADAPTER, LEGACY,  "rsk.png",       "#e9b64e") \
+  X(ROOTSTOCK,   33,  "rsk",        "RBTC",  "Rootstock",       EVM,       30,    15000,    60000, 18,  ADAPTER, LEGACY,  "rsk.png",       "#e9b64e") \
   X(GNOSIS,      34,  "gnosis",     "XDAI",  "Gnosis",          EVM,      100,     5000,    10000, 18,  ADAPTER, EIP1559, "gnosis.png",    "#1d6c4e") \
   X(FLARE,       35,  "flare",      "FLR",   "Flare",           EVM,       14,     1000,     3000, 18,  ADAPTER, EIP1559, "flare.png",     "#e6413e") \
   X(KAIA,        36,  "kaia",       "KAIA",  "Kaia",            EVM,     8217,      500,     2000, 18,  ADAPTER, LEGACY,  "kaia.png",      "#ff1d01") \
@@ -81,7 +81,7 @@ enum class EvmTxEnvelope : uint8_t { NONE, LEGACY, EIP1559, SPECIAL };
   X(DOMA,        41,  "doma",       "ETH",   "Doma",            EVM,    97477,      250,     4000, 18,  ADAPTER, EIP1559, "doma.png",      "#4f46e5") \
   X(BEAM,        42,  "beam",       "BEAM",  "Beam",            EVM,     4337,     1000,     4000, 18,  ADAPTER, EIP1559, "beam.png",      "#0bdbb5") \
   X(MOONRIVER,   43,  "moonriver",  "MOVR",  "Moonriver",       EVM,     1285,     3000,    12000, 18,  ADAPTER, LEGACY,  "moonriver.png", "#f5b700") \
-  X(PEAQ,        44,  "peaq",       "PEAQ",  "peaq",            EVM,     3338,     3000,    18000, 18,  ADAPTER, LEGACY,  "peaq.png",      "#7a2bf5") \
+  X(PEAQ,        44,  "peaq",       "PEAQ",  "Peaq",            EVM,     3338,     3000,    18000, 18,  ADAPTER, LEGACY,  "peaq.png",      "#7a2bf5") \
   X(SEI,         45,  "sei",        "SEI",   "Sei",             EVM,     1329,      200,     1000, 18,  ADAPTER, EIP1559, "sei.png",       "#9e1f19")
 
 enum class SwapPair : uint8_t {

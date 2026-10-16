@@ -253,6 +253,7 @@ const App = (() => {
 
   function init() {
     initThemeSwitcher();
+    if (typeof MaisonTypeface !== 'undefined') MaisonTypeface.init();
     connectWS();
     startHealthPolling();
   }

@@ -832,6 +832,13 @@ void SwapDaemon::recordCompletedTrade(const SwapStateMachine& sm) {
     if (wholeCtr > 0.0)
       rate = (static_cast<double>(p.xfgAmount) / 1e7) / wholeCtr;
   }
+  // A zero divisor means the rate genuinely cannot be computed. recordCompletedSwap now
+  // drops such trades so they cannot weight the TWAP as rate*volume == 0.
+  if (rate <= 0.0) {
+    m_logger(Logging::WARNING) << "SwapTrade: cannot compute rate for pair="
+      << static_cast<int>(p.pair) << " (ctrAmount=" << p.ctrAmount
+      << " divisor=" << div << "); excluded from the TWAP";
+  }
 
   CompletedSwapTrade local;
   local.pair = p.pair;
@@ -4920,7 +4927,7 @@ bool SwapDaemon::loadOfferConfig(const std::string& jsonPath) {
     return false;
   }
   m_offerManager.reset(new OfferManager(
-    *m_swapRelay, m_makerSecretKey, m_makerPublicKey, m_logger.getLogger(),
+    *m_swapRelay, m_oracle, m_makerSecretKey, m_makerPublicKey, m_logger.getLogger(),
     [this](uint8_t pair) { return canStartNewSwap(static_cast<SwapPair>(pair), nullptr, true); }));
   if (!m_offerManager->loadConfig(jsonPath)) {
     m_offerManager.reset();

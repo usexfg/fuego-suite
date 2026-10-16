@@ -14,6 +14,7 @@
 
 #pragma once
 
+#include "PriceOracle.h"
 #include "SwapTypes.h"
 #include "crypto/crypto.h"
 #include "crypto/hash.h"
@@ -39,6 +40,7 @@ public:
   };
 
   OfferManager(CryptoNote::SwapOfferRelay& relay,
+               PriceOracle& oracle,
                const Crypto::SecretKey& makerSecretKey,
                const Crypto::PublicKey& makerPublicKey,
                Logging::ILogger& logger,
@@ -66,6 +68,7 @@ private:
   void cancelManagedOffer(OfferState& state);
 
   CryptoNote::SwapOfferRelay& m_relay;
+  PriceOracle& m_oracle;
   Crypto::SecretKey m_makerSecretKey;
   Crypto::PublicKey m_makerPublicKey;
   Logging::LoggerRef m_logger;

@@ -10,6 +10,9 @@ import (
 
 func main() {
 	cfg := app.DefaultConfig()
+	if t := os.Getenv("XFG_CONTROL_TOKEN"); t != "" {
+		cfg.ControlToken = t
+	}
 	flagCount := 0
 
 	for i := 1; i < len(os.Args); i++ {
@@ -71,6 +74,9 @@ func main() {
 			fmt.Sscanf(next(), "%d", &p)
 			cfg.HeadlessPort = p
 			flagCount++
+		case "--control-token":
+			cfg.ControlToken = next()
+			flagCount++
 		case "--no-interactive", "-y":
 			flagCount++
 		case "--help", "-h":
@@ -128,6 +134,10 @@ func printHelp() {
 	fmt.Println("Headless:")
 	fmt.Println("  --headless      Run in background mode (no TUI, auto-execute soft orders)")
 	fmt.Println("  --headless-port Port for headless control API (default: 18190)")
+	fmt.Println("  --control-token  Bearer token for the control API. REQUIRED with --headless")
+	fmt.Println("                   (also read from $XFG_CONTROL_TOKEN): the control API's")
+	fmt.Println("                   /offer and /cancel make walletd sign, so it is never")
+	fmt.Println("                   served unauthenticated.")
 	fmt.Println()
 	fmt.Println("Behavior:")
 	fmt.Println("  --no-interactive, -y   Skip wizard even with no flags")

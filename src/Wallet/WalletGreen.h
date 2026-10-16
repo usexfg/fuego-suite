@@ -222,6 +222,29 @@ protected:
   void throwIfNotInitialized() const;
   void throwIfStopped() const;
   void throwIfTrackingMode() const;
+  // Derives a user-owned commitment output key at `outputIndex` of `transaction`,
+  // bound to the primary address's spend public key. Every self-owned commitment
+  // output in this wallet routes through here so none can silently fall back to
+  // the sender/view-key-spendable legacy derivation.
+  Crypto::PublicKey deriveSelfCommitmentKey(const ITransaction& transaction, size_t outputIndex);
+  // Same, but for an output owned by a third party. `recipientViewPublicKey`
+  // drives the ECDH (delivery) and `recipientSpendPublicKey` binds ownership,
+  // so the recipient can spend the output but the sender cannot.
+  Crypto::PublicKey deriveRecipientCommitmentKey(
+    const ITransaction& transaction,
+    size_t outputIndex,
+    const Crypto::PublicKey& recipientViewPublicKey,
+    const Crypto::PublicKey& recipientSpendPublicKey);
+  // Recovers the scalar and key image needed to sign a CommitmentSpend for an
+  // existing deposit. Owner-bound outputs require the recipient spend secret;
+  // legacy outputs fall back to the original ECDH-derived scalar so pre-v11
+  // deposits stay spendable. `recipientSpendSecret` is the primary address's
+  // spend secret.
+  void resolveCommitmentSpendKey(
+    const TransactionOutputInformation& transfer,
+    const Crypto::SecretKey& recipientSpendSecret,
+    KeyPair& outKeyPair,
+    Crypto::KeyImage& outKeyImage) const;
   void doShutdown();
   void clearCaches(bool clearTransactions, bool clearCachedData);
   void clearCacheAndShutdown();
@@ -384,16 +407,15 @@ protected:
   // change output, and prepares the key inputs.
   void prepareXfgInputs(ITransaction &transaction, uint64_t xfgNeeded, uint64_t mixin,
                         std::vector<InputInfo> &keysInfo);
-  // A commitment output this wallet can find and spend: its key is derived
-  // from the view key and output index, as the scanner re-derives it.
+  // A commitment output this wallet can find and spend: its key is bound to the
+  // primary address's spend public key (deriveSelfCommitmentKey), so the scanner
+  // recognises it and only this wallet's spend secret can sign for it. The signing
+  // side is resolveCommitmentSpendKey; there is no legacy-only spend helper.
   void addCommitmentToSelf(ITransaction &transaction, uint64_t amount, uint32_t term);
   void addHeatOutputToSelf(ITransaction &transaction, uint64_t amount)
   {
     addCommitmentToSelf(transaction, amount, parameters::HEAT_TERM);
   }
-  // The keys of a commitment output this wallet received, re-derived from the
-  // view key the way the scanner recognized it.
-  CryptoNote::DepositCommitmentKeys deriveOwnCommitmentKeys(const TransactionOutputInformation &transfer) const;
   // Adds every input, then signs them. A signature covers the whole prefix,
   // so ITransaction refuses an input once anything is signed.
   void addAndSignInputs(ITransaction &transaction, std::vector<InputInfo> &keysInfo,

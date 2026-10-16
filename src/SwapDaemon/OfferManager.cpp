@@ -24,11 +24,13 @@
 namespace XfgSwap {
 
 OfferManager::OfferManager(CryptoNote::SwapOfferRelay& relay,
+                           PriceOracle& oracle,
                            const Crypto::SecretKey& makerSecretKey,
                            const Crypto::PublicKey& makerPublicKey,
                            Logging::ILogger& logger,
                            std::function<bool(uint8_t)> canPublishPair)
   : m_relay(relay),
+    m_oracle(oracle),
     m_makerSecretKey(makerSecretKey),
     m_makerPublicKey(makerPublicKey),
     m_logger(logger, "OfferManager"),
@@ -101,8 +103,15 @@ bool OfferManager::loadConfigFromJson(const std::string& json) {
 uint64_t OfferManager::compositeToRateNum(uint8_t pair) {
   CryptoNote::CompositePrice cp = m_relay.getCompositePrice(pair);
   if (cp.sourceCount == 0) {
-    double seedRate = PriceOracle::getSeedRate(static_cast<SwapPair>(pair));
-    return static_cast<uint64_t>(seedRate * 1e7);
+    // The relay had nothing. The old code returned the static seed, so managed offers
+    // were priced against a constant and never saw the live Hearth XFG price.
+    const double rate = m_oracle.getEffectiveRate(static_cast<SwapPair>(pair));
+    if (rate <= 0.0) {
+      m_logger(Logging::WARNING) << "OfferManager: no rate for pair="
+        << static_cast<int>(pair) << ", skipping this managed offer";
+      return 0;
+    }
+    return static_cast<uint64_t>(rate * 1e7);
   }
   return static_cast<uint64_t>(cp.rate * 1e7);
 }

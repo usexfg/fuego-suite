@@ -12,8 +12,17 @@
     (function () {
       var t;
       try { t = localStorage.getItem('xfg.theme'); } catch (e) {}
-      document.documentElement.setAttribute('data-theme',
-        (t === 'maison' || t === 'fulltrade' || t === 'reference') ? t : 'reference');
+      var theme = (t === 'maison' || t === 'fulltrade' || t === 'reference') ? t : 'reference';
+      document.documentElement.setAttribute('data-theme', theme);
+
+      // Typeface resolves here too, and only for maison, so the chosen face is
+      // in place before first paint rather than snapping in afterwards.
+      if (theme === 'maison') {
+        var f, ok = false;
+        try { f = localStorage.getItem('xfg.maisonTypeface'); } catch (e) {}
+        ok = (f === 'cormorant' || f === 'bitter' || f === 'sourceserif' || f === 'plex');
+        if (ok) document.documentElement.setAttribute('data-typeface', f);
+      }
     })();
   </script>
 </head>
@@ -63,6 +72,16 @@
         <button type="button" class="theme-opt" data-theme="fulltrade" aria-pressed="false" title="House reference — warm primary, graded depth, generous controls">FullTrade</button>
         <button type="button" class="theme-opt" data-theme="reference" aria-pressed="false" title="The doctrine itself — zero radius, zero shadow, flat surfaces, maximum density">Reference</button>
       </div>
+    </div>
+    <div class="typeface-switch" id="typeface-switch" hidden>
+      <label class="typeface-label" for="maison-typeface">Typeface</label>
+      <select class="typeface-select" id="maison-typeface">
+        <option value="saira">Saira — current</option>
+        <option value="cormorant">Cormorant — high-contrast serif</option>
+        <option value="bitter">Bitter — slab serif</option>
+        <option value="sourceserif">Source Serif 4 — warm serif</option>
+        <option value="plex">IBM Plex Sans — technical sans</option>
+      </select>
     </div>
   </nav>
 
@@ -342,6 +361,7 @@
   </div>
 
   <script src="/vendor/lightweight-charts.standalone.production.js"></script>
+  <script src="/js/typeface.js"></script>
   <script src="/js/app.js"></script>
   <script src="/js/swapxfg.js"></script>
 </body>

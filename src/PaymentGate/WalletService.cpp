@@ -264,6 +264,37 @@ namespace PaymentService
       return boost::filesystem::remove(filename, err) && !err;
     }
 
+    // M-3: export filenames arrive over JSON-RPC and are joined onto the wallet
+    // directory. A name containing ".." escapes that directory once the OS
+    // resolves it, and an *absolute* name makes boost::filesystem's operator/
+    // discard the base entirely — so exportWalletKeys could be steered into
+    // writing plaintext secret keys anywhere the walletd process can write. Only
+    // plain single-component names inside the wallet directory are accepted.
+    bool isConfinedExportFileName(const std::string &fileName)
+    {
+      if (fileName.empty() || fileName.size() > 255)
+      {
+        return false;
+      }
+
+      // Reject anything carrying a separator (both flavours, so a Windows host
+      // cannot be walked with '/' and vice versa) before parsing.
+      if (fileName.find_first_of("/\\") != std::string::npos)
+      {
+        return false;
+      }
+
+      if (fileName == "." || fileName == "..")
+      {
+        return false;
+      }
+
+      // Belt-and-braces: reject a name the platform still considers a traversal
+      // or a rooted path after parsing.
+      const boost::filesystem::path candidate(fileName);
+      return !candidate.is_absolute() && candidate.filename().string() == fileName;
+    }
+
     void replaceWalletFiles(const std::string &path, const std::string &tempFilePath)
     {
       Tools::replace_file(tempFilePath, path);
@@ -738,6 +769,12 @@ namespace PaymentService
         return make_error_code(CryptoNote::error::NOT_INITIALIZED);
       }
 
+      if (!isConfinedExportFileName(fileName))
+      {
+        logger(Logging::WARNING, Logging::BRIGHT_YELLOW) << "Export rejected: filename must be a plain name inside the wallet directory";
+        return make_error_code(CryptoNote::error::INVALID_ARGUMENT);
+      }
+
       boost::filesystem::path walletPath(config.walletFile);
       boost::filesystem::path exportPath = walletPath.parent_path() / fileName;
 
@@ -773,6 +810,12 @@ namespace PaymentService
       {
         logger(Logging::WARNING, Logging::BRIGHT_YELLOW) << "Export impossible: Wallet Service is not initialized";
         return make_error_code(CryptoNote::error::NOT_INITIALIZED);
+      }
+
+      if (!isConfinedExportFileName(fileName))
+      {
+        logger(Logging::WARNING, Logging::BRIGHT_YELLOW) << "Export rejected: filename must be a plain name inside the wallet directory";
+        return make_error_code(CryptoNote::error::INVALID_ARGUMENT);
       }
 
       boost::filesystem::path walletPath(config.walletFile);

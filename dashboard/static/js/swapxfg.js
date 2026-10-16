@@ -224,6 +224,7 @@ const SwapXFG = (() => {
   // ── Init ──
 
   function init() {
+    if (typeof MaisonTypeface !== 'undefined') MaisonTypeface.init();
     initOracleChart();
     initChainSelect();
     initBridgeForm();

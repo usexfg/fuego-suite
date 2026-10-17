@@ -617,6 +617,11 @@ namespace CryptoNote {
       uint64_t netXfg = 0; // BUY only: net XFG credited to proceeds
       bool newlyExpired = false;
       bool isAuction = false;  // call-auction fill (no pool/accumulator involvement)
+      // Set ONLY by the pool-as-maker path. This must be an explicit flag, not
+      // a check of orderId.data[0] == 0xF0: orderId is attacker-supplied in
+      // TransactionExtraLimitDeposit, so the prefix is forgeable and would let
+      // a user order be mis-dispatched to the pool reversal branch.
+      bool isPoolFill = false;
       bool isTaker = false;    // auction: this fill is on the fee-paying side
       uint64_t rebateHeat = 0; // auction maker fills: rebate credited to proceedsHeat
       uint64_t priceHeat = 0;  // auction: fill's price value (fillXfg × p*/COIN)
@@ -662,6 +667,12 @@ namespace CryptoNote {
       uint64_t priorPoolXfgReserve = 0;
       uint64_t priorPoolHeatReserve = 0;
       uint64_t poolBandFilledLastBlock = 0;
+      uint64_t lastRegenPclear = 0;  // first-run sentinel for shouldRegenerate()
+      // PoolOrderOrchestrator::m_priceHistory drives computeSpreadBps, which
+      // prices pool orders that move real reserves. Without this the deque
+      // survives popBlock and reorged nodes compute a different spread for the
+      // same height.
+      std::deque<uint64_t> priceHistory;
     };
     std::deque<std::pair<uint32_t, OrderbookRollbackSnapshot>> m_orderbookSnapshots;
 

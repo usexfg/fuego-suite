@@ -15,6 +15,11 @@
 
 namespace CryptoNote {
 
+// Reserved orderId prefix marking protocol market-maker orders. Defined here so
+// both the auction and settlement validation agree on one value; a user deposit
+// carrying this prefix would be dispatched to the pool-as-maker branch.
+constexpr uint8_t POOL_ORDER_ID_PREFIX = 0xF0;
+
 struct AuctionOrder {
   Crypto::Hash orderId;
   uint64_t price;        // canonical: HEAT atomics per XFG atomic × COIN

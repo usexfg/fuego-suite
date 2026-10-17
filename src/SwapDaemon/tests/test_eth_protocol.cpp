@@ -15,6 +15,7 @@
 
 #include "SwapDaemon/SwapHashLock.h"
 #include "SwapDaemon/Ethereum/EthRpcClient.h"
+#include "SwapDaemon/Gleec/GleecChainClient.h"
 #include "SwapDaemon/Ethereum/ContractAbi.h"
 #include "SwapDaemon/Crypto/RlpEncoder.h"
 #include "SwapDaemon/Crypto/Secp256k1Signer.h"
@@ -127,6 +128,19 @@ static bool signedTxValueEquals(const std::vector<uint8_t>& tx, bool typed,
 
 int main() {
   std::cout << "=== ETH protocol unit tests ===\n";
+
+  {
+    const std::string address = "0x1111111111111111111111111111111111111111";
+    CHECK(EthRpcClient::isValidEvmAddress(address), "valid EVM registry address");
+    CHECK(!EthRpcClient::isValidEvmAddress("0x123"), "short EVM registry rejected");
+    CHECK(!EthRpcClient::isValidEvmAddress("0x0000000000000000000000000000000000000000"),
+          "zero EVM registry rejected");
+    auto rpc = std::make_unique<EthRpcClient>("localhost", 8545,
+        std::string(64, '1'), address, 11169);
+    GleecChainClient gleec(std::move(rpc), address);
+    CHECK(gleec.readinessError() == "HTLC registry address is missing or invalid",
+          "GLEEC cannot admit swaps without its own registry");
+  }
 
   // ── hashlock ─────────────────────────────────────────────────────────
   {

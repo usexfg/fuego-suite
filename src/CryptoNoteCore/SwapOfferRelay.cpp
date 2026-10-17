@@ -533,9 +533,8 @@ std::string SwapOfferRelay::makeFillReplayKey(const COMMAND_ORDER_FILL::request&
 }
 
 void SwapOfferRelay::insertOrderIntoBook(SwapOrder order) {
-  if (!isValidPair(order.pair)) return;
+  if (!isExecutablePair(order.pair)) return;
   uint8_t pair = order.pair;
-  if (!isValidPair(pair)) return;  // bounds: m_orderBooks has MAX_PAIR_INDEX + 1 slots
   uint64_t price = order.price;
   auto& book = m_orderBooks[pair];
 
@@ -548,7 +547,7 @@ void SwapOfferRelay::insertOrderIntoBook(SwapOrder order) {
 
 void SwapOfferRelay::handleOrderOpen(const COMMAND_ORDER_OPEN::request& msg) {
   // CRITICAL: pair bounds before any book access
-  if (!isValidPair(msg.pair)) return;
+  if (!isExecutablePair(msg.pair)) return;
   if (msg.side > 1) return;
 
   SwapOrder order;
@@ -750,7 +749,7 @@ std::vector<SwapOfferRelay::Fill> SwapOfferRelay::matchOrder(
 
   // NOTE: caller must hold m_mutex
   std::vector<Fill> fills;
-  if (!isValidPair(pair)) return fills;
+  if (!isExecutablePair(pair)) return fills;
 
   auto& oppositeLadder = (takerSide == SwapOrder::Side::ASK)
                          ? m_orderBooks[pair].bids

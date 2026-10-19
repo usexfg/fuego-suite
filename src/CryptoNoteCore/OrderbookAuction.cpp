@@ -15,7 +15,7 @@
 namespace CryptoNote {
 
 // Pool-generated order ids are stamped with this prefix by generatePoolOrders().
-const uint8_t POOL_ORDER_ID_PREFIX = 0xF0;
+// Defined as constexpr in OrderbookAuction.h so settlement validation shares it.
 
 namespace {
 

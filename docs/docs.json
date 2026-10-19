@@ -1,18 +1,21 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "palm",
+  "theme": "linden",
   "name": "Fuego",
-  "favicon": "/images/favicon.png",
+  "favicon": {
+    "light": "/images/PolishedFuegoGonCharcoal.png",
+    "dark": "/images/PolishedFuegoGonCharcoal.png"
+  },
   "colors": {
-    "primary": "#FF4500",
-    "light": "#FF6B35",
-    "dark": "#CC3700"
+    "primary": "#AF893F",
+    "light": "#9E9E9D",
+    "dark": "#816C2F"
   },
   "navbar": {
     "links": [
       {
         "label": "GitHub",
-        "href": "https://github.com/usexfg/fuego-suite"
+        "href": "https://github.com/usexfg/"
       }
     ]
   },
@@ -122,7 +125,37 @@
   },
   "footer": {
     "socials": {
-      "github": "https://github.com/usexfg/fuego-suite"
+      "github": "https://github.com/usexfg"
+    }
+  },
+  "description": "Sovereign Sound Money Private Banking",
+  "background": {
+    "image": {
+      "light": "/docs/images/image-15.jpg",
+      "dark": "/strategy/coin-E-cooled-flame-G.jpg"
+    },
+    "decoration": "grid"
+  },
+  "appearance": {
+    "default": "dark"
+  },
+  "logo": {
+    "light": "/images/coin-E-cooled-flame-G.jpg",
+    "dark": "/docs/images/PolishedFuegoGonCharcoal.png"
+  },
+  "icons": {
+    "library": "tabler"
+  },
+  "styling": {
+    "codeblocks": "dark"
+  },
+  "fonts": {
+    "heading": {
+      "family": "Playfair Display",
+      "weight": 600
+    },
+    "body": {
+      "family": "Merriweather"
     }
   }
 }

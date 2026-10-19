@@ -52,6 +52,21 @@ public:
   // Current number of recorded prices
   size_t priceHistorySize() const { return m_priceHistory.size(); }
 
+  // Reorg support: the deque feeds computeSpreadBps, which prices real pool
+  // orders that move real reserves, so it must be part of the per-block
+  // rollback snapshot or a popped block leaves orphaned prices behind.
+  const std::deque<uint64_t>& priceHistory() const { return m_priceHistory; }
+  void restorePriceHistory(std::deque<uint64_t> history) {
+    m_priceHistory = std::move(history);
+  }
+
+  // shouldRegenerate() treats m_lastRegenPclear == 0 as its first-run
+  // sentinel, so a node that pops back past the first regeneration takes the
+  // threshold path where a fresh node returns true immediately — a different
+  // spread, different pool prices, different header. Must be rolled back too.
+  uint64_t lastRegenPclear() const { return m_lastRegenPclear; }
+  void restoreLastRegenPclear(uint64_t p) { m_lastRegenPclear = p; }
+
 private:
   std::deque<uint64_t> m_priceHistory;  // last 30 blocks of P_clear
   uint64_t m_lastRegenPclear = 0;

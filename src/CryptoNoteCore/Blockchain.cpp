@@ -4266,6 +4266,8 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
     snap.priorPoolXfgReserve = g_priorPoolXfgReserve;
     snap.priorPoolHeatReserve = g_priorPoolHeatReserve;
     snap.poolBandFilledLastBlock = g_poolBandFilledLastBlock;
+    snap.priceHistory = g_poolOrchestrator.priceHistory();
+    snap.lastRegenPclear = g_poolOrchestrator.lastRegenPclear();
     snap.orders = g_orderbookMempool.getAllUserOrders();
     snap.poolOrders = g_orderbookMempool.getAllPoolOrders();
     m_orderbookSnapshots.push_back({height, std::move(snap)});
@@ -4420,20 +4422,19 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
             xfgMoved = fill.fillXfg;
             heatDebit = fill.heat;
             if (m_ammPool.reserveXfg < xfgMoved) continue;
-            if (m_ammPool.pendingXfg < xfgMoved) continue;
-            m_ammPool.pendingXfg -= xfgMoved;
+            // Pool inventory lives in reserve*, never in pending*. pendingXfg /
+            // pendingHeat are the limit-order escrow float (see the deposit
+            // path and the backstop, which both draw fills from dep.amount).
+            // Crediting pool inventory here commingled the two and let pool
+            // trading starve a user's withdrawal at the pending-reserve gate.
             m_ammPool.reserveXfg -= xfgMoved;
-            m_ammPool.pendingHeat += heatDebit;
             m_ammPool.reserveHeat += heatDebit;
           } else {
             // Buyer (pool is maker): HEAT leaves pool, XFG enters pool
             xfgMoved = fill.fillXfg;
             heatDebit = fill.heat;
             if (m_ammPool.reserveHeat < heatDebit) continue;
-            if (m_ammPool.pendingHeat < heatDebit) continue;
-            m_ammPool.pendingHeat -= heatDebit;
             m_ammPool.reserveHeat -= heatDebit;
-            m_ammPool.pendingXfg += xfgMoved;
             m_ammPool.reserveXfg += xfgMoved;
           }
           if (fill.cdFeeHeat > 0) {
@@ -4448,7 +4449,10 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
           rec.heat = heatDebit;
           rec.feeHeat = fill.cdFeeHeat;
           rec.isAuction = true;
-          rec.isTaker = false;
+          rec.isPoolFill = true;
+          // Honour the auction's own taker side rather than hardcoding: this
+          // fill's direction determines whether the pool paid or received.
+          rec.isTaker = auction.hasTaker && (fill.side == (auction.takerIsBid ? 0 : 1));
           rec.priceHeat = fill.heat;
           fillsThisBlock.push_back(rec);
           block.orderbookNumMatches++;
@@ -5910,20 +5914,40 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
         continue;
       }
       if (rec.side == 1) {
-        m_ammPool.pendingXfg += rec.xfg;
+        // Three distinct forward paths produce fills; they touch different
+        // state and must be unwound by the matching inverse. Neither isAuction
+        // (user auction fills set it too) nor the orderId 0xF0 prefix (the
+        // orderId is attacker-supplied) can discriminate — rec.isPoolFill is
+        // set by the forward path itself.
+        if (!rec.isPoolFill) m_ammPool.pendingXfg += rec.xfg;
         uint64_t heatPaid = 0;
-        if (!rec.isAuction) {
-          // Forward removed (heatPaid + cdFeeHeat) from reserveHeat and credited
-          // heatPaid to proceeds. Recompute heatPaid with the exact same floor
-          // as settlement (rec.heat is the gross pool payout).
+        if (rec.isPoolFill) {
+          // Pool-as-maker sell. Forward: reserveXfg -= x ; reserveHeat += heat.
+          // Nothing touched pending* (it is the limit-order escrow float), so
+          // leave it alone. Omitting this restore permanently desynchronised the
+          // AMM from a node that never saw the orphaned fill, and
+          // validateSettlement gates tx validity on these reserves.
+          m_ammPool.reserveXfg = (m_ammPool.reserveXfg > UINT64_MAX - rec.xfg)
+              ? UINT64_MAX : m_ammPool.reserveXfg + rec.xfg;
+          m_ammPool.reserveHeat = (m_ammPool.reserveHeat > UINT64_MAX - rec.heat)
+              ? UINT64_MAX : m_ammPool.reserveHeat + rec.heat;
+          if (rec.feeHeat > 0 && m_ammPool.cdHearthFeeAccumulator >= rec.feeHeat)
+            m_ammPool.cdHearthFeeAccumulator -= rec.feeHeat;
+        } else if (!rec.isAuction) {
+          // Backstop fill. Forward removed (heatPaid + cdFeeHeat) from
+          // reserveHeat and credited heatPaid to proceeds. Recompute heatPaid
+          // with the exact same floor as settlement (rec.heat is the gross pool
+          // payout).
           heatPaid = static_cast<uint64_t>(
               ((uint128_t)rec.heat * (feeDiv - feeBps)) / feeDiv);
           m_ammPool.reserveXfg -= rec.xfg;
           m_ammPool.reserveHeat += heatPaid + rec.feeHeat;
           if (m_ammPool.cdHearthFeeAccumulator >= rec.feeHeat)
             m_ammPool.cdHearthFeeAccumulator -= rec.feeHeat;
-        } else if (rec.feeHeat > 0) {
-          if (m_ammPool.cdHearthFeeAccumulator >= rec.feeHeat)
+        } else {
+          // User order matched in the auction: forward moved only the escrow
+          // leg and the deposit's proceeds, never the reserves.
+          if (rec.feeHeat > 0 && m_ammPool.cdHearthFeeAccumulator >= rec.feeHeat)
             m_ammPool.cdHearthFeeAccumulator -= rec.feeHeat;
         }
         if (depIt != m_limitDeposits.end()) {
@@ -5938,14 +5962,25 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
           }
         }
       } else {
-        m_ammPool.pendingHeat += rec.heat;
-        if (!rec.isAuction) {
+        if (!rec.isPoolFill) m_ammPool.pendingHeat += rec.heat;
+        if (rec.isPoolFill) {
+          // Pool-as-maker buy. Forward: reserveHeat -= heat ; reserveXfg += x.
+          // pending* untouched by the pool path — same reasoning as the sell.
+          m_ammPool.reserveHeat = (m_ammPool.reserveHeat > UINT64_MAX - rec.heat)
+              ? UINT64_MAX : m_ammPool.reserveHeat + rec.heat;
+          m_ammPool.reserveXfg = (m_ammPool.reserveXfg < rec.xfg)
+              ? 0 : m_ammPool.reserveXfg - rec.xfg;
+          if (rec.feeHeat > 0 && m_ammPool.cdHearthFeeAccumulator >= rec.feeHeat)
+            m_ammPool.cdHearthFeeAccumulator -= rec.feeHeat;
+        } else if (!rec.isAuction) {
+          // Backstop fill.
           m_ammPool.reserveHeat -= rec.heat;
           m_ammPool.reserveXfg += rec.xfg;
           if (m_ammPool.cdHearthFeeAccumulator >= rec.feeHeat)
             m_ammPool.cdHearthFeeAccumulator -= rec.feeHeat;
-        } else if (rec.feeHeat > 0) {
-          if (m_ammPool.cdHearthFeeAccumulator >= rec.feeHeat)
+        } else {
+          // User order matched in the auction: escrow leg + proceeds only.
+          if (rec.feeHeat > 0 && m_ammPool.cdHearthFeeAccumulator >= rec.feeHeat)
             m_ammPool.cdHearthFeeAccumulator -= rec.feeHeat;
         }
         if (depIt != m_limitDeposits.end()) {
@@ -6098,6 +6133,8 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
       g_priorPoolXfgReserve = snap.priorPoolXfgReserve;
       g_priorPoolHeatReserve = snap.priorPoolHeatReserve;
       g_poolBandFilledLastBlock = snap.poolBandFilledLastBlock;
+      g_poolOrchestrator.restorePriceHistory(snap.priceHistory);
+      g_poolOrchestrator.restoreLastRegenPclear(snap.lastRegenPclear);
       g_orderbookMempool.clear();
       // Restore user orders
       for (const auto& o : snap.orders)
@@ -8008,6 +8045,15 @@ bool CryptoNote::Blockchain::validateSettlement(const Transaction& tx, uint32_t 
     }
     if (d.targetPrice == 0 || d.targetPrice % parameters::ORDER_PRICE_TICK != 0) {
       error = "limit deposit: price violates the tick";
+      return false;
+    }
+    // 0xF0 is the reserved pool-order prefix (OrderbookAuction.h). Without this
+    // a user order carrying it is dispatched to the pool-as-maker branch, which
+    // moves real reserves without debiting the order's escrow — an unbounded
+    // pool drain. Mirrors OrderbookMempool::addOrder, which only guards the
+    // gossip path and is never reached by a tx-extra deposit.
+    if (d.orderId.data[0] == POOL_ORDER_ID_PREFIX) {
+      error = "limit deposit: orderId uses the reserved pool prefix";
       return false;
     }
     const uint64_t pending = d.side == 1 ? m_ammPool.pendingXfg : m_ammPool.pendingHeat;

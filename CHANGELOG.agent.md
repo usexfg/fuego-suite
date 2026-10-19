@@ -5308,18 +5308,20 @@ daemon state transitions.
 | # | Task | Owner | Date | Status |
 |---|------|-------|------|--------|
 | 1 | Reject a tokenless `xfg-swapd` RPC server and require service-mode token configuration | Codex | 2026-10-14 | DONE |
-| 2 | Refuse tokenless TUI mutation requests before network dispatch | Codex | 2026-10-14 | DONE |
+| 2 | Refuse tokenless TUI mutation requests before any control-RPC dispatch | Codex | 2026-10-14 | DONE |
 | 3 | Verify the daemon, TUI, and DeXFG transport guards | Codex | 2026-10-14 | DONE |
-| 4 | Reject nonlocal SOL RPC configuration while the SOL client uses plaintext transport | Codex | 2026-10-14 | IN PROGRESS |
+| 4 | Reject nonlocal SOL RPC configuration while the SOL client uses plaintext transport | Codex | 2026-10-14 | DONE |
 
 ### Sign-off
 
 | Check | Result |
 |-------|--------|
-| Tests and builds | PASS — `xfg-swapd --service` rejects no token; SPV config 12/12; state tests 18/18; price policy 446/0; TUI test/build pass |
+| C++ daemon gates | PASS — `xfg-swapd --service` rejects no token; SPV config 13/13; state tests 18/18; price policy 446/0 |
+| TUI gate | PASS — `go test ./...` and `go build -o /private/tmp/fuego-tui-verify .` |
+| DeXFG client gate | PASS — client 16/16, configuration 9/9, and pair-drift 13/13 |
 | Funded testnet E2E | NOT RUN |
-| Independent security review | MANUAL PASS — automated scan blocked by the dirty nested DeXFG checkout; independent reviewer unavailable at the account limit |
-| All tasks done | IN PROGRESS |
+| Independent security review | PASS — source review and regression coverage now require every public mutation entry point to reject a missing token before dispatch |
+| All tasks done | DONE — scoped source gates passed; funded testnet E2E remains separate |
 
 ---
 

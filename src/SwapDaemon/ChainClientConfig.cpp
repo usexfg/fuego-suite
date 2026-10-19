@@ -368,7 +368,16 @@ bool loadChainClientConfig(const std::string& path,
   out.xmrWalletPort = static_cast<uint16_t>(jsonGetUint(json, "xmr_wallet_port", 18082));
 
   out.solHost       = jsonGetStr(json, "sol_rpc_host", "");
-  out.solPort       = static_cast<uint16_t>(jsonGetUint(json, "sol_rpc_port", 8899));
+  const uint64_t solPort = jsonGetUint(json, "sol_rpc_port", 8899);
+  if (!out.solHost.empty() && out.solHost != "127.0.0.1") {
+    errorMsg = "sol_rpc_host must be 127.0.0.1 until authenticated SOL RPC transport is available";
+    return false;
+  }
+  if (!out.solHost.empty() && (solPort == 0 || solPort > 65535)) {
+    errorMsg = "sol_rpc_port must be between 1 and 65535";
+    return false;
+  }
+  out.solPort       = static_cast<uint16_t>(solPort);
   out.solProgramId  = jsonGetStr(json, "sol_program_id");
   out.solKeypairPath = jsonGetStr(json, "sol_keypair_path");
   out.solKeypairBase58 = jsonGetStr(json, "sol_keypair");

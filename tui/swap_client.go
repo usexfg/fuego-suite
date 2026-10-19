@@ -109,7 +109,20 @@ func validateSwapControlToken(token string) (string, error) {
 	return token, nil
 }
 
+func (c *SwapDaemonClient) requireControlToken() error {
+	if c.token == "" {
+		return errors.New("swap daemon control token is required for mutations")
+	}
+	return nil
+}
+
 func (c *SwapDaemonClient) call(ctx context.Context, method string, params any, result any, mutation bool) error {
+	if mutation {
+		if err := c.requireControlToken(); err != nil {
+			return err
+		}
+	}
+
 	body, err := json.Marshal(map[string]any{
 		"jsonrpc": "2.0",
 		"id":      1,
@@ -207,6 +220,9 @@ func (c *SwapDaemonClient) ListReadyChains(ctx context.Context) ([]SwapChain, er
 }
 
 func (c *SwapDaemonClient) Initiate(ctx context.Context, request SwapInitiateRequest) (SwapInitiateResult, error) {
+	if err := c.requireControlToken(); err != nil {
+		return SwapInitiateResult{}, err
+	}
 	if request.Role != "alice" && request.Role != "bob" {
 		return SwapInitiateResult{}, errors.New("swap role must be alice or bob")
 	}
@@ -280,6 +296,9 @@ func (c *SwapDaemonClient) Refund(ctx context.Context, swapID string) (SwapActio
 }
 
 func (c *SwapDaemonClient) runAction(ctx context.Context, method, swapID string) (SwapActionResult, error) {
+	if err := c.requireControlToken(); err != nil {
+		return SwapActionResult{}, err
+	}
 	if err := validateSwapID(swapID); err != nil {
 		return SwapActionResult{}, err
 	}

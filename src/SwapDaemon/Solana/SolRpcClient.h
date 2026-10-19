@@ -64,9 +64,8 @@ struct SolTxResult {
 
 class SolRpcClient {
 public:
-  // host: Solana RPC endpoint (e.g., "http://127.0.0.1" for local,
-  //        "https://api.devnet.solana.com" for devnet)
-  // port: RPC port (8899 for local validator, 443 for HTTPS endpoints)
+  // host: local Solana RPC endpoint (127.0.0.1)
+  // port: local validator RPC port (usually 8899)
   // programId: deployed xfg_htlc program ID (base58)
   SolRpcClient(const std::string& host, uint16_t port,
                const std::string& programId);

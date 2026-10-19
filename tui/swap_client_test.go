@@ -137,6 +137,55 @@ func TestSwapControlTokenValidation(t *testing.T) {
 	}
 }
 
+func TestSwapClientRefusesTokenlessMutationBeforeNetwork(t *testing.T) {
+	calls := 0
+	client := NewSwapDaemonClient(18902, "", "mainnet")
+	client.httpClient = &http.Client{Transport: roundTripFunc(func(_ *http.Request) (*http.Response, error) {
+		calls++
+		return rpcHTTPResponse(`{"jsonrpc":"2.0","result":{},"id":1}`), nil
+	})}
+
+	var result map[string]any
+	err := client.call(context.Background(), "check_timeouts", map[string]any{}, &result, true)
+	if err == nil || !strings.Contains(err.Error(), "control token is required") {
+		t.Fatalf("expected missing-control-token error, got %v", err)
+	}
+	if calls != 0 {
+		t.Fatalf("tokenless mutation made %d network calls", calls)
+	}
+}
+
+func TestSwapClientRefusesTokenlessHighLevelMutationsBeforeNetwork(t *testing.T) {
+	calls := 0
+	client := NewSwapDaemonClient(18902, "", "mainnet")
+	client.httpClient = &http.Client{Transport: roundTripFunc(func(_ *http.Request) (*http.Response, error) {
+		calls++
+		return rpcHTTPResponse(`{"jsonrpc":"2.0","result":{},"id":1}`), nil
+	})}
+
+	if _, err := client.Accept(context.Background(), "swap-1"); err == nil ||
+		!strings.Contains(err.Error(), "control token is required") {
+		t.Fatalf("expected missing-control-token error for accept, got %v", err)
+	}
+	if _, err := client.Refund(context.Background(), "swap-1"); err == nil ||
+		!strings.Contains(err.Error(), "control token is required") {
+		t.Fatalf("expected missing-control-token error for refund, got %v", err)
+	}
+	if _, err := client.Initiate(context.Background(), SwapInitiateRequest{
+		Pair:               "eth",
+		Role:               "alice",
+		XFGAmount:          "1",
+		CounterpartyAmount: "1",
+		Peer:               "maker.example:18901",
+		ExpectedPeerKey:    strings.Repeat("ab", 32),
+	}); err == nil || !strings.Contains(err.Error(), "control token is required") {
+		t.Fatalf("expected missing-control-token error for initiate, got %v", err)
+	}
+	if calls != 0 {
+		t.Fatalf("tokenless high-level mutation made %d network calls", calls)
+	}
+}
+
 func TestSwapControlTokenFileRequiresOwnerOnlyRegularFile(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("owner-only file verification is unavailable on Windows")
@@ -223,7 +272,7 @@ func TestSwapClientInitiateUsesRuntimeReadinessAndStringAmounts(t *testing.T) {
 }
 
 func TestSwapClientRejectsAliasAndInvalidInputsBeforeMutation(t *testing.T) {
-	client := NewSwapDaemonClient(18902, "", "mainnet")
+	client := NewSwapDaemonClient(18902, strings.Repeat("a", 64), "mainnet")
 	methods := make([]string, 0, 2)
 	client.httpClient = &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		var call struct {
@@ -271,7 +320,7 @@ func TestSwapClientRejectsAliasAndInvalidInputsBeforeMutation(t *testing.T) {
 
 func TestSwapClientRejectsWrongNetworkBeforeMutation(t *testing.T) {
 	calls := 0
-	client := NewSwapDaemonClient(18902, "", "testnet")
+	client := NewSwapDaemonClient(18902, strings.Repeat("a", 64), "testnet")
 	client.httpClient = &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		calls++
 		return rpcHTTPResponse(`{"jsonrpc":"2.0","result":{"network":"mainnet","profile":"mainnet"},"id":1}`), nil
@@ -288,7 +337,7 @@ func TestSwapClientRejectsWrongNetworkBeforeMutation(t *testing.T) {
 
 func TestSwapClientReportsUnknownMutationOutcome(t *testing.T) {
 	call := 0
-	client := NewSwapDaemonClient(18902, "", "mainnet")
+	client := NewSwapDaemonClient(18902, strings.Repeat("a", 64), "mainnet")
 	client.httpClient = &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		call++
 		if call == 1 {

@@ -418,6 +418,23 @@ static void test_solana_inline_keypair_config() {
   std::cout << "  PASS: test_solana_inline_keypair_config" << std::endl;
 }
 
+static void test_solana_rejects_nonlocal_rpc_config() {
+  const std::string json = R"({
+    "sol_rpc_host": "api.mainnet-beta.solana.com",
+    "sol_rpc_port": 443,
+    "sol_program_id": "11111111111111111111111111111111",
+    "sol_keypair": "unit-test-keypair"
+  })";
+  const std::string path = writeTempConfig(json);
+  ChainClientConfig config;
+  std::string error;
+  expectConfig(!loadChainClientConfig(path, config, error),
+      "remote plaintext Solana RPC config accepted");
+  expectConfig(!error.empty(), "remote Solana RPC config had no error");
+  std::remove(path.c_str());
+  std::cout << "  PASS: test_solana_rejects_nonlocal_rpc_config" << std::endl;
+}
+
 // =============================================================================
 // Main
 // =============================================================================
@@ -436,6 +453,7 @@ int main() {
   test_generic_evm_config_rejects_unsafe_entries();
   test_testnet_evm_config_requires_deployment_identity();
   test_solana_inline_keypair_config();
+  test_solana_rejects_nonlocal_rpc_config();
   std::cout << "All SPV config wiring tests passed." << std::endl;
   return 0;
 }

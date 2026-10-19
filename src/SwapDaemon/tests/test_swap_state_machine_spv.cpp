@@ -7,6 +7,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <stdexcept>
 #include "Common/JsonValue.h"
 #include "SwapDaemon/SwapDatabase.h"
 #include "SwapDaemon/SwapTypes.h"
@@ -14,6 +15,7 @@
 #include "SwapDaemon/SwapDaemon.h"
 #include "SwapDaemon/RpcServer.h"
 #include "Logging/ConsoleLogger.h"
+#include <HTTP/httplib.h>
 
 using namespace XfgSwap;
 
@@ -29,6 +31,10 @@ struct SwapDaemonTestAccess {
 struct RpcServerTestAccess {
   static std::string dispatch(RpcServer& server, const std::string& request) {
     return server.dispatch(request);
+  }
+
+  static bool authorize(const RpcServer& server, const httplib::Request& request) {
+    return server.authorize(request);
   }
 };
 }
@@ -548,8 +554,28 @@ static bool test_rpc_status_record_excludes_persistence_secrets() {
   Crypto::generate_keys(params.ourSwapPubKey, params.ourSwapSecKey);
   const bool saved = daemon.database().saveSwap(SwapStateMachine(params));
 
-  RpcServer server(daemon, logger);
-  bool ok = saved;
+  bool rejectedEmptyToken = false;
+  try {
+    RpcServer unauthenticatedServer(daemon, logger, {});
+  } catch (const std::invalid_argument&) {
+    rejectedEmptyToken = true;
+  }
+
+  const std::string controlToken(64, 'a');
+  RpcServer server(daemon, logger, controlToken);
+  httplib::Request noToken;
+  httplib::Request wrongToken;
+  wrongToken.headers.emplace("X-Swap-Token", std::string(64, 'b'));
+  httplib::Request headerToken;
+  headerToken.headers.emplace("X-Swap-Token", controlToken);
+  httplib::Request bearerToken;
+  bearerToken.headers.emplace("Authorization", "Bearer " + controlToken);
+  const bool authorizationOk =
+      !RpcServerTestAccess::authorize(server, noToken) &&
+      !RpcServerTestAccess::authorize(server, wrongToken) &&
+      RpcServerTestAccess::authorize(server, headerToken) &&
+      RpcServerTestAccess::authorize(server, bearerToken);
+  bool ok = saved && rejectedEmptyToken && authorizationOk;
   try {
     const std::string listResponse = RpcServerTestAccess::dispatch(
         server, R"({"jsonrpc":"2.0","id":41,"method":"list_swaps","params":{}})");

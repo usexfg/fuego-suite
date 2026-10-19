@@ -190,6 +190,9 @@ RpcServer::RpcServer(SwapDaemon& daemon, Logging::ILogger& logger,
   : m_daemon(daemon)
   , m_logger(logger, "RpcServer")
   , m_controlToken(controlToken) {
+  if (m_controlToken.empty()) {
+    throw std::invalid_argument("swap daemon RPC control token is required");
+  }
 }
 
 RpcServer::~RpcServer() {
@@ -229,10 +232,7 @@ void RpcServer::stop() {
 }
 
 bool RpcServer::authorize(const httplib::Request& req) const {
-  if (m_controlToken.empty()) {
-    // Loopback-only server without a configured token: local trust domain.
-    return true;
-  }
+  if (m_controlToken.empty()) return false;
   auto it = req.headers.find("X-Swap-Token");
   if (it != req.headers.end() && it->second == m_controlToken) return true;
   auto auth = req.headers.find("Authorization");
@@ -318,12 +318,6 @@ std::string RpcServer::dispatch(const std::string& body) {
   }
 
   m_logger(Logging::INFO) << "RPC method: " << method;
-
-  // Token enforcement happens in authorize() at the route level: when
-  // --rpc-token is configured, every POST (including mutating methods)
-  // requires the X-Swap-Token / Bearer header. The server binds loopback
-  // only, so a token-less daemon trusts localhost (same domain as the
-  // wallet RPC the local wallet already exposes).
 
   std::string result;
   if (method == "status") {

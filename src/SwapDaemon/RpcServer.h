@@ -45,10 +45,9 @@ class SwapDaemon;
 class RpcServer {
   friend struct RpcServerTestAccess;
 public:
-  // controlToken: when non-empty, every POST requires header
-  // X-Swap-Token: <token> (or Authorization: Bearer <token>).
+  // Every JSON-RPC POST requires X-Swap-Token: <token> or Bearer <token>.
   RpcServer(SwapDaemon& daemon, Logging::ILogger& logger,
-            const std::string& controlToken = {});
+            const std::string& controlToken);
   ~RpcServer();
 
   // Start listening on the given port (127.0.0.1 only).

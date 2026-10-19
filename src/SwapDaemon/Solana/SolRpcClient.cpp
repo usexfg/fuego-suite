@@ -538,6 +538,13 @@ std::vector<uint8_t> SolRpcClient::base64Decode(const std::string& encoded) {
 SolRpcClient::SolRpcClient(const std::string& host, uint16_t port,
                            const std::string& programId)
   : m_host(host), m_port(port), m_programId(programId) {
+  if (m_host != "127.0.0.1") {
+    throw std::invalid_argument(
+        "SOL RPC must use local 127.0.0.1 until authenticated transport is available");
+  }
+  if (m_port == 0) {
+    throw std::invalid_argument("SOL RPC port must be nonzero");
+  }
   m_rpcUrl = m_host + ":" + std::to_string(m_port);
 }
 

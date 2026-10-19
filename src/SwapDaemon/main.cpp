@@ -76,7 +76,7 @@ void printUsage() {
     "  --socks5-proxy <proxy>  Route swap P2P through SOCKS5 proxy (e.g. Tor: 127.0.0.1:9050)\n"
     "  --status-port <port>    Status endpoint for monitoring (default: 18900)\n"
     "  --rpc-port <port>       JSON-RPC server for wallet integration (default: 18902)\n"
-    "  --rpc-token <token>     Require X-Swap-Token header on all JSON-RPC calls\n"
+    "  --rpc-token <token>     JSON-RPC control token (required with --service)\n"
     "  --rpc-token-file <file> Read the JSON-RPC token from an owner-only file\n"
     "                           (or set XFG_SWAPD_RPC_TOKEN)\n"
     "  --swap-p2p-port <port>  Swap peer protocol listen port (default: 18901, 0=off)\n"
@@ -458,6 +458,11 @@ int main(int argc, char* argv[]) {
     std::cerr << "Error: " << error.what() << std::endl;
     return 1;
   }
+  if (serviceMode && rpcToken.empty()) {
+    std::cerr << "Error: --service requires --rpc-token, --rpc-token-file, or "
+                 "XFG_SWAPD_RPC_TOKEN" << std::endl;
+    return 1;
+  }
 
   // Set up logging
   Logging::ConsoleLogger consoleLogger(Logging::INFO);
@@ -556,13 +561,11 @@ int main(int argc, char* argv[]) {
       logger(Logging::INFO) << "Status endpoint: 127.0.0.1:" << statusPort;
     }
 
-    // Start JSON-RPC server for wallet integration.
-    // Loopback-only bind. When --rpc-token is set, every POST requires the
-    // X-Swap-Token (or Bearer) header; without it, localhost is trusted.
+    // Start token-authenticated JSON-RPC server for wallet integration.
     XfgSwap::RpcServer rpcServer(daemon, consoleLogger, rpcToken);
     if (rpcServer.start(rpcPort)) {
       logger(Logging::INFO) << "JSON-RPC server: 127.0.0.1:" << rpcPort
-        << (rpcToken.empty() ? " (loopback trust)" : " (token auth enabled)");
+        << " (token auth enabled)";
     } else {
       logger(Logging::WARNING) << "Failed to start JSON-RPC server on port " << rpcPort;
     }

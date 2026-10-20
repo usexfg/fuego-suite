@@ -87,7 +87,7 @@ Use a font that renders Greek + stroke-T cleanly (Saira often needs a fallback f
 | Term | Meaning |
 |------|---------|
 | **XFG** | Base-layer privacy coin; burned to mint HEAT |
-| **HEAT / ΗΞΔŦ** | Algorithmic flatcoin; purchasing-power oriented; peg reference `HEAT_PEG_USD = 1.58` (CPI-adjusted design path) |
+| **HEAT / ΗΞΔŦ** | Algorithmic flatcoin; purchasing-power oriented; hearthstone reference `FCI_HEARTHSTONE_INITIAL_CENTS = 158` (quarterly CPI re-base) |
 | **CD** | Certificate of Deposit — term-locked **HEAT**, yield from protocol fees |
 | **Hearth** | On-chain XFG/HEAT market (AMM + orderbook hybrid) |
 | **Eternal Flame** | Accounting for destroyed base-layer coins |

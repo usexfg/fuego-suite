@@ -997,6 +997,7 @@ namespace CryptoNote
     if (present_mask & (1 << 2)) s(bread, "bread");
     if (present_mask & (1 << 3)) s(eggs,  "eggs");
     if (present_mask & (1 << 4)) s(gas,   "gas");
+    if (present_mask & (1 << 5)) s(rice,  "rice");
     return true;
   }
 

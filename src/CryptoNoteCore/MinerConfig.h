@@ -37,27 +37,28 @@ public:
   uint32_t    miningThreads;
 
   // ── Fuego Cost Index (FCI) basket prices ─────────────────────────────────
-  // All stored as integer microUSD (µUSD = 0.000001 USD).
-  // FX conversion happens at init() via getCurrencyUsdRate(); consensus only
-  // ever sees µUSD integers — no floats cross into the daemon.
+  // All stored as integer cents (399 = $3.99). The miner enters a decimal
+  // amount in its local currency and init() rounds to the nearest cent, so
+  // consensus only ever sees integer cents — no floats cross into the daemon.
   //
   // present_mask bits:
   //   bit 0 = power   bit 1 = milk   bit 2 = bread
-  //   bit 3 = eggs    bit 4 = gas
+  //   bit 3 = eggs    bit 4 = gas    bit 5 = rice
   //
   // A value of 0 in present_mask means no FCI vote is included in coinbase.
   // Phase 1: votes are stored on-chain but no DIGM payout is issued.
   //          Block height + spend-key-hash recorded for auditable back-pay.
   uint8_t  fciPresentMask;   // bitmask of which commodities are configured
-  uint32_t fciPower;         // µUSD per kWh   (e.g. $0.12 → 120000)
-  uint32_t fciMilk;          // µUSD per gallon whole milk
-  uint32_t fciGas;           // µUSD per gallon petrol
-  uint32_t fciBread;         // µUSD per kg loaf
-  uint32_t fciEggs;          // µUSD per dozen large eggs
+  uint32_t fciPower;         // cents per kWh      (e.g. $0.12  → 12)
+  uint32_t fciMilk;          // cents per gallon whole milk
+  uint32_t fciGas;           // cents per gallon petrol
+  uint32_t fciBread;         // cents per kg loaf
+  uint32_t fciEggs;          // cents per dozen large eggs
+  uint32_t fciRice;          // cents per kg uncooked white rice
 
   // ── Currency helpers ─────────────────────────────────────────────────────
   // Miner may supply prices in any supported fiat; init() multiplies by
-  // fciUsdRate to produce the µUSD integer stored above.
+  // fciUsdRate to produce the cent integer stored above.
   std::string fciCurrency;   // ISO-4217 code (default: "USD")
   double      fciUsdRate;    // local-currency → USD rate (default: 1.0)
 

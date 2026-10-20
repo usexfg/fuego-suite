@@ -543,7 +543,7 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
   // ZEC
   if (!chainCfg.zecHost.empty()) {
     auto rpc = std::make_unique<ZecRpcClient>(chainCfg.zecHost, chainCfg.zecPort, chainCfg.zecRpcUser, chainCfg.zecRpcPass);
-    m_chainRegistry.registerChain(SwapPair::ZEC, std::make_unique<ZecChainClient>(std::move(rpc), chainCfg.zecWif));
+    m_chainRegistry.registerChain(SwapPair::ZCASH, std::make_unique<ZecChainClient>(std::move(rpc), chainCfg.zecWif));
     m_logger(Logging::INFO) << "ZEC chain client registered: " << chainCfg.zecHost << ":" << chainCfg.zecPort;
   }
  // ZANO (staged — client sources staged, not yet in lib)

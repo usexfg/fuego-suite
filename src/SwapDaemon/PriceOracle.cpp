@@ -122,7 +122,7 @@ double PriceOracle::getEffectiveRate(SwapPair pair) const {
     case SwapPair::PLASMA: return SEED_PLASMA_USD / xfgUsd;
     case SwapPair::DOGE: return SEED_DOGE_USD / xfgUsd;
     case SwapPair::DASH: return SEED_DASH_USD / xfgUsd;
-    case SwapPair::ZEC: return SEED_ZEC_USD / xfgUsd;
+    case SwapPair::ZCASH: return SEED_ZEC_USD / xfgUsd;
     case SwapPair::PULSECHAIN: return SEED_PULSECHAIN_USD / xfgUsd;
     case SwapPair::ZANO: return SEED_ZANO_USD / xfgUsd;
     case SwapPair::BTC: return SEED_BTC_USD / xfgUsd;
@@ -158,7 +158,7 @@ double PriceOracle::getSeedRate(SwapPair pair) {
     case SwapPair::PLASMA: return SEED_PLASMA_USD / SEED_XFG_USD;
     case SwapPair::DOGE: return SEED_DOGE_USD / SEED_XFG_USD;
     case SwapPair::DASH: return SEED_DASH_USD / SEED_XFG_USD;
-    case SwapPair::ZEC: return SEED_ZEC_USD / SEED_XFG_USD;
+    case SwapPair::ZCASH: return SEED_ZEC_USD / SEED_XFG_USD;
     case SwapPair::PULSECHAIN: return SEED_PULSECHAIN_USD / SEED_XFG_USD;
     case SwapPair::ZANO: return SEED_ZANO_USD / SEED_XFG_USD;
     case SwapPair::BTC: return SEED_BTC_USD / SEED_XFG_USD;

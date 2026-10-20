@@ -44,7 +44,8 @@ fuego-suite/
 - Not fiat based, peg targets purchasing power only; adjusts for inflation/CPI
 - Mint by burning XFG at hearth pool price with 0% launch premium (hardcoded, PI controller removed)
 - Launch ratio: 1 HEAT = 10 XFG (10:1 XFG per HEAT)
-- Peg reference: $1.58 USD (HEAT_PEG_USD)  adjusted for inflation starting Q1|2009 1 USD 
+- Hearthstone reference: $1.58 USD at launch (`FCI_HEARTHSTONE_INITIAL_CENTS = 158`), re-based quarterly from the on-chain Fuego Cost Index (see below)
+- Fuego Cost Index (FCI): miners vote a 6-item consumer basket in integer cents (power, gas, rice, milk, bread, eggs) via `TX_EXTRA_MINER_BASKET_VOTE`; trimmed median per category, 3-of-6 fresh-quorum gate per quarter, 5.04% max quarterly move
 - Certificates of Deposit (CD): V12 activation, epoch-term-locked HEAT earning protocol revenue yield
 - **TREASURY ROUTING (69/11/20)**: 69% CD Yield Pool / 11% Bonus Vault / 20% Treasury Reserve
 - **BONUS VAULT**: 11% of swap fees fund tier-based loyalty bonuses (2.5× for 72 epochs, 2× for 36, 1.5× for 18, 1.25× for 6)

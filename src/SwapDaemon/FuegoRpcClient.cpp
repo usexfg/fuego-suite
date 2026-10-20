@@ -412,8 +412,8 @@ bool FuegoRpcClient::getFuegoPrice(FuegoPrice& price) {
 
     price.xfgHeatRatio = json.contains("xfg_heat_ratio")
       ? std::stod(json("xfg_heat_ratio").getString()) : 0.0;
-    price.heatPegUsd = json.contains("heat_peg_usd")
-      ? std::stod(json("heat_peg_usd").getString()) : 0.0;
+    price.hearthstoneUsd = json.contains("hearthstone")
+      ? std::stod(json("hearthstone").getString()) : 0.0;
     price.xfgSpotUsd = json.contains("xfg_spot_usd")
       ? std::stod(json("xfg_spot_usd").getString()) : 0.0;
 

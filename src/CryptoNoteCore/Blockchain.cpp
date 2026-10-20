@@ -5751,9 +5751,9 @@ void CryptoNote::Blockchain::processFciBlock(const Block& block,
   m_fuegoCostIndex.addCoinbaseVote(block.baseTransaction.extra);
 }
 
-uint64_t CryptoNote::Blockchain::getHearthstoneMicro() const {
+uint64_t CryptoNote::Blockchain::getHearthstoneCents() const {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
-  return m_fuegoCostIndex.hearthstoneMicro();
+  return m_fuegoCostIndex.hearthstoneCents();
 }
 
 void CryptoNote::Blockchain::rebuildFciState(uint32_t blockCount) {

@@ -52,7 +52,7 @@ int main() {
     assert(isLegacyUtxoPair(SwapPair::KMD_SPV)==true);
     assert(isLegacyUtxoPair(SwapPair::DOGE)==true);
     assert(isLegacyUtxoPair(SwapPair::DASH)==true);
-    assert(isLegacyUtxoPair(SwapPair::ZEC)==true);
+    assert(isLegacyUtxoPair(SwapPair::ZCASH)==true);
     assert(isLegacyUtxoPair(SwapPair::TON)==true);
     // GLEEC must be keccak family (EVM client) — the dashpltc fix
     assert(isLegacyUtxoPair(SwapPair::GLEEC)==false);

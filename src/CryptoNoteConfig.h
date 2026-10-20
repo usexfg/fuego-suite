@@ -218,8 +218,9 @@ const uint64_t HEARTH_MAX_BLOCK_PRICE_MOVE_PCT = 100;
 
 // ─── Fuego Cost Index (FCI) — on-chain miner inflation oracle ────────────
 // Miners embed TX_EXTRA_MINER_BASKET_VOTE (0x38) in their coinbase.
-// All prices are integer microUSD (1 µUSD = 0.000001 USD).
-// FX conversion is client-side only; consensus never touches floats.
+// All prices are integer cents (399 = $3.99). FX conversion is client-side
+// only; consensus never touches floats, and the miner rounds to the nearest
+// cent before sealing the vote.
 //
 // Quorum: 39% of epoch blocks must carry a vote for a category to update.
 // Absent quorum → that commodity carries its previous epoch median forward.
@@ -227,33 +228,45 @@ const uint64_t HEARTH_MAX_BLOCK_PRICE_MOVE_PCT = 100;
 // Trimmed median: 25% of extremes discarded per category before median.
 // This filters structural urban/rural price differentials automatically.
 //
+// Quarterly gate: the Hearthstone reference only re-bases when at least
+// FCI_MIN_FRESH_QUORUM of the basket categories cleared quorum inside the
+// trailing quarter. A basket carried forward by stale medians cannot move
+// the reference.
+//
 // Phase 1: payouts disabled. All on-chain votes permanently recorded
 //          for auditable back-pay when Phase 2 (DIGM) activates.
 const uint32_t FCI_EPOCH_BLOCKS = EPOCH_DURATION_BLOCKS;
 const uint32_t FCI_MIN_QUORUM = 351;   // 39% of 900 blocks
 const uint32_t FCI_TRIM_PCT = 25;      // 25% each tail discarded
 const uint32_t FCI_EPOCHS_PER_QUARTER = 18; // one quarter of the 72-epoch term
-const uint64_t FCI_INDEX_SCALE = 1000000ULL;
-const uint64_t FCI_HEAT_PEG_INITIAL_USD_MICRO = 1580000ULL;
+const uint64_t FCI_INDEX_SCALE = 100ULL;    // index par is 100 cents
+const uint64_t FCI_HEARTHSTONE_INITIAL_CENTS = 158ULL; // $1.58 launch reference
 
-// Commodity basket — Day-0 USD baselines (microUSD, integer)
-//   Power: 1 kWh electric     $0.12    → 120,000 µUSD
-//   Gas:   1 gallon petrol    $3.50    → 3,500,000 µUSD
-//   Milk:  1 gallon whole     $3.90    → 3,900,000 µUSD
-//   Bread: 1 kg loaf          $2.50    → 2,500,000 µUSD
-//   Eggs:  1 dozen large      $3.00    → 3000000 µUSD
-const uint32_t FCI_BASELINE_POWER = 120000U;  // µUSD per kWh
-const uint32_t FCI_BASELINE_GAS = 3500000U;   // µUSD per gallon
-const uint32_t FCI_BASELINE_MILK = 3900000U;  // µUSD per gallon
-const uint32_t FCI_BASELINE_BREAD = 2500000U; // µUSD per kg loaf
-const uint32_t FCI_BASELINE_EGGS = 3000000U;  // µUSD per dozen
+// Commodity basket — Day-0 USD baselines (integer cents)
+//   Power: 1 kWh electric     $0.12    → 12
+//   Gas:   1 gallon petrol    $3.50    → 350
+//   Milk:  1 gallon whole     $3.90    → 390
+//   Bread: 1 kg loaf          $2.50    → 250
+//   Eggs:  1 dozen large      $3.00    → 300
+//   Rice:  1 kg uncooked      $2.50    → 250
+const uint32_t FCI_BASELINE_POWER = 12U;  // cents per kWh
+const uint32_t FCI_BASELINE_GAS = 350U;   // cents per gallon
+const uint32_t FCI_BASELINE_MILK = 390U;  // cents per gallon
+const uint32_t FCI_BASELINE_BREAD = 250U; // cents per kg loaf
+const uint32_t FCI_BASELINE_EGGS = 300U;  // cents per dozen
+const uint32_t FCI_BASELINE_RICE = 250U;  // cents per kg uncooked
 
 // Composite weights (must sum to 100)
-const uint32_t FCI_WEIGHT_POWER = 40; // 40% — electricity
-const uint32_t FCI_WEIGHT_GAS = 30;   // 30% — gasoline/gallon
+const uint32_t FCI_WEIGHT_POWER = 30; // 30% — electricity
+const uint32_t FCI_WEIGHT_GAS = 25;   // 25% — gasoline/gallon
+const uint32_t FCI_WEIGHT_RICE = 15;  // 15% — rice/kg (staple)
 const uint32_t FCI_WEIGHT_MILK = 10;  // 10% — milk/gallon
 const uint32_t FCI_WEIGHT_BREAD = 10; // 10% — bread/kg
 const uint32_t FCI_WEIGHT_EGGS = 10;  // 10% — eggs/dozen
+
+// Categories that must have cleared quorum inside the trailing quarter
+// before a quarterly re-base is allowed. 3 of 6.
+const uint32_t FCI_MIN_FRESH_QUORUM = 3;
 
 // A quarterly peg update can move at most 5.04% of the current reference.
 const uint32_t FCI_MAX_QUARTERLY_DRIFT_BPS = 504;
@@ -314,9 +327,11 @@ const uint64_t EPOCHS_PER_YEAR = 73; // 65700 blocks/yr / 900 blocks/epoch
 const uint64_t SWAP_FEE_TREASURY_SHARE_PCT =
     20; // 20% of epoch swap fees → Treasury Reserve
 
-// Initial HEAT USD peg reference. FCI tallies may accumulate before v12, but
-// the reported reference stays at this value until a v12 quarterly boundary.
-const double HEAT_PEG_USD = 1.58;
+// Dollar view of the FCI reference. FCI_HEARTHSTONE_INITIAL_CENTS is the single
+// source of truth; consensus reads the integer cents, and this double exists
+// only for display code. Never hand-edit this to a different number.
+const double HEAT_PEG_USD =
+    static_cast<double>(FCI_HEARTHSTONE_INITIAL_CENTS) / 100.0;
 
 // HEAT mint burn split
 const uint64_t MINT_BURN_EF_PCT =

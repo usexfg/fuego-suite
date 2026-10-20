@@ -158,7 +158,7 @@ int main() {
                     static_cast<uint8_t>(XfgSwap::SwapPair::SIA) == 17 &&
                     static_cast<uint8_t>(XfgSwap::SwapPair::DOGE) == 20 &&
                     static_cast<uint8_t>(XfgSwap::SwapPair::DASH) == 21 &&
-                    static_cast<uint8_t>(XfgSwap::SwapPair::ZEC) == 22 &&
+                    static_cast<uint8_t>(XfgSwap::SwapPair::ZCASH) == 22 &&
                     static_cast<uint8_t>(XfgSwap::SwapPair::ZANO) == 24 &&
                     static_cast<uint8_t>(XfgSwap::SwapPair::TON) == 27,
                 "Update executable-pair admission when staged indices change");

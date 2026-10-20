@@ -78,8 +78,8 @@ static void testActivationAndNames() {
 static void testDerivedMetadata() {
   assert(minMsPerBlock(SwapPair::SEI) == 200);
   assert(maxMsPerBlock(SwapPair::SEI) == 1000);
-  assert(minMsPerBlock(SwapPair::RSK) == 15000);
-  assert(maxMsPerBlock(SwapPair::RSK) == 60000);
+  assert(minMsPerBlock(SwapPair::ROOTSTOCK) == 15000);
+  assert(maxMsPerBlock(SwapPair::ROOTSTOCK) == 60000);
   assert(msPerBlock(SwapPair::PEAQ) == maxMsPerBlock(SwapPair::PEAQ));
   assert(claimRunwayBlocks(SwapPair::SEI) == 18000);
   uint64_t minimumWindow = 0;

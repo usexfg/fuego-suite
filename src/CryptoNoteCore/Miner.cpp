@@ -231,6 +231,7 @@ namespace CryptoNote
     m_fci_basket.bread        = config.fciBread;
     m_fci_basket.eggs         = config.fciEggs;
     m_fci_basket.gas          = config.fciGas;
+    m_fci_basket.rice         = config.fciRice;
     m_paradio_vote            = config.paradioVote;
 
     if (m_fci_basket.present_mask) {
@@ -241,9 +242,10 @@ namespace CryptoNote
         << " bread=" << m_fci_basket.bread
         << " eggs=" << m_fci_basket.eggs
         << " gas=" << m_fci_basket.gas
-        << " (all in \u00b5USD)";
+        << " rice=" << m_fci_basket.rice
+        << " (all in USD cents)";
     } else {
-      logger(INFO) << "[FCI] No basket prices configured. Use --fci-power/milk/gas/bread/eggs or --fci-oracle to participate.";
+      logger(INFO) << "[FCI] No basket prices configured. Use --fci-power/milk/gas/bread/eggs/rice or --fci-oracle to participate.";
     }
     if (!m_paradio_vote.empty()) {
       logger(INFO) << "[Paradio] Block vote: '" << m_paradio_vote << "'";

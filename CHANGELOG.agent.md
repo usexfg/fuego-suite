@@ -1,4 +1,153 @@
-## Public audit accounting snapshot (`/get_public_audit`, XFGAPI `/v1/node/audit/balances`)
+## FCI restore: integer cents, rice as a sixth category, 3-of-6 quarterly gate
+
+**Started**: 2026-10-20
+**Agent**: opencode (DeepSeek V4.1 Flash Free)
+**Status**: DONE — sources restored, rebuilt, tested. Not pushed.
+**Scope**: Bring the Fuego Cost Index back into the tree, price the basket and the reference in integer cents, add rice as a sixth category, replace the unanimous quarterly gate with a 3-of-6 fresh-quorum gate, rename the RPC reference field to `hearthstone`, and repair the build breaks `master` shipped with.
+
+### Why this entry exists
+
+The 2026-10-12 FCI entry below recorded the work as DONE, but `FuegoCostIndex.h`,
+`FuegoCostIndex.cpp`, `FuegoCostIndexTest.cpp`, `DandelionStemTest.cpp`,
+`PublicAuditSnapshotTest.cpp` and `tools/fci-oracle/` were never committed to any
+ref. `Blockchain.h` did commit `#include "FuegoCostIndex.h"`, so `master` at
+`21560dfbf` did not compile: the header was missing, `RpcServer.cpp` called a
+`getHeatPegUsdMicro()` that no longer existed, `tests/CMakeLists.txt` listed three
+source files that had never been in git, and `src/CMakeLists.txt` linked
+`public_audit_tests` even with `BUILD_TESTS=OFF`.
+
+This entry records the reconstruction and the unit change that followed it.
+
+### Task list
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Recover the lost sources from session records and verify each recovered body against the surviving compiled object | opencode | 2026-10-20 | DONE |
+| 2 | Move the basket baselines, the reference, and the index scale from microUSD to integer cents (399 = $3.99) | opencode | 2026-10-20 | DONE |
+| 3 | Add rice (`APU0000701312`, white long grain, per lb → $/kg) as mask bit 5; rebalance weights to 30/25/15/10/10/10 | opencode | 2026-10-20 | DONE |
+| 4 | Replace the all-categories quarterly gate with `FCI_MIN_FRESH_QUORUM = 3` of 6, and carry per-category last-quorum epochs in the rollback snapshot | opencode | 2026-10-20 | DONE |
+| 5 | Rename `heat_peg_usd` → `hearthstone` across RPC, `Blockchain`, `FuegoRpcClient`, and the dashboard, with no deprecated alias | opencode | 2026-10-20 | DONE |
+| 6 | Restore `tools/fci-oracle` as a BLS-only producer and pin its output shape to the daemon scanner with a test | opencode | 2026-10-20 | DONE |
+| 7 | Repair the build breaks: `FuegoCostIndex.h`, the `getHeatPegUsdMicro` call, the dangling test sources, the unguarded `-lresolv` link, and the `SwapPair::ZEC` / `SwapPair::RSK` references left behind by the pair rename | opencode | 2026-10-20 | DONE |
+| 8 | Fix `AGENTS.md`'s HEAT reference line and the four docs that still said "peg reference" | opencode | 2026-10-20 | DONE |
+| 9 | Build every target, run the full suite, and record the evidence | opencode | 2026-10-20 | DONE |
+
+### What landed
+
+**Unit change.** Every price in the FCI is an integer number of cents. A miner
+enters a decimal amount in its own currency and `MinerConfig` rounds to the
+nearest cent before the vote is sealed, so no float ever reaches consensus. The
+index scale is `100`, meaning the index reads `100` at the Day-0 basket and the
+reference reads `158` for `$1.58`.
+
+**Rice.** Appended as mask bit 5, not inserted. Bits 0–4 keep their historical
+meaning and order, and `TransactionExtraMinerBasketVote::serialize` writes only
+the masked fields, so a five-category vote serializes byte-identically to the
+pre-rice format. `FuegoCostIndexTest.FiveCategoryVotesDoNotCarryRiceOnTheWire`
+pins that: setting `rice` to a nonzero value on a `0x1f` vote must not change a
+single byte.
+
+**Weights.** `FCI_WEIGHT_POWER = 30`, `FCI_WEIGHT_GAS = 25`,
+`FCI_WEIGHT_RICE = 15`, `FCI_WEIGHT_MILK = 10`, `FCI_WEIGHT_BREAD = 10`,
+`FCI_WEIGHT_EGGS = 10`. A `static_assert` keeps the total at 100.
+
+**Quarterly gate.** `closeEpoch` updates the medians for any category that
+cleared quorum, records that category's epoch in `m_lastQuorumEpochs`, and then
+re-bases the reference only when at least `FCI_MIN_FRESH_QUORUM` (3) categories
+cleared quorum inside the trailing quarter. A category carried forward at its
+old median does not count. `m_lastQuorumEpochs` travels in `Snapshot`, so a
+reorg that rewinds an epoch boundary rewinds the gate with it; without that, a
+replayed boundary would count categories from the abandoned branch.
+
+**Rename.** The RPC field is `hearthstone` and the internal names are
+`hearthstoneCents()` / `m_hearthstoneCents` / `FCI_HEARTHSTONE_INITIAL_CENTS`.
+There is no `heat_peg_usd` alias. `HEAT_PEG_USD` survives as a derived double
+(`FCI_HEARTHSTONE_INITIAL_CENTS / 100.0`) so the two cannot drift apart.
+
+**Single inflation source.** `tools/fci-oracle` reads the BLS public API only.
+The second vendor that was previously averaged in was dropped: its US feed
+republishes the same BLS series, and its nearest comparable series is core CPI
+(`all_items_less_food_and_energy`), a different basket from the headline figure
+the reference tracks. Averaging it in would have double-counted one source
+rather than cross-checked two.
+
+### Files
+
+- `src/CryptoNoteCore/FuegoCostIndex.h` / `.cpp` — restored, cents, six
+  categories, fresh-quorum gate, quorum history in the snapshot.
+- `src/CryptoNoteConfig.h` — cents baselines, rice weight and baseline,
+  `FCI_MIN_FRESH_QUORUM`, `FCI_HEARTHSTONE_INITIAL_CENTS`, `FCI_INDEX_SCALE = 100`,
+  and `HEAT_PEG_USD` derived from the cent constant.
+- `src/CryptoNoteCore/TransactionExtra.h` / `.cpp` — `rice` field, mask bit 5.
+- `src/CryptoNoteCore/MinerConfig.h` / `.cpp` — `fciRice`, `--fci-rice`,
+  `"rice"` oracle key, `toUsdCents()`.
+- `src/CryptoNoteCore/Miner.cpp` — rice in the basket, cents in the log line.
+- `src/CryptoNoteCore/Blockchain.h` / `.cpp` — `getHearthstoneCents()`.
+- `src/Rpc/CoreRpcServerCommandsDefinitions.h` / `RpcServer.cpp` — `hearthstone`
+  field, and the call that made `master` unbuildable removed.
+- `src/SwapDaemon/FuegoRpcClient.h` / `.cpp`, `dashboard/static/js/hearth.js` —
+  read `hearthstone`.
+- `tests/UnitTests/FuegoCostIndexTest.cpp` — 17 cases, including the
+  byte-identity regression and the 2-vs-3 fresh-category boundary.
+- `tests/UnitTests/FciOracleJsonTest.cpp` — 6 cases pinning the oracle document
+  to the daemon's flat scanner.
+- `tools/fci-oracle/` — restored; `gofmt` and `go vet` clean.
+
+### Verification
+
+| Gate | Evidence |
+|------|----------|
+| Configure | `cmake build/release -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON` → `Generating done` |
+| Build | `cmake --build build/release -j 8` → exit 0, no errors |
+| FCI suite | `./tests/fuego_cost_index_tests` → 17/17 passed |
+| Oracle suite | `./tests/fci_oracle_json_tests` → 6/6 passed |
+| Full suite | `ctest -j 4` → 53/55 passed |
+| Oracle, live | `/tmp/fci-oracle -out /tmp/fci_oracle.json` → six keys plus headline CPI 336.94 (2026-09) |
+
+The two failing ctest entries are `test_sol_e2e` and `test_xmr_live_e2e`. Both
+are registered by the shared `foreach(...)` block in `src/CMakeLists.txt` with no
+arguments and print their usage string when run, so they fail on a bare `ctest`
+regardless of this change. They need a dedicated harness invocation, not a fix
+in this scope.
+
+### Known gaps
+
+- **`public_audit_tests` is disabled in `tests/CMakeLists.txt`.** The source was
+  never committed and had drifted off the current API. It has been repaired far
+  enough to compile against `COMMAND_RPC_GET_PUBLIC_AUDIT`, but
+  `PublicAuditSnapshot.RollbackRestoresTheReportedValues` still fails for
+  test-local reasons: its own claim-cap assertion
+  (`std::min(claimsCounter, beforeApyPool - 1500) == claimsCounter`) cannot hold
+  for the values it sets up, and it drives `BankingIndex::popBlock()` outside the
+  undo path `Blockchain` actually uses. Re-enable it once those assertions are
+  rewritten against a real connect/disconnect cycle.
+- **Electricity rounds hard at this scale.** `$0.196/kWh` becomes `20` cents, a
+  2.04% step, and power carries 30% of the index. The error is a rounding error,
+  so it is bounded by ±2% on that component (±0.6% on the index) and oscillates
+  around zero as the price drifts, but it is not negligible quarter to quarter.
+  If it proves too coarse in operation, the fix is to quote power per 100 kWh
+  (`1200` = `$12.00/100 kWh`) in both the config baseline and the miner
+  conversion, which restores four significant digits without leaving cents.
+- **No V13 gate.** Activation uses the existing `BLOCK_MAJOR_VERSION_12` check
+  and a coordinated rollout, as directed. There is no version bump that would
+  let old nodes reject rice-bearing votes on their own.
+- **`docs/plans/heat-cpi-peg-quarterly.md` still describes the superseded V13
+  plan** (Dec-2008 base 211.398, launch `$1.574`, freeze above 2.50pp
+  disagreement). It is a second writer for the same mechanism and should be
+  retired or rewritten against this one.
+
+### Sign-off
+
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `cmake --build build/release -j 8` exited 0 |
+| Tests pass | DONE — FCI 17/17, oracle JSON 6/6, full suite 53/55 with the two argument-taking e2e harnesses excluded as pre-existing |
+| All tasks done | DONE — tasks 1–9 complete; the four known gaps above remain open by decision or by separate scope |
+| Pushed | NOT DONE — awaiting review |
+
+---
+
+
 
 **Started**: 2026-10-13
 **Agent**: opencode (space-bunny-free)

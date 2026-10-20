@@ -2961,13 +2961,13 @@ bool RpcServer::on_get_fuego_price(const COMMAND_RPC_GET_FUEGO_PRICE::request& /
     snprintf(buf, sizeof(buf), "%.8f", ratio);
     res.xfg_heat_ratio = buf;
 
-    const double heatPegUsd = static_cast<double>(
-        m_core.get_blockchain_storage().getHeatPegUsdMicro()) /
+    const double hearthstoneUsd = static_cast<double>(
+        m_core.get_blockchain_storage().getHearthstoneCents()) /
         parameters::FCI_INDEX_SCALE;
-    snprintf(buf, sizeof(buf), "%.4f", heatPegUsd);
-    res.heat_peg_usd = buf;
+    snprintf(buf, sizeof(buf), "%.4f", hearthstoneUsd);
+    res.hearthstone = buf;
 
-    const double xfgSpotUsd = ratio * heatPegUsd;
+    const double xfgSpotUsd = ratio * hearthstoneUsd;
     snprintf(buf, sizeof(buf), "%.4f", xfgSpotUsd);
     res.xfg_spot_usd = buf;
 

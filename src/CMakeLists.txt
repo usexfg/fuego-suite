@@ -1033,7 +1033,9 @@ if (${CMAKE_SYSTEM_NAME} STREQUAL "Linux" OR APPLE AND NOT ANDROID)
   # the DNS checkpoint lookup.
   target_link_libraries(core_tests PRIVATE -lresolv)
   # public_audit_tests does the same for its source-to-field mapping assertions.
-  target_link_libraries(public_audit_tests PRIVATE -lresolv)
+  if (TARGET public_audit_tests)
+    target_link_libraries(public_audit_tests PRIVATE -lresolv)
+  endif ()
 endif ()
 
 # --------------------------

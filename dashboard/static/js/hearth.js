@@ -393,7 +393,7 @@ const Hearth = (() => {
 
   function updateReferencePrice(data) {
     const valid = data && data.status === 'OK';
-    const peg = valid ? Number(data.heat_peg_usd) : 0;
+    const peg = valid ? Number(data.hearthstone) : 0;
     const impliedXfgUsd = valid ? Number(data.xfg_spot_usd) : 0;
     setMetricText('heat-peg', Number.isFinite(peg) && peg > 0
       ? `1 HΞ∆Ŧ ≋ $${peg.toFixed(4)}` : '—');

@@ -2678,7 +2678,9 @@ struct COMMAND_RPC_AMM_POOL_INFO {
 
 // Combined XFG/HEAT price snapshot for the wallet and xfg-swapd.
 // spot_price is the canonical hearth price (HEAT atomics per XFG atomic * COIN);
-// xfg_heat_ratio / heat_peg_usd / xfg_spot_usd are human-readable doubles.
+// xfg_heat_ratio / hearthstone / xfg_spot_usd are human-readable doubles.
+// hearthstone is the FCI reference price of HΞ∆Ŧ in USD, published as a
+// decimal string derived from the on-chain integer cent value.
 struct COMMAND_RPC_GET_FUEGO_PRICE {
   typedef EMPTY_STRUCT request;
 
@@ -2689,7 +2691,7 @@ struct COMMAND_RPC_GET_FUEGO_PRICE {
     uint64_t redemption_price_num;
     uint64_t redemption_price_denom;
     std::string xfg_heat_ratio;
-    std::string heat_peg_usd;
+    std::string hearthstone;
     std::string xfg_spot_usd;
     uint64_t height;
     std::string status;
@@ -2700,7 +2702,7 @@ struct COMMAND_RPC_GET_FUEGO_PRICE {
       KV_MEMBER(redemption_price_num)
       KV_MEMBER(redemption_price_denom)
       KV_MEMBER(xfg_heat_ratio)
-      KV_MEMBER(heat_peg_usd)
+      KV_MEMBER(hearthstone)
       KV_MEMBER(xfg_spot_usd)
       KV_MEMBER(height)
       KV_MEMBER(status)

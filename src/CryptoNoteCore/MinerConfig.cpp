@@ -53,6 +53,7 @@ const command_line::arg_descriptor<uint32_t> arg_mining_threads = {
 //   --fci-milk  3.90          (USD per gallon)
 //   --fci-bread 2.50          (USD per kg loaf)
 //   --fci-eggs  3.00          (USD per dozen)
+//   --fci-rice  2.50          (USD per kg uncooked white rice)
 // With non-USD currency:
 //   --fci-currency EUR --fci-usd-rate 1.08 --fci-power 0.29
 const command_line::arg_descriptor<double>      arg_fci_power = {
@@ -65,6 +66,8 @@ const command_line::arg_descriptor<double>      arg_fci_bread = {
   "fci-bread",    "Bread price per kg loaf in local currency", 0.0, true};
 const command_line::arg_descriptor<double>      arg_fci_eggs = {
   "fci-eggs",     "Eggs price per dozen large in local currency", 0.0, true};
+const command_line::arg_descriptor<double>      arg_fci_rice = {
+  "fci-rice",     "Uncooked white rice price per KG in local currency", 0.0, true};
 const command_line::arg_descriptor<std::string> arg_fci_currency = {
   "fci-currency", "ISO-4217 currency code for FCI prices (default: USD)", "USD", true};
 const command_line::arg_descriptor<double>      arg_fci_usd_rate = {
@@ -112,16 +115,19 @@ double getCurrencyUsdRate(const std::string& code) {
   return 0.0;
 }
 
-// Convert local-currency price to integer microUSD (µUSD = 0.000001 USD).
+// Convert local-currency price to integer cents (399 = $3.99).
 // Returns 0 on invalid or unrepresentable input.
-uint32_t toMicroUsd(double localPrice, double usdRate) {
+uint32_t toUsdCents(double localPrice, double usdRate) {
   if (!std::isfinite(localPrice) || !std::isfinite(usdRate) ||
       localPrice <= 0.0 || usdRate <= 0.0) return 0;
   double usd = localPrice * usdRate;
   if (!std::isfinite(usd)) return 0;
-  double raw = std::round(usd * 1000000.0);
+  double raw = std::round(usd * 100.0);
   if (!std::isfinite(raw)) return 0;
   if (raw > static_cast<double>(UINT32_MAX)) return 0;
+  // A price that rounds down to zero cents cannot be voted: zero is the
+  // "absent" sentinel on the wire and decodeVote rejects it.
+  if (raw < 1.0) return 0;
   return static_cast<uint32_t>(raw);
 }
 
@@ -131,7 +137,7 @@ uint32_t toMicroUsd(double localPrice, double usdRate) {
 bool tryLoadOracleJson(const std::string& path, double usdRate,
                        uint8_t& mask,
                        uint32_t& power, uint32_t& milk, uint32_t& gas,
-                       uint32_t& bread, uint32_t& eggs,
+                       uint32_t& bread, uint32_t& eggs, uint32_t& rice,
                        uint32_t staleWarnDays)
 {
   if (path.empty()) return false;
@@ -184,10 +190,11 @@ bool tryLoadOracleJson(const std::string& path, double usdRate,
       {"bread", 1 << 2, bread},
       {"eggs",  1 << 3, eggs},
       {"gas",   1 << 4, gas},
+      {"rice",  1 << 5, rice},
     };
     for (auto& f : fields) {
       if (key == f.name && !(mask & f.bit)) {
-        uint32_t u = toMicroUsd(val, usdRate);
+        uint32_t u = toUsdCents(val, usdRate);
         if (u > 0) { f.out = u; mask |= f.bit; loaded = true; }
         break;
       }
@@ -204,7 +211,7 @@ bool tryLoadOracleJson(const std::string& path, double usdRate,
 MinerConfig::MinerConfig()
   : miningThreads(0)
   , fciPresentMask(0)
-  , fciPower(0), fciMilk(0), fciGas(0), fciBread(0), fciEggs(0)
+  , fciPower(0), fciMilk(0), fciGas(0), fciBread(0), fciEggs(0), fciRice(0)
   , fciCurrency("USD"), fciUsdRate(1.0)
   , fciStaleWarnDays(30)
 {}
@@ -218,6 +225,7 @@ void MinerConfig::initOptions(boost::program_options::options_description& desc)
   command_line::add_arg(desc, arg_fci_gas);
   command_line::add_arg(desc, arg_fci_bread);
   command_line::add_arg(desc, arg_fci_eggs);
+  command_line::add_arg(desc, arg_fci_rice);
   command_line::add_arg(desc, arg_fci_currency);
   command_line::add_arg(desc, arg_fci_usd_rate);
   command_line::add_arg(desc, arg_fci_oracle_path);
@@ -257,11 +265,11 @@ void MinerConfig::init(const boost::program_options::variables_map& options) {
     fciStaleWarnDays = command_line::get_arg(options, arg_fci_stale_warn);
 
   // ── Load CLI prices first (highest priority) ──────────────────────────
-  // bit 0=power, 1=milk, 2=bread, 3=eggs, 4=gas
+  // bit 0=power, 1=milk, 2=bread, 3=eggs, 4=gas, 5=rice
   auto parseField = [&](auto arg_desc, uint8_t bit, uint32_t& out) {
     if (command_line::has_arg(options, arg_desc)) {
       double v = command_line::get_arg(options, arg_desc);
-      uint32_t u = toMicroUsd(v, fciUsdRate);
+      uint32_t u = toUsdCents(v, fciUsdRate);
       if (u > 0) { out = u; fciPresentMask |= bit; }
     }
   };
@@ -270,12 +278,13 @@ void MinerConfig::init(const boost::program_options::variables_map& options) {
   parseField(arg_fci_bread, 1 << 2, fciBread);
   parseField(arg_fci_eggs,  1 << 3, fciEggs);
   parseField(arg_fci_gas,   1 << 4, fciGas);
+  parseField(arg_fci_rice,  1 << 5, fciRice);
 
   // ── Then fill any missing fields from oracle JSON (lower priority) ────
   if (!fciOraclePath.empty()) {
     tryLoadOracleJson(fciOraclePath, fciUsdRate,
                       fciPresentMask,
-                      fciPower, fciMilk, fciGas, fciBread, fciEggs,
+                      fciPower, fciMilk, fciGas, fciBread, fciEggs, fciRice,
                       fciStaleWarnDays);
   }
 

@@ -38,7 +38,7 @@ struct FuegoPrice {
   uint64_t redemptionPriceNum;
   uint64_t redemptionPriceDenom;
   double   xfgHeatRatio;        // parsed from string
-  double   heatPegUsd;          // parsed from string
+  double   hearthstoneUsd;      // parsed from string
   double   xfgSpotUsd;          // parsed from string
 };
 

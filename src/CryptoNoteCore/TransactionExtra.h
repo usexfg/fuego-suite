@@ -125,12 +125,17 @@ struct TransactionExtraTTL {
 };
 
 struct TransactionExtraMinerBasketVote {
+  // Mask bit -> category: 0 power, 1 milk, 2 bread, 3 eggs, 4 gas, 5 rice.
+  // Bits 0-4 keep their historical meaning and order, so a five-category
+  // vote serializes byte-identically to the pre-rice format. Only a vote
+  // that sets bit 5 grows by the extra rice field.
   uint8_t present_mask;
   uint32_t power;
   uint32_t milk;
   uint32_t bread;
   uint32_t eggs;
   uint32_t gas;
+  uint32_t rice;
   bool serialize(ISerializer& serializer);
 };
 

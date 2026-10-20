@@ -170,7 +170,7 @@ inline bool isLegacyUtxoPair(SwapPair p) {
     case SwapPair::KMD_SPV:
     case SwapPair::DOGE:
     case SwapPair::DASH:
-    case SwapPair::ZEC:
+    case SwapPair::ZCASH:
     case SwapPair::TON:
       return true;
     default:

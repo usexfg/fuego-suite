@@ -138,7 +138,7 @@ namespace CryptoNote {
     uint64_t getCurrentEpochSwapFees() const { return m_currentEpochSwapFees; }
     uint64_t getTotalCdLocked() const { return m_totalCdLocked; }
     uint64_t getHeatSupply() const { return m_heatSupply; }
-    uint64_t getHearthstoneMicro() const;
+    uint64_t getHearthstoneCents() const;
     uint64_t getHeatOnDeposit() const { return m_heatOnDeposit; }
     uint64_t getDigmSupply() const { return m_digmSupply; }
     uint64_t getHeatCdFeePool() const { return m_heatCdFeePool; }

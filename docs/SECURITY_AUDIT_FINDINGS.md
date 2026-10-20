@@ -16,7 +16,7 @@ Round 1 detail, fix recipes and verification steps live in
 
 | Severity | Count | Fixed | Open / Deferred / Decision |
 |----------|-------|-------|---------------------------|
-| CRITICAL | 1 | 0 | 1 (R2-1, protocol change, must land with v11) |
+| CRITICAL | 1 | 0 | 1 (R2-1, **false positive on master** — see note; live only on `isPermitted`-style branches) |
 | HIGH | 1 | 1 | 0 |
 | MEDIUM | 3 | 3 | 0 |
 | LOW | 8 | 6 | 1 deferred (L-2b wallet cipher), 1 documented (L-1) |
@@ -59,7 +59,7 @@ barrier at the connect site. `popTransaction` was verified type-guarded already,
 
 | ID | Sev | Title | Location | Status |
 |----|-----|-------|----------|--------|
-| R2-1 | **CRITICAL** | Treasury vault spend key derivable from public data | `Treasury/VaultKeys.cpp:19`, `CryptoNoteConfig.h:306` | **MUST LAND WITH v11** (block 1,111,111) |
+| R2-1 | **CRITICAL** | Treasury vault spend key derivable from public data | `Treasury/VaultKeys.cpp:19`, `CryptoNoteConfig.h:306` | **FALSE POSITIVE on master** — see note below |
 | R2-2 | LOW | Wallet files use ChaCha8 (AEAD around it is sound) | `Wallet/WalletGreen.cpp:2293` | **DEFERRED** — see L-2b |
 | R2-3 | INFO | 69/11/20 epoch fee split strands integer dust | `Blockchain.cpp:5082-5084` | OPEN |
 | R2-4 | PROCESS | `fuego-currency` skill doc stale (says 80/20; code is 69/11/20) | `~/.config/opencode/skills/fuego-currency/` | OPEN |
@@ -80,6 +80,20 @@ Getting a spend on-chain still requires block inclusion, so it is not a free rem
 is the only cryptographic barrier, and it is not one. Rotating the derivation is a protocol change
 needing an activation/migration plan, hence DECISION rather than a patch.
 
+**False positive on master (adversarially verified 2026-10-20).** This finding was written
+against `codex/treasury-vault-auth`, which has `VaultPolicy::isPermitted` (a content
+predicate at `VaultPolicy.cpp:41`) as the sole vault-spend gate. **Master has no such
+function.** Master's `VaultPolicy::hasVaultInput` (38 lines) is called at
+`Blockchain.cpp:6218` inside `if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11)` and
+rejects any transaction naming a synthetic vault key image. Vault UTXOs are never
+spendable from a transaction on master — they are only manipulated by internal
+consensus code (`mintVaultChangeUtxo`, `spendUtxos`). The derivation being public is real
+and inherent (nodes must agree on the key image), but on master it is harmless because
+the key image cannot appear in a transaction. R2-1 remains a live concern only on
+branches that introduce `isPermitted`-style spend paths. The design doc at
+`docs/R2-1_VAULT_AUTH_DESIGN.md` (on `codex/treasury-vault-auth`) still applies to any
+future branch that makes vault spends transactional.
+
 **Exploit path, source-traced (2026-10-13).** An earlier draft of the design doc claimed an
 attacker would forge a ring signature over the vault key image. **Retracted** — the vault is not
 inside the ring-signature system. `mintVaultChangeUtxo` (`Blockchain.cpp:3204`) creates synthetic
@@ -98,6 +112,13 @@ on-chain Hearth fill at `HEARTH_TAG_CUTOFF_HEIGHT = UPGRADE_HEIGHT_V11 = 1111111
 v12 (`CD_ACTIVATION_HEIGHT = UPGRADE_HEIGHT_V12`), but both feed the same vault — so authorization
 must be enforced from v11 onward, and pre-v11 is the only legacy-derivation window. Design:
 `docs/R2-1_VAULT_AUTH_DESIGN.md` on `codex/treasury-vault-auth`.
+
+**Feature request (not a security finding):** It would be useful for the vault and protocol LP
+to be addressable via the reserved `@fuegoxfg` alias (already reserved in `AliasIndex.cpp`).
+This would let auditors and users identify protocol-owned funds by a human-readable name
+rather than a raw address. Requires: (a) the vault/protocol LP address being registered as
+an alias at genesis, and (b) the alias resolution path being wired into treasury/LP display
+endpoints. Not a security change; tracked separately.
 
 ## L-2b (deferred) — wallet-file cipher upgrade, and why it is not a field swap
 
@@ -169,6 +190,8 @@ Three prior claims were rejected against source. Re-filing them would waste a da
 | `sc_check` timing leak | `crypto/crypto-ops.c:2881` | Branchless straight-line compare; operates on to-be-validated **public** scalars |
 | `signum` "division by -a" timing leak | `crypto/crypto-ops.c:2877` | Factually wrong: body is `(a>>63)-((-a)>>63)` — shifts only, no division, no branches |
 | `sc_mulsub` timing leak | `crypto/crypto-ops.c:2555` | Standard ref10 field arithmetic; no secret branches or secret-indexed loads. Local count is not a timing signal |
+| R2-1 (vault spend key derivable) | `Treasury/VaultKeys.cpp:19`, `CryptoNoteConfig.h:306` | On master, `VaultPolicy::hasVaultInput` at `Blockchain.cpp:6218` rejects any tx naming a synthetic vault key image. Vault UTXOs are not transaction-spendable. The finding applies only to branches introducing `isPermitted`-style content-gated spend paths (e.g. `codex/treasury-vault-auth`). The key being public is inherent and harmless on master. |
+| Dev fund view secret in source (`FUEGO_DEV_FUND_VIEW_SECRET_KEY_HEX`) | `CryptoNoteConfig.h:577` | This is a **view** key, not a spend key. It only allows decrypting/seeing incoming payments to the dev fund address; it cannot spend them. Being in source is already public and is a transparency feature, not a vulnerability. Used for alias-registration fee verification (stealth-address derivation at `Blockchain.cpp:4943`). Replacing it with a "public wallet address" would break the stealth-address check unless the verification is redesigned (e.g., check output amount against a precomputed expected key, which is not possible since the expected key depends on txPubKey × output index). **Not a security issue.** |
 
 Also rejected on review: `oaes_sprintf` "buffer overflow" (it length-checks up front at
 `oaes_lib.c:442-449` and has zero callers) and the `popen` "command injection" (all four

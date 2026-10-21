@@ -158,6 +158,7 @@ func newTuiModel(cfg Config) tuiModel {
 func (m tuiModel) Init() tea.Cmd {
 	return tea.Batch(
 		m.fetchData(),
+		func() tea.Msg { return m.fetchDaemonStatus() }, // seed the chain catalog immediately
 		refreshTick(),
 		cursorBlink(),
 		m.autoBridgeCmd(m.activePair),
@@ -212,7 +213,7 @@ func (m tuiModel) fetchData() tea.Cmd {
 	wallet := m.wallet
 	bch := m.bch
 	return func() tea.Msg {
-		data, err := client.FetchAll(ActivePairs)
+		data, err := client.FetchAll(CurrentPairs())
 		msg := refreshMsg{data: data, err: err}
 		if wallet != nil {
 			bal, balErr := wallet.GetBalance()
@@ -306,6 +307,9 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.daemonStatus = msg.status
 			m.daemonLastErr = ""
+			if msg.status != nil {
+				ApplySwapChains(msg.status.Chains)
+			}
 		}
 
 	case ethConnectedMsg:
@@ -462,24 +466,26 @@ func (m tuiModel) handleCDKey(k string) (tea.Model, tea.Cmd) {
 // ── prevPair / nextPair (markets-only) ──
 
 func prevPair(cur uint8) uint8 {
-	for i := len(ActivePairs) - 1; i >= 0; i-- {
-		if ActivePairs[i] == cur {
+	pairs := CurrentPairs()
+	for i := len(pairs) - 1; i >= 0; i-- {
+		if pairs[i] == cur {
 			if i == 0 {
-				return ActivePairs[len(ActivePairs)-1]
+				return pairs[len(pairs)-1]
 			}
-			return ActivePairs[i-1]
+			return pairs[i-1]
 		}
 	}
-	return ActivePairs[0]
+	return pairs[0]
 }
 
 func nextPair(cur uint8) uint8 {
-	for i, p := range ActivePairs {
+	pairs := CurrentPairs()
+	for i, p := range pairs {
 		if p == cur {
-			return ActivePairs[(i+1)%len(ActivePairs)]
+			return pairs[(i+1)%len(pairs)]
 		}
 	}
-	return ActivePairs[0]
+	return pairs[0]
 }
 
 // ── handleCommand ──
@@ -626,6 +632,20 @@ func (m *tuiModel) executeSwap() tea.Cmd {
 	}
 
 	pair := m.draftPair
+
+	// Refuse to execute against a pair the local swapd cannot serve.
+	if info, ok := SwapChainInfo(pair); ok && info.Protocol && !info.Ready {
+		switch {
+		case !info.Configured:
+			m.statusMsg = fmt.Sprintf("%s not ready: not configured on this swapd", PairName(pair))
+		case info.ReadinessError != "":
+			m.statusMsg = fmt.Sprintf("%s not ready: %s", PairName(pair), info.ReadinessError)
+		default:
+			m.statusMsg = fmt.Sprintf("%s not ready: preflight failed", PairName(pair))
+		}
+		return nil
+	}
+
 	xfgAtomic := m.swapModal.xfgAtomic
 	rate := m.swapModal.rate
 	pairName := m.swapModal.pairName

@@ -90,7 +90,7 @@ func RenderSidebar(
 	// Pair list (only visible when Markets is active)
 	if activeView == ViewMarkets {
 		lines = append(lines, pad(sectionStyle.Render("")))
-		for _, p := range ActivePairs {
+		for _, p := range CurrentPairs() {
 			marker := " "
 			if p == activePair {
 				marker = ">"

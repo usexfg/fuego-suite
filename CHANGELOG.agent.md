@@ -1,3 +1,29 @@
+## swapxfg TUI: dynamic pair catalog from swapd status
+
+**Started**: 2026-10-21
+**Agent**: opencode (GLM-5.3-Flash Free)
+**Status**: IN PROGRESS
+**Scope**: The Go TUI (`swapxfg/`) hardcodes 7 pairs (`app/pairs.go: ActivePairs`) while the swap daemon catalog carries 46 ids (25 ACTIVE + 17 ADAPTER + 4 STAGED) and exposes the full catalog with per-pair `protocol/configured/ready/readinessError` in `buildStatusJson` (`SwapDaemon.cpp:5229`, served by the loopback StatusServer on 18900). Patch makes the TUI read that catalog and display/act on all protocol pairs, with the legacy 7-pair table as fallback when swapd is unreachable. DeXFG/dashboard already do this (`list_chains`).
+
+### Task list
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Add `ChainCatalogEntry` + `ApplySwapChains` in `pairs.go`; dynamic `PairName`/`PairLabelLong`/`PairShort`/`PairFromString`/`HotkeyPair` | opencode | 2026-10-21 | DONE |
+| 2 | Parse `chains` in `DaemonStatus` (`daemon_status.go`) and apply on `daemonStatusMsg` (`tui.go`) | opencode | 2026-10-21 | DONE |
+| 3 | Guard `executeSwap` on per-pair readiness, surfacing `readinessError` | opencode | 2026-10-21 | DONE |
+| 4 | `go build ./...` + `go vet ./...` + `go test ./app` in `swapxfg/`, record evidence | opencode | 2026-10-21 | DONE |
+
+### Sign-off table
+
+| Gate | Status |
+|------|--------|
+| Build compiles | ✅ `go build ./...` clean; `make build-tui` → "Fuego TUI built successfully" |
+| Tests pass | ✅ `go vet ./...` clean; `go test ./app` → `ok 0.352s` |
+| All tasks done | ✅ opencode, 2026-10-21 |
+
+---
+
 ## Staging tracker ground-truth refresh
 
 **Started**: 2026-10-20

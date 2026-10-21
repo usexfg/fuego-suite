@@ -21,7 +21,7 @@ func xfgRefUsd(ext *ExternalPrices) string {
 // xfgSwapRate returns the on-chain swap rate from daemon TWAP/composite.
 // This is the ACTUAL rate that swaps execute at.
 func xfgSwapRate(prices map[uint8]*SwapPriceResponse) string {
-	for _, p := range ActivePairs {
+	for _, p := range CurrentPairs() {
 		if pr, ok := prices[p]; ok && pr.XfgUsdMid != "" && pr.XfgUsdMid != "0.000000" {
 			if val, err := strconv.ParseFloat(pr.XfgUsdMid, 64); err == nil && val > 0 {
 				return fmt.Sprintf("$%.4f", val)
@@ -38,17 +38,29 @@ func pairCtrUsd(pair uint8, ext *ExternalPrices) string {
 	}
 	switch pair {
 	case PairSOL:
-		if ext.SOL > 0 { return fmt.Sprintf("$%.0f", ext.SOL) }
+		if ext.SOL > 0 {
+			return fmt.Sprintf("$%.0f", ext.SOL)
+		}
 	case PairETH:
-		if ext.ETH > 0 { return fmt.Sprintf("$%.0f", ext.ETH) }
+		if ext.ETH > 0 {
+			return fmt.Sprintf("$%.0f", ext.ETH)
+		}
 	case PairXMR:
-		if ext.XMR > 0 { return fmt.Sprintf("$%.0f", ext.XMR) }
+		if ext.XMR > 0 {
+			return fmt.Sprintf("$%.0f", ext.XMR)
+		}
 	case PairBCH:
-		if ext.BCH > 0 { return fmt.Sprintf("$%.0f", ext.BCH) }
+		if ext.BCH > 0 {
+			return fmt.Sprintf("$%.0f", ext.BCH)
+		}
 	case PairBNB:
-		if ext.BNB > 0 { return fmt.Sprintf("$%.0f", ext.BNB) }
+		if ext.BNB > 0 {
+			return fmt.Sprintf("$%.0f", ext.BNB)
+		}
 	case PairARB, PairBASE:
-		if ext.ETH > 0 { return fmt.Sprintf("$%.0f", ext.ETH) }
+		if ext.ETH > 0 {
+			return fmt.Sprintf("$%.0f", ext.ETH)
+		}
 	}
 	return ""
 }
@@ -72,7 +84,7 @@ func RenderTicker(activePair uint8, prices map[uint8]*SwapPriceResponse, ext *Ex
 		parts = append(parts, ref)
 	}
 
-	for _, p := range ActivePairs {
+	for _, p := range CurrentPairs() {
 		name := PairShort(p)
 		pr := prices[p]
 		rate := "—"
@@ -130,7 +142,7 @@ func RenderTickerWithCD(activePair uint8, prices map[uint8]*SwapPriceResponse, e
 		parts = append(parts, ref)
 	}
 
-	for _, p := range ActivePairs {
+	for _, p := range CurrentPairs() {
 		name := PairShort(p)
 		pr := prices[p]
 		rate := "—"
@@ -176,7 +188,7 @@ func RenderPriceLine(pair uint8, prices map[uint8]*SwapPriceResponse, ext *Exter
 	if pr == nil {
 		return StyleMuted.Render("  XFG — H\u2CB6\u2206T | ref $—  |  TWAP: —  Composite: —  (on-chain)")
 	}
-	
+
 	twap := pr.Twap
 	comp := pr.CompositeRate
 	if twap == "" {
@@ -204,6 +216,6 @@ func RenderPriceLine(pair uint8, prices map[uint8]*SwapPriceResponse, ext *Exter
 
 	beacon := fmt.Sprintf("XFG %s H\u2CB6\u2206T | ref $%s", hearth, xfgRef)
 	rates := fmt.Sprintf("TWAP: %s  Composite: %s  (on-chain)", twap, comp)
-	
-	return StyleAccent.Render("  " + beacon + "  ") + StyleMuted.Render("|  " + rates)
+
+	return StyleAccent.Render("  "+beacon+"  ") + StyleMuted.Render("|  "+rates)
 }

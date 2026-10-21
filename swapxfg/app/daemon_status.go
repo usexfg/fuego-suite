@@ -25,9 +25,10 @@ type DaemonSwap struct {
 }
 
 type DaemonStatus struct {
-	Height int            `json:"height"`
-	Offers []DaemonOffer  `json:"offers"`
-	Swaps  []DaemonSwap   `json:"swaps"`
+	Height int                 `json:"height"`
+	Chains []ChainCatalogEntry `json:"chains"`
+	Offers []DaemonOffer       `json:"offers"`
+	Swaps  []DaemonSwap        `json:"swaps"`
 }
 
 func FetchDaemonStatus(addr string) (*DaemonStatus, error) {

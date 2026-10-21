@@ -60,7 +60,7 @@ func RunHeadless(cfg Config) error {
 	writeStatus := func(w http.ResponseWriter) {
 		bal, _ := wallet.GetBalance()
 		var totalOffers int
-		for _, p := range ActivePairs {
+		for _, p := range CurrentPairs() {
 			offers, _ := client.GetOffers(p)
 			totalOffers += len(offers)
 		}
@@ -187,7 +187,7 @@ func RunHeadless(cfg Config) error {
 
 	mux.HandleFunc("/offers", func(w http.ResponseWriter, r *http.Request) {
 		all := make(map[string][]SwapOffer)
-		for _, p := range ActivePairs {
+		for _, p := range CurrentPairs() {
 			offers, err := client.GetOffers(p)
 			if err == nil {
 				all[PairShort(p)] = offers
@@ -236,7 +236,7 @@ func RunHeadless(cfg Config) error {
 				continue
 			}
 			var totalOffers int
-			for _, p := range ActivePairs {
+			for _, p := range CurrentPairs() {
 				offers, _ := client.GetOffers(p)
 				totalOffers += len(offers)
 			}

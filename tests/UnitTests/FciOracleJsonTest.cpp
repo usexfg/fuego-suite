@@ -38,7 +38,7 @@ MinerConfig loadOracle(const std::string& path) {
 
 }  // namespace
 
-TEST(FciOracleJsonTest, ParsesEveryBasketKeyIntoCents) {
+TEST(FciOracleJsonTest, ParsesEveryBasketKeyOntoItsVoteGrid) {
   const auto path = writeOracle("fci_all_six.json", R"({
     "power": 0.196,
     "milk": 4.106,
@@ -50,12 +50,12 @@ TEST(FciOracleJsonTest, ParsesEveryBasketKeyIntoCents) {
   const auto config = loadOracle(path);
 
   EXPECT_EQ(0x3f, config.fciPresentMask);
-  EXPECT_EQ(20u, config.fciPower);   // $0.196/kWh rounds to 20 cents
-  EXPECT_EQ(411u, config.fciMilk);   // $4.106/gal rounds to 411 cents
-  EXPECT_EQ(403u, config.fciBread);  // $4.0345/kg rounds to 403 cents
-  EXPECT_EQ(227u, config.fciEggs);   // $2.272/dozen rounds to 227 cents
-  EXPECT_EQ(463u, config.fciGas);    // $4.631/gal rounds to 463 cents
-  EXPECT_EQ(246u, config.fciRice);   // $2.4648/kg rounds to 246 cents
+  EXPECT_EQ(196u, config.fciPower);  // $0.196/kWh → milli-USD, not cents
+  EXPECT_EQ(411u, config.fciMilk);   // $4.106/gal → cents
+  EXPECT_EQ(403u, config.fciBread);  // $4.0345/kg → cents
+  EXPECT_EQ(227u, config.fciEggs);   // $2.272/dozen → cents
+  EXPECT_EQ(463u, config.fciGas);    // $4.631/gal → cents
+  EXPECT_EQ(246u, config.fciRice);   // $2.4648/kg → cents
 }
 
 // The oracle writes quoted metadata and a nested _provenance object alongside
@@ -80,7 +80,7 @@ TEST(FciOracleJsonTest, SkipsQuotedMetadataAndNestedProvenance) {
   EXPECT_EQ(0x3f, config.fciPresentMask);
   EXPECT_EQ(403u, config.fciBread);
   EXPECT_EQ(246u, config.fciRice);
-  EXPECT_EQ(20u, config.fciPower);
+  EXPECT_EQ(196u, config.fciPower);
 }
 
 TEST(FciOracleJsonTest, LeavesAbsentKeysOutOfTheVote) {
@@ -91,17 +91,18 @@ TEST(FciOracleJsonTest, LeavesAbsentKeysOutOfTheVote) {
   const auto config = loadOracle(path);
 
   EXPECT_EQ(0x11, config.fciPresentMask);
-  EXPECT_EQ(20u, config.fciPower);
+  EXPECT_EQ(196u, config.fciPower);
   EXPECT_EQ(463u, config.fciGas);
   EXPECT_EQ(0u, config.fciMilk);
   EXPECT_EQ(0u, config.fciRice);
 }
 
-// Zero is the "absent" sentinel on the wire, so a price that cannot be
-// expressed as at least one cent must not set its mask bit.
-TEST(FciOracleJsonTest, RejectsPricesThatCannotReachOneCent) {
+// Zero is the "absent" sentinel on the wire, so a price that cannot reach the
+// smallest step on its grid must not set its mask bit. Power's step is a tenth
+// of a cent, so it survives values that would vanish on the cent grid.
+TEST(FciOracleJsonTest, RejectsPricesThatRoundToZero) {
   const auto path = writeOracle("fci_degenerate.json", R"({
-    "power": 0.001,
+    "power": 0.0004,
     "milk": 0,
     "bread": -2.50,
     "gas": 4.631
@@ -115,17 +116,19 @@ TEST(FciOracleJsonTest, RejectsPricesThatCannotReachOneCent) {
   EXPECT_EQ(463u, config.fciGas);
 }
 
-TEST(FciOracleJsonTest, RoundsToTheNearestCent) {
+TEST(FciOracleJsonTest, RoundsOntoEachVoteGrid) {
   const auto path = writeOracle("fci_rounding.json", R"({
+    "power": 0.7886,
     "milk": 3.99,
     "bread": 3.999,
     "eggs": 2.004
   })");
   const auto config = loadOracle(path);
 
+  EXPECT_EQ(789u, config.fciPower);  // milli-USD: 788.6 rounds up
   EXPECT_EQ(399u, config.fciMilk);   // 399 is $3.99
-  EXPECT_EQ(400u, config.fciBread);  // 399.9 rounds up
-  EXPECT_EQ(200u, config.fciEggs);   // 200.4 rounds down
+  EXPECT_EQ(400u, config.fciBread);  // 399.9 cents rounds up
+  EXPECT_EQ(200u, config.fciEggs);   // 200.4 cents rounds down
 }
 
 TEST(FciOracleJsonTest, MissingFileLeavesTheBasketEmpty) {

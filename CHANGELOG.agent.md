@@ -1,4 +1,59 @@
-## FCI restore: integer cents, rice as a sixth category, 3-of-6 quarterly gate
+## Staging tracker ground-truth refresh
+
+**Started**: 2026-10-20
+**Agent**: opencode (GLM-5.3-Flash Free)
+**Status**: DONE (docs only)
+**Scope**: `src/SwapDaemon/chains-staging/README.md` had drifted from `SwapPairCatalog.h`: DOGE/AVAX/ZEC/DASH were listed as pending P0/P1 but shipped as ACTIVE (ids 20/14/22/21). Table, sequence, template mapping and directory tree updated. Corrected ZANO template row (catalog family is CRYPTONOTE ⇒ Monero pattern, not Litecoin copy). SPARK row moved to Parked with reference to `spark/README.md` routes.
+
+### Task list
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Count catalog ACTIVE/ADAPTER/STAGED (25/17/4 of 46) and reconcile tracker | opencode | 2026-10-20 | DONE |
+| 2 | Rewrite priority table and sequence; mark shipped dirs; fix ZANO family row | opencode | 2026-10-20 | DONE |
+
+### Sign-off table
+
+| Gate | Status |
+|------|--------|
+| Build compiles | N/A — docs only |
+| Tests pass | N/A — docs only |
+| All tasks done | DONE 2026-10-20 (opencode) |
+
+---
+
+## Spark staging plan (spark.money Bitcoin L2)
+
+**Started**: 2026-10-20
+**Agent**: opencode (GLM-5.3-Flash Free)
+**Status**: DONE (docs/planning only — no source code changed, no build claimed)
+**Scope**: Feasibility analysis and staging plan for adding Spark (spark.money, Lightspark Bitcoin L2) to Fuego swaps. docs-only; route decision for implementation is deferred to maintainers.
+
+### Why this entry exists
+
+`src/SwapDaemon/chains-staging/` gained a `spark/` plan and the staging tracker gained rows. The catalog is append-only (`SwapPairCatalog.h`), so this entry records the reserved id decision before any future code change.
+
+### Task list
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Research Spark trust model, script/HTLC surface, SDKs, Garden bridge (docs.spark.money, spark.money/research) | opencode | 2026-10-20 | DONE |
+| 2 | Write `src/SwapDaemon/chains-staging/spark/README.md` — three routes (managed rail / direct `SPARK = 46` pair / Garden), invariants applied, open dependency: SE preimage-release primitive unconfirmed | opencode | 2026-10-20 | DONE |
+| 3 | Update `chains-staging/README.md` priority table, template mapping, directory listing | opencode | 2026-10-20 | DONE |
+
+### Sign-off table
+
+| Gate | Status |
+|------|--------|
+| Build compiles | N/A — docs only, no source change |
+| Tests pass | N/A — docs only |
+| All tasks done | DONE 2026-10-20 (opencode) |
+
+### Open items (blockers for implementation)
+
+1. Spark conditional-transfer release on preimage knowledge — API exposure to third-party integrators unconfirmed. Until confirmed, `SPARK` ships only as a STAGED catalog id or not at all; Route A (managed rail on the existing `SwapPair::BTC`) needs no catalog change.
+
+
 
 **Started**: 2026-10-20
 **Agent**: opencode (DeepSeek V4.1 Flash Free)
@@ -31,14 +86,20 @@ This entry records the reconstruction and the unit change that followed it.
 | 7 | Repair the build breaks: `FuegoCostIndex.h`, the `getHeatPegUsdMicro` call, the dangling test sources, the unguarded `-lresolv` link, and the `SwapPair::ZEC` / `SwapPair::RSK` references left behind by the pair rename | opencode | 2026-10-20 | DONE |
 | 8 | Fix `AGENTS.md`'s HEAT reference line and the four docs that still said "peg reference" | opencode | 2026-10-20 | DONE |
 | 9 | Build every target, run the full suite, and record the evidence | opencode | 2026-10-20 | DONE |
+| 10 | Move the power category from the cent grid to milli-USD per kWh (3 decimals), so miners type `0.788` instead of `19.6` cents; keep the other five categories on cents | opencode | 2026-10-21 | DONE |
+| 11 | Write `docs/developer/fuego-cost-index.mdx` — FCI reference plus a miner how-to (units, CLI, oracle, verification, common mistakes) and register it in `docs/docs.json` | opencode | 2026-10-21 | DONE |
 
 ### What landed
 
-**Unit change.** Every price in the FCI is an integer number of cents. A miner
-enters a decimal amount in its own currency and `MinerConfig` rounds to the
-nearest cent before the vote is sealed, so no float ever reaches consensus. The
-index scale is `100`, meaning the index reads `100` at the Day-0 basket and the
-reference reads `158` for `$1.58`.
+**Unit change.** Five of the six categories are integer cents
+(399 = $3.99). Power is milli-USD per kWh (788 = $0.788/kWh), because
+electricity is quoted to three decimals everywhere and one cent is a 5% step at
+US prices. A miner enters a decimal amount in its own currency and
+`MinerConfig` rounds onto the category's own grid before the vote is sealed, so
+no float ever reaches consensus. The index is a ratio (price ÷ baseline), so the
+mixed grids cancel and never distort the result. The index scale is `100`,
+meaning the index reads `100` at the Day-0 basket and the reference reads `158`
+for `$1.58`.
 
 **Rice.** Appended as mask bit 5, not inserted. Bits 0–4 keep their historical
 meaning and order, and `TransactionExtraMinerBasketVote::serialize` writes only
@@ -92,6 +153,8 @@ rather than cross-checked two.
 - `tests/UnitTests/FciOracleJsonTest.cpp` — 6 cases pinning the oracle document
   to the daemon's flat scanner.
 - `tools/fci-oracle/` — restored; `gofmt` and `go vet` clean.
+- `docs/developer/fuego-cost-index.mdx` — FCI reference and miner how-to;
+  registered in `docs/docs.json` under the Developer group.
 
 ### Verification
 
@@ -103,6 +166,8 @@ rather than cross-checked two.
 | Oracle suite | `./tests/fci_oracle_json_tests` → 6/6 passed |
 | Full suite | `ctest -j 4` → 53/55 passed |
 | Oracle, live | `/tmp/fci-oracle -out /tmp/fci_oracle.json` → six keys plus headline CPI 336.94 (2026-09) |
+| Daemon, live | `fuegod --fci-power 0.196 ...` → `[FCI] Basket vote active: mask=0x3f power=196 ... (power in milli-USD/kWh, rest in cents)` |
+| Daemon, oracle | `fuegod --fci-oracle /tmp/fci_oracle.json` → same mask and values, provenance keys skipped |
 
 The two failing ctest entries are `test_sol_e2e` and `test_xmr_live_e2e`. Both
 are registered by the shared `foreach(...)` block in `src/CMakeLists.txt` with no
@@ -121,13 +186,10 @@ in this scope.
   for the values it sets up, and it drives `BankingIndex::popBlock()` outside the
   undo path `Blockchain` actually uses. Re-enable it once those assertions are
   rewritten against a real connect/disconnect cycle.
-- **Electricity rounds hard at this scale.** `$0.196/kWh` becomes `20` cents, a
-  2.04% step, and power carries 30% of the index. The error is a rounding error,
-  so it is bounded by ±2% on that component (±0.6% on the index) and oscillates
-  around zero as the price drifts, but it is not negligible quarter to quarter.
-  If it proves too coarse in operation, the fix is to quote power per 100 kWh
-  (`1200` = `$12.00/100 kWh`) in both the config baseline and the miner
-  conversion, which restores four significant digits without leaving cents.
+- **Power grid moved to milli-USD.** Resolved 2026-10-21: power is now
+  `FCI_BASELINE_POWER = 120` milli-USD per kWh and the miner conversion uses a
+  1000× scale, so `$0.196/kWh` votes as `196` instead of `20`. The other five
+  categories remain on cents. The per-100-kWh alternative is no longer needed.
 - **No V13 gate.** Activation uses the existing `BLOCK_MAJOR_VERSION_12` check
   and a coordinated rollout, as directed. There is no version bump that would
   let old nodes reject rice-bearing votes on their own.

@@ -90,16 +90,17 @@ TEST(FuegoCostIndexTest, StartsAtTheConfiguredBasketAndReference) {
             tally.hearthstoneCents);
 }
 
-TEST(FuegoCostIndexTest, PricesAndReferenceAreIntegerCents) {
-  FuegoCostIndex index;
-
-  // 399 is $3.99. The basket and the reference must both live on that grid,
-  // so a vote can never carry a fractional cent into consensus.
-  EXPECT_EQ(parameters::FCI_BASELINE_MILK, 390U);
-  EXPECT_EQ(parameters::FCI_BASELINE_GAS, 350U);
-  EXPECT_EQ(parameters::FCI_BASELINE_EGGS, 300U);
-  EXPECT_EQ(parameters::FCI_BASELINE_BREAD, 250U);
-  EXPECT_EQ(parameters::FCI_BASELINE_RICE, 250U);
+// The basket and the reference are integers, but not all on the same grid:
+// five categories are cents per retail unit, power is milli-USD per kWh. If
+// power ever drops back to a cent grid, a $0.196/kWh reading starts
+// quantising into 5% steps and the index inherits that noise.
+TEST(FuegoCostIndexTest, BasketBaselinesSitOnTheirIntegerGrids) {
+  EXPECT_EQ(parameters::FCI_BASELINE_POWER, 120U); // $0.12/kWh, milli-USD
+  EXPECT_EQ(parameters::FCI_BASELINE_GAS, 350U);   // $3.50/gal
+  EXPECT_EQ(parameters::FCI_BASELINE_MILK, 390U);  // $3.90/gal
+  EXPECT_EQ(parameters::FCI_BASELINE_BREAD, 250U); // $2.50/kg
+  EXPECT_EQ(parameters::FCI_BASELINE_EGGS, 300U);  // $3.00/dozen
+  EXPECT_EQ(parameters::FCI_BASELINE_RICE, 250U);  // $2.50/kg
   EXPECT_EQ(parameters::FCI_HEARTHSTONE_INITIAL_CENTS, 158U);
 }
 

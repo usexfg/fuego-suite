@@ -242,14 +242,19 @@ const uint32_t FCI_EPOCHS_PER_QUARTER = 18; // one quarter of the 72-epoch term
 const uint64_t FCI_INDEX_SCALE = 100ULL;    // index par is 100 cents
 const uint64_t FCI_HEARTHSTONE_INITIAL_CENTS = 158ULL; // $1.58 launch reference
 
-// Commodity basket — Day-0 USD baselines (integer cents)
-//   Power: 1 kWh electric     $0.12    → 12
-//   Gas:   1 gallon petrol    $3.50    → 350
-//   Milk:  1 gallon whole     $3.90    → 390
-//   Bread: 1 kg loaf          $2.50    → 250
-//   Eggs:  1 dozen large      $3.00    → 300
-//   Rice:  1 kg uncooked      $2.50    → 250
-const uint32_t FCI_BASELINE_POWER = 12U;  // cents per kWh
+// Commodity basket — Day-0 USD baselines, in the integer units the vote
+// carries. Five categories are cents per natural retail unit (399 = $3.99).
+// Power is milli-USD per kWh (788 = $0.788/kWh): electricity is quoted to
+// three decimals everywhere, and one cent is a 5% step at US prices — far too
+// coarse for a category carrying 30% of the index.
+//
+//   Power: 1 kWh electric     $0.12    → 120   milli-USD/kWh
+//   Gas:   1 gallon petrol    $3.50    → 350   cents/gallon
+//   Milk:  1 gallon whole     $3.90    → 390   cents/gallon
+//   Bread: 1 kg loaf          $2.50    → 250   cents/kg
+//   Eggs:  1 dozen large      $3.00    → 300   cents/dozen
+//   Rice:  1 kg uncooked      $2.50    → 250   cents/kg
+const uint32_t FCI_BASELINE_POWER = 120U; // milli-USD per kWh
 const uint32_t FCI_BASELINE_GAS = 350U;   // cents per gallon
 const uint32_t FCI_BASELINE_MILK = 390U;  // cents per gallon
 const uint32_t FCI_BASELINE_BREAD = 250U; // cents per kg loaf

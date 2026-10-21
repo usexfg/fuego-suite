@@ -132,6 +132,10 @@ uint32_t FuegoCostIndex::trimmedMedian(std::vector<uint32_t> values) {
 }
 
 uint64_t FuegoCostIndex::calculateIndexCents() const {
+  // Each category contributes price/baseline, so the unit of a vote cancels
+  // against the unit of its baseline. That is what lets power sit on a
+  // milli-USD grid while the other five sit on a cent grid without the index
+  // needing to know the difference.
   uint128_t weightedIndex = 0;
   for (size_t i = 0; i < COMMODITY_COUNT; ++i) {
     weightedIndex += (uint128_t(m_medianPrices[i]) * WEIGHTS[i] *

@@ -243,7 +243,7 @@ namespace CryptoNote
         << " eggs=" << m_fci_basket.eggs
         << " gas=" << m_fci_basket.gas
         << " rice=" << m_fci_basket.rice
-        << " (all in USD cents)";
+        << " (power in milli-USD/kWh, rest in cents)";
     } else {
       logger(INFO) << "[FCI] No basket prices configured. Use --fci-power/milk/gas/bread/eggs/rice or --fci-oracle to participate.";
     }

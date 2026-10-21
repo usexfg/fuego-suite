@@ -57,7 +57,7 @@ const command_line::arg_descriptor<uint32_t> arg_mining_threads = {
 // With non-USD currency:
 //   --fci-currency EUR --fci-usd-rate 1.08 --fci-power 0.29
 const command_line::arg_descriptor<double>      arg_fci_power = {
-  "fci-power",    "Electricity price per kWh in local currency", 0.0, true};
+  "fci-power",    "Electricity price per kWh in local currency (stored to 0.001)", 0.0, true};
 const command_line::arg_descriptor<double>      arg_fci_milk = {
   "fci-milk",     "Whole milk price per GALLON in local currency", 0.0, true};
 const command_line::arg_descriptor<double>      arg_fci_gas = {
@@ -115,18 +115,25 @@ double getCurrencyUsdRate(const std::string& code) {
   return 0.0;
 }
 
-// Convert local-currency price to integer cents (399 = $3.99).
+// The vote carries integers on two grids. Five categories are cents per
+// natural retail unit (399 = $3.99). Power is milli-USD per kWh (788 =
+// $0.788/kWh), because electricity is quoted to three decimals worldwide and
+// one cent would quantise a US price into 5% steps.
+constexpr double FCI_SCALE_CENTS = 100.0;
+constexpr double FCI_SCALE_POWER_MILLI = 1000.0;
+
+// Convert a local-currency price to the integer grid the vote carries.
 // Returns 0 on invalid or unrepresentable input.
-uint32_t toUsdCents(double localPrice, double usdRate) {
+uint32_t toVoteUnits(double localPrice, double usdRate, double scale) {
   if (!std::isfinite(localPrice) || !std::isfinite(usdRate) ||
       localPrice <= 0.0 || usdRate <= 0.0) return 0;
   double usd = localPrice * usdRate;
   if (!std::isfinite(usd)) return 0;
-  double raw = std::round(usd * 100.0);
+  double raw = std::round(usd * scale);
   if (!std::isfinite(raw)) return 0;
   if (raw > static_cast<double>(UINT32_MAX)) return 0;
-  // A price that rounds down to zero cents cannot be voted: zero is the
-  // "absent" sentinel on the wire and decodeVote rejects it.
+  // A price that rounds to zero cannot be voted: zero is the "absent"
+  // sentinel on the wire and decodeVote rejects it.
   if (raw < 1.0) return 0;
   return static_cast<uint32_t>(raw);
 }
@@ -184,17 +191,17 @@ bool tryLoadOracleJson(const std::string& path, double usdRate,
     double val = std::strtod(colon + 1, &end);
     if (end == colon + 1) { p = qe + 1; continue; } // not a number
 
-    struct { const char* name; uint8_t bit; uint32_t& out; } fields[] = {
-      {"power", 1 << 0, power},
-      {"milk",  1 << 1, milk},
-      {"bread", 1 << 2, bread},
-      {"eggs",  1 << 3, eggs},
-      {"gas",   1 << 4, gas},
-      {"rice",  1 << 5, rice},
+    struct { const char* name; uint8_t bit; double scale; uint32_t& out; } fields[] = {
+      {"power", 1 << 0, FCI_SCALE_POWER_MILLI, power},
+      {"milk",  1 << 1, FCI_SCALE_CENTS, milk},
+      {"bread", 1 << 2, FCI_SCALE_CENTS, bread},
+      {"eggs",  1 << 3, FCI_SCALE_CENTS, eggs},
+      {"gas",   1 << 4, FCI_SCALE_CENTS, gas},
+      {"rice",  1 << 5, FCI_SCALE_CENTS, rice},
     };
     for (auto& f : fields) {
       if (key == f.name && !(mask & f.bit)) {
-        uint32_t u = toUsdCents(val, usdRate);
+        uint32_t u = toVoteUnits(val, usdRate, f.scale);
         if (u > 0) { f.out = u; mask |= f.bit; loaded = true; }
         break;
       }
@@ -266,19 +273,20 @@ void MinerConfig::init(const boost::program_options::variables_map& options) {
 
   // ── Load CLI prices first (highest priority) ──────────────────────────
   // bit 0=power, 1=milk, 2=bread, 3=eggs, 4=gas, 5=rice
-  auto parseField = [&](auto arg_desc, uint8_t bit, uint32_t& out) {
+  auto parseField = [&](auto arg_desc, uint8_t bit, double scale,
+                        uint32_t& out) {
     if (command_line::has_arg(options, arg_desc)) {
       double v = command_line::get_arg(options, arg_desc);
-      uint32_t u = toUsdCents(v, fciUsdRate);
+      uint32_t u = toVoteUnits(v, fciUsdRate, scale);
       if (u > 0) { out = u; fciPresentMask |= bit; }
     }
   };
-  parseField(arg_fci_power, 1 << 0, fciPower);
-  parseField(arg_fci_milk,  1 << 1, fciMilk);
-  parseField(arg_fci_bread, 1 << 2, fciBread);
-  parseField(arg_fci_eggs,  1 << 3, fciEggs);
-  parseField(arg_fci_gas,   1 << 4, fciGas);
-  parseField(arg_fci_rice,  1 << 5, fciRice);
+  parseField(arg_fci_power, 1 << 0, FCI_SCALE_POWER_MILLI, fciPower);
+  parseField(arg_fci_milk,  1 << 1, FCI_SCALE_CENTS, fciMilk);
+  parseField(arg_fci_bread, 1 << 2, FCI_SCALE_CENTS, fciBread);
+  parseField(arg_fci_eggs,  1 << 3, FCI_SCALE_CENTS, fciEggs);
+  parseField(arg_fci_gas,   1 << 4, FCI_SCALE_CENTS, fciGas);
+  parseField(arg_fci_rice,  1 << 5, FCI_SCALE_CENTS, fciRice);
 
   // ── Then fill any missing fields from oracle JSON (lower priority) ────
   if (!fciOraclePath.empty()) {

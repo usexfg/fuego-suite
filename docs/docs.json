@@ -112,7 +112,8 @@
         "pages": [
           "developer/architecture",
           "developer/building",
-          "developer/rpc-reference"
+          "developer/rpc-reference",
+          "developer/fuego-cost-index"
         ]
       },
       {

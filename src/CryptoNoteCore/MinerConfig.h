@@ -37,9 +37,11 @@ public:
   uint32_t    miningThreads;
 
   // ── Fuego Cost Index (FCI) basket prices ─────────────────────────────────
-  // All stored as integer cents (399 = $3.99). The miner enters a decimal
-  // amount in its local currency and init() rounds to the nearest cent, so
-  // consensus only ever sees integer cents — no floats cross into the daemon.
+  // Stored as integers on the vote grid. Five categories are cents per natural
+  // retail unit (399 = $3.99); power is milli-USD per kWh (788 = $0.788),
+  // because electricity is quoted to three decimals. The miner enters a decimal
+  // amount in its local currency and init() scales it, so consensus only ever
+  // sees integers — no floats cross into the daemon.
   //
   // present_mask bits:
   //   bit 0 = power   bit 1 = milk   bit 2 = bread
@@ -49,7 +51,7 @@ public:
   // Phase 1: votes are stored on-chain but no DIGM payout is issued.
   //          Block height + spend-key-hash recorded for auditable back-pay.
   uint8_t  fciPresentMask;   // bitmask of which commodities are configured
-  uint32_t fciPower;         // cents per kWh      (e.g. $0.12  → 12)
+  uint32_t fciPower;         // milli-USD per kWh (e.g. $0.788 → 788)
   uint32_t fciMilk;          // cents per gallon whole milk
   uint32_t fciGas;           // cents per gallon petrol
   uint32_t fciBread;         // cents per kg loaf
@@ -58,7 +60,7 @@ public:
 
   // ── Currency helpers ─────────────────────────────────────────────────────
   // Miner may supply prices in any supported fiat; init() multiplies by
-  // fciUsdRate to produce the cent integer stored above.
+  // fciUsdRate to produce the integer stored above.
   std::string fciCurrency;   // ISO-4217 code (default: "USD")
   double      fciUsdRate;    // local-currency → USD rate (default: 1.0)
 

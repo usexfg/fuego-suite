@@ -5,41 +5,42 @@ Each subdirectory contains a README with the implementation plan for that chain.
 
 ## Priority Order
 
+Ground truth is `SwapPairCatalog.h`; this table tracks what is *not yet* live.
+DOGE (20), AVAX (14), ZEC (22) and DASH (21) shipped from staging to ACTIVE —
+plans below are kept for reference only. LIVE REMAINING: ZANO, TON, SIA, DOT.
+
 | Priority | Chain | Type | Rationale |
 |----------|-------|------|-----------|
-| P0 | DOGE | UTXO | Top 10 market cap, same pattern as LTC, massive retail volume |
-| P0 | AVAX | EVM | Top 20 market cap, header-only inheritance, DeFi ecosystem access |
-| P1 | ZEC | UTXO | Privacy alignment with Fuego, mature atomic swap ecosystem |
-| P1 | DASH | UTXO | Established atomic swap ecosystem, privacy features |
-| P2 | ZANO | UTXO | Privacy-focused, ASIC-resistant, niche community |
-| P2 | TON | Non-standard | Telegram integration, massive user base, custom implementation |
-| P2 | SIA | Non-standard | Filecoin ecosystem, placeholder exists, needs full implementation |
+| P1 | ZANO | Cryptonote | Privacy-focused, ASIC-resistant, dedicated pair catalog (id 24 STAGED), Monero-pattern client |
+| P2 | TON | Non-standard | Telegram integration, massive user base, custom implementation (id 27 STAGED) |
+| P2 | SIA | Non-standard | Filecoin ecosystem, placeholder exists, needs full implementation (id 17 STAGED) |
+| P2 | DOT | Non-standard | Polkadot geonization, custom implementation (id 28 STAGED) |
 
 ## Implementation Sequence
 
-1. **Phase 1 (P0)**: DOGE + AVAX — quickest wins, lowest effort
-2. **Phase 2 (P1)**: ZEC + DASH — medium effort, privacy alignment
-3. **Phase 3 (P2)**: ZANO + TON + SIA — higher effort, niche value
+1. **DONE (moved to catalog ACTIVE)**: DOGE (20), AVAX (14), ZEC (22), DASH (21)
+2. **Phase 1 (P1)**: ZANO — Monero-family cryptonote client
+3. **Phase 2 (P2)**: TON + SIA + DOT — higher effort, niche value
+4. **Parked**: SPARK (see `spark/README.md`) — direct pair parked behind the open
+   SE release-primitive question; Route A (managed rail, no new pair) remains the recommendation.
 
 ## Directory Structure
 
 ```
 chains-staging/
 ├── README.md          ← this file (overall plan)
-├── doge/
-│   └── README.md      ← Dogecoin implementation plan
-├── avax/
-│   └── README.md      ← Avalanche implementation plan
-├── zec/
-│   └── README.md      ← Zcash implementation plan
-├── dash/
-│   └── README.md      ← Dash implementation plan
+├── doge/              ← SHIPPED (catalog id 20, ACTIVE)
+├── avax/              ← SHIPPED (catalog id 14, ACTIVE)
+├── zec/               ← SHIPPED (catalog id 22, ACTIVE)
+├── dash/              ← SHIPPED (catalog id 21, ACTIVE)
 ├── zano/
-│   └── README.md      ← Zano implementation plan
+│   └── README.md      ← Zano implementation plan (P1)
 ├── ton/
 │   └── README.md      ← TON implementation plan
-└── sia/
-    └── README.md      ← Sia implementation plan
+├── sia/
+│   └── README.md      ← Sia implementation plan
+└── spark/
+    └── README.md      ← Spark (spark.money) Bitcoin L2 plan (parked, see Route A/B)
 ```
 
 ## Template Mapping
@@ -55,6 +56,8 @@ Each chain's README references the existing implementation it is based on:
 | ZANO | Litecoin | UTXO full client (copy LTC, change network params) |
 | TON | Solana | Custom non-standard client |
 | SIA | (empty) | Custom non-standard client (placeholder exists) |
+| ZANO | Monero | Cryptonote-family client (catalog family CRYPTONOTE, id 24) — the earlier "Litecoin copy" line here was wrong |
+| DOT | (none) | Custom non-standard client (Substrate) |
 
 ## Testing Strategy
 

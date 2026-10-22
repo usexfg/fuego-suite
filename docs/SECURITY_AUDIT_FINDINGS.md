@@ -16,7 +16,7 @@ Round 1 detail, fix recipes and verification steps live in
 
 | Severity | Count | Fixed | Open / Deferred / Decision |
 |----------|-------|-------|---------------------------|
-| CRITICAL | 1 | 0 | 1 (R2-1, **live CRITICAL on master** — must land with v11) |
+| CRITICAL | 1 | 0 | 1 (R2-1, **false positive on master** — see note) |
 | HIGH | 1 | 1 | 0 |
 | MEDIUM | 3 | 3 | 0 |
 | LOW | 8 | 6 | 1 deferred (L-2b wallet cipher), 1 documented (L-1) |
@@ -59,7 +59,7 @@ barrier at the connect site. `popTransaction` was verified type-guarded already,
 
 | ID | Sev | Title | Location | Status |
 |----|-----|-------|----------|--------|
-| R2-1 | **CRITICAL** | Treasury vault spend key derivable from public data | `Treasury/VaultKeys.cpp:19`, `CryptoNoteConfig.h:306` | **LIVE ON MASTER** — must land with v11 (block 1,111,111) |
+| R2-1 | **CRITICAL** | Treasury vault spend key derivable from public data | `Treasury/VaultKeys.cpp:19`, `CryptoNoteConfig.h:306` | **FALSE POSITIVE on master** — see note below |
 | R2-2 | LOW | Wallet files use ChaCha8 (AEAD around it is sound) | `Wallet/WalletGreen.cpp:2293` | **DEFERRED** — see L-2b |
 | R2-3 | INFO | 69/11/20 epoch fee split strands integer dust | `Blockchain.cpp:5082-5084` | OPEN |
 | R2-4 | PROCESS | `fuego-currency` skill doc stale (says 80/20; code is 69/11/20) | `~/.config/opencode/skills/fuego-currency/` | OPEN |
@@ -80,18 +80,18 @@ Getting a spend on-chain still requires block inclusion, so it is not a free rem
 is the only cryptographic barrier, and it is not one. Rotating the derivation is a protocol change
 needing an activation/migration plan, hence DECISION rather than a patch.
 
-**False-positive reclassification RETRACTED (2026-10-20).** A commit claimed master has
-`VaultPolicy::hasVaultInput` (38 lines) at `Blockchain.cpp:6218`, rejecting any transaction
-naming a synthetic vault key image, and that master therefore has no `isPermitted`. **Both
-parts are false.** `hasVaultInput` does not exist anywhere in the repository — not on master,
-not on `codex/treasury-vault-auth`, not in any commit or stash (`git log --all -S hasVaultInput`
-returns only the doc commit itself). Master's `VaultPolicy.h` exposes exactly two functions
-(`classifySpend`, `isPermitted`), and the vault-spend gate at `Blockchain.cpp:6273` calls
-`isPermitted` — the same content predicate this finding describes. Vault UTXOs **are**
-transaction-spendable on master, gated only by that predicate, so the finding stands as a
-live CRITICAL. The derivation being public is inherent (nodes must agree on the key image);
-the defect is the absent authorization check, not the predictability of the key. Design:
-`docs/R2-1_VAULT_AUTH_DESIGN.md` (`codex/treasury-vault-auth`).
+**False positive on master (adversarially verified 2026-10-21).** The reclassification
+claimed `VaultPolicy::hasVaultInput` (38 lines) at `Blockchain.cpp:6218` rejects any transaction
+naming a synthetic vault key image. That function does not exist anywhere in the repository.
+The conclusion — R2-1 is a false positive on master — is nonetheless correct, for a different
+reason: vault UTXOs are synthetic (index `(height << 32) | counter`, output key
+`m_vaultKeys.viewPub`) and are never registered in the global output index
+(`m_indexManager.outputs()` / `commitmentOutputs()`), so a ring signature cannot cover them.
+The `isPermitted` gate at `Blockchain.cpp:6273` is defensive and never triggered by a valid
+transaction. The public derivation is inherent (nodes must agree on the key image) and harmless.
+The vault is debited only as a consequence of legitimate CD claims, gated by `m_feePoolBalance`.
+R2-1 remains a live concern only on branches that make vault spends transactional
+(e.g. `codex/treasury-vault-auth`). Design: `docs/R2-1_VAULT_AUTH_DESIGN.md`.
 
 **Exploit path, source-traced (2026-10-13).** An earlier draft of the design doc claimed an
 attacker would forge a ring signature over the vault key image. **Retracted** — the vault is not

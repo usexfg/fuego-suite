@@ -6269,14 +6269,14 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
       }
     }
     if (isVaultSpend) {
-      VaultPartition vaultSource = VaultPolicy::classifySpend(transaction.tx, m_vault);
-      if (!VaultPolicy::isPermitted(transaction.tx, vaultSource, m_vault)) {
-        logger(ERROR, BRIGHT_RED) << "Rejected unauthorized vault spend for partition "
-            << vaultPartitionName(vaultSource);
-        rollbackSpentKeyInserts();
-        m_indexManager.transactionMap().erase(transactionHash);
-        return false;
-      }
+      // R2-1 fix: vault spends are internal-only (epoch work via spendUtxos).
+      // No transaction may name a vault key image — the spend key is public by
+      // construction (nodes must agree on the key image), so any content-based
+      // gate (isPermitted) is bypassable. Reject unconditionally.
+      logger(ERROR, BRIGHT_RED) << "Rejected transaction naming a synthetic vault key image";
+      rollbackSpentKeyInserts();
+      m_indexManager.transactionMap().erase(transactionHash);
+      return false;
     }
   }
 

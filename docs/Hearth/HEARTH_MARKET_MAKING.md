@@ -4,8 +4,7 @@
 
 ## 1. Liquidity Management Overview
 
-Hearth combines a constant-product AMM with a limit order overlay.
-Participants can provide liquidity directly or place limit-deposit commitments.
+Hearth uses one pool inventory two ways: constant-product AMM (`reserveXfg × reserveHeat`) for LP shares, direct swaps, and the post-auction backstop; the same reserves quoted as depth-band makers in the per-block call auction. Participants can provide balanced LP inventory or place tx-extra limit-deposit commitments.
 
 ## 2. Using `scripts/hearth_market_maker.py`
 

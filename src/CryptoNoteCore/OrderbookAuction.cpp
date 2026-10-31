@@ -47,7 +47,8 @@ bool laterOrder(const AuctionOrder& a, const AuctionOrder& b) {
 
 AuctionResult runAuction(const std::vector<AuctionOrder>& bidsIn,
                          const std::vector<AuctionOrder>& asksIn,
-                         uint64_t prevPclear) {
+                         uint64_t prevPclear,
+                         uint8_t blockMajorVersion) {
   AuctionResult result;
 
   if (bidsIn.empty() || asksIn.empty()) return result;
@@ -221,10 +222,12 @@ AuctionResult runAuction(const std::vector<AuctionOrder>& bidsIn,
     }
   }
 
-  // Fee assignment: the taker side pays the full 1% (70% → CD yield, 30% into
-  // the rebate pool); the maker side receives the pool pro-rata by fill value.
+  // Fee assignment: the taker side pays the full 1%. The split is versioned
+  // (hearthCdSharePct): v11 pays makers 70% to buy depth, v12 pays CD holders
+  // 70%. The maker side receives the rebate pool pro-rata by fill value.
   // Conservation: Σ fee = Σ cd + Σ reb (cumulative floors per side).
   if (result.hasTaker) {
+    const uint64_t cdSharePct = hearthCdSharePct(blockMajorVersion);
     uint8_t takerSide = result.takerIsBid ? 0 : 1;
     auto feeCum = [&](uint64_t cumHeat) {
       return static_cast<uint64_t>(
@@ -237,8 +240,7 @@ AuctionResult runAuction(const std::vector<AuctionOrder>& bidsIn,
       uint64_t prev = takerCum;
       takerCum += f.heat;
       uint64_t fee = feeCum(takerCum) - feeCum(prev);
-      f.cdFeeHeat = static_cast<uint64_t>(
-          ((uint128_t)fee * parameters::HEARTH_CD_SHARE_PCT) / 100);
+      f.cdFeeHeat = static_cast<uint64_t>(((uint128_t)fee * cdSharePct) / 100);
       uint64_t reb = fee - f.cdFeeHeat;
       f.rebateHeat = reb;   // taker pays the rebate into the pool
       rebPool += reb;

@@ -1,10 +1,17 @@
 # Orderbook v11 — Call-Auction CLOB + Microstructure Upgrades
 
-**Status**: Plan / awaiting approval of the v12→v11 re-gate before implementation.
+**Status**: Historical plan. Live code is **one inventory, two uses**: AMM
+(`reserveXfg × reserveHeat`) is the balance sheet; the depth band is that
+inventory quoted as 0xF0 makers in the call auction (`generatePoolOrders()`,
+`HEARTH_DEPTH_BAND_PCT`). Per block after bootstrap: regenerate pool makers →
+auction (user deposits + pool makers) → AMM-curve backstop for leftovers.
+See `AGENTS.md` and `docs/features/hearth/how-hearth-works.mdx`. Do not treat
+diagrams below that omit pool makers or call auction fills “fee-free” as
+current.
 
 ## 1. Goal
 
-Replace pool-intermediated pricing with real two-sided price discovery on-chain, without reintroducing the unbacked-order attack class. The mechanism is a **per-block call auction** (exchange opening-auction rules) over **tx-extra-backed limit orders**, upgraded with exchange-grade microstructure rules, with the constant-product AMM retained as a volume-capped backstop.
+Replace pool-intermediated pricing with real two-sided price discovery on-chain, without reintroducing the unbacked-order attack class. The mechanism is a **per-block call auction** (exchange opening-auction rules) over **tx-extra-backed limit orders**, upgraded with exchange-grade microstructure rules, with the constant-product AMM retained as a volume-capped backstop **and** as the inventory behind pool depth-band makers.
 
 ## 2. Architecture
 

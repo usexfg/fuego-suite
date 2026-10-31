@@ -35,6 +35,13 @@ static int g_fail = 0;
 
 static const uint64_t COIN = parameters::COIN;
 
+// The taker-fee split is versioned; these tests pin v11.
+static AuctionResult runAuctionV11(const std::vector<AuctionOrder>& bids,
+                                   const std::vector<AuctionOrder>& asks,
+                                   uint64_t prevPclear) {
+  return runAuction(bids, asks, prevPclear, BLOCK_MAJOR_VERSION_11);
+}
+
 static Crypto::Hash mkHash(uint8_t b0, uint8_t b1 = 0, uint8_t b2 = 0) {
   Crypto::Hash h{}; h.data[0] = b0; h.data[1] = b1; h.data[2] = b2; return h;
 }
@@ -191,11 +198,11 @@ static void testPoolTwoSidedQuoting() {
 
   std::vector<AuctionOrder> withoutAsk{ poolBid };
   std::vector<AuctionOrder> asksOnly{ userAsk };
-  AuctionResult baseline = runAuction(withoutAsk, asksOnly, P);
+  AuctionResult baseline = runAuctionV11(withoutAsk, asksOnly, P);
   CHECK(baseline.crossed, "pool bidding alone crosses with the user's sell");
 
   std::vector<AuctionOrder> asksBoth{ userAsk, poolAskFar };
-  AuctionResult twoSided = runAuction(withoutAsk, asksBoth, P);
+  AuctionResult twoSided = runAuctionV11(withoutAsk, asksBoth, P);
   CHECK(twoSided.crossed, "adding the pool's own ask does not void the auction");
 
   uint64_t userFilled = 0;
@@ -212,7 +219,7 @@ static void testSelfTradeStillBlocked() {
   Crypto::Hash sameParty = mkHash(0xBB);
   std::vector<AuctionOrder> bids{ mkOrder(mkHash(0x01), 0, 10 * COIN, 100 * COIN, 5, sameParty) };
   std::vector<AuctionOrder> asks{ mkOrder(mkHash(0x02), 1, 1 * COIN, 100 * COIN, 6, sameParty) };
-  AuctionResult r = runAuction(bids, asks, P);
+  AuctionResult r = runAuctionV11(bids, asks, P);
   CHECK(!r.crossed, "one address crossing itself produces no fills");
 
   // Exempting pool orders removes them from the self-trade net, so the spread
@@ -221,7 +228,7 @@ static void testSelfTradeStillBlocked() {
   Crypto::Hash pool{};
   std::vector<AuctionOrder> pb{ mkOrder(mkHash(0xF0, 0x01), 0, P - COIN / 20, 100 * COIN, 0, pool) };
   std::vector<AuctionOrder> pa{ mkOrder(mkHash(0xF0, 0x02), 1, P + COIN / 20, 100 * COIN, 0, pool) };
-  AuctionResult pr = runAuction(pb, pa, P);
+  AuctionResult pr = runAuctionV11(pb, pa, P);
   CHECK(!pr.crossed, "a well-formed pool band (bid < ask) never self-crosses");
 }
 
@@ -244,7 +251,7 @@ static void testConservation() {
   std::cout << "\nAuction: volume and fee conservation\n";
   std::vector<AuctionOrder> bids, asks;
   buildCrossingBook(bids, asks);
-  AuctionResult r = runAuction(bids, asks, 2 * COIN);
+  AuctionResult r = runAuctionV11(bids, asks, 2 * COIN);
   CHECK(r.crossed, "constructed book crosses");
 
   uint64_t bidVol = 0, askVol = 0, bidHeat = 0, askHeat = 0;
@@ -273,11 +280,11 @@ static void testDeterminism() {
   std::cout << "\nAuction: deterministic under input permutation\n";
   std::vector<AuctionOrder> bids, asks;
   buildCrossingBook(bids, asks);
-  AuctionResult a = runAuction(bids, asks, 2 * COIN);
+  AuctionResult a = runAuctionV11(bids, asks, 2 * COIN);
 
   std::vector<AuctionOrder> rb(bids.rbegin(), bids.rend());
   std::vector<AuctionOrder> ra(asks.rbegin(), asks.rend());
-  AuctionResult b = runAuction(rb, ra, 2 * COIN);
+  AuctionResult b = runAuctionV11(rb, ra, 2 * COIN);
 
   bool same = a.crossed == b.crossed &&
               a.clearingPrice == b.clearingPrice &&
@@ -285,7 +292,7 @@ static void testDeterminism() {
               a.fills.size() == b.fills.size();
   CHECK(same, "reversing submission order changes nothing about the outcome");
 
-  AuctionResult empty = runAuction({}, asks, 2 * COIN);
+  AuctionResult empty = runAuctionV11({}, asks, 2 * COIN);
   CHECK(!empty.crossed, "empty bid side produces no cross");
 }
 
@@ -293,7 +300,7 @@ static void testNoCrossWhenSpread() {
   std::cout << "\nAuction: non-crossing book stays uncrossed\n";
   std::vector<AuctionOrder> bids{ mkOrder(mkHash(0x01), 0, 1 * COIN, 10 * COIN, 5, mkHash(0xB1)) };
   std::vector<AuctionOrder> asks{ mkOrder(mkHash(0x02), 1, 3 * COIN, 10 * COIN, 5, mkHash(0xA1)) };
-  AuctionResult r = runAuction(bids, asks, 2 * COIN);
+  AuctionResult r = runAuctionV11(bids, asks, 2 * COIN);
   CHECK(!r.crossed && r.fills.empty(), "best bid below best ask yields no fills");
 }
 

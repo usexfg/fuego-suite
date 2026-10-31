@@ -1576,6 +1576,22 @@ std::vector<Crypto::Hash> core::getCommitmentMerkleProof(const Crypto::Hash& com
   return m_blockchain.getCommitmentMerkleProof(commitment);
 }
 
+Crypto::Hash core::getReleaseRegistryRoot() const {
+  return m_blockchain.getReleaseRegistryRoot();
+}
+
+size_t core::getReleaseRegistryCount() const {
+  return m_blockchain.getReleaseRegistryCount();
+}
+
+std::optional<ReleaseRecord> core::findRelease(const Crypto::Hash& contentHash) const {
+  return m_blockchain.findRelease(contentHash);
+}
+
+ReleaseProof core::getReleaseProof(const Crypto::Hash& contentHash) const {
+  return m_blockchain.getReleaseProof(contentHash);
+}
+
 int64_t core::getCommitmentLeafIndex(const Crypto::Hash& commitment) const {
   return m_blockchain.getCommitmentLeafIndex(commitment);
 }

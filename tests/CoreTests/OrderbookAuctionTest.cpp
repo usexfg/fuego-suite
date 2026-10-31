@@ -46,10 +46,18 @@ static AuctionOrder ask(uint8_t id, uint64_t price, uint64_t vol, uint32_t heigh
 
 static uint64_t P = parameters::COIN; // price unit (1 HEAT per XFG × COIN)
 
+// The taker-fee split is versioned. These tests pin v11 unless they say
+// otherwise; testFeeSplitFlipsAtV12 covers the v12 side.
+static AuctionResult runAuctionV11(const std::vector<AuctionOrder>& bids,
+                                   const std::vector<AuctionOrder>& asks,
+                                   uint64_t prevPclear) {
+  return runAuction(bids, asks, prevPclear, BLOCK_MAJOR_VERSION_11);
+}
+
 void testNoCrossing() {
   std::vector<AuctionOrder> bids = { bid(1, 2 * P, 100, 10, 1) };
   std::vector<AuctionOrder> asks = { ask(2, 3 * P, 100, 10, 2) };
-  AuctionResult r = runAuction(bids, asks, P);
+  AuctionResult r = runAuctionV11(bids, asks, P);
   TEST(!r.crossed);
   TEST(r.matchedVolume == 0);
 }
@@ -63,7 +71,7 @@ void testBasicCrossingMaxVolume() {
   // prevPclear = 1P → closest is 2.5P.
   std::vector<AuctionOrder> bids = { bid(1, 3 * P, 100, 10, 1), bid(2, 2 * P, 100, 10, 2) };
   std::vector<AuctionOrder> asks = { ask(3, 1 * P, 100, 10, 3), ask(4, (uint64_t)(2.5 * P), 50, 10, 4) };
-  AuctionResult r = runAuction(bids, asks, P);
+  AuctionResult r = runAuctionV11(bids, asks, P);
   TEST(r.crossed);
   TEST(r.clearingPrice == (uint64_t)(2.5 * P));
   TEST(r.matchedVolume == 100);
@@ -80,7 +88,7 @@ void testTimePriorityRationing() {
   // One price level on both sides; asks larger — bids fill fully, asks ration by time.
   std::vector<AuctionOrder> bids = { bid(1, 2 * P, 100, 10, 1) };
   std::vector<AuctionOrder> asks = { ask(2, 2 * P, 60, 20, 2), ask(3, 2 * P, 60, 30, 3) };
-  AuctionResult r = runAuction(bids, asks, P);
+  AuctionResult r = runAuctionV11(bids, asks, P);
   TEST(r.crossed);
   TEST(r.matchedVolume == 100);
   uint64_t earlyFill = 0, lateFill = 0;
@@ -98,7 +106,7 @@ void testOverFillRegression() {
   // with bid volume above it exceeding matchedVolume. Bids must ration.
   std::vector<AuctionOrder> bids = { bid(1, 100 * P, 90, 10, 1) };
   std::vector<AuctionOrder> asks = { ask(2, 40 * P, 50, 10, 2) };
-  AuctionResult r = runAuction(bids, asks, 0);
+  AuctionResult r = runAuctionV11(bids, asks, 0);
   TEST(r.crossed);
   TEST(r.matchedVolume == 50);
   uint64_t bidFill = 0, askFill = 0;
@@ -111,7 +119,7 @@ void testOverFillRegression() {
   // Mirror: winning price is a BID price, asks above it exceed matchedVolume.
   std::vector<AuctionOrder> bids2 = { bid(3, 200 * P, 50, 10, 3) };
   std::vector<AuctionOrder> asks2 = { ask(4, 100 * P, 90, 10, 4) };
-  AuctionResult r2 = runAuction(bids2, asks2, 200 * P);
+  AuctionResult r2 = runAuctionV11(bids2, asks2, 200 * P);
   TEST(r2.crossed);
   TEST(r2.matchedVolume == 50);
   uint64_t bidFill2 = 0, askFill2 = 0;
@@ -128,7 +136,7 @@ void testMaxVolumeSelection() {
   // imbalance: 2P→100, 2.5P→100 → prevPclear=2P → 2P wins (dist 0).
   std::vector<AuctionOrder> bids = { bid(1, 3 * P, 100, 10, 1), bid(2, (uint64_t)(2.5 * P), 100, 10, 2) };
   std::vector<AuctionOrder> asks = { ask(3, 1 * P, 100, 10, 3), ask(4, 2 * P, 200, 10, 4) };
-  AuctionResult r = runAuction(bids, asks, 2 * P);
+  AuctionResult r = runAuctionV11(bids, asks, 2 * P);
   TEST(r.crossed);
   TEST(r.clearingPrice == 2 * P);
   TEST(r.matchedVolume == 200);
@@ -147,7 +155,7 @@ void testTieBreakImbalanceThenPrice() {
   // p=1: bidVol=200, askVol=100 → vol 100, imb 100
   // p=2: bidVol=200, askVol=100 → vol 100, imb 100
   // p=3: bidVol=100, askVol=100 → vol 100, imb 0 ← wins
-  AuctionResult r = runAuction(bids, asks, P);
+  AuctionResult r = runAuctionV11(bids, asks, P);
   TEST(r.crossed);
   TEST(r.clearingPrice == 3 * P);
   TEST(r.matchedVolume == 100);
@@ -157,14 +165,14 @@ void testSelfTradeExclusion() {
   // Same addressHash on both sides — only the side of the LATEST order survives.
   std::vector<AuctionOrder> bids = { bid(1, 2 * P, 100, 10, 7) };   // hash 7, height 10
   std::vector<AuctionOrder> asks = { ask(2, 1 * P, 100, 20, 7) };   // hash 7, height 20 (later, ask side)
-  AuctionResult r = runAuction(bids, asks, P);
+  AuctionResult r = runAuctionV11(bids, asks, P);
   // Latest order is the ask → the hash keeps ONLY asks → no bids → no crossing.
   TEST(!r.crossed);
 
   // Reverse: latest is the bid → keeps bids only → no crossing.
   std::vector<AuctionOrder> bids2 = { bid(3, 2 * P, 100, 30, 8) };
   std::vector<AuctionOrder> asks2 = { ask(4, 1 * P, 100, 20, 8) };
-  AuctionResult r2 = runAuction(bids2, asks2, P);
+  AuctionResult r2 = runAuctionV11(bids2, asks2, P);
   TEST(!r2.crossed);
 }
 
@@ -178,7 +186,7 @@ void testFeeConservation() {
   std::vector<AuctionOrder> asks = {
     ask(3, 2 * P, 100, 20, 3),   // asks aggregate 100 → asks are the maker side
   };
-  AuctionResult r = runAuction(bids, asks, P);
+  AuctionResult r = runAuctionV11(bids, asks, P);
   TEST(r.crossed);
   TEST(r.matchedVolume == 100);
   TEST(r.hasTaker);
@@ -199,9 +207,9 @@ void testFeeConservation() {
   uint64_t totalFee = cdSum + rebTakerSum;
   TEST(totalFee <= expectedFee);
   TEST(expectedFee - totalFee < 4);
-  // 70/30 split of the collected fee.
+  // v11 split: 30% CD / 70% maker.
   uint64_t expectCd = static_cast<uint64_t>(
-      ((uint128_t)expectedFee * parameters::HEARTH_CD_SHARE_PCT) / 100);
+      ((uint128_t)expectedFee * hearthCdSharePct(BLOCK_MAJOR_VERSION_11)) / 100);
   TEST(cdSum <= expectCd);
 }
 
@@ -211,7 +219,7 @@ void testFeeAskTakerAndTie() {
   {
     std::vector<AuctionOrder> bids = { bid(1, 2 * P, 50, 10, 1) };
     std::vector<AuctionOrder> asks = { ask(2, 2 * P, 100, 20, 2), ask(3, 2 * P, 100, 21, 3) };
-    AuctionResult r = runAuction(bids, asks, P);
+    AuctionResult r = runAuctionV11(bids, asks, P);
     TEST(r.crossed);
     TEST(r.hasTaker);
     TEST(r.takerIsBid == false);
@@ -226,7 +234,7 @@ void testFeeAskTakerAndTie() {
   {
     std::vector<AuctionOrder> bids = { bid(4, 2 * P, 100, 10, 4) };
     std::vector<AuctionOrder> asks = { ask(5, 2 * P, 100, 20, 5) };
-    AuctionResult r = runAuction(bids, asks, P);
+    AuctionResult r = runAuctionV11(bids, asks, P);
     TEST(r.crossed);
     TEST(!r.hasTaker);
     for (const auto& f : r.fills) {
@@ -248,7 +256,7 @@ void testHeatBalanceAcrossSides() {
     ask(4, 2 * P, 50, 20, 4),
     ask(5, 2 * P, 50, 21, 5),
   };
-  AuctionResult r = runAuction(bids, asks, P);
+  AuctionResult r = runAuctionV11(bids, asks, P);
   TEST(r.crossed);
   TEST(r.matchedVolume == 100);
   uint64_t bidHeat = 0, askHeat = 0;
@@ -264,7 +272,7 @@ void testHeatConversionExact() {
   // fill.heat == floor(fillXfg × clearingPrice / COIN)
   std::vector<AuctionOrder> bids = { bid(1, 2 * P, 100, 10, 1) };
   std::vector<AuctionOrder> asks = { ask(2, 2 * P, 50, 10, 2) };
-  AuctionResult r = runAuction(bids, asks, P);
+  AuctionResult r = runAuctionV11(bids, asks, P);
   TEST(r.crossed);
   for (const auto& f : r.fills) {
     uint64_t expect = static_cast<uint64_t>((static_cast<uint128_t>(f.fillXfg) * 2 * P) / parameters::COIN);
@@ -284,11 +292,45 @@ void testPrevPclearTieBreak() {
   std::vector<AuctionOrder> asks3 = { ask(5, 1 * P, 100, 10, 5) };
   // p=1: bidVol 100, askVol 100 → 100, imb 0
   // p=2: bidVol 100, askVol 100 → 100, imb 0 — tie on volume+imbalance → prevPclear.
-  AuctionResult r = runAuction(bids3, asks3, 2 * P);
+  AuctionResult r = runAuctionV11(bids3, asks3, 2 * P);
   TEST(r.crossed);
   TEST(r.clearingPrice == 2 * P);   // closest to prevPclear
-  AuctionResult r2 = runAuction(bids3, asks3, 1 * P);
+  AuctionResult r2 = runAuctionV11(bids3, asks3, 1 * P);
   TEST(r2.clearingPrice == 1 * P);  // closest to prevPclear
+}
+
+void testFeeSplitFlipsAtV12() {
+  // Same crossing, two block versions. v11 pays makers 70%; v12 pays the CD
+  // pool 70%. Conservation must hold on both sides either way.
+  std::vector<AuctionOrder> bids = {
+    bid(1, 2 * P, 100, 10, 1),
+    bid(2, 2 * P, 200, 11, 2),
+  };
+  std::vector<AuctionOrder> asks = {
+    ask(3, 2 * P, 100, 20, 3),
+  };
+
+  auto split = [&](uint8_t version, uint64_t& cd, uint64_t& rebTaker) {
+    AuctionResult r = runAuction(bids, asks, P, version);
+    cd = 0;
+    rebTaker = 0;
+    for (const auto& f : r.fills) {
+      cd += f.cdFeeHeat;
+      if (f.side == 0) rebTaker += f.rebateHeat;
+    }
+  };
+
+  uint64_t cdV11 = 0, rebV11 = 0, cdV12 = 0, rebV12 = 0;
+  split(BLOCK_MAJOR_VERSION_11, cdV11, rebV11);
+  split(BLOCK_MAJOR_VERSION_12, cdV12, rebV12);
+
+  TEST(cdV11 > 0 && rebV11 > 0 && cdV12 > 0 && rebV12 > 0);
+  TEST(cdV11 + rebV11 == cdV12 + rebV12);   // same fee, different split
+  TEST(rebV11 > cdV11);                     // v11: maker-heavy
+  TEST(cdV12 > rebV12);                     // v12: CD-heavy
+  // 30/70 at v11, 70/30 at v12 — allow one atom of floor rounding.
+  TEST(rebV11 <= (rebV11 + cdV11) * 70 / 100 + 2);
+  TEST(cdV12 <= (cdV12 + rebV12) * 70 / 100 + 2);
 }
 
 int main() {
@@ -303,6 +345,7 @@ int main() {
   testHeatBalanceAcrossSides();
   testFeeConservation();
   testFeeAskTakerAndTie();
+  testFeeSplitFlipsAtV12();
   testPrevPclearTieBreak();
   fprintf(stderr, "=== Auction Tests ===\nPassed: %d / %d\n", tests_passed, tests_run);
   return tests_passed == tests_run ? 0 : 1;

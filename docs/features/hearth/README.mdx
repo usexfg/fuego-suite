@@ -4,7 +4,7 @@ Hearth is Fuego's native XFG/HEAT market. This document explains the v11 archite
 
 ## 1. What Hearth is
 
-Hearth is a **per-block call auction with a constant-product AMM backstop**, implemented as a consensus rule on a privacy (CryptoNote/RingCT) chain. Two-sided price discovery happens on-chain, at block time, from tx-extra-backed limit orders — the pool is a liquidity backstop, not the price source.
+Hearth is a **per-block call auction plus a constant-product AMM**, implemented as a consensus rule on a privacy (CryptoNote/RingCT) chain. **One inventory, two uses** — not AMM *or* depth band. `m_ammPool` (`reserveXfg × reserveHeat`) is the balance sheet (LP shares, direct swaps, mint-spot fallback, post-auction backstop). The depth band is that same inventory quoted as 0xF0 makers in the auction (`generatePoolOrders()`, `HEARTH_DEPTH_BAND_PCT` of reserves, adaptive 30–300 bps). Two-sided price discovery is on-chain, at block time, from tx-extra-backed user limits plus those pool makers.
 
 Three properties define it:
 
@@ -16,14 +16,14 @@ Three properties define it:
 
 | Dimension | Typical UTXO-chain DEX | Hearth (v11) |
 |---|---|---|
-| Price source | AMM curve (reserve ratio) | Two-sided auction of committed orders |
+| Price source | AMM curve (reserve ratio) | Two-sided auction of committed user orders **plus** pool depth-band makers |
 | User orders | Often swaps-only, or off-chain signed orders | On-chain tx-extra deposits — backed, signed, deterministic |
 | Execution | Continuous per-tx | Batch, once per block, one clearing price |
 | Maker compensation | Often none | 30% of the 1% taker fee rebated to makers |
 | Protocol revenue | Fee to treasury/liquidity | 70% of the 1% taker fee → HEAT CD yield pool |
 | LP mechanics | Single-sided often allowed | Balanced-only (no dilution), fair pro-rata shares |
 | Manipulation surface | Sandwich attacks on mempool ordering | Batch VWAP-free clearing; self-trade exclusion; min price tick; fee-gated sybil |
-| Backing | Reserves only | Orders backed by escrowed deposits; the AMM is a capped backstop |
+| Backing | Reserves only | User orders escrowed; pool makers backed by the same AMM reserves used for swaps/backstop |
 
 The unusual parts worth calling out:
 
@@ -45,8 +45,8 @@ The unusual parts worth calling out:
                    ┌──────────────────┼───────────────────┐
                    ▼                  ▼                   ▼
             height expiry      CALL AUCTION          AMM backstop
-            (claimable)    (user-vs-user crossing)  (pool as maker,
-                                │                    volume-capped)
+            (claimable)    (user deposits + 0xF0     (leftover user
+                                pool depth-band)      deposits vs x*y=k)
                                 ▼
               P_clear = max-volume clearing price
                                 │
@@ -59,7 +59,7 @@ The unusual parts worth calling out:
 - Books are built from resting deposits: `BUY_XFG` (HEAT budget) → bids; `SELL_XFG` (XFG) → asks. Prices are in canonical scale: HEAT atomics per XFG atomic × COIN (1e7).
 - Clearing price `p*` maximizes executed volume; ties break by imbalance, then proximity to the previous block's `P_clear`, then lower price.
 - Fills settle in price-time priority, rationing the larger side at `p*`.
-- Value moves between the two parties' escrow buckets — **the AMM reserves are untouched by auction fills**.
+- User-vs-user fills move escrow buckets only — **AMM reserves are untouched**. Pool depth-band fills (`orderId` prefix `0xF0`) **do** debit/credit `reserveXfg`/`reserveHeat`; those makers are the pool quoting its inventory, not a second book.
 
 ### 3.2 Fee model (1% taker, 70/30 split)
 
@@ -71,7 +71,7 @@ The unusual parts worth calling out:
 
 ### 3.3 AMM backstop
 
-- Constant-product (`xfg × heat = k`), used only for the unfilled remainder.
+- Constant-product (`xfg × heat = k`): inventory for LP, direct swaps, depth-band sizing, and the unfilled remainder after the auction.
 - Volume-capped per block at `HEARTH_BACKSTOP_MAX_BPS` (500) of the block's auction volume; uncapped when no auction volume exists (bootstrap).
 - LP deposits are balanced-only; shares mint pro-rata (`min(amountA·T/reserveA, amountB·T/reserveB)`), never single-sided (single-sided mints nothing — no dilution).
 
@@ -111,7 +111,7 @@ The unusual parts worth calling out:
 | `src/CryptoNoteCore/OrderbookAuction.{h,cpp}` | Call-auction matcher (clearing price, priority, self-trade, fees) |
 | `src/CryptoNoteCore/Blockchain.cpp` | `processOrderbookForBlock`, settlement, rollback, treasury epoch work |
 | `src/CryptoNoteCore/AmmPool.{h,cpp}` | Constant-product math, LP shares, spot price |
-| `src/CryptoNoteCore/OrderbookMempool.*` | Pool-order display band |
+| `src/CryptoNoteCore/OrderbookMempool.*` | User + pool depth-band orders; pool makers execute in the auction |
 | `src/CryptoNoteCore/PoolOrderOrchestrator.*` | Regeneration timing + adaptive spread (volatility from pool spot) |
 | `src/CryptoNoteCore/HeatMintEngine.*` | Mint validation at the canonical price |
 | `src/CryptoNoteConfig.h` | All constants |

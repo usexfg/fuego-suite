@@ -57,6 +57,7 @@ struct COMMAND_RPC_GET_HEIGHT {
   };
 };
 
+
 struct COMMAND_RPC_GET_BLOCKS_FAST {
 
   struct request {
@@ -1622,6 +1623,92 @@ struct COMMAND_RPC_CHECK_COMMITMENT_EXISTS {
 
 
 // ============================================================================
+// RELEASE REGISTRY RPC ENDPOINTS (song provenance)
+// ============================================================================
+//
+// Read-only. A release leaf binds content hash, signer, height, and metadata,
+// so an inclusion proof shows who signed which bytes at which height. There is
+// no registration route: the index is fed from chain data, never from HTTP.
+
+struct COMMAND_RPC_GET_RELEASE_ROOT {
+  typedef EMPTY_STRUCT request;
+
+  struct response {
+    std::string merkle_root;  // Hex. Zero hash when the index is empty
+    uint64_t count;           // Number of registered releases
+    std::string status;
+
+    void serialize(ISerializer& s) {
+      KV_MEMBER(merkle_root)
+      KV_MEMBER(count)
+      KV_MEMBER(status)
+    }
+  };
+};
+
+struct COMMAND_RPC_GET_RELEASE {
+  struct request {
+    std::string content_hash;  // Hex SHA-256 of the audio file
+
+    void serialize(ISerializer& s) {
+      KV_MEMBER(content_hash)
+    }
+  };
+
+  struct response {
+    bool found;
+    std::string content_hash;
+    std::string signer;        // Hex Ed25519 public key
+    uint64_t height;           // Height the registration landed at
+    std::string metadata_hex;  // Opaque registration metadata
+    std::string status;
+
+    void serialize(ISerializer& s) {
+      KV_MEMBER(found)
+      KV_MEMBER(content_hash)
+      KV_MEMBER(signer)
+      KV_MEMBER(height)
+      KV_MEMBER(metadata_hex)
+      KV_MEMBER(status)
+    }
+  };
+};
+
+struct COMMAND_RPC_GET_RELEASE_PROOF {
+  struct request {
+    std::string content_hash;
+
+    void serialize(ISerializer& s) {
+      KV_MEMBER(content_hash)
+    }
+  };
+
+  struct response {
+    bool found;
+    std::string content_hash;
+    std::string leaf_hash;                // Leaf, not the content hash
+    std::string merkle_root;              // Current root
+    uint64_t height;
+    uint32_t leaf_index;
+    std::vector<std::string> proof_path;  // Sibling hashes in hex
+    std::vector<uint32_t> proof_indices;  // Left(0) or right(1) at each level
+    std::string status;
+
+    void serialize(ISerializer& s) {
+      KV_MEMBER(found)
+      KV_MEMBER(content_hash)
+      KV_MEMBER(leaf_hash)
+      KV_MEMBER(merkle_root)
+      KV_MEMBER(height)
+      KV_MEMBER(leaf_index)
+      KV_MEMBER(proof_path)
+      KV_MEMBER(proof_indices)
+      KV_MEMBER(status)
+    }
+  };
+};
+
+// ============================================================================
 // SWAP ORDERBOOK RPC ENDPOINTS
 // ============================================================================
 
@@ -2662,6 +2749,10 @@ struct COMMAND_RPC_AMM_POOL_INFO {
     uint64_t epoch_swap_fees;
     uint64_t hearth_twap;
     uint64_t height;
+    // Taker-fee split in force at `height`: the CD share of the 1% Hearth fee
+    // (percent). v11 = 30, v12 = 70. Wallets quote against this rather than
+    // assuming one version's split.
+    uint64_t hearth_cd_share_pct;
     std::string status;
     void serialize(ISerializer &s) {
       KV_MEMBER(reserve_xfg)
@@ -2671,6 +2762,7 @@ struct COMMAND_RPC_AMM_POOL_INFO {
       KV_MEMBER(epoch_swap_fees)
       KV_MEMBER(hearth_twap)
       KV_MEMBER(height)
+      KV_MEMBER(hearth_cd_share_pct)
       KV_MEMBER(status)
     }
   };

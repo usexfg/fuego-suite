@@ -28,7 +28,7 @@ The simplest door in: hand over one asset, receive the other at the market's cur
 - **XFG → ΗΞΔŦ:** sell XFG into the pool, receive ΗΞΔŦ.
 - **ΗΞΔŦ → XFG:** buy XFG with ΗΞΔŦ.
 
-The pool prices every trade on a constant-product curve: a small trade fills near the current price, and a large one moves it — the more you trade at once, the less each extra coin buys. Before a sale, `sell_xfg` shows what you'll receive, where it leaves the pool's price, and what **minting** the same XFG would give instead, then asks before it sells.
+Direct swaps price on the pool’s constant-product curve (the same inventory LPs deposited). That inventory is also quoted as depth-band orders in the per-block auction — not a second book. A small swap fills near the current price; a large one moves it. Before a sale, `sell_xfg` shows what you'll receive, where it leaves the pool's price, and what **minting** the same XFG would give instead, then asks before it sells.
 
 You always set a **minimum you're willing to accept**, so a fast-moving market can't fill you at a price you didn't agree to.
 
@@ -45,7 +45,7 @@ From the wallet RPC (SimpleWallet `--rpc-bind` and walletd) the same trades are 
 
 ## Limit orders
 
-Maybe you don't want the price right now — you want **your** price. Post a bid or an ask backed by real funds, and Hearth fills it automatically the moment the market crosses your level. Set it and walk away: fills, partial fills, and proceeds are all credited on-chain and claimable whenever you come back.
+Maybe you don't want the price right now — you want **your** price. Post a bid or an ask backed by real funds. Each block, Hearth runs a call auction (your order vs other users **and** vs the pool’s depth-band quotes from LP inventory), then any leftover can fill on the AMM curve if your limit is crossed. Set it and walk away: fills, partial fills, and proceeds are credited on-chain and claimable whenever you come back.
 
 - **Buy ΗΞΔŦ** below the market and wait for the pullback.
 - **Sell ΗΞΔŦ** at your target and let the market come to you.

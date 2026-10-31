@@ -189,7 +189,7 @@ Navigate with arrow keys or j/k, select with Enter, quit with q or Ctrl+C.
 - Launch ratio 10:1 (1 ΗΞΔŦ = 10 XFG) at genesis
 - Peg target $1.58 USD; mint premium hardcoded to **0 bps** (`HEAT_MINT_PREMIUM_BPS = 0`) — no premium, PI controller removed
 - Protocol buys or mints ΗΞΔŦ for CD yield payments (structural demand, protocol pays 0% fee)
-- On-chain exchange replaces constant-product AMM; MM pool orders regenerate each block ±10% depth
+- On-chain Hearth: constant-product AMM (swaps + backstop) plus pool depth-band makers in the per-block call auction (`HEARTH_DEPTH_BAND_PCT` of reserves, adaptive spread)
 - Pool reserves tracked (as a whole) on-chain with unspendable pool keys
 
 ### Protocol Earnings 

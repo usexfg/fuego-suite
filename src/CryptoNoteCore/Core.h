@@ -213,6 +213,12 @@ namespace CryptoNote {
     uint64_t getCommitmentHighestBlock() const;
     std::vector<Crypto::Hash> getCommitmentLeaves() const;
 
+    // Release registry (song provenance)
+    Crypto::Hash getReleaseRegistryRoot() const;
+    size_t getReleaseRegistryCount() const;
+    std::optional<ReleaseRecord> findRelease(const Crypto::Hash& contentHash) const;
+    ReleaseProof getReleaseProof(const Crypto::Hash& contentHash) const;
+
     // Direct CommitmentIndex access (for epoch reports, slash queries)
     const CommitmentIndex& getCommitmentIndex() const;
 

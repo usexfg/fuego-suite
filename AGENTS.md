@@ -29,15 +29,14 @@ fuego-suite/
 
 ## Key Subsystems
 
-### Hearth Exchange (on-chain AMM + limit-order overlay, v12+)
-- Constant-product AMM (XFG/HEAT) with a **limit-order overlay**: orders are tx-extra-backed `TransactionExtraLimitDeposit` commitments (no gossip, no unbacked orders)
-- Orders execute **at block time against the pool at the live spot price** (`ammGetSpotPrice`, HEAT/XFG × COIN); partial fills credit `proceedsXfg/proceedsHeat`, claimable via `TransactionExtraLimitWithdraw`
-- Expiry is height-based; expired orders keep deposit + proceeds claimable (auto-return)
+### Hearth Exchange (call auction + AMM, v11+)
+- **Both mechanisms share one inventory.** `m_ammPool` is the constant-product balance sheet (`reserveXfg × reserveHeat`). Direct AMM swaps and the post-auction backstop price on that curve. The depth band is not a second book: it is the pool quoting that same inventory as makers in the call auction.
+- **User limits** are tx-extra-backed `TransactionExtraLimitDeposit` commitments (no gossip, no unbacked orders). Partial fills credit `proceedsXfg/proceedsHeat`, claimable via `TransactionExtraLimitWithdraw`. Expiry is height-based; expired orders keep deposit + proceeds claimable.
+- **Per block (after 144-block AMM-only bootstrap):** (1) regenerate pool depth-band orders from reserves, (2) call auction of user deposits **plus** those pool orders, (3) AMM backstop fills leftover user deposits on the constant-product curve, volume-capped.
+- **Pool depth band is real.** `generatePoolOrders()` builds 0xF0-prefixed makers (adaptive spread 30–300 bps, `HEARTH_DEPTH_BAND_PCT` of reserves). Auction fills with `orderId.data[0] == 0xF0` move `reserveXfg`/`reserveHeat`. They are not user escrow (`m_limitDeposits`); user orders win same-price ties.
 - **Balanced LP deposits only** — single-sided deposits mint no shares (no dilution); shares are fair pro-rata at the pool ratio
 - Taker pays the 1% fee; **70%** is debited into the HEAT-denominated `cdHearthFeeAccumulator` → minted into `CD_APY_POOL` at the epoch boundary, **30%** is the maker rebate (auction makers, or LPs on pool fills); consumed XFG burned 50/50 (EF/SWF)
-- `PoolOrderOrchestrator` still generates the displayed depth band (adaptive spread 30–300 bps, volatility fed by the pool spot price at v12) — informational depth, not in-band matched
-- The in-band CLOB matcher, `MIN_DISTINCT_PARTIES`, and gossiped orders are **retired**
-- Bootstrap window: 144 blocks of AMM-only operation after upgrade
+- The gossiped in-band CLOB matcher, `MIN_DISTINCT_PARTIES`, and unbacked orders are **retired**
 - **Treasury LP Manager**: the protocol's own ratio-paired LP position from the 20% treasury share + mint premiums + donations (both legs, no cross-conversion); compounds and drives bootstrap repayment (two-leg owned-reserves check)
 
 ### HEAT Flatcoin (colored coin)
@@ -65,12 +64,13 @@ NOT protocol earnings:
 - **Mint premium**: none — `HEAT_MINT_PREMIUM_BPS = 0`, goes nowhere. Do not document as revenue.
 - **CD creation fee**: 0.1% of CD amount → burned and credited (HEAT) to the **Treasury LP Manager** via the `TreasuryFund` tag (v12+). NOT protocol revenue, NOT CD yield. Pre-v12 it was a donation to @fuegoxfg (development fund).
 
-### Hearth Exchange — Data Flow Per Block (v12+)
-1. `PoolOrderOrchestrator`: record pool spot price (volatility feed), decide regeneration, compute adaptive spread
-2. `generatePoolOrders()` — displayed depth band from AMM reserves (informational)
-3. OOB executor: fill resting `m_limitDeposits` whose limit is crossed by the live spot price (1% taker fee, proceeds credited, height-based expiry)
-4. Treasury LP Manager epoch work (fee share routing, conversions, ratio-paired LP provisioning, burns, bootstrap check)
-5. Write P_clear + depth stats to block header
+### Hearth Exchange — Data Flow Per Block (v11+)
+1. `PoolOrderOrchestrator`: record pool spot (volatility), decide regeneration, compute adaptive spread
+2. `generatePoolOrders()` → `setPoolOrders()` — depth-band makers from AMM reserves (executed, not display-only)
+3. Height-based expiry on `m_limitDeposits` (expired stay claimable, skip this block's fills)
+4. Call auction: user deposits + 0xF0 pool orders; user-vs-user fills move escrow/proceeds; pool fills move `reserve*`
+5. AMM backstop: unfilled user deposits vs constant-product curve at live spot, capped by `HEARTH_BACKSTOP_MAX_BPS`
+6. Write P_clear + depth stats to block header; Treasury LP Manager epoch work when the epoch closes
 
 ### Cryptographic Primitives
 - Ring signatures: MLSAG with OSPEAD decoy selection

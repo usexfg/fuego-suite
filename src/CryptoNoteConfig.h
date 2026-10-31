@@ -418,10 +418,14 @@ const std::vector<uint64_t> HEAT_BILL_DENOMINATIONS = {
 };
 
 const uint64_t HEARTH_FEE_BPS = 100; // 1.0% Hearth taker fee (total)
-const uint64_t HEARTH_CD_SHARE_PCT =
-    70; // of the 1%: 70% → CD yield pool (percent, not bps — divisor is 100)
-const uint64_t HEARTH_MAKER_REBATE_BPS = 30; // of the 1%: 30% → maker rebate
 const uint64_t HEARTH_FEE_DIVISOR = 10000;
+
+// Hearth taker-fee split, by block major version (percent, not bps — the
+// divisor is 100). V11 pays for depth: the pool and the book are new, so most
+// of the fee goes back to the makers who quoted it. V12 flips the emphasis to
+// savers once the depth has a track record. The two legs always sum to 100.
+const uint64_t HEARTH_CD_SHARE_PCT_V11 = 30; // v11: 30% CD yield / 70% maker
+const uint64_t HEARTH_CD_SHARE_PCT_V12 = 70; // v12: 70% CD yield / 30% maker
 const uint64_t ORDER_PRICE_TICK = COIN / 100; // min price granularity (1%)
 const uint64_t HEARTH_BACKSTOP_MAX_BPS =
     500; // backstop fills ≤ 5× auction volume per block
@@ -613,6 +617,18 @@ const uint8_t BLOCK_MAJOR_VERSION_11 = 11;
 const uint8_t BLOCK_MAJOR_VERSION_12 =
     12; // HEAT CDs + unified output/input types + hidden amounts + MLSAG
 const uint8_t BLOCK_MAJOR_VERSION_13 = 13; // Deprecated: orderbook moved to v11
+
+// Hearth taker-fee split for a block major version. Consensus paths must pass
+// the version of the block they are settling, never a default: a reorg replays
+// the block's own version and must recompute the same split.
+inline uint64_t hearthCdSharePct(uint8_t blockMajorVersion) {
+  return blockMajorVersion >= BLOCK_MAJOR_VERSION_12
+             ? parameters::HEARTH_CD_SHARE_PCT_V12
+             : parameters::HEARTH_CD_SHARE_PCT_V11;
+}
+inline uint64_t hearthMakerRebatePct(uint8_t blockMajorVersion) {
+  return 100 - hearthCdSharePct(blockMajorVersion);
+}
 
 // Orderbook (v11+)
 const uint32_t BOOTSTRAP_BLOCKS = 144; // ~24 hours HEARTH-only

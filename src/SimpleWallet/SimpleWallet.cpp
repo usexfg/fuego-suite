@@ -4121,7 +4121,8 @@ bool simple_wallet::swap(const std::vector<std::string>& args) {
     outputAmount = static_cast<uint64_t>(
         (static_cast<uint128_t>(net) * (10000 - parameters::WALLET_SWAP_SLIPPAGE_BPS)) / 10000);
     // Where the trade leaves the pool: the output and the fee's CD share leave.
-    const uint64_t cdFee = (gross - net) * parameters::HEARTH_CD_SHARE_PCT / 100;
+    // The split is versioned and comes from the daemon, not from a constant.
+    const uint64_t cdFee = (gross - net) * poolRes.hearth_cd_share_pct / 100;
     const uint64_t outAfter = reserveOut > net + cdFee ? reserveOut - net - cdFee : 0;
     const uint64_t xfgBefore = poolRes.reserve_xfg, heatBefore = poolRes.reserve_heat;
     const uint64_t xfgAfter = direction == 0 ? reserveIn + amount : outAfter;

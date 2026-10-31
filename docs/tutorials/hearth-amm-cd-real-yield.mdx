@@ -17,8 +17,9 @@ HEAT CD yield is paid from **fees**, not token printing.
 
 ### 2) Hearth (XFG/HEAT on-chain)
 
+- One inventory, two uses: AMM curve (swaps + backstop) and depth-band makers in the call auction
 - Rate: **1%** (`HEARTH_FEE_BPS = 100`)
-- Split: **100% CD · 0% LP** (LPs earn the swap spread, not the fee)
+- Split: **70% CD yield · 30% maker rebate** (LPs when the pool is the counterparty; LPs also earn pool P&L)
 
 ## User path
 
@@ -37,7 +38,7 @@ Mainnet epoch = **900 blocks** (~5 days at ~480s). Distribution and accounting a
 
 The following are **incorrect** for current code and must not be treated as product facts:
 
-- Hearth protocol trade fee of 0.3% (live: **1%** `HEARTH_FEE_BPS`, 100% CD / 0% LP)
+- Hearth protocol trade fee of 0.3% or 100% CD / 0% LP (live: **1%** `HEARTH_FEE_BPS`, **70/30** CD / maker rebate)
 - Atomic swap fees “80% to CDs only” (live: **69% CD / 11% Bonus / 20% Treasury**)
 - Opening a CD by locking **XFG** (live: lock **HEAT** after mint)
 

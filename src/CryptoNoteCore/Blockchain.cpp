@@ -96,15 +96,18 @@ bool addChecked(uint64_t& sum, uint64_t value) {
 
 // A v11 swap's Hearth fee, reconstructed from the net output the taker
 // declared: gross = output ÷ 99%, fee = gross − output. Settlement debits the
-// CD share (70%) from the reserves; the other 30%, and anything the taker left
-// below the curve, stays with the LPs. It depends only on the declared output,
-// so a reversal recomputes it exactly.
-uint64_t swapCdFeeOut(uint64_t output) {
+// CD share from the reserves; the maker share, and anything the taker left
+// below the curve, stays with the LPs. The split is versioned — v11 gives the
+// maker 70%, v12 the CD pool — so the block's own major version must be passed
+// through. It depends only on the declared output, so a reversal recomputes it
+// exactly.
+uint64_t swapCdFeeOut(uint64_t output, uint8_t majorVersion) {
   const uint64_t div = parameters::HEARTH_FEE_DIVISOR;
   const uint64_t bps = parameters::HEARTH_FEE_BPS;
   const uint64_t gross = static_cast<uint64_t>(((uint128_t)output * div) / (div - bps));
   const uint64_t fee = gross > output ? gross - output : 0;
-  return static_cast<uint64_t>(((uint128_t)fee * parameters::HEARTH_CD_SHARE_PCT) / 100);
+  return static_cast<uint64_t>(
+      ((uint128_t)fee * hearthCdSharePct(majorVersion)) / 100);
 }
 
 // The CD share enters cdHearthFeeAccumulator in HEAT. A HEAT→XFG swap's fee is
@@ -118,9 +121,10 @@ struct SwapCdShare {
   uint64_t heat = 0;         // credited to cdHearthFeeAccumulator
 };
 
-SwapCdShare swapCdShare(uint8_t direction, uint64_t output, uint64_t twap) {
+SwapCdShare swapCdShare(uint8_t direction, uint64_t output, uint64_t twap,
+                        uint8_t majorVersion) {
   SwapCdShare share;
-  const uint64_t cdFeeOut = swapCdFeeOut(output);
+  const uint64_t cdFeeOut = swapCdFeeOut(output, majorVersion);
   if (direction == 0) {
     share.fromReserve = cdFeeOut;
     share.heat = cdFeeOut;
@@ -4406,7 +4410,8 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
       }
     }
     CryptoNote::AuctionResult auction =
-        runAuction(auctionBids, auctionAsks, g_orderbookLastClearingPrice);
+        runAuction(auctionBids, auctionAsks, g_orderbookLastClearingPrice,
+                   block.majorVersion);
     if (auction.crossed && auction.matchedVolume > 0) {
       auctionMatchedVolume = auction.matchedVolume;
       // P_clear = the discovered price (last-price semantics, bootstrap-seeded).
@@ -4533,6 +4538,9 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
     // for its average price over the fill, before the fee.
     const uint64_t feeBps = parameters::HEARTH_FEE_BPS;
     const uint64_t feeDiv = parameters::HEARTH_FEE_DIVISOR;
+    // Taker-fee split for this block's version (v11: 30% CD / 70% maker,
+    // v12: 70% CD / 30% maker). The maker share stays with the LPs.
+    const uint64_t cdSharePct = hearthCdSharePct(block.majorVersion);
     // Backstop volume cap: pool-intermediated fills are bounded at
     // HEARTH_BACKSTOP_MAX_BPS (500 = 5×) of the block's auction volume. With no
     // auction volume the backstop is bounded at 500 basis points (5%) of the
@@ -4573,8 +4581,7 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
         uint64_t heatPaid = static_cast<uint64_t>(
             ((uint128_t)grossHeat * (feeDiv - feeBps)) / feeDiv);
         uint64_t feeHeat = grossHeat - heatPaid;
-        uint64_t cdFeeHeat = static_cast<uint64_t>(
-            ((uint128_t)feeHeat * parameters::HEARTH_CD_SHARE_PCT) / 100);
+        uint64_t cdFeeHeat = static_cast<uint64_t>(((uint128_t)feeHeat * cdSharePct) / 100);
         // Saturating add: an overflow must not abort the fill pass mid-way
         // (partial application would fork consensus).
         m_ammPool.cdHearthFeeAccumulator =
@@ -4582,7 +4589,7 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
             ? UINT64_MAX : m_ammPool.cdHearthFeeAccumulator + cdFeeHeat;
         m_ammPool.pendingXfg -= fillXfg;
         m_ammPool.reserveXfg += fillXfg;
-        m_ammPool.reserveHeat -= (heatPaid + cdFeeHeat);  // 30% stays with LPs
+        m_ammPool.reserveHeat -= (heatPaid + cdFeeHeat);  // maker share stays with LPs
         dep.amount -= fillXfg;
         dep.proceedsHeat += heatPaid;
 
@@ -4624,7 +4631,7 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
         // unbacked CD yield. With no TWAP yet it stays in the reserves.
         const uint64_t twap = twapBefore(height);
         const uint64_t cdFeeXfg = twap == 0 ? 0 : static_cast<uint64_t>(
-            ((uint128_t)feeXfg * parameters::HEARTH_CD_SHARE_PCT) / 100);
+            ((uint128_t)feeXfg * cdSharePct) / 100);
         const uint64_t feeHeatEq = static_cast<uint64_t>(
             ((uint128_t)cdFeeXfg * twap) / parameters::COIN);
         m_ammPool.cdHearthFeeAccumulator =
@@ -4632,7 +4639,7 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
             ? UINT64_MAX : m_ammPool.cdHearthFeeAccumulator + feeHeatEq;
 
         m_ammPool.pendingHeat -= heatCost;
-        m_ammPool.reserveXfg -= (netXfg + cdFeeXfg);  // 30% of the fee stays with LPs
+        m_ammPool.reserveXfg -= (netXfg + cdFeeXfg);  // maker share of the fee stays with LPs
         m_ammPool.reserveHeat += heatCost;
         dep.amount -= heatCost;
         dep.proceedsXfg += netXfg;
@@ -4734,6 +4741,26 @@ void CryptoNote::Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
   Crypto::Hash CryptoNote::Blockchain::getCommitmentMerkleRoot() const {
     std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
     return m_commitmentIndex.computeMerkleRoot();
+  }
+
+  Crypto::Hash CryptoNote::Blockchain::getReleaseRegistryRoot() const {
+    std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
+    return m_releaseRegistry.root();
+  }
+
+  size_t CryptoNote::Blockchain::getReleaseRegistryCount() const {
+    std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
+    return m_releaseRegistry.count();
+  }
+
+  std::optional<CryptoNote::ReleaseRecord> CryptoNote::Blockchain::findRelease(const Crypto::Hash& contentHash) const {
+    std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
+    return m_releaseRegistry.findByContentHash(contentHash);
+  }
+
+  CryptoNote::ReleaseProof CryptoNote::Blockchain::getReleaseProof(const Crypto::Hash& contentHash) const {
+    std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
+    return m_releaseRegistry.proof(contentHash);
   }
 
   std::vector<Crypto::Hash> CryptoNote::Blockchain::getCommitmentMerkleProof(const Crypto::Hash& commitment) const {
@@ -6642,7 +6669,8 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
           const bool xfgIn = auth.direction == 0;
           uint64_t& reserveIn = xfgIn ? m_ammPool.reserveXfg : m_ammPool.reserveHeat;
           uint64_t& reserveOut = xfgIn ? m_ammPool.reserveHeat : m_ammPool.reserveXfg;
-          const SwapCdShare cd = swapCdShare(auth.direction, auth.outputAmount, twapBefore(block.height));
+          const SwapCdShare cd = swapCdShare(auth.direction, auth.outputAmount,
+                                             twapBefore(block.height), block.bl.majorVersion);
           reserveIn += auth.inputAmount;
           reserveOut -= auth.outputAmount + cd.fromReserve;
           m_ammPool.cdHearthFeeAccumulator += cd.heat;
@@ -7150,7 +7178,8 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
         // V11+: exact inverse of the settlement in pushTransaction — the same
         // TWAP (blocks below this one), so the same CD share.
         const bool xfgIn = auth.direction == 0;
-        const SwapCdShare cd = swapCdShare(auth.direction, auth.outputAmount, twapBefore(height));
+        const SwapCdShare cd = swapCdShare(auth.direction, auth.outputAmount,
+                                           twapBefore(height), majorVersion);
         uint64_t& reserveIn = xfgIn ? m_ammPool.reserveXfg : m_ammPool.reserveHeat;
         uint64_t& reserveOut = xfgIn ? m_ammPool.reserveHeat : m_ammPool.reserveXfg;
         reserveIn = reserveIn >= auth.inputAmount ? reserveIn - auth.inputAmount : 0;
@@ -8010,7 +8039,8 @@ bool CryptoNote::Blockchain::validateSettlement(const Transaction& tx, uint32_t 
               std::to_string(a.minOutput) + ", " + std::to_string(net) + "] on the curve";
       return false;
     }
-    const SwapCdShare cd = swapCdShare(a.direction, a.outputAmount, twapBefore(height));
+    const SwapCdShare cd = swapCdShare(a.direction, a.outputAmount, twapBefore(height),
+                                       getBlockMajorVersionForHeight(height));
     if (reserveIn > UINT64_MAX - a.inputAmount || reserveOut < a.outputAmount ||
         reserveOut - a.outputAmount < cd.fromReserve) {
       error = "AMM swap: reserves cannot settle it";

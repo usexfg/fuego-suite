@@ -1,12 +1,16 @@
 # Fuego On-Chain Batch Orderbook — Design
 
-Status: **APPROVED** | Date: 2026-06-26 | Review: 13 objections, all resolved
+Status: **HISTORICAL (2026-06-26)**. Live Hearth does **not** replace the AMM.
+One inventory, two uses: constant-product reserves are the balance sheet
+(swaps, LP, backstop); the depth band is those reserves quoted as executed
+0xF0 makers in the per-block call auction. Canonical write-up:
+`docs/features/hearth/how-hearth-works.mdx`.
 
 ---
 
 ## Purpose
 
-Internal on-chain price discovery for XFG/HEAT without a centralized exchange. HEARTH constant-product AMM is replaced as the price authority; HEARTH is retained as a protocol-managed market depth band for instant fills.
+Internal on-chain price discovery for XFG/HEAT without a centralized exchange. HEARTH constant-product AMM is the inventory and swap/backstop curve; the protocol-managed depth band is how that inventory quotes in the auction.
 
 ---
 

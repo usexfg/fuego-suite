@@ -34,6 +34,7 @@
 #include "Currency.h"
 #include "BankingIndex.h"
 #include "CommitmentIndex.h"
+#include "ReleaseRegistry.h"
 #include "HeatMintEngine.h"
 #include "DigmMintEngine.h"
 #include "FuegoCostIndex.h"
@@ -348,6 +349,13 @@ namespace CryptoNote {
     std::vector<Crypto::Hash> getCommitmentLeaves() const;
     CommitmentIndex::Height getCommitmentHighestBlock() const;
 
+    // Release registry (song provenance). Separate tree from commitments:
+    // a release leaf binds content hash, signer, height, and metadata.
+    Crypto::Hash getReleaseRegistryRoot() const;
+    size_t getReleaseRegistryCount() const;
+    std::optional<ReleaseRecord> findRelease(const Crypto::Hash& contentHash) const;
+    ReleaseProof getReleaseProof(const Crypto::Hash& contentHash) const;
+
     // Banking fee computation (0.1% on HEAT commitments)
     static uint64_t computeBankingFeesFromTransactions(const std::vector<Transaction>& txs);
 
@@ -565,6 +573,7 @@ namespace CryptoNote {
     CryptoNote::BlockIndex m_blockIndex;
     CryptoNote::BankingIndex m_bankingIndex;
     CryptoNote::CommitmentIndex m_commitmentIndex;
+    CryptoNote::ReleaseRegistry m_releaseRegistry;
     CryptoNote::AliasIndex m_aliasIndex;
 
     // HEAT stablecoin state

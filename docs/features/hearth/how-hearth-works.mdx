@@ -1,10 +1,10 @@
 ---
 title: "How Hearth works"
-description: "On-chain XFG/HEAT market: constant-product AMM + tx-extra-backed limit orders, 1% taker fee → CD yield; LP income is pool P&L."
+description: "On-chain XFG/HEAT market: one pool inventory quoted as depth-band makers in a call auction and as a constant-product curve for swaps/backstop."
 keywords: ["Hearth", "AMM", "orderbook", "XFG", "HEAT", "fuego"]
 ---
 
-**Hearth** is Fuego’s native **XFG/HEAT** exchange: a constant-product AMM with a limit-order overlay. It is the price surface for minting HEAT and for on-chain XFG↔HEAT swaps.
+**Hearth** is Fuego’s native **XFG/HEAT** exchange. One pool inventory, two uses: the constant-product AMM is the balance sheet; the depth band is that inventory quoted as makers in the per-block call auction. It is the price surface for minting HEAT and for on-chain XFG↔HEAT trades.
 
 ## What Hearth is not
 
@@ -12,20 +12,18 @@ keywords: ["Hearth", "AMM", "orderbook", "XFG", "HEAT", "fuego"]
 - Not the same as **swapXFG** (cross-chain atomic swaps)
 - Not DIGM
 
-## Orderbook model (v12+)
+## Orderbook model (v11+)
 
-The original in-band CLOB matcher (gossiped, unbacked orders matched once per block at a VWAP clearing price) is **retired**. The live model:
+The original gossiped in-band CLOB (unbacked orders) is **retired**. The live model uses **one pool inventory** two ways — not AMM *or* depth band:
 
-1. **Orders are transactions.** A limit order is created by a `TransactionExtraLimitDeposit` (SELL_XFG deposits XFG, BUY_XFG deposits HEAT into the pending buckets). Nothing exists in a gossip mempool — every resting order is backed by committed funds.
-2. **Execution at block time, against the pool, at the live spot price.** Each block the protocol fills resting orders whose limit is crossed by the current pool spot price (`ammGetSpotPrice` = HEAT/XFG × COIN):
-   - SELL_XFG fills if `target ≤ spot`; the pool buys the XFG and credits HEAT proceeds.
-   - BUY_XFG fills if `target ≥ spot`; the pool sells XFG and debits the HEAT budget.
-3. **Partial fills and proceeds.** Fills consume part of the deposit; the proceeds (`proceedsXfg` / `proceedsHeat`) are claimable later with the remaining deposit via a `TransactionExtraLimitWithdraw` (also the auto-return path for expired orders).
-4. **Expiry is height-based** (`expiration` blocks). Expired orders keep their deposit + proceeds claimable.
-5. **Taker pays the 1% fee** by receiving the fee-adjusted output; the fee value leaves LP reserves into the HEAT-denominated CD accumulator.
-6. **No unbacked orders, no gossip, no user-vs-user matching.** The pool is the sole counterparty — this removes the wash-trade / unbacked-order manipulation classes entirely.
+1. **User limits are transactions.** A limit order is a `TransactionExtraLimitDeposit` (SELL_XFG deposits XFG, BUY_XFG deposits HEAT into pending buckets). No gossip mempool of unbacked quotes.
+2. **Call auction first.** Each block, resting user deposits plus **pool depth-band makers** (`generatePoolOrders()`, 0xF0 ids, sized from `HEARTH_DEPTH_BAND_PCT` of reserves, spread 30–300 bps) cross at a max-volume clearing price. User-vs-user fills move escrow/proceeds. Pool-maker fills move `reserveXfg`/`reserveHeat`. User orders win same-price ties.
+3. **AMM backstop second.** Unfilled user deposits whose limit is crossed by live spot (`ammGetSpotPrice` = HEAT/XFG × COIN) fill on the constant-product curve, volume-capped (`HEARTH_BACKSTOP_MAX_BPS`). Direct `ammSwap` txs also use this curve.
+4. **Partial fills and proceeds.** Fills consume part of a user deposit; proceeds (`proceedsXfg` / `proceedsHeat`) plus remainder are claimable via `TransactionExtraLimitWithdraw` (also the expiry return path).
+5. **Expiry is height-based.** Expired orders keep deposit + proceeds claimable and skip that block's auction/backstop.
+6. **Taker pays the 1% fee.** On auction fills the rationed side is the taker and makers get the 30% rebate. On backstop/AMM fills the pool is the maker, so 30% stays with LPs.
 
-`P_clear` remains the header metric (clearing-price statistic), seeded from the pool ratio in bootstrap; at v12 the volatility feed used for the adaptive spread is the **pool spot price** itself.
+`P_clear` is the auction clearing price (header metric), seeded from the pool ratio in the 144-block bootstrap. The depth-band spread's volatility feed is the pool spot price.
 
 ## Fee (live code)
 

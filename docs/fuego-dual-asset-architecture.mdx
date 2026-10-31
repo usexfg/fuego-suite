@@ -32,9 +32,9 @@ Details: [DEPOSIT_ARCHITECTURE.md](https://github.com/usexfg/fuego-suite/blob/ma
 
 ## Hearth
 
-**Hearth** is the on-chain **XFG/HEAT** market (constant-product AMM plus orderbook / depth-band machinery). It:
+**Hearth** is the on-chain **XFG/HEAT** market. One pool inventory, two uses: constant-product AMM (`reserveXfg × reserveHeat`) for LP shares, direct swaps, and the post-auction backstop; the same reserves quoted as depth-band makers in the per-block call auction (`generatePoolOrders()`, `HEARTH_DEPTH_BAND_PCT`). User limits are tx-extra deposits. It:
 
-- Sets the **TWAP / spot rate** used when minting HEAT
+- Discovers **P_clear** in the auction (mint TWAP); pool spot is bootstrap/fallback and the swap/backstop curve
 - Charges **`HEARTH_FEE_BPS = 100` (1%)** per trade → **70% CD yield / 30% maker rebate** (LPs receive the rebate on pool fills)
 
 ## swapXFG

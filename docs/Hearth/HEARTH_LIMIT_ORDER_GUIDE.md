@@ -4,14 +4,17 @@
 
 ### Overview
 
-Hearth settles ALL orders through the pool. There is no UTXO-level
-counterparty settlement (Phase 6b is cancelled). Instead:
+One pool inventory, two uses — not AMM *or* depth band. `reserveXfg × reserveHeat`
+is the balance sheet (LP shares, direct swaps, mint-spot fallback, backstop).
+The depth band is that inventory quoted as makers in the call auction. There is
+no UTXO-level counterparty settlement (Phase 6b cancelled).
 
-- **In-band (depth band)**: pool-generated orders at adaptive spread. User
-  market orders fill against pool orders.
-- **Out-of-band (limit orders)**: user places limit order with one-sided
-  deposit into pool's pending reserves. When P_clear reaches target price,
-  pool provides counterparty from reserves. Pending → reserves on fill.
+- **Depth band (pool makers)**: `generatePoolOrders()` builds 0xF0-prefixed
+  orders from `HEARTH_DEPTH_BAND_PCT` of reserves at adaptive spread (30–300 bps).
+  Injected into the per-block call auction. Fills move `reserve*`. Not display-only.
+- **User limits**: `TransactionExtraLimitDeposit` one-sided escrow in pending.
+  Auction first (may fill vs other users or vs pool makers). Unfilled remainder
+  hits the AMM curve (backstop). Proceeds claimable via `TransactionExtraLimitWithdraw`.
 
 ### Three-Layer Reserve Model
 

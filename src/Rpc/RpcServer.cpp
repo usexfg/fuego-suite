@@ -233,6 +233,12 @@ std::unordered_map<std::string, RpcServer::RpcHandler<RpcServer::HandlerFunction
   { "/get_commitment_merkle_proof", { jsonMethod<COMMAND_RPC_GET_COMMITMENT_MERKLE_PROOF>(&RpcServer::on_get_commitment_merkle_proof), true } },
   { "/check_commitment_exists", { jsonMethod<COMMAND_RPC_CHECK_COMMITMENT_EXISTS>(&RpcServer::on_check_commitment_exists), true } },
 
+  // Release registry (song provenance), read-only. No registration route:
+  // the index is fed from chain data, never from an HTTP body.
+  { "/get_release_root", { jsonMethod<COMMAND_RPC_GET_RELEASE_ROOT>(&RpcServer::on_get_release_root), true } },
+  { "/get_release", { jsonMethod<COMMAND_RPC_GET_RELEASE>(&RpcServer::on_get_release), true } },
+  { "/get_release_proof", { jsonMethod<COMMAND_RPC_GET_RELEASE_PROOF>(&RpcServer::on_get_release_proof), true } },
+
   // Fee pool analytics + treasury
   { "/get_fee_pool_info", { jsonMethod<COMMAND_RPC_GET_FEE_POOL_INFO>(&RpcServer::on_get_fee_pool_info), true } },
   { "/get_epoch_history", { jsonMethod<COMMAND_RPC_GET_EPOCH_HISTORY>(&RpcServer::on_get_epoch_history), true } },
@@ -2562,6 +2568,111 @@ bool RpcServer::on_get_commitment_merkle_root(const COMMAND_RPC_GET_COMMITMENT_M
   }
 }
 
+bool RpcServer::on_get_release_root(const COMMAND_RPC_GET_RELEASE_ROOT::request& /*req*/,
+                                    COMMAND_RPC_GET_RELEASE_ROOT::response& res) {
+  try {
+    res.merkle_root = Common::podToHex(m_core.getReleaseRegistryRoot());
+    res.count = static_cast<uint64_t>(m_core.getReleaseRegistryCount());
+    res.status = CORE_RPC_STATUS_OK;
+    return true;
+  } catch (const std::exception& e) {
+    res.merkle_root = "";
+    res.count = 0;
+    res.status = e.what();
+    return true;
+  }
+}
+
+namespace {
+
+// Shared shape check for the two content-hash lookups. A malformed hash is a
+// miss, not a server error: the caller sent something that cannot be a leaf.
+bool parseReleaseHash(const std::string& text, Crypto::Hash& out) {
+  if (text.size() != 64) {
+    return false;
+  }
+  return Common::podFromHex(text, out);
+}
+
+}  // namespace
+
+bool RpcServer::on_get_release(const COMMAND_RPC_GET_RELEASE::request& req,
+                               COMMAND_RPC_GET_RELEASE::response& res) {
+  try {
+    res.found = false;
+    res.height = 0;
+
+    Crypto::Hash contentHash;
+    if (!parseReleaseHash(req.content_hash, contentHash)) {
+      res.status = CORE_RPC_STATUS_OK;
+      return true;
+    }
+
+    auto record = m_core.findRelease(contentHash);
+    if (!record) {
+      res.status = CORE_RPC_STATUS_OK;
+      return true;
+    }
+
+    res.found = true;
+    res.content_hash = req.content_hash;
+    res.signer = Common::podToHex(record->signer);
+    res.height = record->height;
+    res.metadata_hex = Common::toHex(record->metadata);
+    res.status = CORE_RPC_STATUS_OK;
+    return true;
+  } catch (const std::exception& e) {
+    res.found = false;
+    res.status = e.what();
+    return true;
+  }
+}
+
+bool RpcServer::on_get_release_proof(const COMMAND_RPC_GET_RELEASE_PROOF::request& req,
+                                     COMMAND_RPC_GET_RELEASE_PROOF::response& res) {
+  try {
+    res.found = false;
+    res.height = 0;
+    res.leaf_index = 0;
+
+    Crypto::Hash contentHash;
+    if (!parseReleaseHash(req.content_hash, contentHash)) {
+      res.status = CORE_RPC_STATUS_OK;
+      return true;
+    }
+
+    auto proof = m_core.getReleaseProof(contentHash);
+    if (!proof.found) {
+      res.status = CORE_RPC_STATUS_OK;
+      return true;
+    }
+
+    res.found = true;
+    res.content_hash = req.content_hash;
+    res.leaf_hash = Common::podToHex(proof.leaf);
+    res.merkle_root = Common::podToHex(proof.root);
+    res.height = proof.height;
+    res.leaf_index = proof.leafIndex;
+
+    for (const auto& sibling : proof.path) {
+      res.proof_path.push_back(Common::podToHex(sibling));
+    }
+
+    uint32_t idx = proof.leafIndex;
+    for (size_t i = 0; i < proof.path.size(); ++i) {
+      res.proof_indices.push_back(idx & 1);
+      idx >>= 1;
+    }
+
+    res.status = CORE_RPC_STATUS_OK;
+    return true;
+  } catch (const std::exception& e) {
+    res.found = false;
+    res.status = e.what();
+    return true;
+  }
+}
+
 bool RpcServer::on_get_commitment_merkle_proof(const COMMAND_RPC_GET_COMMITMENT_MERKLE_PROOF::request& req,
                                                 COMMAND_RPC_GET_COMMITMENT_MERKLE_PROOF::response& res) {
   try {
@@ -2938,6 +3049,8 @@ bool RpcServer::on_amm_pool_info(const COMMAND_RPC_AMM_POOL_INFO::request& req,
   res.epoch_swap_fees = info.epochSwapFees;
   res.hearth_twap = m_core.getHearthTwap();
   res.height = m_core.get_current_blockchain_height();
+  res.hearth_cd_share_pct =
+      hearthCdSharePct(m_core.getCurrentBlockMajorVersion());
   res.status = CORE_RPC_STATUS_OK;
   return true;
 }

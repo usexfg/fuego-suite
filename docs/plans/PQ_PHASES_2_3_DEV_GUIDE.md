@@ -153,7 +153,7 @@ Swap fees remain strictly governed by Fuego's canonical tokenomics:
 
 ### 2. Hearth AMM & CD Banking Integration
 
-The Hearth Exchange (v12+ on-chain AMM + limit-order overlay) transitions into the STARK state tree:
+The Hearth Exchange (v11+: one pool inventory as call-auction depth-band makers and as the constant-product curve for swaps/backstop) transitions into the STARK state tree:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐

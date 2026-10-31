@@ -134,6 +134,11 @@ private:
   bool on_get_commitment_stats(const COMMAND_RPC_GET_COMMITMENT_STATS::request& req, COMMAND_RPC_GET_COMMITMENT_STATS::response& res);
   bool on_get_commitment_merkle_root(const COMMAND_RPC_GET_COMMITMENT_MERKLE_ROOT::request& req, COMMAND_RPC_GET_COMMITMENT_MERKLE_ROOT::response& res);
   bool on_get_commitment_merkle_proof(const COMMAND_RPC_GET_COMMITMENT_MERKLE_PROOF::request& req, COMMAND_RPC_GET_COMMITMENT_MERKLE_PROOF::response& res);
+
+  // release registry (song provenance), read-only
+  bool on_get_release_root(const COMMAND_RPC_GET_RELEASE_ROOT::request& req, COMMAND_RPC_GET_RELEASE_ROOT::response& res);
+  bool on_get_release(const COMMAND_RPC_GET_RELEASE::request& req, COMMAND_RPC_GET_RELEASE::response& res);
+  bool on_get_release_proof(const COMMAND_RPC_GET_RELEASE_PROOF::request& req, COMMAND_RPC_GET_RELEASE_PROOF::response& res);
   bool on_check_commitment_exists(const COMMAND_RPC_CHECK_COMMITMENT_EXISTS::request& req, COMMAND_RPC_CHECK_COMMITMENT_EXISTS::response& res);
 
   // Fee pool analytics + treasury

@@ -39,6 +39,23 @@ target_link_libraries(alias_index_tests PRIVATE
 )
 add_test(NAME alias_index_tests COMMAND alias_index_tests)
 
+# Release registry: append-only merkle index of release registrations. The leaf
+# binds content hash, signer, height, and metadata, so a proof shows who signed
+# which bytes at which height. No chain feed yet — see
+# docs/superpowers/plans/2026-10-28-release-registry-api.md.
+add_executable(release_registry_tests
+    UnitTests/ReleaseRegistryTest.cpp
+)
+target_include_directories(release_registry_tests PRIVATE ${CMAKE_SOURCE_DIR}/external/gtest/include)
+target_link_libraries(release_registry_tests PRIVATE
+    CryptoNoteCore
+    Crypto
+    Common
+    gtest
+    gtest_main
+)
+add_test(NAME release_registry_tests COMMAND release_registry_tests)
+
 # Owner-bound commitment derivation: sender/view-only material must not sign,
 # the scanner must attribute outputs to the matching key, and pre-v11 outputs
 # must stay discoverable. See docs/developer/v11-p0-commitment-keys-and-asset-accounting-guide.md

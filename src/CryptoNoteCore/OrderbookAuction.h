@@ -33,8 +33,8 @@ struct AuctionFill {
   uint8_t side;      // 0 = bid (BUY_XFG), 1 = ask (SELL_XFG)
   uint64_t fillXfg;  // XFG atomics exchanged
   uint64_t heat;     // fillXfg × clearingPrice / COIN (price value of the fill)
-  uint64_t cdFeeHeat = 0;   // taker fills: 70% of the 1% fee → CD yield (HEAT)
-  uint64_t rebateHeat = 0;  // maker fills: 30% of the 1% fee → maker rebate (HEAT)
+  uint64_t cdFeeHeat = 0;   // taker fills: CD share of the 1% fee (HEAT)
+  uint64_t rebateHeat = 0;  // maker fills: maker share of the 1% fee (HEAT)
 };
 
 struct AuctionResult {
@@ -49,11 +49,13 @@ struct AuctionResult {
 
 // Bids (BUY_XFG) sorted price-desc; asks (SELL_XFG) sorted price-asc.
 // prevPclear: last block's clearing price, used only for tie-breaks.
+// blockMajorVersion: selects the taker-fee split (parameters::hearthCdSharePct).
 // Pool-generated orders (0xF0 id prefix) all carry the same zeroed addressHash,
 // so they are exempt from self-trade exclusion: without that, the two-sided
 // market maker reads as one party and a whole side is dropped.
 AuctionResult runAuction(const std::vector<AuctionOrder>& bids,
                          const std::vector<AuctionOrder>& asks,
-                         uint64_t prevPclear);
+                         uint64_t prevPclear,
+                         uint8_t blockMajorVersion);
 
 } // namespace CryptoNote

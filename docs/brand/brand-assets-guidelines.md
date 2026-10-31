@@ -89,7 +89,7 @@ Use a font that renders Greek + stroke-T cleanly (Saira often needs a fallback f
 | **XFG** | Base-layer privacy coin; burned to mint HEAT |
 | **HEAT / ΗΞΔŦ** | Algorithmic flatcoin; purchasing-power oriented; hearthstone reference `FCI_HEARTHSTONE_INITIAL_CENTS = 158` (quarterly CPI re-base) |
 | **CD** | Certificate of Deposit — term-locked **HEAT**, yield from protocol fees |
-| **Hearth** | On-chain XFG/HEAT market (AMM + orderbook hybrid) |
+| **Hearth** | On-chain XFG/HEAT market: one pool inventory as auction depth-band makers and as the AMM curve |
 | **Eternal Flame** | Accounting for destroyed base-layer coins |
 | **Epoch** | Protocol accounting period (~5 days) |
 | **Fire Alias** | Short on-chain identity |

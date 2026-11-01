@@ -39,6 +39,23 @@ target_link_libraries(alias_index_tests PRIVATE
 )
 add_test(NAME alias_index_tests COMMAND alias_index_tests)
 
+# HEAT mint conservation. The sums in scanMintTx run over amounts the
+# transaction author chose, so they must be checked: an unchecked
+# `xfgOutputs + fee` wraps and lets an unbacked mint pass conservation.
+add_executable(heat_mint_engine_tests
+    CoreTests/HeatMintTest.cpp
+)
+target_include_directories(heat_mint_engine_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/external/gtest/include
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_link_libraries(heat_mint_engine_tests PRIVATE
+    CryptoNoteCore
+    gtest
+    gtest_main
+)
+add_test(NAME heat_mint_engine_tests COMMAND heat_mint_engine_tests)
+
 # Release registry: append-only merkle index of release registrations. The leaf
 # binds content hash, signer, height, and metadata, so a proof shows who signed
 # which bytes at which height. No chain feed yet — see

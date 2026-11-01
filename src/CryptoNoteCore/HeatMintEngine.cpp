@@ -11,10 +11,19 @@
 #include "CryptoNoteConfig.h"
 #include "Common/Int128.h"
 #include <cstdio>
+#include <limits>
 
 namespace CryptoNote {
 
 namespace {
+
+// Every sum below is over amounts the transaction author chose, so each one
+// must be checked: a wrapping sum turns an unbacked mint into a "valid" one.
+bool addChecked(uint64_t& sum, uint64_t value) {
+  if (sum > std::numeric_limits<uint64_t>::max() - value) return false;
+  sum += value;
+  return true;
+}
 
 // expectedHeat = xfgBurned × price / COIN, price = HEAT atomics per XFG atomic × COIN.
 uint64_t expectedHeatFor(uint64_t xfgBurned, uint64_t price) {
@@ -32,9 +41,9 @@ bool scanMintTx(const Transaction& tx, uint64_t fee,
 
   for (const auto& in : tx.inputs) {
     if (in.type() == typeid(KeyInput)) {
-      xfgInputs += boost::get<KeyInput>(in).amount;
+      if (!addChecked(xfgInputs, boost::get<KeyInput>(in).amount)) return false;
     } else if (in.type() == typeid(TransactionInputCommitmentSpend)) {
-      xfgInputs += boost::get<TransactionInputCommitmentSpend>(in).amount;
+      if (!addChecked(xfgInputs, boost::get<TransactionInputCommitmentSpend>(in).amount)) return false;
     } else if (in.type() == typeid(TransactionInputCommitmentTransfer)) {
       // CommitmentTransfer inputs are not a valid XFG burn source.
       // Allowing them without counting their value would break supply conservation.
@@ -46,19 +55,25 @@ bool scanMintTx(const Transaction& tx, uint64_t fee,
     if (out.target.type() == typeid(TransactionOutputCommitment)) {
       const auto& commitment = boost::get<TransactionOutputCommitment>(out.target);
       if (commitment.term == parameters::HEAT_TERM) {
-        heatOutputs += out.amount;
+        if (!addChecked(heatOutputs, out.amount)) return false;
       } else {
-        xfgOutputs += out.amount;
+        if (!addChecked(xfgOutputs, out.amount)) return false;
       }
     } else {
-      xfgOutputs += out.amount;
+      if (!addChecked(xfgOutputs, out.amount)) return false;
     }
   }
 
   if (heatOutputs == 0) return false;
-  if (xfgInputs < xfgOutputs + fee) return false;
 
-  xfgBurned = xfgInputs - xfgOutputs - fee;
+  // `xfgOutputs + fee` wraps for a large enough output amount, which makes a
+  // transaction spending far more than it brings in look conserved and reports
+  // a burn of a few atomics (or zero).
+  uint64_t xfgSpent = xfgOutputs;
+  if (!addChecked(xfgSpent, fee)) return false;
+  if (xfgInputs < xfgSpent) return false;
+
+  xfgBurned = xfgInputs - xfgSpent;
   return true;
 }
 

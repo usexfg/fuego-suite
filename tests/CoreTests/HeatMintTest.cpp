@@ -2,6 +2,7 @@
 #include "gtest/gtest.h"
 #include "CryptoNoteCore/HeatMintEngine.h"
 #include "CryptoNoteConfig.h"
+#include <limits>
 
 using namespace CryptoNote;
 
@@ -116,3 +117,53 @@ TEST(HeatMintEngine, FeeReducesBurn) {
   uint64_t burned = 0, minted = 0;
   EXPECT_FALSE(engine.validateMint(tx, 10, PRICE_5, burned, minted));
 }
+
+// Amounts in a mint transaction are chosen by its author, so the sums in
+// scanMintTx must not wrap. Before the checked adds, `xfgOutputs + fee` wrapped
+// for a large enough output: a transaction creating an output of UINT64_MAX
+// from 1000 atomics of input passed conservation and reported a burn of 1000.
+TEST(HeatMintEngine, OutputPlusFeeOverflowRejected) {
+  HeatMintEngine engine;
+  Transaction tx;
+
+  KeyInput ki;
+  ki.amount = 1000;
+  tx.inputs.push_back(ki);
+
+  TransactionOutput bigOut;
+  bigOut.amount = std::numeric_limits<uint64_t>::max();
+  bigOut.target = KeyOutput();
+  tx.outputs.push_back(bigOut);
+
+  TransactionOutput heatOut;
+  heatOut.amount = 1;
+  TransactionOutputCommitment co;
+  co.term = parameters::HEAT_TERM;
+  heatOut.target = co;
+  tx.outputs.push_back(heatOut);
+
+  uint64_t burned = 0, minted = 0;
+  EXPECT_FALSE(engine.validateMint(tx, 1, PRICE_5, burned, minted));
+}
+
+TEST(HeatMintEngine, InputSumOverflowRejected) {
+  HeatMintEngine engine;
+  Transaction tx;
+
+  for (int i = 0; i < 2; ++i) {
+    KeyInput ki;
+    ki.amount = std::numeric_limits<uint64_t>::max();
+    tx.inputs.push_back(ki);
+  }
+
+  TransactionOutput heatOut;
+  heatOut.amount = 1;
+  TransactionOutputCommitment co;
+  co.term = parameters::HEAT_TERM;
+  heatOut.target = co;
+  tx.outputs.push_back(heatOut);
+
+  uint64_t burned = 0, minted = 0;
+  EXPECT_FALSE(engine.validateMint(tx, 0, PRICE_5, burned, minted));
+}
+

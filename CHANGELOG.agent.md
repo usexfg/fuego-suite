@@ -1,11 +1,11 @@
-## Release registry: merkle index for release registrations (library only)
+## Release registry: merkle index + read-only proof API
 
 **Started**: 2026-10-30
 **Agent**: opencode (DeepSeek V4.1 Flash Free)
-**Status**: IN PROGRESS — library landed, no chain feed, no RPC
-**Scope**: Append-only merkle index so a platform can later fetch a root and an inclusion proof for a song's content hash without running a node. New `ReleaseRegistry` class, separate from `CommitmentIndex` (that tree is HEAT commitments; song leaves must not share it). Leaf = `cn_fast_hash(content_hash ‖ signer ‖ height_le64 ‖ metadata_len_le16 ‖ metadata)`, pairing rule copied from `CommitmentIndex.cpp:100-131`. Plan: `docs/superpowers/plans/2026-10-28-release-registry-api.md`.
+**Status**: IN PROGRESS — read API live, no chain feed
+**Scope**: Append-only merkle index so a platform can fetch a root and an inclusion proof for a song's content hash without running a node. New `ReleaseRegistry` class, separate from `CommitmentIndex` (that tree is HEAT commitments; song leaves must not share it). Leaf = `cn_fast_hash(content_hash ‖ signer ‖ height_le64 ‖ metadata_len_le16 ‖ metadata)`, pairing rule copied from `CommitmentIndex.cpp:100-131`. Three open JSON routes on the daemon, modelled on `/get_commitment_merkle_proof` (`RpcServer.cpp:233`, handler `:2565`); the third handler-map flag is `allowBusyCore`, not auth (`RpcServer.h:69-72`). Plan: `docs/superpowers/plans/2026-10-28-release-registry-api.md`.
 
-Not in this entry: `TX_EXTRA_DIGM_ALBUM` (`0x0A`) is still a macro only and is not in the tx-extra variant; nothing parses it. No block connect, no reorg undo, no signature check, no RPC route. The index is fed by tests only, so it is not chain truth yet.
+Not in this entry: `TX_EXTRA_DIGM_ALBUM` (`0x0A`) is still a macro only and is not in the tx-extra variant; nothing parses it. No block connect, no reorg undo, no signature check. The index is fed by tests only, so every route returns `found: false` on a real node. It is not chain truth yet.
 
 ### Task list
 
@@ -15,20 +15,26 @@ Not in this entry: `TX_EXTRA_DIGM_ALBUM` (`0x0A`) is still a macro only and is n
 | 2 | `ReleaseRegistry.cpp` — leaf hash, first-registration-wins insert, erase-by-height with index rebuild, root, proof, static verify | DeepSeek V4.1 Flash Free | 2026-10-30 | DONE |
 | 3 | `tests/UnitTests/ReleaseRegistryTest.cpp` — 7 tests incl. tampered-path and post-erase proof | DeepSeek V4.1 Flash Free | 2026-10-30 | DONE |
 | 4 | `tests/CMakeLists.txt` — `release_registry_tests` target | DeepSeek V4.1 Flash Free | 2026-10-30 | DONE |
-| 5 | Tx-extra `0x0A` parser + variant arm | — | — | TODO |
-| 6 | `Blockchain` connect/pop calls `insert` / `eraseByHeight` | — | — | TODO |
-| 7 | RPC routes `/get_release_root`, `/get_release`, `/get_release_proof` | — | — | TODO |
-| 8 | `docs/developer/release-registry-api.md` | — | — | TODO |
+| 5 | `Blockchain`/`Core` getters + `m_releaseRegistry` member | DeepSeek V4.1 Flash Free | 2026-10-31 | DONE |
+| 6 | RPC routes `/get_release_root`, `/get_release`, `/get_release_proof` + 3 `COMMAND_RPC_*` structs | DeepSeek V4.1 Flash Free | 2026-10-31 | DONE |
+| 7 | `docs/developer/release-registry-api.md` | DeepSeek V4.1 Flash Free | 2026-10-31 | DONE |
+| 8 | Tx-extra `0x0A` parser + variant arm | — | — | TODO |
+| 9 | `Blockchain` connect/pop calls `insert` / `eraseByHeight` | — | — | TODO |
+| 10 | Enforce or document insert-order invariant (root determinism) | — | — | TODO |
+| 11 | Automated test for the three RPC routes | — | — | TODO |
 
 ### Sign-off table
 
 | Gate | Status |
 |------|--------|
-| Build compiles | ✅ `cmake --build build --target release_registry_tests` clean (only pre-existing icu4c/jsoncpp dylib version warnings) |
+| Build compiles | ✅ `--target release_registry_tests` and `--target Daemon` clean (only pre-existing icu4c/jsoncpp/openssl dylib version warnings) |
 | Tests pass | ✅ 7/7 `ReleaseRegistry.*` PASS |
-| All tasks done | ❌ tasks 5-8 open; no RPC, no chain feed |
+| Routes answer live | ✅ temp datadir, `--restricted-rpc`, port 18999: root `{count:0, zero root, OK}`, proof miss `{found:false, OK}`, malformed hash → `found:false` not 500, `/get_commitment_merkle_root` unregressed |
+| All tasks done | ❌ tasks 8-11 open; no chain feed |
 
 ---
+
+## swapxfg TUI: dynamic pair catalog from swapd status
 
 
 

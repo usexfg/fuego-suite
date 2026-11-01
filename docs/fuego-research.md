@@ -167,7 +167,7 @@ Swap fees: 2% per atomic swap (1% initiation + 1% claim on claim/refund)
 - Protocol earnings are ONLY these two streams. Mint premium is 0 bps (goes nowhere).
 
 Banking fees (tiered): 0.1% per tier (0.8/8/80/800 XFG burns → fee 8K/80K/800K/8M ħ)
-- The CD creation fee (0.1%) is donated to @fuegoxfg (Fuego Development Fund), NOT protocol revenue.
+- The CD creation fee (0.1%) is paid in ΗΞΔŦ; from v11 it is credited to the protocol Treasury ΗΞΔŦ reserve, before v11 to @fuegoxfg. Not CD yield.
 
 ## 10. Governance for Protocol Upgrades
 

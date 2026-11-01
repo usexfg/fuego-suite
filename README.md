@@ -203,11 +203,11 @@ There are exactly **two** protocol earnings streams
 
 NOT protocol earnings:
 - **Mint premium** — none (0 bps, `HEAT_MINT_PREMIUM_BPS = 0`), goes nowhere.
-- **CD creation fee** — 0.1% of CD amount, donated to **@fuegoxfg** (Fuego Development Fund). Not protocol revenue, not CD yield, not treasury.
+- **CD creation fee** — 0.1% of CD amount, paid in ΗΞΔŦ at creation. From v11 it is credited to the protocol Treasury ΗΞΔŦ reserve; before v11 it was sent to **@fuegoxfg**. Never part of CD yield.
 
 ### Certificates of Deposit (CD) — V12 activation
 
-Epoch (900 blocks) term-locked ΗΞΔŦ deposits earning real yield thru protocol revenue, not inflation. Each CD requires an upfront banking fee of a mere 0.1% of CD amount (fee also in ΗΞΔŦ) paid at time of CD creation (no fees at claim) and sent to **@fuegoxfg** as a donation to Fuego Development Fund.
+Epoch (900 blocks on mainnet, 10 on testnet) term-locked ΗΞΔŦ deposits earning real yield thru protocol revenue, not inflation. Each CD requires an upfront banking fee of 0.1% of CD amount, paid in ΗΞΔŦ at time of CD creation (no fee at claim). From v11 the fee is credited to the protocol Treasury ΗΞΔŦ reserve; before v11 it was sent to **@fuegoxfg**.
 
 | Command | Description |
 |---------|-------------|

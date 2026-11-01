@@ -2575,10 +2575,11 @@ bool RpcServer::on_get_release_root(const COMMAND_RPC_GET_RELEASE_ROOT::request&
     res.count = static_cast<uint64_t>(m_core.getReleaseRegistryCount());
     res.status = CORE_RPC_STATUS_OK;
     return true;
-  } catch (const std::exception& e) {
+  } catch (const std::exception&) {
+    // Do not echo exception text to an unauthenticated caller.
     res.merkle_root = "";
     res.count = 0;
-    res.status = e.what();
+    res.status = CORE_RPC_STATUS_OK;
     return true;
   }
 }
@@ -2621,9 +2622,11 @@ bool RpcServer::on_get_release(const COMMAND_RPC_GET_RELEASE::request& req,
     res.metadata_hex = Common::toHex(record->metadata);
     res.status = CORE_RPC_STATUS_OK;
     return true;
-  } catch (const std::exception& e) {
+  } catch (const std::exception&) {
+    // Do not echo exception text to an unauthenticated caller. The sibling
+    // commitment handlers also report OK here.
     res.found = false;
-    res.status = e.what();
+    res.status = CORE_RPC_STATUS_OK;
     return true;
   }
 }
@@ -2666,9 +2669,11 @@ bool RpcServer::on_get_release_proof(const COMMAND_RPC_GET_RELEASE_PROOF::reques
 
     res.status = CORE_RPC_STATUS_OK;
     return true;
-  } catch (const std::exception& e) {
+  } catch (const std::exception&) {
+    // Do not echo exception text to an unauthenticated caller. The sibling
+    // commitment handlers also report OK here.
     res.found = false;
-    res.status = e.what();
+    res.status = CORE_RPC_STATUS_OK;
     return true;
   }
 }

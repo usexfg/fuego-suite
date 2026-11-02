@@ -84,6 +84,10 @@ So the same file registered by two different signers produces two different leav
 
 The fold below only proves that the path is *internally consistent* with the `merkle_root` in the same response. A daemon that lies can return a fabricated leaf, a fabricated path, and a fabricated root that agree perfectly. **Comparing `current` to `merkle_root` from the same response verifies arithmetic, not authenticity.**
 
+### Ordered-by-contract invariant
+
+The registry is **ordered-by-contract**, not enforced-by-code: insertion order determines root determinism. If two nodes are fed the same records in different orders, the merkle roots diverge and proofs from one node will not verify against the other. The feed must be ordered; `insert()` does not enforce height monotonicity. See `CHANGELOG.agent.md` W3.
+
 The root must come from somewhere you already trust. Today there is nowhere: the registry root is not committed into a block header and is not exposed by any independent channel, so a proof fetched over HTTP from a single daemon cannot be trusted at all. This becomes meaningful only when the root is pinned — from a block header field, a checkpoint, or an agreement across independent nodes. Until then, treat `/get_release_proof` as a shape demonstration.
 
 Given a root you obtained independently:

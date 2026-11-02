@@ -101,6 +101,8 @@ bool ReleaseRegistry::insert(const ReleaseRecord& rec) {
     return false;
   }
 
+  // Ordered-by-contract: insertion order determines root determinism.
+  // The feed must be ordered; this code does NOT enforce height monotonicity.
   m_index.emplace(rec.contentHash, m_records.size());
   m_records.push_back(rec);
   m_leaves.push_back(leafHash(rec));

@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "skills": {
+    "content-creator": {
+      "source": "smithery.ai",
+      "sourceType": "well-known",
+      "computedHash": "a12d9125e1589b7ff76142fbf0c23c7a404fd5a2eccf5cacf3aca8323165220b"
+    },
+    "excalidraw-diagram-generator": {
+      "source": "smithery.ai",
+      "sourceType": "well-known",
+      "computedHash": "e15a9e2e6be3a1f5a89f960bdbbfa86784d029a9164300e5fad5636740b2a1a5"
+    },
+    "image-manipulation-image-magick": {
+      "source": "smithery.ai",
+      "sourceType": "well-known",
+      "computedHash": "f4f81a1054a423c5eff04f05c1b72335beae2251201c5b5729b0dce4bee06f7e"
+    },
+    "interaction-design": {
+      "source": "smithery.ai",
+      "sourceType": "well-known",
+      "computedHash": "1fac9a5aff8463e98b935a0a1b48452d71afcfa50a3bc4b7af9510bfdd8a1731"
+    },
+    "notion-knowledge-capture": {
+      "source": "smithery.ai",
+      "sourceType": "well-known",
+      "computedHash": "31ac0126e07deb75eecf781b0f803d87a33cc43c0deea56529c03e68e283d14d"
+    },
+    "scroll-experience": {
+      "source": "smithery.ai",
+      "sourceType": "well-known",
+      "computedHash": "75ab16d37862e6f0c6db1b9dfc21b8b4c672823d82877befddf955b362e049b8"
+    },
+    "smithery-ai-cli": {
+      "source": "smithery.ai",
+      "sourceType": "well-known",
+      "computedHash": "dc17f090c975afe1d96a25dbe843fc9c978e96d5699eed1bb7c12b411e10b830"
+    },
+    "ux-researcher-designer": {
+      "source": "smithery.ai",
+      "sourceType": "well-known",
+      "computedHash": "4e4fd356cdd7f3fc96888a2ab2fa13e8cae14f05b9a144528b0a16b7dc66443a"
+    },
+    "visual-design-foundations": {
+      "source": "smithery.ai",
+      "sourceType": "well-known",
+      "computedHash": "9f0f44bd206036f17f69cf78f3f3b5f9c0e0118672574ffd35c4c34c3d574d16"
+    }
+  }
+}

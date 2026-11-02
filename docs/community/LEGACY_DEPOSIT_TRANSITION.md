@@ -30,7 +30,7 @@ Your pre-v10 COLD deposit still holds XFG. You have not lost anything.
 ```
 withdraw_bond <deposit_id>
 ```
-Your XFG returns to your wallet with any interest that has accrued from swap fees since the bond migration activated. No lock. No penalty. No fee.
+Your XFG returns to your wallet. No lock. No penalty. No fee.
 
 **Step 2:** Burn it to mint HEAT.
 
@@ -42,15 +42,10 @@ Choose a term from 1 to 72 epochs (~5 days to ~1 year). Your HEAT earns real yie
 
 ## What you should not expect
 
-The 80% figure from the original COLD system is gone. It was funded by destroying the value of everyone else's XFG. 
+The 80% figure from the original COLD system is fugazi tbh, but at the time was the best idea we had. It was a model funded by destroying the value of everyone else's tokens. As bad of an idea it is- it is a model not uncommon in crypto- dare i say the most common for deposit interest.. however it was an essential stepping stone of experience that led us on our way to building Fuego Reserve. 
 
-The replacement is a real-yield system producing 15–30% from actual protocol activity. If volume grows, rates rise. If the treasury backstops shortfalls, the floor holds. The system earns its yield. It does not print it.  It offers what the old system cannot offer which is why there really isnt anything we CAN redeem into a system based on real yield- except for the system already built to earn as much apy as you want, just now instead of the promise of one thru token issuance. So i did say one thing and do another, but for this I'd hope you'll accept the replacement.
+The replacement is a real-yield system producing interest from actual protocol activity. As volume grows, rates rise. If the treasury backstops shortfalls, the floor holds. The system earns its yield. It does not print it.  It offers what the old system cannot offer which is why there really isnt anything we CAN redeem, moving into a system based on real yield & sound money assurance- this system is  built to earn a variable APY based on each epoch's activity, but real yield instead of the promise of token issuance. So i admit, i did say one thing and do another, but for this time I hope you would agree, we chose a better replacement.
 
 ## Why this is better
 
-The old system asked you to trust an inflation schedule. The new system asks you to verify protocol revenue. You can see swap fees on-chain every epoch. You can calculate exactly what the pool earned and what your share is. The math is auditable. The economics are transparent.
-
-This is not the product we imagined - it is an econmically better one. It works without asking permission from anyone to earn as much yield as you want.
-
-—ALSO CDs arent available in XFG in the new system and dont exist in HEAT CDs until v11 and even then XFG deposits are only available thru burning XFG and minting HEAT then making a HEAT CD.
-
+The old system asked you to trust an inflation schedule. The new system asks you to verify protocol revenue. You can see swap fees on-chain every epoch. You can calculate exactly what the pool earned and what your share is. Heat supply and burned XFG are always available as well. The math is auditable and economics are transparent. The more we make this so, the more we can lean into & benefit from the assurances of a sound money system.

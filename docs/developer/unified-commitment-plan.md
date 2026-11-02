@@ -42,7 +42,7 @@ TransactionOutputCommitment {
 | `POOL_XFG` (0x504F4C58) | AMM pool XFG reserve |
 | `POOL_HEAT` (0x504F4C48) | AMM pool HEAT reserve |
 | `SWAP_RECEIVE_XFG` (0x53575258) | Swap output XFG |
-
+what about 'swap_receive_heat' | swap output heat?
 ### Inputs (one type)
 
 ```
@@ -179,7 +179,9 @@ The original design used 1-of-4 membership proofs (`amountProof`) for fixed tier
 | Range proof (Bulletproofs+) | Arbitrary | ~672 bytes (aggregated) | ~2500 LOC |
 | Membership via finer tiers | 0.008 granularity | ~512 bytes (N=8) | Medium |
 
-**Recommendation: Bulletproofs+ (range proofs).** One commitment, any amount, one proof. No decomposition, no denominations, no remainder dust. This is the Monero approach and the correct model for a privacy coin.
+**Recommendation: Bulletproofs+ (range proofs).** One commitment, any amount, one proof. No decomposition, no denominations, no remainder dust. This is the Monero approach and the correct model for a privacy coin. 
+
+***BUT does this harm sound money supply confidence? are we trusting in supply or supply proofs? can we keep supply amounts visible (Hearth Pool, Heat mints?) enough to hide over the wire on p2p txns?***
 
 The membership proof infra (`tier_proof.h/.cpp`) stays for **CD inputs only** — CDs need tier enforcement for banking interest calculation. General transfers (term=0 XFG, FOREVER HEAT) use range proofs.
 
@@ -271,6 +273,7 @@ v10 `check_ring_signature` only used for historical block validation. New txs al
 term=0 (regular XFG) and term=FOREVER (HEAT) outputs can optionally hide their term via the commitment. CDs still need visible term for timelock enforcement.
 
 (Low priority — term visibility doesn't meaningfully reduce the decoy pool.)
+***if amounts stay visible- we have to find a way to hide term as high priority***
 
 #### 3c. Wallet: default MLSAG
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2025 Fuego Developers
+// Copyright (c) 2017-2026 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -346,23 +346,23 @@ bool DaemonCommandsHandler::status(const std::vector<std::string>& args) {
 
 
 std::cout << std::endl
-         << "\033[1mFuego Bank of XFG\033[0m |" << (m_core.currency().isTestnet() ? " Testnet - " : " MAINNET | ")
+         << "\033[1mFuego Reserve\033[0m |" << (m_core.currency().isTestnet() ? " Testnet - " : " MAINNET | ")
          << (synced ? "synced " : "syncing ") << height << "/" << last_known_block_index
          << " (" << get_sync_percentage(height, last_known_block_index) << "%) "<< std::endl;
 std::cout << "**************************************************"<< std::endl;
 std::cout << "Network Hashrate: " << get_mining_speed(hashrate) << ", Difficulty: " << difficulty << std::endl;
 std::cout << "Block Major version: " << (int)majorVersion << ", " << "Alt Blocks: " << alt_blocks_count << std::endl;
 const auto &currency = m_core.currency();
-std::cout << "All " << (m_core.currency().isTestnet() ? "TEST" : "XFG") << " minted to date:  " << currency.formatAmount(totalCoinsInNetwork) << " " << (m_core.currency().isTestnet() ? "TEST" : "XFG") << std::endl;
-std::cout << "XFG Locked in Deposits : " << (totalCoinsOnDeposits >= 1000000 ? currency.formatAmount(totalCoinsOnDeposits) : "0.0") << " " << (m_core.currency().isTestnet() ? "TEST" : "XFG") << " (" << currency.formatAmount(calculatePercent(currency, totalCoinsOnDeposits, totalCoinsInNetwork)) << "%)" << std::endl;
+std::cout << "Total " << (m_core.currency().isTestnet() ? "TEST" : "XFG") << " issued to date:  " << currency.formatAmount(totalCoinsInNetwork) << " " << (m_core.currency().isTestnet() ? "TEST" : "XFG") << std::endl;
+std::cout << "Total XFG Burned  : " << (totalCoinsEthereal >= 1000000 ? currency.formatAmount(totalCoinsEthereal) : "0.0") << " " << (m_core.currency().isTestnet() ? "TEST" : "XFG") << " (" << (totalCoinsEthereal > 0 ? currency.formatAmount(calculatePercent(currency, totalEternalFlame, totalCoinsEthereal)) : "0.0") << "% Eternal Flame)" << std::endl;
+std::cout << "Total HΞ∆T Minted : " << currency.formatAmount(totalHeatSupply) << " HΞ∆T" << std::endl;
+std::cout << "XFG in Legacy Deposits : " << (totalCoinsOnDeposits >= 1000000 ? currency.formatAmount(totalCoinsOnDeposits) : "0.0") << " " << (m_core.currency().isTestnet() ? "TEST" : "XFG") << " (" << currency.formatAmount(calculatePercent(currency, totalCoinsOnDeposits, totalCoinsInNetwork)) << "%)" << std::endl;
 std::cout << "Total HΞ∆T Locked in CDs : " << (heatLockedInCDs >= 1000000 ? currency.formatAmount(heatLockedInCDs) : "0.0") << " HΞ∆T (" << (totalHeatSupply > 0 ? currency.formatAmount(calculatePercent(currency, heatLockedInCDs, totalHeatSupply)) : "0.0") << "%)" << std::endl;
 std::cout << "Circulating HΞ∆T : " << currency.formatAmount(circulatingHeat) << " HΞ∆T (" << (totalHeatSupply > 0 ? currency.formatAmount(calculatePercent(currency, circulatingHeat, totalHeatSupply)) : "0.0") << "%)" << std::endl;
-std::cout << "Total HΞ∆T Minted to date : " << currency.formatAmount(totalHeatSupply) << " HΞ∆T" << std::endl;
-  std::cout << "Total XFG Burned to date : " << (totalCoinsEthereal >= 1000000 ? currency.formatAmount(totalCoinsEthereal) : "0.0") << " " << (m_core.currency().isTestnet() ? "TEST" : "XFG") << " (" << (totalCoinsEthereal > 0 ? currency.formatAmount(calculatePercent(currency, totalEternalFlame, totalCoinsEthereal)) : "0.0") << "% E-Flame)" << std::endl;
   std::cout << "Treasury HΞ∆T Reserve : " << (heatMetrics.treasuryHeatReserve >= 1000000 ? currency.formatAmount(heatMetrics.treasuryHeatReserve) : "0.0") << " HΞ∆T" << std::endl;
-  std::cout << "SWF Pending (circulating removed, not total): " << currency.formatAmount(swfBalance) << " " << (m_core.currency().isTestnet() ? "TEST" : "XFG") << std::endl;
-  std::cout << "SWF Permanent (total supply removed): " << currency.formatAmount(permanentlyBurned) << " " << (m_core.currency().isTestnet() ? "TEST" : "XFG") << std::endl;
-  std::cout << "Total XFG Supply: " << currency.formatAmount(actualTotalSupply) << " " << (m_core.currency().isTestnet() ? "TEST" : "XFG") << " (effective max: " << currency.formatAmount(effectiveMaxSupply) << ")" << std::endl;
+  std::cout << "SWF Balance (XFG) : " << currency.formatAmount(swfBalance) << " " << (m_core.currency().isTestnet() ? "TEST" : "XFG") << std::endl;
+ // std::cout << "SWF balance held in HΞ∆T : " << currency.formatAmount(permanentlyBurned) << " " << (m_core.currency().isTestnet() ? "TEST" : "XFG") << std::endl;  //  permanently removed should add to burn total when converted. this needs to be heat balance
+  std::cout << "Current XFG Total Supply: " << currency.formatAmount(actualTotalSupply) << " " << (m_core.currency().isTestnet() ? "TEST" : "XFG") << " (effective max: " << currency.formatAmount(effectiveMaxSupply) << ")" << std::endl;
 std::cout << "**************************************************"<< std::endl;
   return true;
 }

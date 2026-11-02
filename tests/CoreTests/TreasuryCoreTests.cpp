@@ -1293,6 +1293,79 @@ void testVaultUtxoSetLpSurvivesSerialize() {
   TEST(restored.partitionBalance(VaultPartition::LP_RESERVE, AssetType::LP) == 777);
 }
 
+// Adversarial: the R2-1 gate is `m_vault.isVaultKeyImage(ki)`, and every vault
+// UTXO shares one synthetic key image because every addUtxo site passes
+// m_vaultKeys.viewPub. removeAboveIndex() erases that shared key image when it
+// drops ANY vault UTXO, so a reorg that pops a vault UTXO disarms the gate for
+// the UTXOs that remain -- until the process restarts and the cache rebuilds it.
+void testVaultReorgKeepsKeyImageGate() {
+  Crypto::PublicKey spendPub, viewPub;
+  Crypto::SecretKey spendSec, viewSec;
+  Crypto::generate_keys(spendPub, spendSec);
+  Crypto::generate_keys(viewPub, viewSec);
+
+  VaultUtxoSet vault;
+  vault.setSpendKey(spendSec);
+  Crypto::Hash h{};
+  // Same shape as Blockchain: every vault UTXO names m_vaultKeys.viewPub.
+  vault.addUtxo(uint64_t(100) << 32 | 1, 1000, AssetType::HEAT,
+                VaultPartition::CD_APY_POOL, h, viewPub);
+  vault.addUtxo(uint64_t(200) << 32 | 1, 1000, AssetType::HEAT,
+                VaultPartition::CD_APY_POOL, h, viewPub);
+
+  Crypto::KeyImage ki;
+  Crypto::generate_key_image(viewPub, spendSec, ki);
+  TEST(vault.isVaultKeyImage(ki));
+
+  // Reorg pops block 200 (Blockchain.cpp:6149). The height-100 UTXO remains.
+  vault.removeAboveIndex(uint64_t(200) << 32);
+  TEST(vault.totalUtxos() == 1);
+  TEST(vault.isVaultKeyImage(ki));
+}
+
+// Adversarial: the cache is the only persisted copy of `spent`, `spentCount`
+// and the key-image table the consensus gate reads. None of it was round-tripped
+// by a test before this one.
+void testVaultSpentSurvivesSerialize() {
+  Crypto::PublicKey spendPub, viewPub;
+  Crypto::SecretKey spendSec, viewSec;
+  Crypto::generate_keys(spendPub, spendSec);
+  Crypto::generate_keys(viewPub, viewSec);
+
+  VaultUtxoSet vault;
+  vault.setSpendKey(spendSec);
+  Crypto::Hash h{};
+  vault.addUtxo(100, 777, AssetType::HEAT, VaultPartition::CD_APY_POOL, h, viewPub);
+  vault.addUtxo(101, 500, AssetType::HEAT, VaultPartition::CD_APY_POOL, h, viewPub);
+  vault.markSpent(101);
+  TEST(vault.spentCount() == 1);
+
+  Crypto::KeyImage ki;
+  Crypto::generate_key_image(viewPub, spendSec, ki);
+
+  CryptoNote::BinaryArray blob = CryptoNote::storeToBinary<VaultUtxoSet>(vault);
+
+  // Blockchain sets the spend key in its constructor, before init() loads the
+  // cache; mirror that order.
+  VaultUtxoSet restored;
+  restored.setSpendKey(spendSec);
+  CryptoNote::loadFromBinary<VaultUtxoSet>(restored, blob);
+
+  TEST(restored.totalUtxos() == 2);
+  TEST(restored.spentCount() == 1);
+  const VaultOutput* spent = restored.getOutput(101);
+  TEST(spent != nullptr && spent->spent);
+  TEST(restored.partitionBalance(VaultPartition::CD_APY_POOL, AssetType::HEAT) == 777);
+  // Rebuilt from outputKey + spendKey, not serialized.
+  TEST(restored.isVaultKeyImage(ki));
+
+  // removeAboveIndex on a *spent* entry (the untested branch) must decrement
+  // spentCount rather than underflow it.
+  restored.removeAboveIndex(101);
+  TEST(restored.totalUtxos() == 1);
+  TEST(restored.spentCount() == 0);
+}
+
 // Regression (F2/R1): version-gated validation must key on the BLOCK's own
 // majorVersion, resolved through the one consensus authority.
 //
@@ -1385,6 +1458,8 @@ int main() {
   testCoinbaseRejectsEverySettlementTag();
   testRejectedBlockUnwindsVaultSpend();
   testVaultUtxoSetLpSurvivesSerialize();
+  testVaultReorgKeepsKeyImageGate();
+  testVaultSpentSurvivesSerialize();
   testVersionGatesUseConsensusAuthority();
   testVersionHelpersAgree();
   testValidateSettlementSwapCurve();

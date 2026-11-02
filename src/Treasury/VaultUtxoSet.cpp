@@ -293,15 +293,20 @@ void VaultUtxoSet::removeAboveIndex(uint64_t minIndex) {
     for (uint64_t idx : toRemove) {
         auto it = m_utxos.find(idx);
         if (it != m_utxos.end()) {
-            if (it->second.spent) m_spentCount--;
-            // Remove associated key image
-            if (m_spendKeySet) {
-                Crypto::KeyImage ki;
-                Crypto::generate_key_image(it->second.outputKey, m_spendKey, ki);
-                m_keyImages.erase(ki);
-            }
+            // Guarded like unSpendUtxos(): an inconsistent count must not wrap
+            // to UINT64_MAX.
+            if (it->second.spent && m_spentCount > 0) m_spentCount--;
             m_utxos.erase(it);
         }
+    }
+
+    // Rebuild rather than erase one key image per removed UTXO: every vault
+    // output names m_vaultKeys.viewPub, so every vault UTXO shares one synthetic
+    // key image. Erasing it while older UTXOs remain emptied the capability set
+    // and disarmed the R2-1 reject in pushTransaction for the rest of the
+    // process. Rebuilding keeps exactly the key images the remaining UTXOs own.
+    if (m_spendKeySet) {
+        rebuildKeyImageIndex();
     }
 }
 

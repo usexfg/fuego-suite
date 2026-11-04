@@ -564,7 +564,13 @@ namespace CryptoNote
     }
 
     context->mixIn = static_cast<uint64_t>(ringSize);
-    if (context->isV10AmmSwap) {
+    if (context->isV10HeatDeposit) {
+      // HEAT CD deposit: spend HEAT → CD commitment output. Routed on its own
+      // flag; reusing isV10AmmSwap left the CD branch unreachable behind the
+      // AMM branch, so HEAT deposits were dispatched into the AMM swap sender.
+      nextRequest = doSendHeatDepositV10Transaction(std::move(context), events,
+        context->v10SwapInput, context->v10SwapOutput, context->depositTerm);
+    } else if (context->isV10AmmSwap) {
       nextRequest = doSendAmmSwapV10CommitmentTransaction(std::move(context), events,
         context->v10SwapDirection, context->v10SwapInput,
         context->v10SwapOutput, context->v10SwapMinOutput);
@@ -577,10 +583,6 @@ namespace CryptoNote
     } else if (context->isV10LpClaim) {
       nextRequest = doSendLpClaimFeesTransaction(std::move(context), events,
         context->v10LpClaimShares, context->v10LpClaimMinXfg, context->v10LpClaimMinHeat);
-    } else if (context->isV10AmmSwap && context->depositTerm > 0 && context->depositTerm < parameters::DEPOSIT_TERM_LP) {
-      // HEAT CD deposit: spend HEAT → CD commitment output
-      nextRequest = doSendHeatDepositV10Transaction(std::move(context), events,
-        context->v10SwapInput, context->v10SwapOutput, context->depositTerm);
     } else if (context->isV10HeatTransfer) {
       nextRequest = doSendHeatTransferV10Transaction(std::move(context), events,
         context->v10HeatRecipient, context->v10HeatTransferAmount);
@@ -1970,7 +1972,7 @@ namespace CryptoNote
     transactionId = m_transactionsCache.addNewTransaction(neededHeat, fee, std::string(), {}, 0, {});
     context->transactionId = transactionId;
     context->depositTerm = termEpochs;
-    context->isV10AmmSwap = true;  // reuse flag for CD deposit routing
+    context->isV10HeatDeposit = true;
     context->v10SwapInput = amount;
     context->v10SwapOutput = bankingFee;
     setSpendingTransactionToDeposits(transactionId, selectedIds);

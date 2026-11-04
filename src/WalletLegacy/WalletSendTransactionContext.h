@@ -58,6 +58,7 @@ struct SendTransactionContext
   uint64_t v10HeatMinted = 0;
   bool isV10LpAdd = false;  // LP add (reuses heat mint fields, separate flag for routing)
   bool isV10AmmSwap = false;
+  bool isV10HeatDeposit = false; // HEAT CD deposit: routes to the CD commitment-spend sender
   uint8_t v10SwapDirection = 0;
   uint64_t v10SwapInput = 0;
   uint64_t v10SwapOutput = 0;

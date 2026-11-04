@@ -1445,6 +1445,50 @@ void testVersionHelpersAgree() {
   }
 }
 
+// Vault hardening: setSpendKey retargets the synthetic key, so the derived
+// key-image table must be rebuilt from the (now-current) spend key. Adding UTXOs
+// before the key was set registered nothing; retargeting afterwards must derive
+// for the new key and invalidate the old.
+void testVaultSetSpendKeyRebuildsKeyImageIndex() {
+  Crypto::SecretKey spendSec, viewSec, spendSec2;
+  Crypto::PublicKey spendPub, spendPub2, viewPub;
+  Crypto::generate_keys(spendPub, spendSec);
+  Crypto::generate_keys(viewPub, viewSec);
+  Crypto::generate_keys(spendPub2, spendSec2);
+
+  VaultUtxoSet vault;
+  Crypto::Hash h{};
+  vault.addUtxo(100, 1000, AssetType::HEAT, VaultPartition::CD_APY_POOL, h, viewPub);
+
+  Crypto::KeyImage ki, ki2;
+  Crypto::generate_key_image(viewPub, spendSec, ki);
+  Crypto::generate_key_image(viewPub, spendSec2, ki2);
+  vault.setSpendKey(spendSec);
+  TEST(vault.isVaultKeyImage(ki));
+  TEST(!vault.isVaultKeyImage(ki2));
+
+  vault.setSpendKey(spendSec2);
+  TEST(!vault.isVaultKeyImage(ki));
+  TEST(vault.isVaultKeyImage(ki2));
+}
+
+// Vault hardening: allBalances() sums unspent UTXO amounts into per-partition
+// balances; the adds must saturate rather than wrap at UINT64_MAX.
+void testVaultAllBalancesSaturate() {
+  Crypto::SecretKey spendSec;
+  Crypto::PublicKey spendPub;
+  Crypto::generate_keys(spendPub, spendSec);
+
+  VaultUtxoSet vault;
+  Crypto::Hash h{};
+  vault.addUtxo(100, std::numeric_limits<uint64_t>::max(), AssetType::HEAT,
+                VaultPartition::CD_APY_POOL, h, spendPub);
+  vault.addUtxo(101, 1, AssetType::HEAT, VaultPartition::CD_APY_POOL, h, spendPub);
+
+  VaultBalance b = vault.allBalances();
+  TEST(b.heatCdFeePool == std::numeric_limits<uint64_t>::max());
+}
+
 int main() {
   testCdInterestCompounding();
   testLegacyDepositWithdrawsForPrincipal();
@@ -1481,6 +1525,8 @@ int main() {
   testVaultPartitionIsolation();
   testVaultSurplusMintRoundtrip();
   testVaultPopSymmetry();
+  testVaultSetSpendKeyRebuildsKeyImageIndex();
+  testVaultAllBalancesSaturate();
   fprintf(stderr, "=== Treasury/Core Tests ===\nPassed: %d / %d\n", tests_passed, tests_run);
   return tests_passed == tests_run ? 0 : 1;
 }

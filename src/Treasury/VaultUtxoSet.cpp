@@ -14,6 +14,12 @@
 
 namespace CryptoNote {
 
+namespace {
+uint64_t saturatingAdd(uint64_t a, uint64_t b) {
+    return a > UINT64_MAX - b ? UINT64_MAX : a + b;
+}
+}
+
 const char* vaultPartitionName(VaultPartition p) {
     switch (p) {
         case VaultPartition::CD_APY_POOL:     return "CD_APY_POOL";
@@ -81,19 +87,19 @@ VaultBalance VaultUtxoSet::allBalances() const {
         if (vo.spent) continue;
         if (vo.asset == AssetType::XFG) {
             switch (vo.partition) {
-                case VaultPartition::CD_APY_POOL:     b.xfgCdFeePool += vo.amount; break;
-                case VaultPartition::LP_RESERVE:      b.xfgLpReserve += vo.amount; break;
-                case VaultPartition::GENERAL_RESERVE: b.xfgGeneral += vo.amount; break;
-                case VaultPartition::BONUS_VAULT:     b.xfgBonusVault += vo.amount; break;
+                case VaultPartition::CD_APY_POOL:     b.xfgCdFeePool = saturatingAdd(b.xfgCdFeePool, vo.amount); break;
+                case VaultPartition::LP_RESERVE:      b.xfgLpReserve = saturatingAdd(b.xfgLpReserve, vo.amount); break;
+                case VaultPartition::GENERAL_RESERVE: b.xfgGeneral = saturatingAdd(b.xfgGeneral, vo.amount); break;
+                case VaultPartition::BONUS_VAULT:     b.xfgBonusVault = saturatingAdd(b.xfgBonusVault, vo.amount); break;
                 default: break;
             }
         } else if (vo.asset == AssetType::HEAT) {
             switch (vo.partition) {
-                case VaultPartition::CD_APY_POOL:     b.heatCdFeePool += vo.amount; break;
-                case VaultPartition::LP_RESERVE:      b.heatLpReserve += vo.amount; break;
-                case VaultPartition::GENERAL_RESERVE: b.heatGeneral += vo.amount; break;
-                case VaultPartition::SWF:             b.heatSwf += vo.amount; break;
-                case VaultPartition::BONUS_VAULT:     b.heatBonusVault += vo.amount; break;
+                case VaultPartition::CD_APY_POOL:     b.heatCdFeePool = saturatingAdd(b.heatCdFeePool, vo.amount); break;
+                case VaultPartition::LP_RESERVE:      b.heatLpReserve = saturatingAdd(b.heatLpReserve, vo.amount); break;
+                case VaultPartition::GENERAL_RESERVE: b.heatGeneral = saturatingAdd(b.heatGeneral, vo.amount); break;
+                case VaultPartition::SWF:             b.heatSwf = saturatingAdd(b.heatSwf, vo.amount); break;
+                case VaultPartition::BONUS_VAULT:     b.heatBonusVault = saturatingAdd(b.heatBonusVault, vo.amount); break;
                 default: break;
             }
         }
@@ -138,6 +144,7 @@ void VaultUtxoSet::registerKeyImage(const Crypto::KeyImage& ki, uint64_t globalI
 void VaultUtxoSet::setSpendKey(const Crypto::SecretKey& spendKey) {
     m_spendKey = spendKey;
     m_spendKeySet = true;
+    rebuildKeyImageIndex();
 }
 
 void VaultUtxoSet::rebuildKeyImageIndex() {

@@ -1489,6 +1489,24 @@ void testVaultAllBalancesSaturate() {
   TEST(b.heatCdFeePool == std::numeric_limits<uint64_t>::max());
 }
 
+// Vault hardening: equal-amount UTXO selection must be deterministic — ties
+// resolve by global index, not unordered-map iteration order.
+void testVaultSelectUtxosDeterministicTies() {
+  Crypto::SecretKey spendSec;
+  Crypto::PublicKey spendPub;
+  Crypto::generate_keys(spendPub, spendSec);
+
+  VaultUtxoSet vault;
+  Crypto::Hash h{};
+  vault.addUtxo(200, 5, AssetType::HEAT, VaultPartition::CD_APY_POOL, h, spendPub);
+  vault.addUtxo(100, 5, AssetType::HEAT, VaultPartition::CD_APY_POOL, h, spendPub);
+
+  auto sel = vault.selectUtxos(VaultPartition::CD_APY_POOL, AssetType::HEAT, 5);
+  TEST(!sel.empty());
+  TEST(sel.size() == 1);
+  TEST(sel[0].globalOutputIndex == 100);
+}
+
 int main() {
   testCdInterestCompounding();
   testLegacyDepositWithdrawsForPrincipal();
@@ -1527,6 +1545,7 @@ int main() {
   testVaultPopSymmetry();
   testVaultSetSpendKeyRebuildsKeyImageIndex();
   testVaultAllBalancesSaturate();
+  testVaultSelectUtxosDeterministicTies();
   fprintf(stderr, "=== Treasury/Core Tests ===\nPassed: %d / %d\n", tests_passed, tests_run);
   return tests_passed == tests_run ? 0 : 1;
 }

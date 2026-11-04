@@ -169,7 +169,10 @@ std::vector<VaultOutput> VaultUtxoSet::selectUtxos(
     }
     std::sort(candidates.begin(), candidates.end(),
               [](const VaultOutput& a, const VaultOutput& b) {
-                  return a.amount < b.amount;
+                  if (a.amount != b.amount) return a.amount < b.amount;
+                  // Equal amounts: pick by global index so selection is
+                  // deterministic rather than unordered-map order.
+                  return a.globalOutputIndex < b.globalOutputIndex;
               });
 
     std::vector<VaultOutput> selected;

@@ -46,6 +46,16 @@ public:
     tx.inputs.push_back(in);
   }
 
+  void addSwapEscrowInput(uint64_t amount) {
+    TransactionInputSwapEscrow in;
+    in.amount = amount;
+    in.mode = 0;
+    in.escrowTxId = Crypto::Hash{};
+    in.escrowOutputIndex = 0;
+    in.keyImage = Crypto::KeyImage{};
+    tx.inputs.push_back(in);
+  }
+
   Logging::ConsoleLogger m_logger;
   CurrencyBuilder builder;
   Currency currency;
@@ -127,6 +137,30 @@ TEST_F(InputAmountOverflowTest, GetInputsMoneyAmountAcceptsExactMax) {
   uint64_t money = 0;
   ASSERT_TRUE(get_inputs_money_amount(tx, money));
   EXPECT_EQ(money, kMax);
+}
+
+// A swap escrow is a v11+ spendable input type and must be valued by its own
+// amount. Before the fix it fell through the unknown-type arm (assert(false) in
+// debug, 0 in release via -DNDEBUG) so the aggregate input total was 0 and the
+// fee / conservation checks treated the escrow as unfunded.
+TEST_F(InputAmountOverflowTest, SwapEscrowInputIsValuedByItsAmount) {
+  addSwapEscrowInput(250);
+
+  uint64_t total = 0;
+  ASSERT_TRUE(currency.getTransactionAllInputsAmountChecked(tx, 0, total));
+  EXPECT_EQ(total, 250);
+  EXPECT_EQ(currency.getTransactionInputAmount(tx.inputs[0], 0), 250);
+}
+
+// Escrow plus a real key input: the aggregate must sum both, not zero the
+// escrow out and read the key input alone.
+TEST_F(InputAmountOverflowTest, SwapEscrowAndKeyInputsSum) {
+  addKeyInput(100);
+  addSwapEscrowInput(250);
+
+  uint64_t total = 0;
+  ASSERT_TRUE(currency.getTransactionAllInputsAmountChecked(tx, 0, total));
+  EXPECT_EQ(total, 350);
 }
 
 } // namespace

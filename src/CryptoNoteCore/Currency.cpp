@@ -520,6 +520,13 @@ double Currency::getBurnPercentage() const {
     {
       return boost::get<TransactionInputCommitmentTransfer>(in).amount;
     }
+    else if (in.type() == typeid(TransactionInputSwapEscrow))
+    {
+      // Swap escrow is a v11+ spendable input type. It must be valued by its
+      // own amount, otherwise the aggregate input total (and the fee /
+      // conservation checks built on it) treat the escrow as 0.
+      return boost::get<TransactionInputSwapEscrow>(in).amount;
+    }
     else if (in.type() == typeid(BaseInput))
     {
       return 0;

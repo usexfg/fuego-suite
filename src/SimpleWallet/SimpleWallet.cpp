@@ -3632,7 +3632,7 @@ bool simple_wallet::register_alias(const std::vector<std::string> &args) {
     // requires ownerAddress, so this path fails until private resolution is designed.
     aliasReg.ownerAddress = "";
     aliasReg.aliasType = aliasType;
-    aliasReg.networkId = static_cast<uint32_t>(m_currency.getFuegoNetworkId());
+    aliasReg.networkId = m_currency.getFuegoNetworkId();
 
     if (!aliasReg.isValid()) {
       fail_msg_writer() << "Invalid alias registration data.";

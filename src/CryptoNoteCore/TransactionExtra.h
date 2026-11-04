@@ -193,7 +193,7 @@ struct TransactionExtraAliasRegistration {
   Crypto::Hash addressHash;        // cn_fast_hash(spendKey||viewKey) for privacy (v2 scheme)
   std::string ownerAddress;        // Full address serialized publicly; currently required by isValid().
   uint8_t aliasType = 0;           // 0 = reserved (deprecated), 1 = Regular user (lowercase [a-z0-9])
-  uint32_t networkId = 0;          // Fuego network identifier — prevents testnet-to-mainnet replay attacks
+  uint64_t networkId = 0;          // Fuego network identifier — prevents testnet-to-mainnet replay attacks
   bool serialize(ISerializer& serializer);
   bool isValid() const;
 };
@@ -286,6 +286,7 @@ struct TransactionExtraAmmClaim {
 struct TransactionExtraHeatMintAuth {
   uint64_t xfgBurned;
   uint64_t heatMinted;
+  uint64_t liquidityFeeXfg;  // Liquidity fee paid to fund AuntPoL (80% CD yield, 20% bonus vault)
   bool serialize(ISerializer& serializer);
 };
 

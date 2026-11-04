@@ -18,6 +18,7 @@ namespace {
 uint64_t saturatingAdd(uint64_t a, uint64_t b) {
     return a > UINT64_MAX - b ? UINT64_MAX : a + b;
 }
+const uint64_t kMaxVaultUtxoCount = 1000000;
 }
 
 const char* vaultPartitionName(VaultPartition p) {
@@ -225,6 +226,9 @@ void VaultUtxoSet::serialize(ISerializer& s) {
 
     uint64_t count = isInput ? 0 : m_utxos.size();
     s(count, "vault_utxo_count");
+    if (isInput && count > kMaxVaultUtxoCount) {
+      throw std::runtime_error("vault utxo count out of range");
+    }
 
     if (isInput) {
         for (uint64_t i = 0; i < count; ++i) {
@@ -255,6 +259,9 @@ void VaultUtxoSet::serialize(ISerializer& s) {
             s.binary(vo.outputKey.data, sizeof(vo.outputKey.data), "vo_outkey");
             s(vo.spent, "vo_spent");
 
+            if (m_utxos.find(vo.globalOutputIndex) != m_utxos.end()) {
+              throw std::runtime_error("duplicate vault utxo index in cache");
+            }
             m_utxos[vo.globalOutputIndex] = vo;
             if (vo.spent) m_spentCount++;
         }
@@ -282,6 +289,14 @@ void VaultUtxoSet::serialize(ISerializer& s) {
     }
 
     s(m_spentCount, "vault_spent_count");
+    if (isInput) {
+      // Recompute the spent count from the records just loaded; the persisted
+      // counter is advisory and must not override the recomputed truth.
+      m_spentCount = 0;
+      for (const auto& [idx, vo] : m_utxos) {
+        if (vo.spent) m_spentCount++;
+      }
+    }
 
     // CRIT-01 fix: rebuild key image index after deserialization
     if (isInput) {

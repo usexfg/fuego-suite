@@ -307,7 +307,11 @@ void testFeeSplitFlipsAtV12() {
     bid(2, 2 * P, 200, 11, 2),
   };
   std::vector<AuctionOrder> asks = {
-    ask(3, 2 * P, 100, 20, 3),
+    // Aggregate 250 → bids (300 aggregate) are the taker side; matched 250 XFG
+    // at 2xCOIN → taker fee = 5 HEAT, large enough that both version splits
+    // floor to strictly positive, distinguishable CD/maker shares (a 100 XFG
+    // / 2 HEAT fixture floored the v11 CD share to 0 and left v12 with a 1/1 tie).
+    ask(3, 2 * P, 250, 20, 3),
   };
 
   auto split = [&](uint8_t version, uint64_t& cd, uint64_t& rebTaker) {
@@ -321,8 +325,17 @@ void testFeeSplitFlipsAtV12() {
   };
 
   uint64_t cdV11 = 0, rebV11 = 0, cdV12 = 0, rebV12 = 0;
+  {
+    AuctionResult r11 = runAuction(bids, asks, P, BLOCK_MAJOR_VERSION_11);
+    AuctionResult r12 = runAuction(bids, asks, P, BLOCK_MAJOR_VERSION_12);
+    fprintf(stderr, "DEBUG v11: crossed=%d matched=%llu taker=%d feeHeat=%llu\n",
+            (int)r11.crossed, (unsigned long long)r11.matchedVolume, (int)r11.hasTaker, (unsigned long long)(r11.hasTaker ? 0 : 0));
+  }
   split(BLOCK_MAJOR_VERSION_11, cdV11, rebV11);
   split(BLOCK_MAJOR_VERSION_12, cdV12, rebV12);
+  fprintf(stderr, "DEBUG feeSplit: v11 cd=%llu reb=%llu | v12 cd=%llu reb=%llu\n",
+          (unsigned long long)cdV11, (unsigned long long)rebV11,
+          (unsigned long long)cdV12, (unsigned long long)rebV12);
 
   TEST(cdV11 > 0 && rebV11 > 0 && cdV12 > 0 && rebV12 > 0);
   TEST(cdV11 + rebV11 == cdV12 + rebV12);   // same fee, different split

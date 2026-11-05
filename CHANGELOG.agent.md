@@ -2,8 +2,8 @@
 
 **Started**: 2026-11-03
 **Agent**: opencode (DeepSeek V4.1 Flash Free)
-**Status**: DONE (code, tests, docs). One deployment gap is called out below.
-**Scope**: `src/CryptoNoteConfig.h`, `src/CryptoNoteCore/{Blockchain,HeatMintEngine,OrderbookAuction}`, `src/Wallet/WalletGreen.cpp`, `src/SimpleWallet/SimpleWallet.cpp`, `tests/CoreTests/HeatMintTest.cpp`, `tests/docs/test_docs_fee_routing_alignment.py`, plus the docs sweep listed under workstream 6.
+**Status**: DONE (code, tests, docs). No open deployment gap: AuntPoL no longer depends on the SWF, and the SWF→HEAT collateral path is deferred by design.
+**Scope**: `src/CryptoNoteConfig.h`, `src/CryptoNoteCore/{Blockchain,HeatMintEngine}`, `src/Wallet/WalletGreen.cpp`, `src/SimpleWallet/SimpleWallet.cpp`, `tests/CoreTests/HeatMintTest.cpp`, `tests/docs/test_docs_fee_routing_alignment.py`, plus the docs sweep listed under workstream 6.
 
 The batch changes four things that were previously coupled:
 

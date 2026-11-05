@@ -8,12 +8,13 @@ description: "Fuego Suite Updates & Features"
 v1.11.00 (Consensus v12 — Hearth orderbook rework, treasury, CD economics)
 * **Hearth orderbook**: in-band CLOB matcher + gossiped orders retired. Limit orders are now tx-extra-backed (`TransactionExtraLimitDeposit`) deposits executed at block time against the pool at the live spot price; height-based expiry; partial fills with claimable proceeds (`TransactionExtraLimitWithdraw`).
 * Per-block call auction: user-vs-user crossing at a max-volume clearing price (price discovery); tx-extra-backed deposits; AMM is a volume-capped backstop (`HEARTH_BACKSTOP_MAX_BPS`).
-* Fee model: 1% taker fee split 70% CD yield / 30% maker rebate (auction makers; LPs on pool fills). Min price tick (`ORDER_PRICE_TICK`).
+* Fee model: 1% taker fee with a versioned split — **30% CD yield / 70% maker rebate at v11**, flipping to **70/30 at v12** (auction makers; LPs on pool fills). Min price tick (`ORDER_PRICE_TICK`).
 * All v12-gated consensus work re-gated to v11 (chain height at decision: 1,015,027 < 1,111,111).
 * **Canonical price scale**: HEAT/XFG × COIN (1e7) everywhere — mint, swaps, quotes, TWAP; Q64.64/1e8/1e18 purged from price paths (legacy preserved for pre-v12 re-validation).
 * **LP**: balanced deposits only (single-sided mints nothing); fair pro-rata shares; LP income = pool trading P&L, not the flat fee.
 * **Fees**: taker pays the 1% Hearth fee via fee-adjusted output; fee debited from LP reserves → HEAT-denominated `cdHearthFeeAccumulator` → `CD_APY_POOL` at epoch; consumed XFG burned 50/50 (EF/SWF). `/addswapfee` authenticated; swap fees accounted exactly (2% claim / 1% refund).
-* **Treasury**: Treasury LP Manager provisions the protocol's ratio-paired LP position (20% treasury share + mint premiums + HEAT CD fees + donations via the `TreasuryFund` tag); bonus vault (11%) converts to HEAT; bootstrap repayment = two-leg owned-reserves check; overall burn tally (`total_burned_xfg`).
+* **Treasury**: Treasury LP Manager (AuntPoL) provisions the protocol's ratio-paired LP position. **Both legs are funded by the 1% mint premium** (`HEAT_MINT_PREMIUM_BPS`): the withheld premium XFG is the XFG leg and the HEAT it buys is the HEAT leg (plus HEAT donations). The two pair at the pool ratio, with no SWF transfer and no cross-conversion; bootstrap repayment = two-leg owned-reserves check; overall burn tally (`total_burned_xfg`).
+* **Fee routing (v11)**: atomic swap fees split **80% CD / 20% Bonus Vault / 0% Treasury** (pre-v11 blocks replay 69/11/20); the 1% mint premium is a haircut inside the mint burn that funds both AuntPoL legs (withheld XFG → XFG leg, the HEAT it buys → HEAT leg); the 0.1% CD creation fee is charged in XFG to `FUEGO_DEV_FUND_ADDRESS`.
 * **CD economics**: HEAT-denominated epoch rates, CD-only APY denominator, block-level interest cap, youngest-ring interest cap, consensus term whitelist, legacy XFG deposits withdraw-only at v12.
 * Security fixes: AMM swap settlement from actual balance deltas, coinbase settlement-tag rejection, orderbook UAF, mainnet fee-pool funding, epoch snapshot at block start.
 

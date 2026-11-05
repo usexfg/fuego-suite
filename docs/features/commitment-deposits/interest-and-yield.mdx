@@ -12,17 +12,17 @@ HEAT CD interest comes from **protocol revenue**, not inflation.
 
 | Stream | Rate | CD-relevant share |
 |--------|------|-------------------|
-| **Atomic swap fee** (SwapXFG TUI / DeXFG tab) | **1% initiation + 1% claim = 2%** per swap (`SWAP_FEE_RATE_BPS`) | **69%** → CD yield (`SWAP_FEE_CD_SHARE_PCT`) |
-| **Hearth swap fee** (on-chain Hearth DEX) | **1%** per trade (`HEARTH_FEE_BPS`) | Hearth routing → CD yield accumulator |
+| **Atomic swap fee** (SwapXFG TUI / DeXFG tab) | **1% initiation + 1% claim = 2%** per swap (`SWAP_FEE_RATE_BPS`) | **80%** → CD yield (`SWAP_FEE_CD_SHARE_PCT_V11`) |
+| **Hearth swap fee** (on-chain Hearth DEX) | **1%** per trade (`HEARTH_FEE_BPS`) | 30% → CD accumulator at v11 (70% at v12); remainder is the maker rebate |
 
-Atomic swap remainder: **11%** Bonus Vault, **20%** Treasury.
+Atomic swap remainder at v11+: **20%** Bonus Vault, **0%** Treasury. Pre-v11 blocks settled 69 CD / 11 Bonus / 20 Treasury and replay that split.
 
 More swap + Hearth volume → more yield. Quiet periods → lower yield. No fixed APY guarantee.
 
 ## Not protocol earnings
 
-- **Mint premium** — none. `HEAT_MINT_PREMIUM_BPS = 0`; goes nowhere.
-- **CD creation fee** — 0.1% of CD amount, donated to **@fuegoxfg** (Fuego Development Fund). Not CD yield, not treasury.
+- **Mint premium** — 1% of each mint's burn (`HEAT_MINT_PREMIUM_BPS = 100`, v11+). A haircut inside the burn: the withheld premium XFG is the AuntPoL XFG leg and the premium HEAT it buys is the AuntPoL HEAT leg, not paid out.
+- **CD creation fee** — 0.1% of the HEAT being deposited, charged in **XFG** to `FUEGO_DEV_FUND_ADDRESS`. Not CD yield, not treasury.
 
 ## Epoch distribution (conceptual)
 
@@ -65,5 +65,5 @@ Interest is claimed on **withdraw** or **rollover**, not as a separate “claim 
 ## Do not cite
 
 - “0.3% LP fee funds CDs” — wrong  
-- “100% of swap fees to CDs” — wrong (69%)  
-- “80/20 only” — outdated vs 69/11/20  
+- “100% of swap fees to CDs” — wrong (80% at v11, 69% pre-v11)  
+- “69/11/20 is the current split” — outdated; it is pre-v11 replay only. v11+ is 80/20 with no treasury leg.

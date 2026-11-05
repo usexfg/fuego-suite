@@ -30,17 +30,17 @@ The original gossiped in-band CLOB (unbacked orders) is **retired**. The live mo
 | Constant | Value |
 |----------|-------|
 | `HEARTH_FEE_BPS` | **100** = **1.0%** of trade notional, paid by the taker |
-| `HEARTH_CD_SHARE_BPS` | **70** — 70% of the fee → CD yield |
-| `HEARTH_MAKER_REBATE_BPS` | **30** — 30% of the fee → maker rebate |
+| `HEARTH_CD_SHARE_PCT_V11` | **30** — 30% of the fee → CD yield at v11 |
+| `HEARTH_CD_SHARE_PCT_V12` | **70** — 70% of the fee → CD yield from v12 |
 | `HEARTH_BACKSTOP_MAX_BPS` | **500** — backstop fills ≤ 5× the block's auction volume |
 
 ```
 gross = user_notional
 paid  = gross × (10000 − 100) / 10000      // taker receives fee-adjusted output
-fee   = gross − paid                        // 70% → CD accumulator, 30% → maker rebate
+fee   = gross − paid                        // v11: 30% → CD accumulator, 70% → maker rebate
 ```
 
-On auction fills the taker is the rationed side; the maker side receives the rebate pool pro-rata. On pool-intermediated fills (backstop/AMM) the pool is the maker, so 30% stays in LP reserves. The 70% accrues in a HEAT-denominated accumulator (`cdHearthFeeAccumulator`) and is minted into the CD yield vault (`CD_APY_POOL`) at each epoch boundary; the consumed XFG side is burned 50/50 (Eternal Flame / SWF).
+On auction fills the taker is the rationed side; the maker side receives the rebate pool pro-rata. On pool-intermediated fills (backstop/AMM) the pool is the maker, so the maker share stays in LP reserves. The CD share accrues in a HEAT-denominated accumulator (`cdHearthFeeAccumulator`) and is minted into the CD yield vault (`CD_APY_POOL`) at each epoch boundary; the consumed XFG side is burned 50/50 (Eternal Flame / SWF).
 
 ## Roles
 
@@ -49,8 +49,8 @@ On auction fills the taker is the rationed side; the maker side receives the reb
 | Trader | Swaps XFG↔HEAT (AMM) or places a limit order; pays the 1% flat fee |
 | LP | Provides a **balanced** XFG+HEAT deposit (single-sided deposits are rejected); earns the pool’s trading P&L and appreciation, realized on withdrawal via share redemption — not the flat fee |
 | Minter | Uses Hearth TWAP when burning XFG to mint HEAT (canonical price = HEAT/XFG × COIN) |
-| CD holder | Receives the 1% Hearth flat fee via the CD yield vault |
-| Protocol / Treasury | The **Treasury LP Manager** maintains the protocol’s own ratio-paired LP position (from the 20% treasury fee share + mint premiums + donations) which compounds and drives bootstrap repayment |
+| CD holder | Receives the CD share of the 1% Hearth flat fee (30% at v11, 70% at v12) via the CD yield vault |
+| Protocol / Treasury | The **Treasury LP Manager (AuntPoL)** maintains the protocol's own ratio-paired LP position. **Both legs are funded by the 1% mint premium**: the withheld premium XFG is the XFG leg and the HEAT it buys is the HEAT leg (plus HEAT donations). It compounds and drives bootstrap repayment |
 
 ## Privacy
 

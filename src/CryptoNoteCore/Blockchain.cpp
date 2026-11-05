@@ -186,13 +186,20 @@ namespace {
 // validateSettlement holds to the XFG the transaction destroys. Every burn is
 // routed alike — all of it to the burn tally, MINT_BURN_EF_PCT to the Eternal
 // Flame (which the block reward re-emits), MINT_BURN_TREASURY_PCT to the SWF.
+//
+// The v11 mint premium is not a burn. It is withheld from the minter inside
+// the declared burn and credited to the AuntPoL XFG leg, paired with the HEAT
+// it mints for the HEAT leg. Only the remainder is destroyed, so only the
+// remainder may feed the burn tallies, the Eternal Flame, or the SWF.
 uint64_t bankedBurn(const CryptoNote::TransactionExtraField& f, uint8_t blockMajorVersion) {
   using namespace CryptoNote;
   if (f.type() == typeid(TransactionExtraHeatCommitment)) {
     return boost::get<TransactionExtraHeatCommitment>(f).amount;
   }
   if (blockMajorVersion >= BLOCK_MAJOR_VERSION_11 && f.type() == typeid(TransactionExtraHeatMintAuth)) {
-    return boost::get<TransactionExtraHeatMintAuth>(f).xfgBurned;
+    const auto& auth = boost::get<TransactionExtraHeatMintAuth>(f);
+    const uint64_t premiumXfg = heatMintPremiumXfg(auth.xfgBurned, blockMajorVersion);
+    return (auth.xfgBurned > premiumXfg) ? (auth.xfgBurned - premiumXfg) : 0;
   }
   return 0;
 }
@@ -1144,7 +1151,6 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
     m_mintPremiumHeatByTx.clear();
     m_blockOrderFills.clear();
     m_blockLpRemoveAmounts.clear();
-    m_blockSwfLpSpends.clear();
     m_epochSnapshots.clear();
     m_fciEpochSnapshots.clear();
     m_fuegoCostIndex.reset();
@@ -5456,12 +5462,14 @@ bool CryptoNote::Blockchain::processBlockEpochWork(const Block& block, uint32_t 
       m_treasuryLpPendingXfg += treasuryShare;
     }
 
-    // V11+: the treasury leg is retired (swapFeeTreasurySharePct == 0), so
-    // nothing new accrues to m_treasuryLpPendingXfg. The Treasury LP Manager
-    // pairs the HEAT leg from mint premiums + donations with XFG from the SWF,
-    // and the CD pool keeps its direct sources (80% swap share conversion +
-    // Hearth 70% maker rebate is separate — the CD share of the Hearth fee is
-    // 30% at v11). Pre-v11 keeps the legacy half-convert path.
+    // V11+: the treasury leg of swap fees is retired (swapFeeTreasurySharePct
+    // == 0), so swap fees no longer accrue to m_treasuryLpPendingXfg. The
+    // mint premium is the AuntPoL source instead: it credits BOTH legs at
+    // connect (premiumXfg to this XFG counter, premiumHeat to
+    // m_treasuryHeatReserve), and the Treasury LP Manager pairs them at the
+    // pool ratio. The CD pool keeps its direct sources (80% swap share
+    // conversion + the Hearth CD share, 30% at v11 / 70% at v12). Pre-v11
+    // keeps the legacy half-convert path.
     if (block.majorVersion < BLOCK_MAJOR_VERSION_11 && m_treasuryLpPendingXfg > 0) {
       uint64_t convertAmount = (m_treasuryLpPendingXfg * CryptoNote::parameters::GENERAL_RESERVE_EPOCH_CONVERT_PCT) / 100;
       if (convertAmount > 0) {
@@ -5518,47 +5526,11 @@ bool CryptoNote::Blockchain::processBlockEpochWork(const Block& block, uint32_t 
       // compounds inside the reserves and counts toward bootstrap repayment
       // via getTreasuryLpValue() (both legs, actual amounts).
       if (block.majorVersion >= BLOCK_MAJOR_VERSION_11) {
-        // AuntPoL XFG leg. The mint premium funds the HEAT leg (it is minted
-        // into m_treasuryHeatReserve); the SWF matches the XFG leg, and only
-        // as needed — the shortfall that would otherwise leave premium HEAT
-        // unpaired, never the whole balance. The SWF currently receives no
-        // spendable XFG (VaultPartition::SWF has no addUtxo caller), so this
-        // stays dormant until it is funded; the balance guard keeps it honest
-        // either way.
-        if (m_treasuryHeatReserve > 0 && !m_ammPool.isEmpty() &&
-            m_ammPool.reserveXfg > 0 && m_ammPool.reserveHeat > 0) {
-          const uint64_t xfgToPairHeat = static_cast<uint64_t>(
-              ((uint128_t)m_treasuryHeatReserve * m_ammPool.reserveXfg) /
-              m_ammPool.reserveHeat);
-          if (xfgToPairHeat > m_treasuryLpPendingXfg) {
-            uint64_t shortfall = xfgToPairHeat - m_treasuryLpPendingXfg;
-            const uint64_t swfXfg =
-                m_vault.partitionBalance(VaultPartition::SWF, AssetType::XFG);
-            if (swfXfg < shortfall) shortfall = swfXfg;
-            if (shortfall > 0 && m_treasuryLpPendingXfg <= UINT64_MAX - shortfall) {
-              auto spend = m_vault.spendUtxos(VaultPartition::SWF, AssetType::XFG,
-                                              shortfall);
-              if (spend.amountSpent > 0) {
-                mintVaultChangeUtxo(spend, VaultPartition::SWF, AssetType::XFG,
-                                    newHeight, blockHash);
-                m_treasuryLpPendingXfg += spend.amountSpent;
-                if (m_blockSwfLpSpends.empty() ||
-                    m_blockSwfLpSpends.back().first != newHeight) {
-                  m_blockSwfLpSpends.push_back({newHeight, {}});
-                }
-                m_blockSwfLpSpends.back().second.insert(
-                    m_blockSwfLpSpends.back().second.end(),
-                    spend.spentIndices.begin(), spend.spentIndices.end());
-                logger(INFO) << "AuntPoL XFG leg (epoch " << epochNumber
-                             << "): SWF matched "
-                             << m_currency.formatAmount(spend.amountSpent)
-                             << " XFG against "
-                             << m_currency.formatAmount(m_treasuryHeatReserve)
-                             << " HEAT of mint-premium reserve";
-              }
-            }
-          }
-        }
+        // Both legs are funded by the mint premium: the withheld premium XFG
+        // is credited to m_treasuryLpPendingXfg at connect, and the HEAT it
+        // buys is credited to m_treasuryHeatReserve. No SWF transfer is
+        // involved — the SWF is the protocol collateral reserve and is never
+        // spent to pair AuntPoL.
         const uint64_t availXfg = m_treasuryLpPendingXfg;
         const uint64_t availHeat = m_treasuryHeatReserve;
         uint64_t depositXfg = 0;
@@ -5636,8 +5608,8 @@ bool CryptoNote::Blockchain::processBlockEpochWork(const Block& block, uint32_t 
     }
 
     // SWF collateral conversion: every 8 epochs, convert 50% of XFG → HEAT (counter only, no burn).
-    // Converted HEAT stays in SWF as off-chain DIGM collateral.
-    // TODO(Phase 2): re-enable when DIGM volume justifies collateralization — keep SWF in XFG until then.
+    // Converted HEAT stays in SWF as off-chain protocol collateral.
+    // TODO(Phase 2): re-enable when collateral demand justifies it — keep SWF in XFG until then.
     // When re-enabled, converted XFG is permanently retired from total supply (m_permanentlyBurned).
     if (false && epochNumber > 0 && epochNumber % CryptoNote::parameters::TREASURY_COUNTER_XFG_MINT_EPOCH_INTERVAL == 0) {
       if (m_swfBurnedXfgPendingHeat > 0) {
@@ -6193,15 +6165,6 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
     m_blockLpRemoveAmounts.pop_back();
   }
 
-  // Un-spend the SWF XFG the epoch boundary matched into AuntPoL's XFG leg.
-  // The XFG counter itself is restored by the epoch snapshot below, but the
-  // vault UTXOs are not: m_vault.removeAboveIndex only drops UTXOs the block
-  // CREATED, so the ones it spent have to be marked unspent explicitly.
-  if (!m_blockSwfLpSpends.empty() && m_blockSwfLpSpends.back().first == poppedHeight) {
-    m_vault.unSpendUtxos(m_blockSwfLpSpends.back().second);
-    m_blockSwfLpSpends.pop_back();
-  }
-
   if (!m_epochSnapshots.empty() && m_epochSnapshots.back().first == poppedHeight) {
     const auto& snap = m_epochSnapshots.back().second;
     m_heatSupply = snap.heatSupply;
@@ -6631,17 +6594,27 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
       for (const auto& f : supplyFields) {
         if (f.type() == typeid(TransactionExtraHeatMintAuth)) {
           const auto& auth = boost::get<TransactionExtraHeatMintAuth>(f);
-          // The burn buys heat(xfgBurned) in total: the minter's outputs plus
-          // the premium settlement reserved for the AuntPoL HEAT leg. The
-          // premium HEAT is real supply credited to the treasury reserve, not
-          // to the minter.
+          // The declared burn buys heat(xfgBurned) in total: the minter's
+          // outputs plus the premium settlement reserved for the AuntPoL HEAT
+          // leg. The premium HEAT is real supply credited to the treasury
+          // reserve, not to the minter.
+          const uint64_t premiumXfg = heatMintPremiumXfg(
+              auth.xfgBurned, block.bl.majorVersion);
           const uint64_t premiumHeat = m_heatMintEngine.premiumHeatFor(
               auth.xfgBurned, twapBefore(block.height), block.bl.majorVersion);
           m_heatSupply = (m_heatSupply > UINT64_MAX - auth.heatMinted) ? UINT64_MAX : m_heatSupply + auth.heatMinted;
           m_heatSupply = (m_heatSupply > UINT64_MAX - premiumHeat) ? UINT64_MAX : m_heatSupply + premiumHeat;
-          if (premiumHeat > 0) {
-            // validateSettlement bounded this addition for the same tx.
-            m_treasuryHeatReserve += premiumHeat;
+          if (premiumXfg > 0) {
+            // The premium XFG is the AuntPoL XFG leg: withheld from the
+            // minter but not burned, so it pairs with the premium HEAT.
+            // validateSettlement bounded both additions for the same tx.
+            m_treasuryLpPendingXfg =
+                (m_treasuryLpPendingXfg > UINT64_MAX - premiumXfg)
+                    ? UINT64_MAX
+                    : m_treasuryLpPendingXfg + premiumXfg;
+            if (premiumHeat > 0) {
+              m_treasuryHeatReserve += premiumHeat;
+            }
             m_mintPremiumHeatByTx[transactionHash] = premiumHeat;
           }
           break;
@@ -7235,7 +7208,8 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
 
   // Mirror of the HEAT-supply credit in pushTransaction. The premium is taken
   // from the connect record, not recomputed: by the time this runs the block's
-  // TWAP contribution has already been unwound.
+  // TWAP contribution has already been unwound. The premium XFG is
+  // deterministic from the tag, so it is recomputed from the block version.
   {
     auto premiumIt = m_mintPremiumHeatByTx.find(transactionHash);
     const uint64_t premiumHeat = premiumIt != m_mintPremiumHeatByTx.end() ? premiumIt->second : 0;
@@ -7245,11 +7219,15 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
     if (parseTransactionExtra(transaction.extra, supplyFields)) {
       for (const auto& f : supplyFields) {
         if (f.type() == typeid(TransactionExtraHeatMintAuth)) {
-          const uint64_t minted = boost::get<TransactionExtraHeatMintAuth>(f).heatMinted;
+          const auto& auth = boost::get<TransactionExtraHeatMintAuth>(f);
+          const uint64_t minted = auth.heatMinted;
           const uint64_t created = (minted > UINT64_MAX - premiumHeat) ? UINT64_MAX : minted + premiumHeat;
           m_heatSupply = (m_heatSupply >= created) ? (m_heatSupply - created) : 0;
           m_treasuryHeatReserve = (m_treasuryHeatReserve >= premiumHeat)
               ? (m_treasuryHeatReserve - premiumHeat) : 0;
+          const uint64_t premiumXfg = heatMintPremiumXfg(auth.xfgBurned, majorVersion);
+          m_treasuryLpPendingXfg = (m_treasuryLpPendingXfg >= premiumXfg)
+              ? (m_treasuryLpPendingXfg - premiumXfg) : 0;
           break;
         }
       }
@@ -8148,11 +8126,18 @@ bool CryptoNote::Blockchain::validateSettlement(const Transaction& tx, uint32_t 
       return false;
     }
     // Read-only bound: the connect path credits premiumHeat to the treasury
-    // reserve (AuntPoL HEAT leg). Settlement must never mutate state — the
+    // HEAT reserve (AuntPoL HEAT leg) and premiumXfg to the treasury XFG
+    // reserve (AuntPoL XFG leg). Settlement must never mutate state — the
     // mempool runs it too — so overflow is rejected here and applied in
     // pushTransaction.
     if (m_treasuryHeatReserve > UINT64_MAX - premiumHeat) {
       error = "HEAT mint: treasury HEAT reserve overflow";
+      return false;
+    }
+    const uint64_t premiumXfg = heatMintPremiumXfg(
+        a.xfgBurned, getBlockMajorVersionForHeight(height));
+    if (m_treasuryLpPendingXfg > UINT64_MAX - premiumXfg) {
+      error = "HEAT mint: treasury XFG reserve overflow";
       return false;
     }
   } else if (kind == typeid(TransactionExtraAmmSwapAuth)) {

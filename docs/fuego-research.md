@@ -161,13 +161,13 @@ Minimum fees (per-byte penalty system):
 - V10+: `MINIMUM_FEE_8KH = 0.0008 XFG` (8,000 ħ)
 
 Swap fees: 2% per atomic swap (1% initiation + 1% claim on claim/refund)
-- Split: 69% CD yield pool / 11% Bonus Vault / 20% Treasury
+- Split (v11+): 80% CD yield pool / 20% Bonus Vault; pre-v11 blocks replay 69/11/20
 - Epoch duration: 900 blocks (~5 days mainnet)
-- Hearth DEX swap fee: 1% per trade (`HEARTH_FEE_BPS = 100`)
-- Protocol earnings are ONLY these two streams. Mint premium is 0 bps (goes nowhere).
+- Hearth DEX swap fee: 1% per trade (`HEARTH_FEE_BPS = 100`), 30% CD / 70% maker at v11 and 70/30 at v12
+- Protocol earnings are ONLY these two streams. The v11 1% mint premium (`HEAT_MINT_PREMIUM_BPS = 100`) is a haircut inside the mint burn that funds both AuntPoL legs — the withheld XFG is the XFG leg and the HEAT it buys is the HEAT leg — not revenue.
 
 Banking fees (tiered): 0.1% per tier (0.8/8/80/800 XFG burns → fee 8K/80K/800K/8M ħ)
-- The CD creation fee (0.1%) is paid in ΗΞΔŦ; from v11 it is credited to the protocol Treasury ΗΞΔŦ reserve, before v11 to @fuegoxfg. Not CD yield.
+- The CD creation fee (0.1% of the HEAT deposited) is charged in XFG to the dev fund (`FUEGO_DEV_FUND_ADDRESS`). Not CD yield, not protocol revenue.
 
 ## 10. Governance for Protocol Upgrades
 

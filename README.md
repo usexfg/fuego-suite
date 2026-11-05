@@ -187,7 +187,7 @@ Navigate with arrow keys or j/k, select with Enter, quit with q or Ctrl+C.
 
 **Key Properties**:
 - Launch ratio 10:1 (1 ΗΞΔŦ = 10 XFG) at genesis
-- Peg target $1.58 USD; mint premium hardcoded to **0 bps** (`HEAT_MINT_PREMIUM_BPS = 0`) — no premium, PI controller removed
+- Peg target $1.58 USD; mint premium **1%** of the burn (`HEAT_MINT_PREMIUM_BPS = 100`) — a haircut inside the burn that funds both AuntPoL legs (withheld XFG → XFG leg, the HEAT it buys → HEAT leg); PI controller removed
 - Protocol buys or mints ΗΞΔŦ for CD yield payments (structural demand, protocol pays 0% fee)
 - On-chain Hearth: constant-product AMM (swaps + backstop) plus pool depth-band makers in the per-block call auction (`HEARTH_DEPTH_BAND_PCT` of reserves, adaptive spread)
 - Pool reserves tracked (as a whole) on-chain with unspendable pool keys
@@ -198,16 +198,16 @@ There are exactly **two** protocol earnings streams
 
 | # | Stream | Rate | Split |
 |---|--------|------|-------|
-| 1 | **Hearth swap fee** — on-chain Hearth DEX fills | **1%** per trade (`HEARTH_FEE_BPS = 100`) | → CD yield / LP per Hearth routing |
-| 2 | **Atomic swap fee** — cross-chain swaps (SwapXFG TUI or DeXFG tab in Fuego-Wallet GUI) | **1% + 1% = 2%** per swap (`SWAP_FEE_RATE_BPS = 100` initiation + claim) | **69% CD Yield / 11% Bonus Vault / 20% Treasury** |
+| 1 | **Hearth swap fee** — on-chain Hearth DEX fills | **1%** per trade (`HEARTH_FEE_BPS = 100`) | **30% CD yield / 70% maker rebate** at v11; **70/30** at v12 |
+| 2 | **Atomic swap fee** — cross-chain swaps (SwapXFG TUI or DeXFG tab in Fuego-Wallet GUI) | **1% + 1% = 2%** per swap (`SWAP_FEE_RATE_BPS = 100` initiation + claim) | **80% CD Yield / 20% Bonus Vault** at v11+ (pre-v11 replay: 69/11/20) |
 
 NOT protocol earnings:
-- **Mint premium** — none (0 bps, `HEAT_MINT_PREMIUM_BPS = 0`), goes nowhere.
-- **CD creation fee** — 0.1% of CD amount, paid in ΗΞΔŦ at creation. From v11 it is credited to the protocol Treasury ΗΞΔŦ reserve; before v11 it was sent to **@fuegoxfg**. Never part of CD yield.
+- **Mint premium** — 1% of the declared burn (`HEAT_MINT_PREMIUM_BPS = 100`, v11+). A haircut **inside** the burn, not a surcharge: the withheld `premiumXfg` is the **AuntPoL XFG leg** (`m_treasuryLpPendingXfg`, not burned) and the `heat(premiumXfg)` it buys is the **AuntPoL HEAT leg**. Protocol LP inventory, not revenue.
+- **CD creation fee** — 0.1% of the HEAT being deposited, charged in **XFG** to `FUEGO_DEV_FUND_ADDRESS`. Never part of CD yield, never a treasury reserve credit.
 
 ### Certificates of Deposit (CD) — V12 activation
 
-Epoch (900 blocks on mainnet, 10 on testnet) term-locked ΗΞΔŦ deposits earning real yield thru protocol revenue, not inflation. Each CD requires an upfront banking fee of 0.1% of CD amount, paid in ΗΞΔŦ at time of CD creation (no fee at claim). From v11 the fee is credited to the protocol Treasury ΗΞΔŦ reserve; before v11 it was sent to **@fuegoxfg**.
+Epoch (900 blocks on mainnet, 10 on testnet) term-locked ΗΞΔŦ deposits earning real yield thru protocol revenue, not inflation. Each CD requires an upfront CD creation fee of 0.1% of the HEAT being deposited, charged in **XFG** at creation (no fee at claim), paid to `FUEGO_DEV_FUND_ADDRESS`.
 
 | Command | Description |
 |---------|-------------|

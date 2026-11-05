@@ -25,11 +25,13 @@
    `security/audit-fixes-round2`, `claude/fuego-atomic-swaps-audit-9vq34l`.
    Both `security/*` branches are stale (based on older commits, delete tests/files) —
    do NOT merge wholesale. Cherry-pick only on owner request.
-2. **Open LOW/INFO findings**: L-2b (wallet cipher, deferred), R2-3 (epoch fee dust),
-   R2-5 (early return from mutating epoch work), I-2 (popen PATH hijack, optional),
-   I-5 (epoch-mint dual paths, deferred round 3). All LOW/INFO, not blockers.
+2. **Open LOW/INFO findings**: L-2b (wallet cipher, deferred), R2-3 (epoch fee dust,
+   still applies to the 80/20 v11 split), R2-5 (early return from mutating epoch work),
+   I-2 (popen PATH hijack, optional), I-5 (epoch-mint dual paths, deferred round 3).
+   All LOW/INFO, not blockers.
 3. **R2-4 (process)**: `fuego-currency` skill doc stale (80/20 vs 69/11/20) —
-   partially corrected per CHANGELOG; verify sync.
+   **RESOLVED**: code is now 80/20 at v11+ and the `fuego-currency`, `fuego-swaps`,
+   and `fuego-heat-and-hearth` skills were corrected to match.
 4. **Dev-fund view secret** in `src/CryptoNoteConfig.h:586` — classified as a
    transparency feature (view-only, cannot spend). In-source comment calls it a launch
    blocker; audit doc says it is not a vulnerability. Disagreement unresolved; default

@@ -34,12 +34,12 @@ Yield plumbing is fed by the **only two protocol fee streams**:
 
 | Source | Rate | CD-related share |
 |--------|------|------------------|
-| Atomic swap (SwapXFG / DeXFG) | **2%** per swap (1% initiation + 1% claim) | **69%** of that fee → CD yield pool (`SWAP_FEE_CD_SHARE_PCT`) |
-| Hearth trade | **1%** (`HEARTH_FEE_BPS`) | Hearth routing → CD accumulator |
+| Atomic swap (SwapXFG / DeXFG) | **2%** per swap (1% initiation + 1% claim) | **80%** of that fee → CD yield pool (`SWAP_FEE_CD_SHARE_PCT_V11`) at v11+ |
+| Hearth trade | **1%** (`HEARTH_FEE_BPS`) | 30% → CD accumulator at v11 (70% at v12); remainder is the maker rebate |
 
-Also from atomic swaps: **11%** Bonus Vault, **20%** Treasury — not paid as base CD pro-rata yield.
+Also from atomic swaps at v11+: **20%** Bonus Vault, **0%** Treasury. Pre-v11 blocks settled 69/11/20 and replay that split.
 
-Mint premium is **0 bps** (goes nowhere) and the **0.1%** CD creation fee is a donation to @fuegoxfg — neither is protocol revenue.
+The v11 mint premium is **1%** of each mint's burn (`HEAT_MINT_PREMIUM_BPS = 100`), a haircut inside the burn that funds both AuntPoL legs (withheld XFG → XFG leg, the HEAT it buys → HEAT leg); the **0.1%** CD creation fee is charged in XFG to the dev fund — neither is protocol revenue.
 
 ## On-chain representation
 

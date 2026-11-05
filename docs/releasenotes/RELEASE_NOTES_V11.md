@@ -11,18 +11,18 @@
 | **Next** | v1.12.00 SILENTFIRE (height 2,666,666) — HEAT CDs + unified outputs |
 
 HEAT flatcoin, the Hearth on-chain AMM, the Fuego Cost Index, treasury LP
-management, and a security pass closing the treasury-vault drain primitive.
+management, a fee-routing rework, and a security pass closing the
+treasury-vault drain primitive.
 
 ---
 
 ## HEAT Flatcoin (colored coin)
 
-- Purchasing-power-targeted flatcoin (not fiat-pegged); adjusts for inflation/CPI.
-- Mint by burning XFG at the Hearth pool TWAP price. Launch ratio 1 HEAT = 10 XFG.
-- Launch premium: 0% (hardcoded; PI controller removed).
-- Hearthstone reference: $1.58 USD at launch (`FCI_HEARTHSTONE_INITIAL_CENTS = 158`),
-  re-based quarterly from the on-chain Fuego Cost Index.
-- Mint premium routes nowhere (`HEAT_MINT_PREMIUM_BPS = 0`).
+- HEAT targets purchasing power rather than a fiat peg, and it adjusts for inflation and CPI.
+- Minting burns XFG at the Hearth pool TWAP price. The launch ratio is 1 HEAT = 10 XFG.
+- From v11, every mint carries a 1% premium (`HEAT_MINT_PREMIUM_BPS = 100`). The premium is a haircut inside the declared burn, not a surcharge: the withheld premium XFG is credited to the AuntPoL XFG leg (`m_treasuryLpPendingXfg`) and is not burned, while the HEAT it buys is minted to the AuntPoL HEAT leg (`m_treasuryHeatReserve`). Total HEAT created still equals the HEAT value of the full burn.
+- The launch premium is otherwise 0%, and the PI controller has been removed.
+- The Hearthstone reference is $1.58 USD at launch (`FCI_HEARTHSTONE_INITIAL_CENTS = 158`), re-based quarterly from the on-chain Fuego Cost Index.
 
 ---
 
@@ -42,14 +42,10 @@ management, and a security pass closing the treasury-vault drain primitive.
   fills of those ids move pool reserves. They are not user escrow.
 - Height-based expiry; expired orders keep deposit + proceeds claimable.
 - Balanced LP deposits only (single-sided mints no shares — no dilution).
-- Taker pays 1% fee (`HEARTH_FEE_BPS = 100`); 70% debited into the
-  HEAT-denominated `cdHearthFeeAccumulator` → minted into `CD_APY_POOL` at the
-  epoch boundary; 30% maker rebate (auction makers, or LPs on pool fills).
-- Consumed XFG burned 50/50 (Eternal Flame / SWF).
-- Bootstrap window: 144 blocks of AMM-only operation after upgrade.
-- **Treasury LP Manager**: protocol's own ratio-paired LP position from the 20%
-  treasury share + mint premiums + donations (both legs, no cross-conversion);
-  compounds and drives bootstrap repayment (two-leg owned-reserves check).
+- The taker pays a 1% fee (`HEARTH_FEE_BPS = 100`). The split is versioned so that reorg replay recomputes the split the block settled. At v11, 30% accrues in the HEAT-denominated `cdHearthFeeAccumulator` and is minted into `CD_APY_POOL` at the epoch boundary, while 70% is the maker rebate paid to auction makers (or to LPs when the pool is the counterparty). At v12 the split flips to 70% CD and 30% maker.
+- Consumed XFG is burned 50/50 between the Eternal Flame and the SWF.
+- The bootstrap window runs 144 blocks of AMM-only operation after the upgrade.
+- The **Treasury LP Manager (AuntPoL)** maintains the protocol's own ratio-paired LP position. **Both legs are funded by the 1% mint premium**: the withheld premium XFG is the XFG leg, and the HEAT it buys is the HEAT leg (plus HEAT donations). The two legs are never cross-converted, and no SWF transfer is involved. The position compounds and drives bootstrap repayment through the two-leg owned-reserves check.
 
 ---
 
@@ -73,14 +69,12 @@ Miner-voted consumer basket, priced in integer cents (power in milli-USD/kWh).
 
 ## Certificates of Deposit (CD) — v12 activation
 
-- V12 activation (`CD_ACTIVATION_HEIGHT = 2,666,666`); epoch-term-locked HEAT
-  earning protocol revenue yield.
-- Treasury routing 69/11/20: 69% CD Yield Pool / 11% Bonus Vault / 20% Treasury
-  Reserve.
-- Bonus Vault tiers: 2.5× (72 epochs), 2× (36), 1.5× (18), 1.25× (6).
-- Two protocol earnings only: Hearth swap fee (1% taker, 70/30 split) and atomic
-  swap fee (1%+1% = 2%, 69/11/20 split). No mint premium, no CD creation fee
-  revenue (0.1% CD creation fee → burned/credited to Treasury LP Manager).
+- V12 activation (`CD_ACTIVATION_HEIGHT = 2,666,666`) introduces epoch-term-locked HEAT that earns protocol revenue yield.
+- From v11, atomic swap fees split 80% to the CD Yield Pool, 20% to the Bonus Vault, and 0% to the Treasury. Blocks before v11 settled 69% CD, 11% Bonus Vault, and 20% Treasury, and reorg replay keeps that split. The treasury leg was retired because the Treasury LP Manager is now funded by the mint premium itself — the withheld premium XFG is the XFG leg and the HEAT it buys is the HEAT leg — rather than by a swap-fee cut.
+- The Bonus Vault pays tier-based loyalty bonuses of 2.5× for 72 epochs, 2× for 36 epochs, 1.5× for 18 epochs, and 1.25× for 6 epochs.
+- There are exactly two protocol earnings streams: the Hearth swap fee (1% taker, versioned 30/70 at v11 and 70/30 at v12) and the atomic swap fee (1% + 1% = 2%, split 80/20 at v11+).
+- The 1% mint premium is not revenue. It is a haircut inside the mint burn that funds both AuntPoL legs: the withheld XFG is the XFG leg and the HEAT it buys is the HEAT leg.
+- The 0.1% CD creation fee is not revenue either. It is charged in XFG as an output to `FUEGO_DEV_FUND_ADDRESS` when the CD is created.
 
 ---
 
@@ -117,7 +111,7 @@ Miner-voted consumer basket, priced in integer cents (power in milli-USD/kWh).
 
 ### Deferred (LOW/INFO, documented)
 - L-2b: wallet-file cipher upgrade (container format change, deferred by owner)
-- R2-3: 69/11/20 epoch fee split integer dust
+- R2-3: epoch fee-split integer dust (floor division; still present in the 80/20 v11 split)
 - R2-5: early return from mutating epoch work
 - I-2: `popen("which tor")` PATH-hijack caveat (optional)
 - I-5: full epoch-mint dual paths (deferred to round 3)
@@ -171,8 +165,10 @@ Miner-voted consumer basket, priced in integer cents (power in milli-USD/kWh).
 ## Commit scope
 
 Major areas since v1.10.02: HEAT + Hearth AMM, FCI (six categories, quarterly gate),
-treasury LP manager, public audit API, R2-1 vault fix, swap TUI dynamic catalog,
-FCI oracle, MCP server, security audit remediation.
+treasury LP manager, fee-routing rework (1% mint premium funds both AuntPoL legs,
+80/20 atomic swap split, versioned Hearth 30/70 split,
+CD creation fee in XFG to the dev fund), public audit API, R2-1 vault fix, swap TUI
+dynamic catalog, FCI oracle, MCP server, security audit remediation.
 
 *Previous: v1.10.02 Wildfire (height 1,003,000)*
 *Next: v1.12.00 SILENTFIRE (height 2,666,666) — HEAT CDs + unified outputs + hidden amounts*

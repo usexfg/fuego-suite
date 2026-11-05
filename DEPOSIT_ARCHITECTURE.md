@@ -5,6 +5,16 @@
 > **Always refer to this document when modifying deposit-related code to avoid reintroducing
 > deprecated patterns.**
 
+> **v11 fee routing (current).** Atomic swap fees split **80% CD / 20% Bonus Vault / 0% Treasury**
+> (`SWAP_FEE_*_V11`). Blocks before v11 settled **69/11/20** and reorg replay keeps that split
+> (`SWAP_FEE_*_PRE_V11`), so the old numbers below survive only where they describe pre-v11 replay.
+> The Hearth 1% taker fee splits **30% CD / 70% maker at v11**, flipping to **70/30 at v12**
+> (`HEARTH_CD_SHARE_PCT_V11` / `_V12`). The treasury's Hearth LP position (AuntPoL) is funded by
+> the **1% mint premium** itself (`HEAT_MINT_PREMIUM_BPS = 100`): the withheld premium XFG is the
+> **XFG leg** (`m_treasuryLpPendingXfg`, not burned) and the HEAT it buys is the **HEAT leg**
+> (`m_treasuryHeatReserve`). No SWF transfer is involved. The **CD creation fee** is 0.1% of the
+> HEAT being deposited, charged in **XFG** to `FUEGO_DEV_FUND_ADDRESS`.
+
 ---
 
 ## TL;DR — Current State
@@ -154,16 +164,36 @@ mintHeatV10(xfgBurned, heatMinted, fee, mixin, txHash)
             ▼
     Blockchain validates via HeatMintEngine:
     • Checks xfgBurned matches input amounts
-    • Checks heatMinted matches output amounts
+    • Checks heatMinted matches the user cap (full-burn HEAT minus the premium HEAT)
     • Checks TWAP rate is within bounds
-    • Tracks permanent burns → 50% EF, 50% Treasury
-    • Treasury counter XFG conversion at epoch → 80% → HEAT → CD_APY_POOL, 20% → LP
+    • Derives the v11 premium by consensus: premiumXfg = xfgBurned × HEAT_MINT_PREMIUM_BPS / 10000
+    • Tracks the net burn (declared burn minus premium) → 50% EF, 50% SWF
+    • Credits premium XFG to the AuntPoL XFG leg (m_treasuryLpPendingXfg)
+    • Credits premium HEAT to the AuntPoL HEAT leg (m_treasuryHeatReserve)
 ```
+
+**Mint premium (v11+)** — a haircut inside the burn, not a surcharge:
+
+```
+expectedHeat     = heat(xfgBurned)
+premiumXfg       = xfgBurned × 100 / 10000
+premiumHeat      = heat(premiumXfg)
+userCap          = expectedHeat − premiumHeat
+m_heatSupply    += expectedHeat             (total is unchanged)
+m_treasuryLpPendingXfg += premiumXfg        (AuntPoL XFG leg; not burned)
+m_treasuryHeatReserve  += premiumHeat       (AuntPoL HEAT leg)
+bankedBurn       = xfgBurned − premiumXfg   (EF/SWF tallies see only this)
+```
+
+Only the net burn — the declared burn minus the premium — is split 50/50 EF/SWF.
+The premium XFG is treasury inventory: it is withheld from the minter but never
+burned, so it funds the XFG leg instead of the EF or SWF. The premium therefore
+decides both who receives part of the HEAT and which XFG funds the LP.
 
 **EF/Treasury 50/50 Split** (from `Blockchain.cpp`):
 ```cpp
 uint64_t efShare = (convertAmount * MINT_BURN_EF_PCT) / 100;      // 50% → Eternal Flame
-uint64_t swfShare = (convertAmount * MINT_BURN_TREASURY_PCT) / 100; // 50% → Treasury
+uint64_t swfShare = (convertAmount * MINT_BURN_TREASURY_PCT) / 100; // 50% → SWF
 m_bankingIndex.addForeverDeposit(efShare, newHeight);
 const_cast<Currency&>(m_currency).syncEternalFlame(m_bankingIndex.getBurnedXfgAmount());
 ```
@@ -243,16 +273,18 @@ Protocol Earnings (ONLY TWO):
 ├── ② Atomic swap fee:     1% + 1% = 2% per cross-chain atomic swap
 │       (SWAP_FEE_RATE_BPS = 100 on initiation + 100 on claim)
 │       via SwapXFG TUI  OR  the DeXFG tab in the Fuego-Wallet GUI
-│       Split 69% CD Yield / 11% Bonus Vault / 20% Treasury
+│       Split 80% CD Yield / 20% Bonus Vault (v11+; pre-v11 replay 69/11/20)
 └── (nothing else is protocol earnings)
 
 NOT protocol earnings:
-├── Mint premium:    0 bps — there is NO premium today (HEAT_MINT_PREMIUM_BPS = 0).
-│                    Goes nowhere. Do not document it as a revenue source.
-└── CD creation fee: 0.1% of CD amount — sent to @fuegoxfg (Fuego Development Fund),
-                     a donation to support development. NOT protocol revenue,
-                     NOT CD yield, NOT treasury. Bank fee charged at CD creation
-                     (no fee at claim), donated to Fuego Development.
+├── Mint premium:    1% of the declared burn (HEAT_MINT_PREMIUM_BPS = 100, v11+).
+│                    A haircut INSIDE the burn, not a surcharge: the withheld
+│                    premium XFG is the AuntPoL XFG leg (m_treasuryLpPendingXfg,
+│                    not burned) and the HEAT it buys is the HEAT leg
+│                    (m_treasuryHeatReserve). Protocol LP inventory, not revenue.
+└── CD creation fee: 0.1% of the HEAT being deposited, charged in XFG as a KeyOutput
+                     to FUEGO_DEV_FUND_ADDRESS. NOT protocol revenue,
+                     NOT CD yield, NOT a treasury reserve credit.
 
         │
         ▼
@@ -443,26 +475,32 @@ CryptoNote::DepositCommitmentKeys commitKeys = CryptoNote::deriveCommitmentKeys(
 
 ## BONUS VAULT & TIER-BASED BONUSES
 
-### Treasury Routing (69/11/20 Split)
+### Swap Fee Routing (versioned)
 
 ```
 Epoch Swap Fees Distribution:
-├── 69% → CD Yield Pool (CD_APY_POOL) — direct APY to CD holders
-├── 11% → Bonus Vault — loyalty + tier bonuses for longer locks
-└── 20% → Treasury Reserve — protocol operations, LP provision
+├── v11+:  80% → CD Yield Pool (CD_APY_POOL) — direct APY to CD holders
+│          20% → Bonus Vault — loyalty + tier bonuses for longer locks
+│           0% → Treasury Reserve (retired at v11)
+└── pre-v11 replay: 69% CD / 11% Bonus / 20% Treasury
 ```
+
+The treasury leg was retired because the treasury's Hearth LP position is now funded
+by the mint premium itself — the withheld premium XFG is the XFG leg and the HEAT it
+buys is the HEAT leg — so taking a swap-fee cut for it double-funded the same position.
+The `treasuryShare` constant and accumulator stay so pre-v11 blocks reverse correctly.
 
 ### Bonus Vault
 
-The Bonus Vault (repurposed from deprecated rollover vault) accumulates 11% of epoch
-swap fees to fund tier-based loyalty bonuses:
+The Bonus Vault (repurposed from deprecated rollover vault) accumulates 20% of epoch
+swap fees (11% pre-v11) to fund tier-based loyalty bonuses:
 
 ```cpp
 // CryptoNoteConfig.h
-const uint64_t SWAP_FEE_BONUS_VAULT_PCT = 11;  // 11% → Bonus Vault
+const uint64_t SWAP_FEE_BONUS_VAULT_PCT_V11 = 20;  // 20% → Bonus Vault (v11+)
 
 // Blockchain.h
-uint64_t m_bonusVaultBalance = 0;  // 11% bonus vault (loyalty + tier bonuses)
+uint64_t m_bonusVaultBalance = 0;  // bonus vault (loyalty + tier bonuses)
 ```
 
 ### Tier-Based Loyalty Bonuses
@@ -516,9 +554,9 @@ if (epochsToMaturity < LOYALTY_BONUS_FULL_EPOCHS) {
 ```json
 // GET /fee_pool_info
 {
-  "fee_pool_balance": 69,        // 69% CD yield pool
-  "treasury_balance": 20,        // 20% treasury reserve
-  "bonus_vault_balance": 11,     // 11% bonus vault
+  "fee_pool_balance": 80,        // 80% CD yield pool (v11+)
+  "treasury_balance": 0,         // 0% treasury reserve (retired at v11)
+  "bonus_vault_balance": 20,     // 20% bonus vault (v11+)
   "rollover_vault_balance": 0,   // deprecated, kept for compat
   "current_epoch_swap_fees": 1000,
   "total_cd_locked": 50000,
@@ -537,7 +575,7 @@ if (epochsToMaturity < LOYALTY_BONUS_FULL_EPOCHS) {
 |----------|---------|------------|
 | `m_poolLockedXfg` | AMM pool XFG lock | Pool operations |
 | `m_poolLockedHeat` | AMM pool HEAT lock | Pool operations |
-| `m_cdYieldPool` | CD yield accumulator (reset each epoch) | Swap fees (69%) |
+| `m_cdYieldPool` | CD yield accumulator (reset each epoch) | Swap fees (80% at v11+) |
 | `m_cdReserve` | CD reserve | — |
 | `m_heatCdFeePool` | HEAT CD fee pool | CD yield minting |
 | `m_protocolLpShares` | Protocol LP shares | Treasury LP |
@@ -545,7 +583,7 @@ if (epochsToMaturity < LOYALTY_BONUS_FULL_EPOCHS) {
 | `m_bootstrapXfgOwed` | Bootstrap XFG owed | — |
 | `m_bootstrapRepaymentVault` | Bootstrap repayment vault | — |
 | `m_swfBalance` | Sovereign Wealth Fund XFG | Mint burn (50%) |
-| `m_feePoolBalance` | 69% CD yield pool (swap fees) | CD yield minting |
+| `m_feePoolBalance` | CD yield pool (swap fees) | CD yield minting |
 | `m_currentEpochSwapFees` | Current epoch swap fees | Swap fee collection |
 | `m_totalCdLocked` | Total XFG locked in CDs | Deposit/withdrawal |
 | ~~`m_totalLegacyBondLocked`~~ | REMOVED (2026-09-11 purge) | — |
@@ -557,9 +595,9 @@ if (epochsToMaturity < LOYALTY_BONUS_FULL_EPOCHS) {
 | `m_treasuryHeatReserve` | Treasury HEAT reserve | — |
 | `m_treasuryLpReserve` | Treasury LP reserve | Treasury LP |
 | `m_treasurySwapFeeXfg` | Treasury swap fee XFG | — |
-| `m_treasuryCounterXFG` | Treasury counter XFG | Swap fees (20%) |
+| `m_treasuryLpPendingXfg` | Treasury LP pending XFG (AuntPoL XFG leg) | Mint premium (v11+) + swap fees (0% at v11+; 20% pre-v11) |
 | `m_swfHeatBalance` | SWF HEAT balance (off-chain DIGM collateral) | SWF conversion |
-| `m_bonusVaultBalance` | 11% bonus vault | Swap fees (11%) |
+| `m_bonusVaultBalance` | Bonus vault (funds the lean-epoch yield floor) | Swap fees (20% at v11+; 11% pre-v11) |
 
 #### Deprecated Variables (2)
 | Variable | Status | Serialization |
@@ -569,18 +607,18 @@ if (epochsToMaturity < LOYALTY_BONUS_FULL_EPOCHS) {
 
 ### Percentage Routing (Verified)
 
-#### Swap Fees (69/11/20)
+#### Swap Fees (80/20 at v11+; 69/11/20 pre-v11 replay)
 ```
 100% epochSwapFees
-├── 69% → cdShare (100% to regular CDs; legacy-bond split removed 2026-09-11)
+├── 80% → cdShare (100% to regular CDs; legacy-bond split removed 2026-09-11)
 │   └── cdShare → m_cdYieldPool → HEAT minting → m_heatCdFeePool + m_feePoolBalance
-├── 11% → bonusVaultShare → m_bonusVaultBalance
-└── 20% → treasuryShare → m_treasuryCounterXFG
+├── 20% → bonusVaultShare → m_bonusVaultBalance
+└──  0% → treasuryShare (retired at v11; the counter and branch stay for replay)
 ```
 
-#### Treasury Counter XFG Conversion
+#### Treasury Counter XFG Conversion (pre-v11 replay only)
 ```
-m_treasuryCounterXFG
+m_treasuryLpPendingXfg (was m_treasuryCounterXFG)
 ├── 80% → convertAmount → HEAT → CD_APY_POOL vault UTXOs
 │   ├── XFG burned: 50% → EF (m_bankingIndex), 50% → SWF (m_swfBalance)
 │   └── HEAT minted → m_heatSupply, CD_APY_POOL vault
@@ -589,6 +627,10 @@ m_treasuryCounterXFG
     ├── HEAT → m_ammPool.reserveHeat
     └── LP shares → m_protocolLpShares, LP_RESERVE vault
 ```
+
+At v11 this half-convert path is skipped: the treasury leg of the swap fee is 0, and the
+Treasury LP Manager pairs the premium XFG leg against the premium HEAT leg at the pool ratio
+instead of converting one into the other.
 
 #### SWF Collateral Conversion (every 8 epochs)
 ```
@@ -611,7 +653,7 @@ XFG burned from treasury conversion
 | Variable | Overflow Check | Line |
 |----------|---------------|------|
 | `m_bonusVaultBalance` | ✓ | 4482 |
-| `m_treasuryCounterXFG` | ✓ | 4520 |
+| `m_treasuryLpPendingXfg` | ✓ | 4520 |
 | `m_cdYieldPool` | ✓ | 4626, 4630 |
 | ~~`m_legacyBondYieldPool`~~ | REMOVED | — |
 | `m_feePoolBalance` | ✓ | 4656, 5552 |
@@ -619,19 +661,19 @@ XFG burned from treasury conversion
 | `m_swfHeatBalance` | ✓ | 4616 |
 
 #### Underflow Protection
-- `m_treasuryCounterXFG -= convertAmount` — guarded by prior `convertAmount` calculation
+- `m_treasuryLpPendingXfg -= convertAmount` — guarded by prior `convertAmount` calculation
 - `m_swfBalance -= xfgToConvert` — guarded by `xfgToConvert = m_swfBalance / 2`
 
 ### Code Path Trace
 
 #### Epoch Boundary Processing
 1. **Auto-roll matured CDs** → `m_commitmentIndex.processAutoRolls()`
-2. **Split swap fees** → 69% CD / 11% Bonus / 20% Treasury
+2. **Split swap fees** → 80% CD / 20% Bonus / 0% Treasury at v11+ (69/11/20 pre-v11 replay)
 3. **Route bonus vault** → `m_bonusVaultBalance += bonusVaultShare`
 4. **Split CD share** → regular CDs vs legacy bonds (50/50)
 5. **Record epoch fee rate** → `m_commitmentIndex.recordEpochFeeRate()`
-6. **Route treasury share** → `m_treasuryCounterXFG += treasuryShare`
-7. **Convert 80% treasury** → HEAT → CD_APY_POOL vault
+6. **Route treasury share** → `m_treasuryLpPendingXfg += treasuryShare` (0 at v11+)
+7. **Pair AuntPoL** → premium XFG (XFG leg) + premium HEAT (HEAT leg) → ratio-paired LP
 8. **Burn XFG** → 50% EF, 50% SWF
 9. **Route 20% to LP** → Hearth AMM pool
 10. **SWF collateral conversion** → every 8 epochs
@@ -639,7 +681,7 @@ XFG burned from treasury conversion
 
 ### Documentation Updated
 - `DEPOSIT_ARCHITECTURE.md` — Complete pool accounting audit
-- `AGENTS.md` — Treasury routing (69/11/20)
+- `AGENTS.md` — Swap fee routing (80/20 at v11+)
 - `CryptoNoteConfig.h` — All percentage constants
 
 ---

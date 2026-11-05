@@ -94,10 +94,10 @@ The block-state transition should be atomic: check all proofs and nullifiers aga
 | Action | Proof/state requirement | Disclosure decision before v11 |
 | --- | --- | --- |
 | XFG reward and ordinary transfers | Authorized block reward, exact public fee, private input/output note amounts, total supply equation. | Reward amount and block timing are public; decide miner payout note policy. |
-| HEAT mint/redemption | Prove XFG burn and HEAT issue at the accepted TWAP, supply bounds, rounding and zero launch premium. | If amount/price/reserve delta is public, it can reveal the trade. |
-| Hearth AMM and limit orders | Prove reserves, pending deposits, fills, expiry, claim, 1% taker fee, 70/30 CD/maker split and no duplicate settlement. | Existing public pool state reveals swaps. Private trading requires a separate committed-state AMM and price-discovery design. |
+| HEAT mint/redemption | Prove XFG burn and HEAT issue at the accepted TWAP, supply bounds, rounding and the v11 1% mint premium that funds both AuntPoL legs (withheld XFG → XFG leg, the HEAT it buys → HEAT leg). | If amount/price/reserve delta is public, it can reveal the trade. |
+| Hearth AMM and limit orders | Prove reserves, pending deposits, fills, expiry, claim, 1% taker fee, the versioned 30/70 CD/maker split at v11 (70/30 at v12) and no duplicate settlement. | Existing public pool state reveals swaps. Private trading requires a separate committed-state AMM and price-discovery design. |
 | LP, treasury and protocol reserve | Prove ratio-paired LP issuance, share burn/redemption, two-leg ownership, reserve debits and treasury LP manager movements. | Public reserve and share totals may reveal amounts. |
-| HEAT CDs and Bonus Vault | Preserve lock terms, backed interest, epoch floor/bonus rules, CD_APY_POOL and BONUS_VAULT liabilities. Include the 0.1% creation burn/treasury credit if activated in v11. | Public epoch and vault changes can narrow note linkage. |
+| HEAT CDs and Bonus Vault | Preserve lock terms, backed interest, epoch floor/bonus rules, CD_APY_POOL and BONUS_VAULT liabilities. Include the 0.1% CD creation fee charged in XFG to the dev fund. | Public epoch and vault changes can narrow note linkage. |
 | Atomic swaps, aliases and DIGM | Explicit escrow/refund/claim, authorization, fees, asset/collateral accounting and bridge rules. | Other chains and existing aliases remain visible/classical. DIGM must first pass the P0 four-asset accounting decision. |
 
 An action that cannot meet its proof and accounting rule must be disabled at the v11 gate or routed through an explicitly documented public bridge. The wallet must state the resulting disclosure. A shared tree alone does not make the existing public AMM or cross-chain swap private.

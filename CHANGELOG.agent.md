@@ -1,4 +1,94 @@
-## Release registry: merkle index + read-only proof API
+## v11 fee-routing rework: mint premium funds both AuntPoL legs, swap 80/20, versioned Hearth split, CD fee redirect
+
+**Started**: 2026-11-03
+**Agent**: opencode (DeepSeek V4.1 Flash Free)
+**Status**: DONE (code, tests, docs). One deployment gap is called out below.
+**Scope**: `src/CryptoNoteConfig.h`, `src/CryptoNoteCore/{Blockchain,HeatMintEngine,OrderbookAuction}`, `src/Wallet/WalletGreen.cpp`, `src/SimpleWallet/SimpleWallet.cpp`, `tests/CoreTests/HeatMintTest.cpp`, `tests/docs/test_docs_fee_routing_alignment.py`, plus the docs sweep listed under workstream 6.
+
+The batch changes four things that were previously coupled:
+
+1. **Mint premium funds both AuntPoL legs.** Every HEAT mint withholds 1% of its declared XFG burn from the minter. The withheld `premiumXfg` is **not burned**: it is credited to the AuntPoL XFG leg (`m_treasuryLpPendingXfg`). The `heat(premiumXfg)` it buys is minted to the AuntPoL HEAT leg (`m_treasuryHeatReserve`). It is a haircut **inside** the declared burn, not a surcharge: `premiumXfg = xfgBurned * HEAT_MINT_PREMIUM_BPS / 10000`, `userCap = heat(xfgBurned) - heat(premiumXfg)`, and total HEAT created still equals `heat(xfgBurned)`. Because the premium XFG is not destroyed, `bankedBurn()` reports only `xfgBurned - premiumXfg`, so the EF/SWF tallies see the net burn and never double-count the premium.
+2. **No SWF transfer to AuntPoL.** Both legs are self-funded by (1), so the epoch-boundary SWF top-up and its `m_blockSwfLpSpends` rollback deque are removed. The SWF remains the DIGM HEAT-collateral reserve and is never spent to pair the protocol's LP.
+3. **Atomic-swap fees are 80% CD / 20% Bonus Vault / 0% Treasury at v11.** The treasury leg is retired because the treasury LP position is now funded entirely by (1). Pre-v11 blocks still settle 69/11/20 and reorg replay keeps that split.
+4. **Hearth taker fee is 30% CD / 70% maker at v11, flipping to 70/30 at v12.** The split is passed through consensus as the block's own version, not a default, so replay recomputes the split that block settled.
+5. **CD creation fee goes to the dev fund in XFG.** It is 0.1% of the HEAT being deposited, charged as a `KeyOutput` to `FUEGO_DEV_FUND_ADDRESS`. It is not carved out of HEAT inputs and not credited to any treasury reserve.
+
+### Workstream 1 — versioned Hearth split
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Replace `HEARTH_CD_SHARE_BPS` / `HEARTH_MAKER_REBATE_BPS` with `HEARTH_CD_SHARE_PCT_V11 = 30` / `_V12 = 70` | DeepSeek V4.1 Flash Free | 2026-11-03 | DONE |
+| 2 | Add `hearthCdSharePct(uint8_t)` / `hearthMakerRebatePct(uint8_t)` in `namespace CryptoNote` (not `parameters`, which closes at `CryptoNoteConfig.h:552`) | DeepSeek V4.1 Flash Free | 2026-11-03 | DONE |
+| 3 | Thread the block major version through `OrderbookAuction.cpp:226-241` and `Blockchain.cpp:110,4576`; no default argument | DeepSeek V4.1 Flash Free | 2026-11-03 | DONE |
+| 4 | Update RPC / `SimpleWallet` / test call sites | DeepSeek V4.1 Flash Free | 2026-11-03 | DONE |
+
+### Workstream 2 — atomic-swap 80/20
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 5 | Add `SWAP_FEE_*_PRE_V11` (69/11/20) and `SWAP_FEE_*_V11` (80/20/0) plus `swapFeeCdSharePct` / `swapFeeBonusVaultPct` / `swapFeeTreasurySharePct` | DeepSeek V4.1 Flash Free | 2026-11-03 | DONE |
+| 6 | Use the three helpers in the epoch split (`Blockchain.cpp:5280-5285`) with `block.majorVersion` | DeepSeek V4.1 Flash Free | 2026-11-03 | DONE |
+| 7 | Keep the treasury accumulator and branch so pre-v11 `m_treasuryLpPendingXfg` replay is unchanged; v11 routes 0 | DeepSeek V4.1 Flash Free | 2026-11-03 | DONE |
+| 8 | Make treasury comments/log strings version-accurate | DeepSeek V4.1 Flash Free | 2026-11-03 | DONE |
+
+### Workstream 3 — mint premium
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 9 | Add `HEAT_MINT_PREMIUM_BPS = 100`, `heatMintPremiumBps(uint8_t)`, `heatMintPremiumXfg(uint64_t, uint8_t)` | DeepSeek V4.1 Flash Free | 2026-11-03 | DONE |
+| 10 | `HeatMintEngine`: `premiumHeatFor(xfgBurned, price, version)`; `validateMint` / `validateMintAuth` take `uint8_t blockMajorVersion` and `uint64_t& premiumHeat`; legacy `FixedPoint64` overloads untouched | DeepSeek V4.1 Flash Free | 2026-11-03 | DONE |
+| 11 | `validateSettlement` mint branch passes `getBlockMajorVersionForHeight(height)` and adds read-only `m_treasuryHeatReserve` / `m_treasuryLpPendingXfg` overflow checks — it stays side-effect-free for mempool | DeepSeek V4.1 Flash Free | 2026-11-04 | DONE |
+| 12 | `pushTransaction` credits `minted + premiumHeat` to supply, credits `premiumXfg` to `m_treasuryLpPendingXfg`, credits `premiumHeat` to `m_treasuryHeatReserve`, and records `m_mintPremiumHeatByTx`; `popTransaction` mirrors all three (recomputing `twapBefore` during pop is unsafe) | DeepSeek V4.1 Flash Free | 2026-11-04 | DONE |
+| 13 | `bankedBurn()` returns `xfgBurned - premiumXfg` from v11, so EF/SWF tallies and rescan/pop reversal all see only the XFG actually destroyed | DeepSeek V4.1 Flash Free | 2026-11-04 | DONE |
+| 14 | Archive serializer round-trips `m_mintPremiumHeatByTx`; `init()` clears it | DeepSeek V4.1 Flash Free | 2026-11-04 | DONE |
+| 15 | `WalletGreen::mintHeatV10` nets the premium out of the user cap, then applies `WALLET_MINT_TWAP_MARGIN_BPS`; `SimpleWallet::mint_heat` nets it and prints a "Mint premium" line | DeepSeek V4.1 Flash Free | 2026-11-04 | DONE |
+| 16 | 9 premium tests in `tests/CoreTests/HeatMintTest.cpp` (20 total), including the premium-XFG/banked-burn conservation and both-legs pairing | DeepSeek V4.1 Flash Free | 2026-11-04 | DONE |
+
+### Workstream 4 — premium funds both legs; SWF pairing removed
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 17 | Credit `premiumXfg` to `m_treasuryLpPendingXfg` at connect and reverse it at pop, so the XFG leg is real inventory rather than a notional SWF transfer | DeepSeek V4.1 Flash Free | 2026-11-04 | DONE |
+| 18 | Remove the `VaultPartition::SWF` top-up and the `m_blockSwfLpSpends` member, clear, and pop handling; the SWF is DIGM collateral only | DeepSeek V4.1 Flash Free | 2026-11-04 | DONE |
+| 19 | Keep the epoch pairing unchanged: it deposits the lesser of the two legs at the pool ratio, so premium XFG and premium HEAT pair without cross-conversion | DeepSeek V4.1 Flash Free | 2026-11-04 | DONE |
+
+### Workstream 5 — CD creation fee to the dev fund
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 20 | `WalletGreen::heatDepositV10`: `neededHeat = amount` (no HEAT fee), CD creation fee as an XFG output to `FUEGO_DEV_FUND_ADDRESS`, `prepareXfgInputs(*transaction, fee + bankingFee, ...)` | DeepSeek V4.1 Flash Free | 2026-11-03 | DONE |
+| 21 | Remove the v11 `TransactionExtraTreasuryFund` asset=1 branch from the CD path | DeepSeek V4.1 Flash Free | 2026-11-03 | DONE |
+| 22 | `SimpleWallet::heat_deposit`: separate HEAT balance check for `amount` and XFG balance check for `bankingFee + fee`; message names the dev fund and XFG | DeepSeek V4.1 Flash Free | 2026-11-03 | DONE |
+
+### Workstream 6 — docs and alignment test
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 23 | `tests/docs/test_docs_fee_routing_alignment.py` asserts the versioned constants and adds `HISTORICAL_MARKERS` so versioned pages may state retired values, while "at v11" / "v11+" do not qualify | DeepSeek V4.1 Flash Free | 2026-11-03 | DONE |
+| 24 | Nav pages: `introduction`, `fuego-dual-asset-architecture` (root + `heat/` copy), `features/hearth/README`, `features/atomic-swaps/step-by-step-guide`, `tutorials/hearth-amm-cd-real-yield`, `api-reference/fee-pool`, `api-reference/swaps`, `security/risk-warnings`, `developer/architecture` | DeepSeek V4.1 Flash Free | 2026-11-03 | DONE |
+| 25 | Non-nav live docs: `AGENTS.md`, `README.md`, `DEPOSIT_ARCHITECTURE.md`, `docs/changelog.mdx`, all `docs/features/**` and `docs/tutorials/**` pages that stated the old splits | DeepSeek V4.1 Flash Free | 2026-11-03 | DONE |
+| 26 | Brand/marketing: `docs/brand/*`, `docs/marketing/*` | DeepSeek V4.1 Flash Free | 2026-11-03 | DONE |
+| 27 | Developer guides: `v11-p0-commitment-keys-and-asset-accounting-guide`, `v11-pq-shielded-stark-implementation-guide`, `fuego-research.md` | DeepSeek V4.1 Flash Free | 2026-11-03 | DONE |
+| 28 | `RELEASE_NOTES_V11.md` rewritten in complete sentences; `SECURITY_AUDIT_FINDINGS.md` R2-3 re-scoped to the 80/20 split and R2-4 marked fixed; `RELEASE_READINESS_CHECK.md` R2-4 note updated | DeepSeek V4.1 Flash Free | 2026-11-03 | DONE |
+| 29 | Skills outside the repo: `fuego-currency`, `fuego-swaps`, `fuego-heat-and-hearth`, `fuego-code-analyzer` regex | DeepSeek V4.1 Flash Free | 2026-11-03 | DONE |
+
+### Known deployment note (not a code defect)
+
+AuntPoL no longer depends on the SWF, so the previous "SWF holds no spendable XFG" blocker is closed by design: the premium funds both legs. Separately, `m_swfBurnedXfgPendingHeat` redemption is still disabled (`if (false && ...)`) and `m_swfHeatBalance` remains a claim rather than counted supply; that is the DIGM collateral path and is intentionally deferred to v12-13, not part of this batch.
+
+### Sign-off table
+
+| Gate | Status |
+|------|--------|
+| Build compiles | ✅ `make -C build -j8` clean, no errors |
+| Tests pass | ✅ `heat_mint_engine_tests` 20/20; `core_tests` 265/265; `test_orderbook` 44/44; `python3 tests/docs/test_docs_fee_routing_alignment.py` 7/7 |
+| Pre-existing failures confirmed, not regressions | ✅ `test_orderbook_auction` 61/63; the two failures at `OrderbookAuctionTest.cpp:327` and `:330` reproduce identically on stashed HEAD |
+| All tasks done | ✅ 29/29 |
+| Docs state the same numbers as `CryptoNoteConfig.h` | ✅ alignment test green |
+
+---
+
+
 
 **Started**: 2026-10-30
 **Agent**: opencode (DeepSeek V4.1 Flash Free)
@@ -442,7 +532,7 @@ Verified against the working tree. Each field has one source, one unit, one cate
 | `swf_collateral_pending_xfg` | `getSwfBurnedXfgPendingHeat()` → `m_swfBurnedXfgPendingHeat` | atomic XFG | lifecycle component, **not** retired from supply |
 | `swf_xfg_permanently_retired_total` | `getPermanentlyBurnedXfg()` → `m_permanently_burned_xfg` | atomic XFG | lifecycle component, retired from total supply |
 | `treasury_legacy_counter_xfg` | `getTreasuryBalance()` → `m_treasuryBalance` | atomic XFG | **deprecated legacy counter**, not live holdings |
-| `treasury_pending_xfg` | `getTreasuryLpPendingXfg()` → `m_treasuryLpPendingXfg` | atomic XFG | unconverted treasury fee share |
+| `treasury_pending_xfg` | `getTreasuryLpPendingXfg()` → `m_treasuryLpPendingXfg` | atomic XFG | AuntPoL XFG leg (mint premium v11+; legacy swap-fee share pre-v11) |
 | `treasury_heat_reserve` | `getTreasuryHeatReserve()` → `m_treasuryHeatReserve` | atomic HEAT | counter |
 | `bonus_vault_counter_heat` | `getBonusVaultBalance()` → `m_bonusVaultBalance` | atomic HEAT | counter |
 | `vault_general_xfg` / `_heat` | `VaultUtxoSet::partitionBalance(GENERAL_RESERVE, ·)` | atomic XFG / HEAT | UTXO custody |
@@ -6034,3 +6124,35 @@ Two regressions found by the reviews and fixed here:
 - **`dandelion_stem`/`hop_count` remain unread** on the order path (`V11_LAUNCH_READINESS.md` 1.10).
 - **No test covers the new `bool` contract** — `tests/CoreTests/SwapOrderbookTests.cpp` never calls
   `handleOrderOpen`. The security surface added here has zero regression coverage.
+
+### Sync Wedge Fix: Phantom Block Index Out of Bounds (SwappedVector::operator[])
+
+**Feature name**: Sync Wedge at Height ~806351 — Phantom Output Index Out of Bounds Fix
+**Start date**: 2026-11-02
+
+Task list:
+1. Bounds-check output index block dimension in scanOutputKeysForIndexes before transactionByIndex lookup (defense in depth; clean reject on phantom).
+2. Add transaction-index bounds check (block + transaction) in transactionByIndex (global safety; std::out_of_range).
+3. Wrap per-tx block processing (validation + connect) in try/catch with popTransactions unwind on exception.
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | PENDING — rebuild + verification required |
+| Tests pass | PENDING — rebuild + verification required |
+| All tasks done | DONE |
+
+### Build Gate Fix: Const-Method Accumulator Mutation (validateSettlement)
+
+**Feature name**: Compile Gate Repair — validateSettlement const mutation
+**Start date**: 2026-11-02
+
+Task list:
+1. Mark HEAT CD-yield accumulator `m_heatOnDeposit` and bonus-vault accumulator `m_bonusVaultPendingXfg` as `mutable` in `Blockchain.h`, unblocking the const `validateSettlement` that records the liquidity-fee split.
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | IN PROGRESS — rebuild running |
+| Tests pass | PENDING |
+| All tasks done | IN PROGRESS |

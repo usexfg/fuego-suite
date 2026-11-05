@@ -59,8 +59,12 @@ Source: `src/CryptoNoteConfig.h`.
 
 | Fee | Rate | Routing |
 |-----|------|---------|
-| **Atomic swap (XFG side)** | **1%** (`SWAP_FEE_RATE_BPS = 100`) | **69%** CD yield · **11%** Bonus Vault · **20%** Treasury |
-| **Hearth trade** | **1%** (`HEARTH_FEE_BPS = 100`) | **70%** CD yield · **30%** maker rebate (LPs when the pool is counterparty) |
+| **Atomic swap (XFG side)** | **1%** (`SWAP_FEE_RATE_BPS = 100`) | **80%** CD yield · **20%** Bonus Vault (v11+) |
+| **Hearth trade** | **1%** (`HEARTH_FEE_BPS = 100`) | **30%** CD yield · **70%** maker rebate (v11; flips to 70/30 at v12) |
+| **HEAT mint** | **1%** of the burn (`HEAT_MINT_PREMIUM_BPS = 100`) | Premium XFG → AuntPoL XFG leg; the HEAT it buys → AuntPoL HEAT leg |
+| **CD creation** | **0.1%** of the deposit, in XFG | Dev fund |
+
+The atomic-swap split is versioned: blocks before v11 settled **69% CD / 11% Bonus Vault / 20% Treasury**, and reorg replay keeps that split. v11 retires the treasury leg because the treasury's Hearth LP position is now funded by the mint premium itself — the withheld premium XFG is the XFG leg and the HEAT it buys is the HEAT leg — instead of by a swap-fee cut.
 
 These are separate mechanisms. Atomic-swap fees are not the same stream as Hearth LP fees. DIGM (if enabled elsewhere) uses its own fee constants and is **not** core Fuego onboarding.
 

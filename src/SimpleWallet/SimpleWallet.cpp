@@ -3992,9 +3992,21 @@ bool simple_wallet::mint_heat(const std::vector<std::string>& args) {
 
   // Consensus prices the mint at the 8-block TWAP; build a little under it so
   // the TWAP moving before inclusion does not invalidate the mint.
-  uint64_t heatAmount = static_cast<uint64_t>(
-      ((static_cast<uint128_t>(xfgAmount) * poolTwap) / parameters::COIN) *
-      (10000 - parameters::WALLET_MINT_TWAP_MARGIN_BPS) / 10000);
+  //
+  // The v11 mint premium is a haircut inside the burn: heat(premiumXfg) of the
+  // burn is minted to the AuntPoL HEAT leg, so the minter receives
+  // heat(xfgAmount) - heat(premiumXfg). Price the two terms separately to match
+  // consensus exactly (their truncation can differ by an atomic).
+  const uint64_t premiumXfg = heatMintPremiumXfg(
+      xfgAmount, BLOCK_MAJOR_VERSION_11);
+  const uint64_t expectedHeat = static_cast<uint64_t>(
+      (static_cast<uint128_t>(xfgAmount) * poolTwap) / parameters::COIN);
+  const uint64_t premiumHeat = static_cast<uint64_t>(
+      (static_cast<uint128_t>(premiumXfg) * poolTwap) / parameters::COIN);
+  const uint64_t userCap =
+      premiumHeat < expectedHeat ? expectedHeat - premiumHeat : 0;
+  uint64_t heatAmount =
+      userCap * (10000 - parameters::WALLET_MINT_TWAP_MARGIN_BPS) / 10000;
 
   // Enforce minimum HEAT mint (0.1 HEAT mainnet, 0.01 HEAT testnet)
   uint64_t minHeat = m_currency.isTestnet()
@@ -4015,6 +4027,10 @@ bool simple_wallet::mint_heat(const std::vector<std::string>& args) {
   success_msg_writer() << "  Price: " << m_currency.formatAmount(poolTwap)
                        << " HEAT per XFG (8-block TWAP, minted "
                        << parameters::WALLET_MINT_TWAP_MARGIN_BPS / 100.0 << "% under it)";
+  success_msg_writer() << "  Mint premium: " << m_currency.formatAmount(premiumXfg)
+                       << " XFG of the burn (" << parameters::HEAT_MINT_PREMIUM_BPS / 100.0
+                       << "%) buys " << m_currency.formatAmount(premiumHeat)
+                       << " HEAT for the protocol's AuntPoL position";
   success_msg_writer() << "  Fee:  " << m_currency.formatAmount(fee);
 
   // Confirmation prompt — user must explicitly approve the mint
@@ -4471,21 +4487,34 @@ bool simple_wallet::heat_deposit(const std::vector<std::string>& args) {
     return false;
   }
 
-  uint64_t bankingFee = amount / 1000;  // 0.1% banking fee → Fuego dev fund
+  // The CD creation fee is XFG (it goes to the dev fund address); the deposit
+  // itself is HEAT. Check the two balances separately — comparing the XFG
+  // balance against the HEAT amount rejected deposits a wallet could fund.
+  uint64_t bankingFee = amount / 1000;  // 0.1% of the deposit, in XFG → dev fund
   if (bankingFee == 0) bankingFee = 1;   // minimum 1 atomic unit
 
   uint64_t fee = m_currency.minimumFee();
-  uint64_t balance = m_wallet->actualBalance();
-  if (balance < amount + bankingFee + fee) {
-    fail_msg_writer() << "Insufficient balance. Available: " << m_currency.formatAmount(balance)
-                      << ", needed: " << m_currency.formatAmount(amount + bankingFee + fee)
-                      << " (includes 0.1% banking fee)";
+  uint64_t xfgNeeded = bankingFee + fee;
+  uint64_t xfgBalance = m_wallet->actualBalance();
+  uint64_t heatBalance = m_wallet->actualHeatBalance();
+  if (heatBalance < amount) {
+    fail_msg_writer() << "Insufficient HEAT for the deposit. Available: "
+                      << m_currency.formatAmount(heatBalance)
+                      << ", needed: " << m_currency.formatAmount(amount);
+    return false;
+  }
+  if (xfgBalance < xfgNeeded) {
+    fail_msg_writer() << "Insufficient XFG for the fees. Available: "
+                      << m_currency.formatAmount(xfgBalance)
+                      << ", needed: " << m_currency.formatAmount(xfgNeeded)
+                      << " (0.1% CD creation fee + network fee)";
     return false;
   }
 
   success_msg_writer() << "HEAT Deposit: " << m_currency.formatAmount(amount)
                        << " HEAT for " << termEpochs << " epochs"
-                       << " | banking fee: " << m_currency.formatAmount(bankingFee);
+                       << " | CD creation fee: " << m_currency.formatAmount(bankingFee)
+                       << " XFG (dev fund)";
 
   // Use heatDepositV10() — dedicated deposit API that builds proper commitment tx
   uint64_t mixIn = m_currency.isTestnet() ? 0 : CryptoNote::parameters::MIN_TX_MIXIN_SIZE;

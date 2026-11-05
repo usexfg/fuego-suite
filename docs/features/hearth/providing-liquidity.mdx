@@ -16,13 +16,13 @@ LP income is the **pool’s own trading P&L**:
 - Reserve appreciation from limit-order execution at the spot price.
 - No separate “spread reward” formula exists anymore (the old `|fill.price − P_clear| × amount` reward belonged to the retired in-band matcher). Your share is realized on withdrawal via proportional share redemption.
 
-You also do **not** earn the atomic-swap fee stream (2% = 1% + 1% per swap) unless you hold HEAT CDs or Bonus Vault rights — those are separate. Protocol earnings are exactly two streams: this 1% Hearth fee and the 2% atomic swap fee. Mint premium is 0 bps (goes nowhere); the 0.1% CD creation fee is burned to the Treasury LP Manager, not protocol revenue.
+You also do **not** earn the atomic-swap fee stream (2% = 1% + 1% per swap) unless you hold HEAT CDs or Bonus Vault rights — those are separate. Protocol earnings are exactly two streams: this 1% Hearth fee and the 2% atomic swap fee. The 1% mint premium is not a third stream: it is a haircut inside the mint burn that funds both AuntPoL legs (withheld XFG → XFG leg, the HEAT it buys → HEAT leg). The 0.1% CD creation fee is charged in XFG to the dev fund. Neither is protocol revenue.
 
 ## Deposits
 
 - **Balanced only.** A single-sided deposit (XFG alone or HEAT alone) mints no shares — the pool requires ratio-paired deposits at the current pool ratio. No dilution.
 - Shares are minted pro-rata (`min(amountA×T/reserveA, amountB×T/reserveB)`) — fair shares at the pool ratio.
-- The **Treasury LP Manager** follows the same rule: it pairs its XFG leg (treasury fee share + donations) with its HEAT leg (mint premiums + HEAT donations) at the pool ratio and deposits only when both legs can be paired; the excess carries to the next epoch.
+- The **Treasury LP Manager** follows the same rule: both of its legs come from the 1% mint premium — the withheld premium XFG is the XFG leg and the HEAT it buys is the HEAT leg (plus donations). It pairs them at the pool ratio and deposits only when both legs can be paired; the excess carries to the next epoch.
 
 ## Practical notes
 

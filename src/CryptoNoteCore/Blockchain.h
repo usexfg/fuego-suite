@@ -644,6 +644,12 @@ namespace CryptoNote {
     };
     std::map<Crypto::Hash, VaultSpendRecord, HashLess> m_vaultSpentByTx;
 
+    // Mint-premium HEAT credited to the treasury reserve (AuntPoL HEAT leg) per
+    // mint transaction, keyed by tx hash. Recorded at connect so popTransaction
+    // can debit exactly what was credited: recomputing twapBefore(height) during
+    // a pop is not safe — the block's TWAP contribution is already gone.
+    std::map<Crypto::Hash, uint64_t, HashLess> m_mintPremiumHeatByTx;
+
     // Limit order deposit tracking: orderId → (side, amount, addressHash) for withdrawal
     // Persists after order expires from mempool so user can reclaim pending deposit
     struct LimitDepositInfo {
@@ -749,8 +755,8 @@ namespace CryptoNote {
     uint64_t m_treasuryXfgReserve = 0;           // DEPRECATED: dead code, kept for serialization compat only
     uint64_t m_treasuryLpReserve = 0;            // XFG reserved for Hearth LP provision
     uint64_t m_treasurySwapFeeXfg = 0;          // Swap fee XFG pending burn (counted, not yet burned)
-    uint64_t m_treasuryLpPendingXfg = 0;          // Unburned treasury XFG reserve (swap-fee share / LP source)
-    uint64_t m_swfHeatBalance = 0;              // SWF counter HEAT (off-chain DIGM collateral, never UTXOs)
+    uint64_t m_treasuryLpPendingXfg = 0;          // AuntPoL XFG leg: mint premium + treasury fee share + XFG donations
+    uint64_t m_swfHeatBalance = 0;              // SWF counter HEAT (off-chain protocol collateral, never UTXOs)
     uint64_t m_bonusVaultBalance = 0;       // 11% bonus vault (funds the lean-epoch yield floor)
     // Autonomous Treasury Vault
     VaultUtxoSet m_vault;
@@ -902,10 +908,13 @@ namespace CryptoNote {
         return false;
       }
 
-      //auto tx_it = m_transactionMap.find(amount_outs_vec[i].first);
-      //if (!(tx_it != m_transactionMap.end())) { logger(ERROR, BRIGHT_RED) << "Wrong transaction id in output indexes: " << Common::podToHex(amount_outs_vec[i].first); return false; }
+      const TxIndex& index = amount_outs_vec[i].first;
+      if (index.block >= m_blocks.size()) {
+        logger(Logging::ERROR, Logging::BRIGHT_RED) << "Phantom output index detected: block " << index.block << " is out of bounds (chain size " << m_blocks.size() << ")";
+        return false;
+      }
 
-      const TransactionEntry& tx = transactionByIndex(amount_outs_vec[i].first);
+      const TransactionEntry& tx = transactionByIndex(index);
 
       if (!(amount_outs_vec[i].second < tx.tx.outputs.size())) {
         logger(Logging::ERROR, Logging::BRIGHT_RED)

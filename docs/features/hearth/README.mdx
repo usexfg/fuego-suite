@@ -61,13 +61,14 @@ The unusual parts worth calling out:
 - Fills settle in price-time priority, rationing the larger side at `p*`.
 - User-vs-user fills move escrow buckets only — **AMM reserves are untouched**. Pool depth-band fills (`orderId` prefix `0xF0`) **do** debit/credit `reserveXfg`/`reserveHeat`; those makers are the pool quoting its inventory, not a second book.
 
-### 3.2 Fee model (1% taker, 70/30 split)
+### 3.2 Fee model (1% taker, versioned split)
 
 - The taker side (the rationed side) pays 1% of its fills' price value.
-- 70% (`HEARTH_CD_SHARE_BPS`) accrues to `cdHearthFeeAccumulator` (HEAT-denominated) and is minted into the CD yield vault (`CD_APY_POOL`) at the epoch boundary; the consumed XFG is burned 50/50 (Eternal Flame / SWF).
-- 30% (`HEARTH_MAKER_REBATE_BPS`) is the maker rebate: distributed to the maker side pro-rata by fill value, with cumulative floors so conservation is exact.
+- The split is versioned (`hearthCdSharePct`): **v11 pays 30% CD / 70% maker** — the pool and the book are new, so the fee buys depth — and **v12 flips to 70% CD / 30% maker** once the market is liquid. Consensus passes the block's own version so reorg replay recomputes the split that block settled.
+- The CD share accrues to `cdHearthFeeAccumulator` (HEAT-denominated) and is minted into the CD yield vault (`CD_APY_POOL`) at the epoch boundary; the consumed XFG is burned 50/50 (Eternal Flame / SWF).
+- The maker share is the maker rebate: distributed to the maker side pro-rata by fill value, with cumulative floors so conservation is exact.
 - Exact volume ties have no taker: no fee, no rebate (pure exchange).
-- On backstop/AMM fills the pool is the maker: 30% stays in LP reserves, 70% goes to CD yield.
+- On backstop/AMM fills the pool is the maker: the maker share stays in LP reserves, the CD share goes to CD yield.
 
 ### 3.3 AMM backstop
 
@@ -85,10 +86,12 @@ The unusual parts worth calling out:
 
 | Flow | Route |
 |---|---|
-| Taker fee (auction) | 1% of taker notional → 70% CD yield accumulator / 30% maker rebate pool |
-| Taker fee (backstop/AMM) | 70% debited from LP reserves → CD yield / 30% stays with LPs |
-| Swap fees (cross-chain) | 69% CD yield / 11% bonus vault / 20% treasury counter |
-| Treasury LP Manager | treasury counter XFG + HEAT reserve (mint premiums, CD fees, donations) → ratio-paired LP position; compounds; repays bootstrap |
+| Taker fee (auction) | 1% of taker notional → 30% CD yield accumulator / 70% maker rebate pool at v11 (70/30 from v12) |
+| Taker fee (backstop/AMM) | The CD share is debited from LP reserves → CD yield; the maker share stays with LPs |
+| Swap fees (cross-chain) | 80% CD yield / 20% bonus vault at v11 (pre-v11 replay: 69/11/20) |
+| Mint premium | 1% of every HEAT mint's burn (`HEAT_MINT_PREMIUM_BPS`) → withheld premium XFG to the AuntPoL XFG leg (`m_treasuryLpPendingXfg`) and the HEAT it buys to the HEAT leg (`m_treasuryHeatReserve`) |
+| Treasury LP Manager | Premium XFG (XFG leg) + premium HEAT (HEAT leg, plus donations) → ratio-paired LP position; compounds; repays bootstrap |
+| CD creation fee | 0.1% of the deposit, charged in XFG → dev fund |
 | Burns | Every XFG→HEAT conversion burns consumed XFG 50% EF / 50% SWF; all burns tally in `total_burned_xfg` |
 
 ## 5. Key constants (v11)
@@ -96,8 +99,8 @@ The unusual parts worth calling out:
 | Constant | Value |
 |---|---|
 | `HEARTH_FEE_BPS` | 100 (1% taker) |
-| `HEARTH_CD_SHARE_BPS` | 70 |
-| `HEARTH_MAKER_REBATE_BPS` | 30 |
+| `HEARTH_CD_SHARE_PCT_V11` | 30 |
+| `HEARTH_CD_SHARE_PCT_V12` | 70 |
 | `HEARTH_BACKSTOP_MAX_BPS` | 500 |
 | `ORDER_PRICE_TICK` | COIN/100 |
 | `BOOTSTRAP_BLOCKS` | 144 |
@@ -121,7 +124,7 @@ The unusual parts worth calling out:
 
 - The in-band CLOB matcher (`OrderbookMatcher`), `MIN_DISTINCT_PARTIES`, and gossiped orders — replaced by the backed auction.
 - Single-sided LP mints — balanced deposits only.
-- The old 50/50 fee-split and LP "spread reward" formula — replaced by the 70/30 taker/maker model and pool P&L.
+- The old 50/50 fee-split and LP "spread reward" formula — replaced by the versioned taker/maker model (30/70 at v11, 70/30 at v12) and pool P&L.
 - Pre-v11 price scales (Q64.64, 1e8, 1e18) — canonical 1e7 everywhere.
 
 ## 8. Status

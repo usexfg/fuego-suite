@@ -30,13 +30,13 @@ CDs lock **HEAT**, not XFG. You must [mint HEAT](/features/heat/mint-heat) first
 
 **No on-protocol price protection.** You and the counterparty agree amount/rate off-chain (or via offers). Market moves between agreement and completion do not auto-adjust the deal.
 
-**Fee.** Completed XFG-side swaps charge **1%**, routed **69% CD yield / 11% Bonus Vault / 20% Treasury** (`CryptoNoteConfig.h`).
+**Fee.** Completed XFG-side swaps charge **1%**, routed **80% CD yield / 20% Bonus Vault** from v11 (`CryptoNoteConfig.h`); pre-v11 blocks replay their 69/11/20 split.
 
 ---
 
 ## Hearth liquidity
 
-Hearth is the on-chain **XFG/HEAT** market: one pool inventory quoted as depth-band makers in the call auction and as a constant-product curve for swaps and the backstop. Protocol trade fee is **1%** (`HEARTH_FEE_BPS = 100`), **70% CD yield / 30% maker rebate**. LPs earn pool P&L plus the rebate when the pool is the maker.
+Hearth is the on-chain **XFG/HEAT** market: one pool inventory quoted as depth-band makers in the call auction and as a constant-product curve for swaps and the backstop. Protocol trade fee is **1%** (`HEARTH_FEE_BPS = 100`), **30% CD yield / 70% maker rebate** at v11 (flipping to 70/30 at v12). LPs earn pool P&L plus the maker share when the pool is the maker.
 
 <Warning>
   Providing Hearth liquidity carries impermanent loss risk. If the XFG/HEAT pool price moves sharply while you are an LP, you may withdraw less value than you deposited, even after LP fee income.

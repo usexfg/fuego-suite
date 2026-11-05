@@ -35,22 +35,24 @@ Details: [DEPOSIT_ARCHITECTURE.md](https://github.com/usexfg/fuego-suite/blob/ma
 **Hearth** is the on-chain **XFG/HEAT** market. One pool inventory, two uses: constant-product AMM (`reserveXfg × reserveHeat`) for LP shares, direct swaps, and the post-auction backstop; the same reserves quoted as depth-band makers in the per-block call auction (`generatePoolOrders()`, `HEARTH_DEPTH_BAND_PCT`). User limits are tx-extra deposits. It:
 
 - Discovers **P_clear** in the auction (mint TWAP); pool spot is bootstrap/fallback and the swap/backstop curve
-- Charges **`HEARTH_FEE_BPS = 100` (1%)** per trade → **70% CD yield / 30% maker rebate** (LPs receive the rebate on pool fills)
+- Charges **`HEARTH_FEE_BPS = 100` (1%)** per trade → **30% CD yield / 70% maker rebate** at v11, flipping to **70% CD / 30% maker** at v12 (LPs receive the maker share on pool fills)
 
 ## swapXFG
 
-**swapXFG** (SwapDaemon) is peer-to-peer **cross-chain** atomic swap infrastructure (adaptor signatures / chain clients). Completed XFG-side swaps charge **1%**, split **69% CD yield / 11% Bonus Vault / 20% Treasury**.
+**swapXFG** (SwapDaemon) is peer-to-peer **cross-chain** atomic swap infrastructure (adaptor signatures / chain clients). Completed XFG-side swaps charge **1%**, split **80% CD yield / 20% Bonus Vault** from v11 (pre-v11 blocks settled 69/11/20 and replay that split).
 
 ## Fee map (code)
 
 | Constant | Value | Meaning |
 |----------|-------|---------|
 | `SWAP_FEE_RATE_BPS` | 100 | 1% on XFG atomic-swap side |
-| `SWAP_FEE_CD_SHARE_PCT` | 69 | → CD yield pool |
-| `SWAP_FEE_BONUS_VAULT_PCT` | 11 | → Bonus Vault |
-| `SWAP_FEE_TREASURY_SHARE_PCT` | 20 | → Treasury |
+| `SWAP_FEE_CD_SHARE_PCT_V11` | 80 | → CD yield pool |
+| `SWAP_FEE_BONUS_VAULT_PCT_V11` | 20 | → Bonus Vault |
+| `SWAP_FEE_TREASURY_SHARE_PCT_V11` | 0 | Treasury leg retired at v11 |
+| `SWAP_FEE_*_PRE_V11` | 69 / 11 / 20 | The split pre-v11 blocks settled; reorg replay only |
 | `HEARTH_FEE_BPS` | 100 | 1% Hearth trade fee |
-| Hearth split | 70/30 | 70% CD yield; 30% rebate to the maker or pool LPs |
+| `HEARTH_CD_SHARE_PCT_V11` / `_V12` | 30 / 70 | CD share of the Hearth fee; the maker rebate is the remainder |
+| `HEAT_MINT_PREMIUM_BPS` | 100 | 1% of each mint's burn → withheld XFG to the AuntPoL XFG leg, the HEAT it buys to the HEAT leg |
 | `EPOCH_DURATION_BLOCKS` | 900 | Mainnet epoch (~5 days at ~480s blocks) |
 | `CD_MIN_EPOCHS` / `CD_MAX_EPOCHS` | 6 / 72 | ~1 month … ~1 year HEAT CD terms |
 
@@ -68,5 +70,5 @@ Details: [DEPOSIT_ARCHITECTURE.md](https://github.com/usexfg/fuego-suite/blob/ma
               swap fees + Hearth fees
                         │
                         ▼
-              CD pool / Bonus / Treasury / LP
+         CD pool / Bonus Vault / LP / dev fund
 ```

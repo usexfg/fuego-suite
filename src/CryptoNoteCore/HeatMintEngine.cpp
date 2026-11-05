@@ -94,13 +94,23 @@ bool HeatMintEngine::isHeatMint(const Transaction& tx) const {
   return false;
 }
 
+uint64_t HeatMintEngine::premiumHeatFor(uint64_t xfgBurned, uint64_t price,
+                                        uint8_t blockMajorVersion) const {
+  if (price == 0) return 0;
+  return expectedHeatFor(
+      heatMintPremiumXfg(xfgBurned, blockMajorVersion), price);
+}
+
 bool HeatMintEngine::validateMint(const Transaction& tx,
                                     uint64_t fee,
                                     uint64_t price,
                                     uint64_t& xfgBurned,
-                                    uint64_t& heatMinted) const {
+                                    uint64_t& heatMinted,
+                                    uint8_t blockMajorVersion,
+                                    uint64_t& premiumHeat) const {
   xfgBurned = 0;
   heatMinted = 0;
+  premiumHeat = 0;
 
   if (price == 0) {
 #ifdef HEAT_MINT_DEBUG
@@ -119,15 +129,22 @@ bool HeatMintEngine::validateMint(const Transaction& tx,
     return false;
   }
 
-  uint64_t expectedHeat = expectedHeatFor(xfgBurned, price);
+  const uint64_t expectedHeat = expectedHeatFor(xfgBurned, price);
+  premiumHeat = premiumHeatFor(xfgBurned, price, blockMajorVersion);
+  // The premium is a fraction of the burn, so it can never exceed the HEAT the
+  // whole burn buys. Guard anyway: a wrapped subtraction here would hand the
+  // minter an unbounded cap.
+  if (premiumHeat > expectedHeat) return false;
+  const uint64_t userCap = expectedHeat - premiumHeat;
 
 #ifdef HEAT_MINT_DEBUG
-  fprintf(stderr, "[HeatMint] validateMint: xfgBurned=%llu expectedHeat=%llu price=%llu heatOutputs=%llu\n",
+  fprintf(stderr, "[HeatMint] validateMint: xfgBurned=%llu expectedHeat=%llu premiumHeat=%llu price=%llu heatOutputs=%llu\n",
     (unsigned long long)xfgBurned, (unsigned long long)expectedHeat,
-    (unsigned long long)price, (unsigned long long)heatOutputs);
+    (unsigned long long)premiumHeat, (unsigned long long)price,
+    (unsigned long long)heatOutputs);
 #endif
 
-  if (heatOutputs > expectedHeat) return false;
+  if (heatOutputs > userCap) return false;
 
   heatMinted = heatOutputs;
   return true;
@@ -137,18 +154,23 @@ bool HeatMintEngine::validateMintAuth(const Transaction& tx,
                                         uint64_t fee,
                                         uint64_t price,
                                         uint64_t xfgBurned,
-                                        uint64_t heatMinted) const {
+                                        uint64_t heatMinted,
+                                        uint8_t blockMajorVersion,
+                                        uint64_t& premiumHeat) const {
+  premiumHeat = 0;
   if (price == 0) return false;
   if (xfgBurned == 0 || heatMinted == 0) return false;
 
   uint64_t actualXfgBurned = 0, actualHeatMinted = 0;
-  if (!validateMint(tx, fee, price, actualXfgBurned, actualHeatMinted)) return false;
+  if (!validateMint(tx, fee, price, actualXfgBurned, actualHeatMinted,
+                    blockMajorVersion, premiumHeat)) return false;
 
   if (actualXfgBurned < xfgBurned) return false;
   if (actualHeatMinted != heatMinted) return false;
 
-  uint64_t expectedHeat = expectedHeatFor(actualXfgBurned, price);
-  if (heatMinted > expectedHeat) return false;
+  const uint64_t expectedHeat = expectedHeatFor(actualXfgBurned, price);
+  if (premiumHeat > expectedHeat) return false;
+  if (heatMinted > expectedHeat - premiumHeat) return false;
 
   return true;
 }

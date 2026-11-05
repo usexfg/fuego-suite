@@ -286,7 +286,6 @@ struct TransactionExtraAmmClaim {
 struct TransactionExtraHeatMintAuth {
   uint64_t xfgBurned;
   uint64_t heatMinted;
-  uint64_t liquidityFeeXfg;  // Liquidity fee paid to fund AuntPoL (80% CD yield, 20% bonus vault)
   bool serialize(ISerializer& serializer);
 };
 

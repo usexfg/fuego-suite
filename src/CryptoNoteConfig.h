@@ -303,14 +303,26 @@ const uint32_t TESTNET_CD_MAX_EPOCHS = 72; // testnet maximum
 const std::vector<uint32_t> CD_ALLOWED_TIERS = {6, 18, 36, 72};
 
 const uint64_t BANKING_FEE_BPS_DIVISOR = 10000; // basis point denominator
-// Swap fee split: 69% CD Yield / 11% Bonus Vault / 20% Treasury Reserve
-const uint64_t SWAP_FEE_CD_SHARE_PCT =
-    69; // 69% of epoch swap fees → CD Yield Pool
-// CD yield: 100% of epoch swap fees buy HEAT from pool → CD holders.
-// No protocol cut — CD holders selling rewards back provides natural ratio
-// recovery.
-const uint64_t SWAP_FEE_BONUS_VAULT_PCT =
-    11; // 11% of epoch swap fees → Bonus Vault (yield floor reserve)
+// Atomic-swap fee split, by block major version (percent, divisor 100).
+//
+// v11 routes the whole fee to the two places that pay for the swap product:
+// CD yield and the Bonus Vault that floors it. The treasury leg is retired at
+// v11 — the treasury's Hearth LP position is funded by the mint premium and
+// the SWF instead — but the constant and its accumulator stay so pre-v11
+// blocks replay with the split they actually settled.
+const uint64_t SWAP_FEE_CD_SHARE_PCT_PRE_V11 =
+    69; // pre-v11: 69% of epoch swap fees → CD Yield Pool
+const uint64_t SWAP_FEE_BONUS_VAULT_PCT_PRE_V11 =
+    11; // pre-v11: 11% of epoch swap fees → Bonus Vault (yield floor reserve)
+const uint64_t SWAP_FEE_TREASURY_SHARE_PCT_PRE_V11 =
+    20; // pre-v11: 20% of epoch swap fees → Treasury Reserve
+
+const uint64_t SWAP_FEE_CD_SHARE_PCT_V11 =
+    80; // v11+: 80% of epoch swap fees → CD Yield Pool
+const uint64_t SWAP_FEE_BONUS_VAULT_PCT_V11 =
+    20; // v11+: 20% of epoch swap fees → Bonus Vault (yield floor reserve)
+const uint64_t SWAP_FEE_TREASURY_SHARE_PCT_V11 =
+    0; // v11+: treasury leg retired (kept so legacy counters still replay)
 // Yield floor: in an epoch whose fee-derived rate falls below this, the
 // Bonus Vault tops each CD up to it. Flat — independent of term, since
 // base interest already compounds and so already rewards duration.
@@ -324,13 +336,11 @@ const uint64_t SWAP_FEE_BONUS_VAULT_PCT =
 // which puts the real figure at 0.81%.
 //
 // Target is 0.8%/yr. Raise it only out of observed vault surplus: the
-// floor is a liability, and the vault is fed by 11% of swap fees, so a
-// floor the vault cannot cover degrades to a first-come haircut at
+// floor is a liability, and the vault is fed by the Bonus Vault share of swap
+// fees, so a floor the vault cannot cover degrades to a first-come haircut at
 // settlement rather than paying out.
 const uint64_t CD_YIELD_FLOOR_RATE = 111;
 const uint64_t EPOCHS_PER_YEAR = 73; // 65700 blocks/yr / 900 blocks/epoch
-const uint64_t SWAP_FEE_TREASURY_SHARE_PCT =
-    20; // 20% of epoch swap fees → Treasury Reserve
 
 // Dollar view of the FCI reference. FCI_HEARTHSTONE_INITIAL_CENTS is the single
 // source of truth; consensus reads the integer cents, and this double exists
@@ -399,8 +409,17 @@ const uint64_t DIGM_PEG_HEAT_ATOMIC = 1000000; // 0.10 HEAT in atomic units
 const uint64_t DIGM_MINT_MIN_HEAT = 1000000;   // 0.10 HEAT minimum (1 DIGM)
 
 const uint64_t HEAT_MINT_MIN_HEAT = 1000000; // 0.1 HEAT minimum mint
+// Mint premium: the share of a HEAT mint's declared XFG burn withheld from
+// the minter to fund BOTH legs of the AuntPoL position. It is a haircut
+// inside the burn, not a surcharge: the minter's cap is
+// heat(xfgBurned) - heat(premiumXfg). The withheld premiumXfg is credited to
+// the AuntPoL XFG leg (it is not burned), and the heat(premiumXfg) it buys is
+// minted to the AuntPoL HEAT leg. Total HEAT created still equals
+// heat(xfgBurned): the minter's outputs plus the premium HEAT. The premium
+// HEAT and the premium XFG pair at the launch ratio, so the position is
+// self-funding and needs no SWF transfer.
 const uint64_t HEAT_MINT_PREMIUM_BPS =
-    0; // mint premium disabled for launch (re-enable later if needed)
+    100; // 1.0% of the burn → AuntPoL XFG + HEAT legs (v11+)
 
 // HEAT output bill denominations (descending, in atomic units).
 // Every HEAT mint decomposes into these standard sizes so outputs pool
@@ -628,6 +647,43 @@ inline uint64_t hearthCdSharePct(uint8_t blockMajorVersion) {
 }
 inline uint64_t hearthMakerRebatePct(uint8_t blockMajorVersion) {
   return 100 - hearthCdSharePct(blockMajorVersion);
+}
+
+// Mint premium for a block major version. Consensus paths pass the version of
+// the block they are settling, never a default: a reorg replays the block's
+// own version and must recompute the same premium.
+inline uint64_t heatMintPremiumBps(uint8_t blockMajorVersion) {
+  return blockMajorVersion >= BLOCK_MAJOR_VERSION_11
+             ? parameters::HEAT_MINT_PREMIUM_BPS
+             : 0;
+}
+
+// premiumXfg = xfgBurned × bps / 10000. Split so the multiply cannot overflow
+// for any burn the supply cap allows.
+inline uint64_t heatMintPremiumXfg(uint64_t xfgBurned,
+                                   uint8_t blockMajorVersion) {
+  const uint64_t bps = heatMintPremiumBps(blockMajorVersion);
+  if (bps == 0) return 0;
+  return (xfgBurned / 10000) * bps + ((xfgBurned % 10000) * bps) / 10000;
+}
+
+// Atomic-swap fee split for a block major version. Same rule as the Hearth
+// helpers: the caller passes the version of the block being settled, never a
+// default, so a reorg replays the split that block actually settled.
+inline uint64_t swapFeeCdSharePct(uint8_t blockMajorVersion) {
+  return blockMajorVersion >= BLOCK_MAJOR_VERSION_11
+             ? parameters::SWAP_FEE_CD_SHARE_PCT_V11
+             : parameters::SWAP_FEE_CD_SHARE_PCT_PRE_V11;
+}
+inline uint64_t swapFeeBonusVaultPct(uint8_t blockMajorVersion) {
+  return blockMajorVersion >= BLOCK_MAJOR_VERSION_11
+             ? parameters::SWAP_FEE_BONUS_VAULT_PCT_V11
+             : parameters::SWAP_FEE_BONUS_VAULT_PCT_PRE_V11;
+}
+inline uint64_t swapFeeTreasurySharePct(uint8_t blockMajorVersion) {
+  return blockMajorVersion >= BLOCK_MAJOR_VERSION_11
+             ? parameters::SWAP_FEE_TREASURY_SHARE_PCT_V11
+             : parameters::SWAP_FEE_TREASURY_SHARE_PCT_PRE_V11;
 }
 
 // Orderbook (v11+)

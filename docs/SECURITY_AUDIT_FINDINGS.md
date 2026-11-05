@@ -61,8 +61,8 @@ barrier at the connect site. `popTransaction` was verified type-guarded already,
 |----|-----|-------|----------|--------|
 | R2-1 | **CRITICAL** | Treasury vault spend key derivable from public data | `Treasury/VaultKeys.cpp:19`, `CryptoNoteConfig.h:306` | **FIXED** — pushTransaction rejects any transaction naming a vault key image unconditionally; vault spends are internal-only via `spendUtxos`. Public key is inherent and harmless. |
 | R2-2 | LOW | Wallet files use ChaCha8 (AEAD around it is sound) | `Wallet/WalletGreen.cpp:2293` | **DEFERRED** — see L-2b |
-| R2-3 | INFO | 69/11/20 epoch fee split strands integer dust | `Blockchain.cpp:5082-5084` | OPEN |
-| R2-4 | PROCESS | `fuego-currency` skill doc stale (says 80/20; code is 69/11/20) | `~/.config/opencode/skills/fuego-currency/` | OPEN |
+| R2-3 | INFO | Epoch fee split strands integer dust (floor division; applies to the 80/20 v11 split the same way it did to 69/11/20) | `Blockchain.cpp:5280-5284` | OPEN |
+| R2-4 | PROCESS | `fuego-currency` / `fuego-swaps` / `fuego-heat-and-hearth` skill docs stale (said 69/11/20; code is 80/20 at v11+) | `~/.config/opencode/skills/` | **FIXED** — all three corrected to 80/20 at v11+, 30/70 Hearth at v11 (70/30 at v12), `HEAT_MINT_PREMIUM_BPS = 100` |
 | R2-5 | LOW | Early `return false` from mutating epoch work | `Blockchain.cpp:5104`, `:1233` | OPEN |
 
 ### R2-1 in one paragraph

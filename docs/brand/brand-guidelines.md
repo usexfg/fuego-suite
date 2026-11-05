@@ -28,13 +28,13 @@ ever revealing who you are.
 ## Voice & Tone
 
 - Direct — say the thing, skip the preamble. One claim. One sentence.
-- Precise — exact numbers only. "1% taker fee, 70% to CD yield pool." Not "low fees" or "most revenue distributed."
+- Precise — exact numbers only. "1% taker fee, 30% to the CD yield pool at v11." Not "low fees" or "most revenue distributed."
 - Confident — assert, don't hedge. "XFG earns" not "XFG might help you earn."
 - Private — no personal data in copy, no "your identity" framings. The user is always sovereign.
 - Terse — no filler. No opener sentences. No "In today's world."
 
 ### Do
-- Use exact numbers: 1%, 70%, 69/11/20, 8,000,008.8, ring size 8
+- Use exact numbers: 1%, 30/70 at v11, 80/20, 8,000,008.8, ring size 8
 - Lead with outcome: "Earn without exposure" not "Atomic swap fee distribution"
 - Use present tense for product claims
 - Name things by their canonical names: Hearth, DeXFG, HEAT, XFG, CD
@@ -141,8 +141,8 @@ timestamps, code blocks, terminal output, data labels. Never for body copy.
 ### Real Protocol Yield
 **Claim**: CD yield comes from real network revenue, not token inflation.
 **Proof**:
-- Source 1: Hearth taker fee — 1%, 70% to CD APY pool
-- Source 2: Atomic swap fee — 2% round-trip, 69% to CD yield / 11% Bonus Vault / 20% Treasury
+- Source 1: Hearth taker fee — 1%, 30% to the CD APY pool at v11 (70% at v12); the remainder is the maker rebate
+- Source 2: Atomic swap fee — 2% round-trip, 80% to CD yield / 20% Bonus Vault at v11+ (pre-v11 replay: 69/11/20)
 - No new XFG minted for yield — fixed supply of 8,000,008
 
 ### Sovereign Exchange

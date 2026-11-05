@@ -43,10 +43,11 @@ RESIDUAL_FACT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     ),
     (
         re.compile(
-            r"\b80%\s+of\s+(?:epoch\s+)?(?:atomic\s+)?swap\s+fees\b|\b80%\s+CD\b",
+            r"\b69%\s+of\s+(?:epoch\s+)?(?:atomic\s+)?swap\s+fees\b|\b69%\s+CD\b"
+            r"|\b20%\s+(?:of\s+)?(?:epoch\s+)?(?:atomic\s+)?swap\s+fees\s+(?:→|to|goes\s+to)\s+Treasury",
             re.I,
         ),
-        "80% swap fee split",
+        "pre-v11 swap fee split stated as current",
     ),
     (
         re.compile(
@@ -77,6 +78,16 @@ DENIAL_MARKERS = re.compile(
     r"cannot|do\s+not|don't|removed|no\s+longer|superseded|"
     r"historical|must\s+not|false|inaccurate|legacy"
     r")\b",
+    re.I,
+)
+
+# A versioned rule legitimately states its OLD values, so long as the text says
+# they are old. These markers must name a past version or a replay — "at v11"
+# and "v11+" deliberately do not qualify, because stating the retired split as
+# the v11 split is exactly the error this test exists to catch.
+HISTORICAL_MARKERS = re.compile(
+    r"(pre-v11|before\s+v11|blocks?\s+before|replay|old\s+split|used\s+to"
+    r"|retired)",
     re.I,
 )
 
@@ -119,6 +130,11 @@ def residual_hits(text: str) -> list[tuple[str, str]]:
             start = max(0, m.start() - 120)
             end = min(len(text), m.end() + 120)
             ctx = text[start:end].replace("\n", " ")
+            # A versioned rule may state its retired values as long as the text
+            # marks them as past. Check that before the denial logic, because
+            # "pre-v11 blocks settled X" is a correct statement, not a myth.
+            if HISTORICAL_MARKERS.search(ctx):
+                continue
             # Deny if the match sits in a clear "this is wrong" block
             if DENIAL_MARKERS.search(ctx):
                 # Still fail if the sentence affirms current product without
@@ -144,21 +160,38 @@ class DocsFeeAlignment(unittest.TestCase):
     def setUpClass(cls):
         cls.cfg_text = CONFIG.read_text()
         cls.swap_bps = parse_uint_const("SWAP_FEE_RATE_BPS", cls.cfg_text)
-        cls.cd = parse_uint_const("SWAP_FEE_CD_SHARE_PCT", cls.cfg_text)
-        cls.bonus = parse_uint_const("SWAP_FEE_BONUS_VAULT_PCT", cls.cfg_text)
-        cls.treasury = parse_uint_const("SWAP_FEE_TREASURY_SHARE_PCT", cls.cfg_text)
+        # The split is versioned: v11 retired the treasury leg, pre-v11 blocks
+        # replay the 69/11/20 they settled with.
+        cls.cd = parse_uint_const("SWAP_FEE_CD_SHARE_PCT_V11", cls.cfg_text)
+        cls.bonus = parse_uint_const("SWAP_FEE_BONUS_VAULT_PCT_V11", cls.cfg_text)
+        cls.treasury = parse_uint_const("SWAP_FEE_TREASURY_SHARE_PCT_V11", cls.cfg_text)
+        cls.cd_pre = parse_uint_const("SWAP_FEE_CD_SHARE_PCT_PRE_V11", cls.cfg_text)
+        cls.bonus_pre = parse_uint_const("SWAP_FEE_BONUS_VAULT_PCT_PRE_V11", cls.cfg_text)
+        cls.treasury_pre = parse_uint_const("SWAP_FEE_TREASURY_SHARE_PCT_PRE_V11", cls.cfg_text)
         cls.hearth_bps = parse_uint_const("HEARTH_FEE_BPS", cls.cfg_text)
+        cls.hearth_cd_v11 = parse_uint_const("HEARTH_CD_SHARE_PCT_V11", cls.cfg_text)
+        cls.hearth_cd_v12 = parse_uint_const("HEARTH_CD_SHARE_PCT_V12", cls.cfg_text)
+        cls.mint_premium = parse_uint_const("HEAT_MINT_PREMIUM_BPS", cls.cfg_text)
         cls.pages = nav_page_paths()
         cls.page_texts = {p: p.read_text() for p in cls.pages}
         cls.blob = "\n".join(cls.page_texts.values())
 
     def test_config_matches_expected_product_truth(self):
         self.assertEqual(self.swap_bps, 100)
-        self.assertEqual(self.cd, 69)
-        self.assertEqual(self.bonus, 11)
-        self.assertEqual(self.treasury, 20)
-        self.assertEqual(self.hearth_bps, 100)
+        self.assertEqual(self.cd, 80)
+        self.assertEqual(self.bonus, 20)
+        self.assertEqual(self.treasury, 0)
         self.assertEqual(self.cd + self.bonus + self.treasury, 100)
+        # Pre-v11 replay keeps the split those blocks settled with.
+        self.assertEqual(self.cd_pre, 69)
+        self.assertEqual(self.bonus_pre, 11)
+        self.assertEqual(self.treasury_pre, 20)
+        self.assertEqual(self.cd_pre + self.bonus_pre + self.treasury_pre, 100)
+        self.assertEqual(self.hearth_bps, 100)
+        # v11 pays for depth (maker-heavy); v12 flips to savers.
+        self.assertEqual(self.hearth_cd_v11, 30)
+        self.assertEqual(self.hearth_cd_v12, 70)
+        self.assertEqual(self.mint_premium, 100)
 
     def test_intro_states_heat_mint_then_cd(self):
         intro = (DOCS / "introduction.mdx").read_text()
@@ -167,12 +200,11 @@ class DocsFeeAlignment(unittest.TestCase):
         self.assertIn("mintheatv10", intro_plain)
         self.assertIn("lock heat", intro_plain)
         self.assertIn("cannot lock raw xfg as a cd", intro_plain)
-        self.assertIn("69%", intro)
-        self.assertIn("11%", intro)
+        self.assertIn("80%", intro)
         self.assertIn("20%", intro)
 
     def test_nav_docs_mention_live_fee_splits(self):
-        for n in (self.cd, self.bonus, self.treasury):
+        for n in (self.cd, self.bonus):
             self.assertIn(f"{n}%", self.blob)
         self.assertIn("SWAP_FEE_RATE_BPS", self.blob)
         self.assertIn("HEARTH_FEE_BPS", self.blob)

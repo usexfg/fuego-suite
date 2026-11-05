@@ -1561,9 +1561,21 @@ namespace CryptoNote
         throw std::system_error(make_error_code(error::WRONG_AMOUNT),
                                 "No Hearth TWAP yet — HEAT mints open two blocks into v11");
       }
-      heatMinted = static_cast<uint64_t>(
-          ((static_cast<uint128_t>(xfgBurned) * twap) / parameters::COIN) *
-          (10000 - parameters::WALLET_MINT_TWAP_MARGIN_BPS) / 10000);
+      // The v11 mint premium is a haircut INSIDE the burn, not a surcharge:
+      // heat(premiumXfg) of the burn is minted to the AuntPoL HEAT leg, so the
+      // minter's cap is heat(xfgBurned) - heat(premiumXfg). Match consensus
+      // exactly — it prices the two terms separately, and the truncation can
+      // differ by an atomic from pricing the difference. A non-zero TWAP only
+      // exists once v11 is active, so the premium always applies here.
+      const uint64_t premiumXfg = heatMintPremiumXfg(
+          xfgBurned, BLOCK_MAJOR_VERSION_11);
+      const uint64_t expectedHeat = static_cast<uint64_t>(
+          (static_cast<uint128_t>(xfgBurned) * twap) / parameters::COIN);
+      const uint64_t premiumHeat = static_cast<uint64_t>(
+          (static_cast<uint128_t>(premiumXfg) * twap) / parameters::COIN);
+      const uint64_t userCap =
+          premiumHeat < expectedHeat ? expectedHeat - premiumHeat : 0;
+      heatMinted = userCap * (10000 - parameters::WALLET_MINT_TWAP_MARGIN_BPS) / 10000;
     }
     if (heatMinted == 0) {
       throw std::system_error(make_error_code(error::WRONG_AMOUNT), "HEAT amount too small for current pool rate");
@@ -1919,7 +1931,7 @@ namespace CryptoNote
       throw std::system_error(make_error_code(error::WRONG_PARAMETERS), "CD term blocks underflow");
     }
 
-    const uint64_t neededHeat = amount + bankingFee;
+    const uint64_t neededHeat = amount;
     uint32_t currentHeight = getBlockCount();
     uint64_t totalHeat = 0;
     std::vector<size_t> selectedDepositIds;
@@ -1950,20 +1962,20 @@ namespace CryptoNote
       transaction->addOutput(amount, cdOut);
     }
 
-    // Banking fee → Treasury LP Manager (v11+): burned HEAT credited via the
-    // TreasuryFund tag (no output — the burn is implicit). Pre-v12: dev-fund output.
+    // CD creation fee → dev fund, paid in XFG. It is 0.1% of the HEAT being
+    // deposited and is charged alongside the network fee, not carved out of the
+    // HEAT inputs: the dev fund is an XFG address and has no HEAT claim, so a
+    // HEAT-denominated fee credited to a protocol reserve would not be the dev
+    // fund's money. (v11 used to route it to m_treasuryHeatReserve through a
+    // TreasuryFund tag; the dev fund's share must not fund protocol reserves.)
     if (bankingFee > 0) {
-      uint32_t v11Height = m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11);
-      if (currentHeight >= v11Height) {
-        std::vector<uint8_t> extra;
-        CryptoNote::addTreasuryFundToExtra(extra, 1, bankingFee);
-        CryptoNote::BinaryArray extraData(extra.begin(), extra.end());
-        transaction->appendExtra(extraData);
+      AccountPublicAddress devAddr{};
+      if (m_currency.parseAccountAddressString(CryptoNote::FUEGO_DEV_FUND_ADDRESS, devAddr)) {
+        transaction->addOutput(bankingFee, devAddr);
       } else {
-        AccountPublicAddress devAddr{};
-        if (m_currency.parseAccountAddressString(CryptoNote::FUEGO_DEV_FUND_ADDRESS, devAddr)) {
-          transaction->addOutput(bankingFee, devAddr);
-        }
+        m_logger(WARNING, BRIGHT_YELLOW)
+            << "CD creation fee skipped: FUEGO_DEV_FUND_ADDRESS did not parse";
+        bankingFee = 0;
       }
     }
 
@@ -1979,10 +1991,10 @@ namespace CryptoNote
     transaction->setUnlockTime(0);
 
 
-    // XFG pays the fee — HEAT must balance exactly — and every input goes in
-    // before any is signed.
+    // XFG pays the network fee and the CD creation fee — HEAT must balance
+    // exactly — and every input goes in before any is signed.
     std::vector<InputInfo> keysInfo;
-    prepareXfgInputs(*transaction, fee, mixin, keysInfo);
+    prepareXfgInputs(*transaction, fee + bankingFee, mixin, keysInfo);
     addAndSignInputs(*transaction, keysInfo, prepareHeatSpends(selectedDepositIds, mixin));
 
     transactionHash = Common::podToHex(transaction->getTransactionHash());

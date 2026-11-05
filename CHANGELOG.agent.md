@@ -1,3 +1,69 @@
+## Audit fixes: epoch CD-yield mint priced at TWAP, AuntPoL HEAT-leg saturation, Hearth accumulator carry-forward
+
+**Started**: 2026-11-05
+**Agent**: Claude Opus 5
+**Status**: CODE DONE / BUILD NOT VERIFIED — Boost is not installed in the audit container, so `make -j$(nproc)` could not run. Build + test gates are open; see sign-off.
+**Scope**: `src/CryptoNoteCore/Blockchain.cpp` (3 hunks, 23+/7-)
+
+Audit of HEAT mints / XFG burns, Hearth operations, and AuntPoL funding paths. The
+mint path itself held up: `scanMintTx` bounds every author-controlled sum, the price
+multiply is 128-bit, the premium is guarded before the cap subtraction, and
+`TransactionInputCommitmentTransfer` is rejected as a burn source. AuntPoL pairing is
+ratio-only with excess carried forward, and the reorg path reverses both legs
+symmetrically. Three defects remained.
+
+1. **Epoch CD-yield mint was priced at live spot, not TWAP** (the one live bug).
+   `processBlockEpochWork` ran `ammGetSpotPrice(reserveXfg, reserveHeat)` to convert
+   the XFG-denominated `m_cdYieldPool` into minted HEAT. It is called from
+   `pushBlock` **after** every `pushTransaction` has settled, and epoch boundaries are
+   deterministic, so a swap placed in the epoch-closing block set the rate that priced
+   the mint — bounded by `HEARTH_MAX_BLOCK_PRICE_MOVE_PCT` (2×) but repeatable every
+   epoch, minting unbacked HEAT into `CD_APY_POOL`. This is the same hazard already
+   closed for mints (`validateSettlement` is TWAP-only, no spot fallback) and for the
+   swap CD share (`swapCdShare`); this call site was missed. Now `twapBefore(height)`,
+   which also excludes the current block, so replay is deterministic. The
+   `isEmpty`/reserve guards existed only to make the spot well-defined and are
+   replaced by a bare scope — `poolRate > 0` remains the gate that defers to the next
+   epoch.
+2. **AuntPoL HEAT leg incremented without a bound.** `m_treasuryHeatReserve +=
+   premiumHeat` was a bare `+=` while every sibling counter in the same block
+   saturates explicitly. Workstream 3 task 11 added the real guard in
+   `validateSettlement`, which does gate the mint connect path — so this was
+   defence-in-depth, not a live wrap — but the invariant sat in another function for
+   another purpose. Now saturating, like its siblings.
+3. **Hearth CD accumulator was dropped when its mint was skipped.**
+   `cdHearthFeeAccumulator = 0` ran even when the `m_heatSupply` guard skipped the
+   mint, destroying the accrued fee. Moved inside the success branch, matching the
+   AuntPoL counters that carry unpaired excess forward. Unreachable at current supply
+   bounds; corrected because it silently destroys value.
+
+Two findings were deliberately **not** changed. The connect/disconnect saturation
+asymmetry (connect saturates to `UINT64_MAX`, pop does a saturating subtract) and the
+128-bit headroom in `ammGetOutputAmount`'s triple product are both unreachable at the
+8M8 supply cap — roughly four orders of magnitude of margin — and altering consensus
+arithmetic for an unreachable branch adds split risk without benefit.
+
+### Workstream 1 — audit fixes
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Price the epoch CD-yield conversion with `twapBefore(height)` instead of `ammGetSpotPrice`; drop the reserve guards that only served the spot call | Claude Opus 5 | 2026-11-05 | DONE |
+| 2 | Saturate `m_treasuryHeatReserve += premiumHeat` at connect | Claude Opus 5 | 2026-11-05 | DONE |
+| 3 | Zero `cdHearthFeeAccumulator` only when the CD-yield mint lands | Claude Opus 5 | 2026-11-05 | DONE |
+| 4 | Add a regression test: epoch CD mint unchanged by a spot-moving swap in the closing block | — | — | TODO |
+| 5 | `make -j$(nproc)` on a host with Boost 1.86+ | — | — | TODO |
+
+### Sign-off
+
+| Gate | Status | Signed | Date |
+|------|--------|--------|------|
+| All tasks DONE | NO — tasks 4, 5 open | — | — |
+| Build compiles | NOT VERIFIED — no Boost in audit container | — | — |
+| Tests pass | NOT RUN | — | — |
+| Brace/paren balance + hunk placement reviewed | YES | Claude Opus 5 | 2026-11-05 |
+
+---
+
 ## v11 fee-routing rework: mint premium funds both AuntPoL legs, swap 80/20, versioned Hearth split, CD fee redirect
 
 **Started**: 2026-11-03

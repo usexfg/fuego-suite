@@ -5695,11 +5695,16 @@ bool CryptoNote::Blockchain::processBlockEpochWork(const Block& block, uint32_t 
       // HEAT-denominated (value already debited from LP reserves at settlement).
       uint64_t heatMinted = 0;
       if (m_cdYieldPool > 0) {
-        // Convert XFG-denominated fees at the pool rate. If no rate is available,
-        // defer to the next epoch — never mint 1:1 across units. The consumed
-        // XFG is burned 50/50 (EF/SWF) like every other fee conversion.
-        if (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0 && m_ammPool.reserveXfg > 0) {
-          uint64_t poolRate = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+        // Convert XFG-denominated fees at the TWAP of the blocks below this one,
+        // never the live spot. Epoch work runs after the block's transactions
+        // have settled and epoch boundaries are deterministic, so the live spot
+        // let a swap in the closing block set the rate that prices this mint —
+        // the same hole already closed for mints (see validateSettlement) and
+        // for the swap CD share (see swapCdShare). With no TWAP yet, defer to
+        // the next epoch — never mint 1:1 across units. The consumed XFG is
+        // burned 50/50 (EF/SWF) like every other fee conversion.
+        {
+          const uint64_t poolRate = twapBefore(height);
           if (poolRate > 0) {
             heatMinted = static_cast<uint64_t>(
                 ((uint128_t)m_cdYieldPool * poolRate) / parameters::COIN);
@@ -5741,8 +5746,12 @@ bool CryptoNote::Blockchain::processBlockEpochWork(const Block& block, uint32_t 
           m_vault.addUtxo(vI, heatMinted, AssetType::HEAT,
                           VaultPartition::CD_APY_POOL, blockHash,
                           m_vaultKeys.viewPub);
+          // Consumed only when the mint actually landed. Zeroing it after the
+          // supply guard skipped the mint destroyed the accrued fee outright;
+          // the AuntPoL counters carry unpaired excess forward for the same
+          // reason.
+          m_ammPool.cdHearthFeeAccumulator = 0;
         }
-        m_ammPool.cdHearthFeeAccumulator = 0;
       }
     }
 
@@ -6613,7 +6622,14 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
                     ? UINT64_MAX
                     : m_treasuryLpPendingXfg + premiumXfg;
             if (premiumHeat > 0) {
-              m_treasuryHeatReserve += premiumHeat;
+              // Saturate like every sibling counter in this block. The addition
+              // is bounded upstream by validateSettlement, but that guard lives
+              // in another function for another purpose — a connect path that
+              // ever reaches here without it must not wrap silently.
+              m_treasuryHeatReserve =
+                  (m_treasuryHeatReserve > UINT64_MAX - premiumHeat)
+                      ? UINT64_MAX
+                      : m_treasuryHeatReserve + premiumHeat;
             }
             m_mintPremiumHeatByTx[transactionHash] = premiumHeat;
           }

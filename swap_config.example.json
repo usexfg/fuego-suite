@@ -153,6 +153,37 @@
   "op_host": "mainnet.optimism.io",
   "op_port": 443,
   "op_priv_key": "<64_hex_private_key>",
+
+  // ── Generic-adapter EVM chains (SwapPairCatalog ids 29-45) ────────────────
+  // These have no flat *_host fields; evm_chains is their only config path.
+  // As shipped, each entry is a read-only client and reports not ready. To
+  // lock funds, add to that entry:
+  //   "private_key":   "<64_hex_private_key>",       // funded signer
+  //   "address":       "<0x signer address>",        // set together with the key
+  //   "htlc_registry": "<0x HashedTimelock deployed on THIS chain>",
+  //   "ptlc_registry": "<0x PtlcTimelock deployed on THIS chain>"  // optional
+  // chain_id must equal the catalog value on mainnet. Delete unused entries.
+  // PEAQ parses, but new PEAQ swaps are refused: no verified price feed.
+  "evm_chains": {
+    "linea":     { "rpc_url": "https://rpc.linea.build", "chain_id": 59144 },
+    "zksync":    { "rpc_url": "https://mainnet.era.zksync.io", "chain_id": 324 },
+    "hyperevm":  { "rpc_url": "https://rpc.hyperliquid.xyz/evm", "chain_id": 999 },
+    "ink":       { "rpc_url": "https://rpc-gel.inkonchain.com", "chain_id": 57073 },
+    "rsk":       { "rpc_url": "https://public-node.rsk.co", "chain_id": 30 },
+    "gnosis":    { "rpc_url": "https://rpc.gnosischain.com", "chain_id": 100 },
+    "flare":     { "rpc_url": "https://flare-api.flare.network/ext/C-rpc", "chain_id": 14 },
+    "kaia":      { "rpc_url": "https://public-en.node.kaia.io", "chain_id": 8217 },
+    "scroll":    { "rpc_url": "https://rpc.scroll.io", "chain_id": 534352 },
+    "abstract":  { "rpc_url": "https://rpc.abstract.xyz", "chain_id": 2741 },
+    "plume":     { "rpc_url": "https://rpc.plume.org", "chain_id": 98866 },
+    "soneium":   { "rpc_url": "https://rpc.soneium.org", "chain_id": 1868 },
+    "doma":      { "rpc_url": "https://rpc.doma.xyz", "chain_id": 97477 },
+    "beam":      { "rpc_url": "https://build.onbeam.com/rpc", "chain_id": 4337 },
+    "moonriver": { "rpc_url": "https://rpc.api.moonriver.moonbeam.network", "chain_id": 1285 },
+    "peaq":      { "rpc_url": "https://peaq.api.onfinality.io/public", "chain_id": 3338 },
+    "sei":       { "rpc_url": "https://evm-rpc.sei-apis.com", "chain_id": 1329 }
+  },
+
   // DOGE — Dogecoin (port 22556)
   "doge_host": "127.0.0.1",
   "doge_port": 22556,

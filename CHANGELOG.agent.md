@@ -1,3 +1,41 @@
+## DeXFG: operator template and docs for the 17 generic-adapter EVM pairs (ids 29-45)
+
+**Started**: 2026-11-06
+**Agent**: Claude Code
+**Status**: DONE — contract deployment and the PEAQ feed id are out of scope (see tasks 4-5)
+**Scope**: `swap_config.example.json`, `src/SwapDaemon/tests/test_spv_config_wiring.cpp`, `docs/dexfg/DEXFG_SWAP_CHAINS.md`
+
+The daemon already executes LINEA … SEI through `evm_chains` (generic `EthChainClient`),
+and the relay admits ids 29-45. What was missing was operator-facing: the example config
+had no `evm_chains` block, which is the only config path for these pairs. Fuego Valise is
+promoted in the same change set (its `chains.yaml` 17 chains → `tier: swap`).
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Add an `evm_chains` block for all 17 ADAPTER pairs to `swap_config.example.json` (catalog chain ids, public RPCs, signer/registry fields documented) | Claude Code | 2026-11-06 | DONE; entries parse as read-only clients that report "signer is not configured" until completed |
+| 2 | `test_example_evm_chains_cover_every_adapter_pair`: load the example's block through `loadChainClientConfig` and require exactly the catalog's ADAPTER EVM pairs | Claude Code | 2026-11-06 | DONE; negative control (peaq entry removed) fails with the drift message |
+| 3 | `docs/dexfg/DEXFG_SWAP_CHAINS.md`: all 46 ids with the four gates (STAGED, relay, client readiness, live quote); 31 pass once configured | Claude Code | 2026-11-06 | DONE; table generated from `SwapPairCatalog.h` |
+| 4 | Verified PEAQ feed id in `AssetCatalog.cpp` | — | — | TODO; `coingecko:peaq-2` untested; DeFiLlama and CoinGecko unreachable from this session |
+| 5 | Deploy `HashedTimelock` on each of the 17 chains | — | — | TODO (out of scope) |
+
+Found, not changed (outside scope):
+- GCC rejects `src/CryptoNoteCore/Blockchain.cpp:150,173` (`bool CryptoNote::isHeatwaveTag` /
+  `carriesHeatwaveTag` defined inside `namespace CryptoNote` with an explicit qualifier). Clang
+  accepts it. Every Linux GCC build of this tree fails there.
+- Clang on Linux rejects `src/SwapDaemon/tests/test_price_policy.cpp:497` (initializer list
+  deduces `long long` vs `long`).
+- The example's flat EVM fields (`eth_host`, `eth_wif`, `rh_host`, …) are names
+  `ChainClientConfig.cpp` never reads.
+
+### Sign-off
+
+| Gate | Status | Signed | Date |
+|------|--------|--------|------|
+| `test_swap_pair_catalog` | PASS (Clang 18, Boost 1.83) | Claude Code | 2026-11-06 |
+| `test_spv_config_wiring` | PASS, 14/14 (Clang 18); new TU also compiles under GCC 13 | Claude Code | 2026-11-06 |
+| Full `make -j$(nproc)` | NOT RUN — blocked by the pre-existing GCC error above | — | — |
+| All tasks DONE | NO — tasks 4, 5 open | — | — |
+
 ## Audit fixes: epoch CD-yield mint priced at TWAP, AuntPoL HEAT-leg saturation, Hearth accumulator carry-forward
 
 **Started**: 2026-11-05

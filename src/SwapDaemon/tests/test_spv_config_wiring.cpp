@@ -6,6 +6,8 @@
 
 #include <cassert>
 #include <iostream>
+#include <iterator>
+#include <set>
 #include <string>
 #include <vector>
 #include <fstream>
@@ -210,15 +212,32 @@ static void test_config_spv_overrides_rpc() {
   std::cout << "  PASS: test_config_spv_overrides_rpc" << std::endl;
 }
 
+static std::string exampleConfigPath() {
+  const std::string thisFile = __FILE__;
+  const auto suffix = thisFile.rfind("/src/SwapDaemon/tests/");
+  return suffix == std::string::npos
+      ? "swap_config.example.json"
+      : thisFile.substr(0, suffix) + "/swap_config.example.json";
+}
+
+// Brace-matched, so it assumes no braces inside the object's strings or comments.
+static std::string jsonObjectAfterKey(const std::string& text, const std::string& key) {
+  const auto keyPos = text.find("\"" + key + "\"");
+  if (keyPos == std::string::npos) return "";
+  const auto open = text.find('{', keyPos);
+  if (open == std::string::npos) return "";
+  int depth = 0;
+  for (size_t i = open; i < text.size(); ++i) {
+    if (text[i] == '{') ++depth;
+    if (text[i] == '}' && --depth == 0) return text.substr(open, i - open + 1);
+  }
+  return "";
+}
+
 // The example is commented and contains placeholder keys. Exercise its
 // PulseChain host and port entries as a minimal valid operator config.
 static void test_pulsechain_example_keys() {
-  const std::string thisFile = __FILE__;
-  const auto suffix = thisFile.rfind("/src/SwapDaemon/tests/");
-  const std::string examplePath = suffix == std::string::npos
-      ? "swap_config.example.json"
-      : thisFile.substr(0, suffix) + "/swap_config.example.json";
-  std::ifstream example(examplePath);
+  std::ifstream example(exampleConfigPath());
   expectConfig(example.good(), "Cannot read swap_config.example.json");
   std::string hostLine;
   std::string portLine;
@@ -240,6 +259,37 @@ static void test_pulsechain_example_keys() {
 
   std::remove(path.c_str());
   std::cout << "  PASS: test_pulsechain_example_keys" << std::endl;
+}
+
+// evm_chains is the only config path for generic-adapter pairs, and the
+// example is the operator's only template for it.
+static void test_example_evm_chains_cover_every_adapter_pair() {
+  std::ifstream example(exampleConfigPath());
+  expectConfig(example.good(), "Cannot read swap_config.example.json");
+  const std::string text((std::istreambuf_iterator<char>(example)),
+                         std::istreambuf_iterator<char>());
+  const std::string block = jsonObjectAfterKey(text, "evm_chains");
+  expectConfig(!block.empty(), "example has no evm_chains object");
+
+  const std::string path = writeTempConfig("{\"evm_chains\": " + block + "}");
+  ChainClientConfig cfg;
+  std::string errMsg;
+  expectConfig(loadChainClientConfig(path, cfg, errMsg), "example evm_chains did not load");
+  std::remove(path.c_str());
+
+  std::set<SwapPair> configured;
+  for (const auto& entry : cfg.evmChains) {
+    expectConfig(!entry.rpcUrl.empty(), "example evm_chains entry has no rpc_url");
+    expectConfig(entry.privateKeyHex.empty(), "example evm_chains ships a signing key");
+    configured.insert(entry.pair);
+  }
+  for (const auto& descriptor : SWAP_PAIR_CATALOG) {
+    const bool adapterEvm = descriptor.family == SwapChainFamily::EVM &&
+                            descriptor.support == SwapPairSupport::ADAPTER;
+    expectConfig(configured.count(descriptor.pair) == (adapterEvm ? 1u : 0u),
+                 "example evm_chains drifted from the catalog's ADAPTER EVM pairs");
+  }
+  std::cout << "  PASS: test_example_evm_chains_cover_every_adapter_pair" << std::endl;
 }
 
 static void test_gleec_registry_syntax_preserves_recovery_config() {
@@ -447,6 +497,7 @@ int main() {
   test_config_spv_server_gap();
   test_config_spv_overrides_rpc();
   test_pulsechain_example_keys();
+  test_example_evm_chains_cover_every_adapter_pair();
   test_gleec_registry_syntax_preserves_recovery_config();
   test_chain_clients_expose_spv_mode();
   test_generic_evm_config();

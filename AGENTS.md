@@ -56,9 +56,24 @@ fuego-suite/
   - **DEPRECATED (DO NOT REINTRODUCE)**: COLD deposits (0xCD tag), Embers_Heat deposits, XFG deposits
   - **GUARDRAILS**: APY from protocol fees (not inflation), deposit secret stored locally, different term lengths don't hurt privacy
 
-### Protocol Earnings (ONLY TWO — DO NOT ADD MORE)
+### Protocol Earnings (currently two — more are welcome)
+These are the streams that exist **today**, not a closed list. New revenue streams
+are actively wanted: if you can see one, propose it. What follows are the two
+implemented, and then the hard rules on what may never fund yield.
+
 1. **Hearth swap fee — 1% taker fee** (`HEARTH_FEE_BPS = 100`), on-chain Hearth fills. Split **30% → CD yield / 70% → maker rebate** at v11 (auction makers; the pool/LPs when it is the counterparty). **v12 flips to 70% CD / 30% maker.**
 2. **Atomic swap fee — 1% + 1% = 2% per cross-chain swap** (`SWAP_FEE_RATE_BPS = 100` initiation + claim), via SwapXFG TUI or DeXFG tab in Fuego-Wallet GUI. Split **80% CD Yield / 20% Bonus Vault** at v11+ (pre-v11 replay: 69/11/20, treasury leg now 0).
+
+**Hard rule — what may NEVER fund CD yield or any interest payment:**
+- **Burn-derived value.** A mint burn is already fully claimed by the HEAT issued
+  against it, so paying yield out of it issues a second claim on spent collateral.
+  This covers `bankedBurn`, the Eternal Flame share, and the SWF burn tally.
+- **The CD creation fee.** It is a dev-fund payment, not revenue.
+- **Inflation.** Yield comes from fees earned, never from minting HEAT that nothing
+  backs. A new stream must be value someone actually paid the protocol.
+
+Any genuinely new stream is fine — and should be considered — provided it clears
+that bar: real value received, with no HEAT claim already issued against it.
 
 NOT protocol earnings:
 - **Mint premium**: 1% of the declared burn (`HEAT_MINT_PREMIUM_BPS = 100`, v11+). It is a haircut **inside** the burn, not a surcharge: the withheld `premiumXfg` is the **AuntPoL XFG leg** (`m_treasuryLpPendingXfg`, not burned), and the `heat(premiumXfg)` it buys is the **AuntPoL HEAT leg** (`m_treasuryHeatReserve`). Not revenue — it is the protocol's own LP inventory.

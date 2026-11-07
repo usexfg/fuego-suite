@@ -7,6 +7,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <stdexcept>
 #include "Common/JsonValue.h"
 #include "SwapDaemon/SwapDatabase.h"
@@ -14,6 +15,7 @@
 #include "SwapDaemon/SwapStateMachine.h"
 #include "SwapDaemon/SwapDaemon.h"
 #include "SwapDaemon/RpcServer.h"
+#include "SwapDaemon/IChainClient.h"
 #include "Logging/ConsoleLogger.h"
 #include <HTTP/httplib.h>
 
@@ -27,6 +29,11 @@ struct SwapDaemonTestAccess {
   static bool preparePeerIdentity(SwapParams& params) {
     return SwapDaemon::preparePeerIdentity(params);
   }
+  static void registerChain(SwapDaemon& daemon, SwapPair pair, std::unique_ptr<IChainClient> client) {
+    daemon.m_chainRegistry.registerChain(pair, std::move(client));
+  }
+  static bool handleCtrLocked(SwapDaemon& daemon, SwapStateMachine& sm) { return daemon.handleCtrLocked(sm); }
+  static bool handleWaitingSpv(SwapDaemon& daemon, SwapStateMachine& sm) { return daemon.handleWaitingSpv(sm); }
 };
 struct RpcServerTestAccess {
   static std::string dispatch(RpcServer& server, const std::string& request) {
@@ -769,9 +776,108 @@ static bool test_expected_peer_key_is_not_a_completed_exchange() {
   return true;
 }
 
+namespace {
+struct ScriptedClaim {
+  ChainClientResult claimResult = ChainClientResult::notSent("BTC: lock is not buried in a quorum-verified block");
+  std::string deadlineError;
+  int claimCalls = 0;
+};
+
+class ScriptedClaimClient : public IChainClient {
+public:
+  explicit ScriptedClaimClient(std::shared_ptr<ScriptedClaim> script) : m_script(std::move(script)) {}
+  std::string chainName() const override { return "BTC"; }
+  ChainClientResult lock(const SwapParams&) override { return ChainClientResult::fail("not scripted"); }
+  ChainClientResult verifyLock(const SwapParams&) override { return ChainClientResult::fail("not scripted"); }
+  ChainClientResult claim(const SwapParams&) override {
+    ++m_script->claimCalls;
+    return m_script->claimResult;
+  }
+  ChainClientResult refund(const SwapParams&) override { return ChainClientResult::fail("not scripted"); }
+  ChainClientResult verifyReserveProof(const std::string&, uint64_t, const std::string&) override {
+    return ChainClientResult::fail("not scripted");
+  }
+  std::string claimDeadlineError(const SwapParams&) override { return m_script->deadlineError; }
+
+private:
+  std::shared_ptr<ScriptedClaim> m_script;
+};
+
+SwapStateMachine bobAwaitingClaim(const std::string& swapId, bool spv) {
+  SwapParams params{};
+  params.swapId = swapId;
+  params.pair = SwapPair::BTC;
+  params.role = SwapRole::BOB;
+  params.useSpvVerification = spv;
+  params.requiredConfirmations = 6;
+  std::memset(&params.adaptorSecret, 0x11, sizeof(params.adaptorSecret));
+  SwapStateMachine sm(params);
+  sm.transition(SwapState::ADAPTOR_KEYS_EXCHANGED);
+  sm.transition(SwapState::ADAPTOR_ESCROW_FUNDED);
+  sm.transition(SwapState::ADAPTOR_PRESIGS_READY);
+  sm.transition(SwapState::ADAPTOR_CTR_LOCKED);
+  if (spv) sm.transition(SwapState::ADAPTOR_WAITING_SPV);
+  return sm;
+}
+
+bool claimIntentAfterOneTick(const std::filesystem::path& dir, const std::string& swapId, bool spv,
+                             const std::shared_ptr<ScriptedClaim>& script, bool& claimAttempted) {
+  Logging::ConsoleLogger logger(Logging::FATAL);
+  SwapDaemon daemon("127.0.0.1", 1, dir.string(), logger);
+  SwapDaemonTestAccess::registerChain(daemon, SwapPair::BTC, std::make_unique<ScriptedClaimClient>(script));
+  daemon.database().setEncryptionKey("unsent-claim-test-key");
+  if (!daemon.database().saveSwap(bobAwaitingClaim(swapId, spv))) return false;
+  SwapStateMachine loaded;
+  if (!daemon.database().loadSwap(swapId, loaded)) return false;
+  if (spv) SwapDaemonTestAccess::handleWaitingSpv(daemon, loaded);
+  else SwapDaemonTestAccess::handleCtrLocked(daemon, loaded);
+  SwapStateMachine persisted;
+  if (!daemon.database().loadSwap(swapId, persisted)) return false;
+  claimAttempted = persisted.params().ctrClaimAttempted;
+  return true;
+}
+} // namespace
+
+static bool test_unsent_claim_keeps_xfg_refund_open() {
+  std::cout << "  test_unsent_claim_keeps_xfg_refund_open... ";
+  namespace fs = std::filesystem;
+  const fs::path base = fs::temp_directory_path() /
+      ("xfg-unsent-claim-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+  fs::create_directories(base);
+  bool ok = true;
+  auto expect = [&](bool condition, const std::string& label) {
+    if (!condition) { std::cout << " [" << label << "]"; ok = false; }
+  };
+  for (const bool spv : {false, true}) {
+    const std::string mode = spv ? "spv" : "full";
+    bool attempted = true;
+
+    auto unsent = std::make_shared<ScriptedClaim>();
+    expect(claimIntentAfterOneTick(base / (mode + "-unsent"), "unsent", spv, unsent, attempted) &&
+               unsent->claimCalls == 1 && !attempted,
+           mode + ": a claim refused before sending withdraws the claim intent");
+
+    auto ambiguous = std::make_shared<ScriptedClaim>();
+    ambiguous->claimResult = ChainClientResult::fail("BTC: no server accepted the transaction");
+    expect(claimIntentAfterOneTick(base / (mode + "-ambiguous"), "ambiguous", spv, ambiguous, attempted) &&
+               ambiguous->claimCalls == 1 && attempted,
+           mode + ": a claim that may have reached the network keeps the XFG refund held");
+
+    auto late = std::make_shared<ScriptedClaim>();
+    late->deadlineError = "BTC: lock timeout 120 is within the 18-block claim runway of tip 110";
+    expect(claimIntentAfterOneTick(base / (mode + "-late"), "late", spv, late, attempted) &&
+               late->claimCalls == 0 && !attempted,
+           mode + ": a claim inside the runway is never attempted");
+  }
+  std::error_code ignored;
+  fs::remove_all(base, ignored);
+  std::cout << (ok ? "PASS\n" : "FAIL\n");
+  return ok;
+}
+
 int main() {
   std::cout << "=== SwapStateMachine SPV state tests ===\n\n";
-  int pass = 0, total = 18;
+  int pass = 0, total = 19;
   if (test_spv_waiting_to_confirmed())    ++pass;
   if (test_spv_waiting_stays_on_retry())  ++pass;
   if (test_spv_waiting_to_refunded())     ++pass;
@@ -790,6 +896,7 @@ int main() {
   if (test_amount_protocol_rejects_downgrade_mismatch_and_replay()) ++pass;
   if (test_non_evm_overflow_rejected_before_record_creation()) ++pass;
   if (test_expected_peer_key_is_not_a_completed_exchange()) ++pass;
+  if (test_unsent_claim_keeps_xfg_refund_open()) ++pass;
 
   std::cout << "\n=== " << pass << "/" << total << " tests passed ===\n";
   return (pass == total) ? 0 : 1;

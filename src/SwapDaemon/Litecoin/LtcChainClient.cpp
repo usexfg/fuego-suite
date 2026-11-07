@@ -441,7 +441,7 @@ ChainClientResult LtcChainClient::claim(const SwapParams& params) {
     return claimOrRefundPtlcP2tr(params);
   if (m_fullNode) return m_fullNode->claim(params);
   if (m_spvHtlc) return m_spvHtlc->claim(params);
-  return ChainClientResult::fail("LTC claim: no RPC or SPV client available");
+  return ChainClientResult::notSent("LTC claim: no RPC or SPV client available");
 }
 
 ChainClientResult LtcChainClient::refund(const SwapParams& params) {

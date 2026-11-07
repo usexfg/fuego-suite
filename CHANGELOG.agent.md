@@ -14,16 +14,19 @@
 **Started**: 2026-11-07
 **Agent**: Claude Code
 **Status**: DONE for BTC, LTC, BCH (full node and SPV) and EVM HashedTimelock/PointTimelock; DOGE, DASH, ZEC, KMD, DCR, SOL not changed (not executable today)
-**Scope**: `Ethereum/EthChainClient.{h,cpp}`, `tests/test_evm_claim_deadline.cpp` (new), `src/CMakeLists.txt`, `Utxo/UtxoHtlcSwap.{h,cpp}`, `Utxo/UtxoHtlcFullNode.{h,cpp}`, `Utxo/UtxoHtlcSpv.{h,cpp}`, `IChainClient.h`, `Bitcoin/BtcChainClient.*`, `Litecoin/LtcChainClient.*`, `BitcoinCash/BchChainClient.*`, `SwapDaemon.cpp`, `tests/test_utxo_htlc_spv.cpp`, `tests/test_utxo_regtest.cpp`, `scripts/regtest-node.sh`
+**Scope**: `ChainClientResult.h`, `SwapDaemon.h`, `tests/test_swap_state_machine_spv.cpp`, `Ethereum/EthChainClient.{h,cpp}`, `tests/test_evm_claim_deadline.cpp` (new), `src/CMakeLists.txt`, `Utxo/UtxoHtlcSwap.{h,cpp}`, `Utxo/UtxoHtlcFullNode.{h,cpp}`, `Utxo/UtxoHtlcSpv.{h,cpp}`, `IChainClient.h`, `Bitcoin/BtcChainClient.*`, `Litecoin/LtcChainClient.*`, `BitcoinCash/BchChainClient.*`, `SwapDaemon.cpp`, `tests/test_utxo_htlc_spv.cpp`, `tests/test_utxo_regtest.cpp`, `scripts/regtest-node.sh`
 
 | # | Task | Owner | Date | Status |
 |---|------|-------|------|--------|
 | review | Nothing stopped Bob from claiming after the lock's runway had shrunk: a claim that reveals t but confirms after Alice's refund becomes valid lets Alice refund the coin and still take the XFG with t. Claims now require the claim runway (`claimRunwayBlocks`) between the tip and the lock timeout; the engine asks `claimDeadlineError` before it records a claim attempt, so a late claim leaves the swap on its refund path instead of in manual reconciliation | Claude Code | 2026-11-07 | DONE; `test_utxo_htlc_spv` 154/154; regtest gate extended |
-| gate | `regtest-node.sh`: under `pipefail` an unlisted tarball ended the BCH step without a message; the checksum check now strips CRLF, accepts upper-case hashes and prints the lines naming the tarball | Claude Code | 2026-11-07 | IN PROGRESS (CI) |
-
+| gate | `regtest-node.sh`: under `pipefail` an unlisted tarball ended the BCH step without a message; the checksum check now strips CRLF, accepts upper-case hashes and prints the lines naming the tarball | Claude Code | 2026-11-07 | DONE; both BCHN signer files verify the tarball (CI run 42406275913) |
+| gate | BCHN 28.x expired at the May 15, 2026 BCH upgrade and disables its RPC ("This version of Bitcoin Cash Node is old"); the gate node is now BCHN 29.2.0. The v29.0.0 notes list four CHIPs (P2S, bounded loops, functions, bitwise) that add script features; the parts of the v29.0.0/v29.1.0 notes that could be read mention no change to the P2SH HTLC opcodes, headers, proof of work or ASERT, and v29.1.0 lists no network changes. The full notes were not read (truncated fetch), so the gate run is the evidence | Claude Code | 2026-11-07 | IN PROGRESS (CI) |
+| review | A claim refused before anything was sent (claim runway reached between the engine's check and the build, unburied lock, no fee rate, no key) left `ctrClaimAttempted` set with no txid: the swap sat in manual reconciliation and the XFG refund stayed held although t was never published. Claim results now carry `nothingSent` (`ChainClientResult::notSent`) for every failure before the broadcast call; the engine then withdraws the claim intent (`withdrawUnsentClaimIntent`). A refused or failed broadcast is not `nothingSent`: a server may have seen t | Claude Code | 2026-11-07 | DONE; `test_swap_state_machine_spv` 19/19 (fails without the engine change), `test_utxo_htlc_spv` 154/154 |
 | review | EVM: `verifyLock` and the new `claimDeadlineError` share one on-chain check (`lockOpenUntil`: open lock, agreed amount, recipient and hash or point, timeout at least a floor); the claim check uses tip + claim runway as the floor | Claude Code | 2026-11-07 | DONE; `test_evm_claim_deadline` 4/4 against a scripted JSON-RPC node |
 
 Not changed: DOGE, DASH, ZEC, KMD, DCR and SOL clients have no claim-time check; none can start a swap today.
+
+Not changed: the BTC/LTC Taproot PTLC claim (`p2tr:` chain state) has no claim-runway check; `claimDeadlineError` returns empty for it. EVM claims that fail inside `claimHtlc`/`claimPoint` are not marked `nothingSent`, because the RPC client does not report whether the transaction was submitted.
 
 ## DeXFG remediation 3.1-3.3: PEAQ and GLEEC feed identity, Tempo plan
 

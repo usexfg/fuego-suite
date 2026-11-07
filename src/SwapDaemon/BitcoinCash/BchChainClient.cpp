@@ -68,7 +68,7 @@ ChainClientResult BchChainClient::verifyLock(const SwapParams& params) {
 ChainClientResult BchChainClient::claim(const SwapParams& params) {
   if (m_fullNode) return m_fullNode->claim(params);
   if (m_spvHtlc) return m_spvHtlc->claim(params);
-  return ChainClientResult::fail("BCH claim: no RPC or SPV client available");
+  return ChainClientResult::notSent("BCH claim: no RPC or SPV client available");
 }
 
 ChainClientResult BchChainClient::refund(const SwapParams& params) {

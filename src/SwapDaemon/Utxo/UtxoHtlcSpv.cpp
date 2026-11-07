@@ -138,39 +138,39 @@ bool UtxoHtlcSpv::spendFee(bool claimPath, uint64_t lockValue, uint64_t& fee, st
 }
 
 ChainClientResult UtxoHtlcSpv::broadcastSpend(bool claimPath, const SwapParams& params) {
-  if (!m_hasKey) return ChainClientResult::fail(failurePrefix() + "no valid WIF key");
+  if (!m_hasKey) return ChainClientResult::notSent(failurePrefix() + "no valid WIF key");
   UtxoHtlcSpend spend;
   UtxoHtlcTerms terms;
   if (!lockScriptFromState(params, spend.htlcScript, terms))
-    return ChainClientResult::fail(failurePrefix() + "no lock script in swap state");
+    return ChainClientResult::notSent(failurePrefix() + "no lock script in swap state");
   spend.lock = lockOutpoint(params);
   spend.signingKey = m_key;
   uint64_t tip = 0;
   std::string error;
   if (!syncedTip(tip, error) || !lockOutput(params, spend.htlcScript, spend.lockValue, error))
-    return ChainClientResult::fail(failurePrefix() + error);
+    return ChainClientResult::notSent(failurePrefix() + error);
   // A claim publishes t; it goes out only against a lock a quorum has buried,
   // so a server cannot harvest t from a claim of an output that does not exist.
   SpvTxInclusion inclusion;
   if (claimPath && (!m_spv->verifyTxInclusion(spend.lock.txid, inclusion) || !quorumIncluded(inclusion) ||
                     inclusion.depth < requiredConfirmations(params)))
-    return ChainClientResult::fail(failurePrefix() + "lock is not buried in a quorum-verified block");
+    return ChainClientResult::notSent(failurePrefix() + "lock is not buried in a quorum-verified block");
   spend.destinationScript = spendDestination(m_chain, claimPath, params, m_pubKey);
   if (!spendFee(claimPath, spend.lockValue, spend.fee, error))
-    return ChainClientResult::fail(failurePrefix() + error);
+    return ChainClientResult::notSent(failurePrefix() + error);
 
   std::vector<uint8_t> rawTx;
   if (claimPath) {
     const std::string late = XfgSwap::claimDeadlineError(m_chain, terms, tip);
-    if (!late.empty()) return ChainClientResult::fail(failurePrefix() + late);
+    if (!late.empty()) return ChainClientResult::notSent(failurePrefix() + late);
     if (!buildHtlcClaim(m_chain.encoding, spend, adaptorSecretBytes(params), rawTx, error))
-      return ChainClientResult::fail(failurePrefix() + "claim: " + error);
+      return ChainClientResult::notSent(failurePrefix() + "claim: " + error);
   } else {
     if (tip < terms.timeoutBlock)
-      return ChainClientResult::fail(failurePrefix() + "refund locked until height " +
-                                     std::to_string(terms.timeoutBlock));
+      return ChainClientResult::notSent(failurePrefix() + "refund locked until height " +
+                                        std::to_string(terms.timeoutBlock));
     if (!buildHtlcRefund(m_chain.encoding, spend, rawTx, error))
-      return ChainClientResult::fail(failurePrefix() + "refund: " + error);
+      return ChainClientResult::notSent(failurePrefix() + "refund: " + error);
   }
   std::string txid;
   if (!m_spv->broadcastTx(rawTx, txid))
@@ -180,7 +180,7 @@ ChainClientResult UtxoHtlcSpv::broadcastSpend(bool claimPath, const SwapParams& 
 
 ChainClientResult UtxoHtlcSpv::claim(const SwapParams& params) {
   if (!hasAdaptorSecret(params))
-    return ChainClientResult::fail(failurePrefix() + "claim needs the adaptor secret");
+    return ChainClientResult::notSent(failurePrefix() + "claim needs the adaptor secret");
   return broadcastSpend(true, params);
 }
 

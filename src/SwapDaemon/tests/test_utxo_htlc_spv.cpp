@@ -299,18 +299,23 @@ static void testClaim(const ChainCase& chain) {
 
   spv->broadcasts.clear();
   spv->inclusions[swap.lockTxid] = {true, spv->tip - 1, 2, true};
-  check(contains(bob->claim(swap.params).error, "not buried") && spv->broadcasts.empty(),
+  const ChainClientResult unburied = bob->claim(swap.params);
+  check(contains(unburied.error, "not buried") && unburied.nothingSent && spv->broadcasts.empty(),
         chain.ticker + ": t is never broadcast against an unburied lock");
   spv->inclusions[swap.lockTxid] = {true, spv->tip - 9, 10, true};
   spv->feesReported = false;
-  check(contains(bob->claim(swap.params).error, "no fee rate") && spv->broadcasts.empty(),
+  const ChainClientResult unpriced = bob->claim(swap.params);
+  check(contains(unpriced.error, "no fee rate") && unpriced.nothingSent && spv->broadcasts.empty(),
         chain.ticker + ": no fee rate, no claim");
   spv->feesReported = true;
   spv->acceptBroadcast = false;
-  check(contains(bob->claim(swap.params).error, "no server accepted"), chain.ticker + ": refused broadcast reported");
+  const ChainClientResult refusedBroadcast = bob->claim(swap.params);
+  check(contains(refusedBroadcast.error, "no server accepted") && !refusedBroadcast.nothingSent,
+        chain.ticker + ": a refused broadcast may still have reached a server, so it is not reported as unsent");
   SwapParams noSecret = swap.params;
   std::memset(&noSecret.adaptorSecret, 0, sizeof(noSecret.adaptorSecret));
-  check(contains(bob->claim(noSecret).error, "adaptor secret"), chain.ticker + ": claim needs t");
+  const ChainClientResult withoutSecret = bob->claim(noSecret);
+  check(contains(withoutSecret.error, "adaptor secret") && withoutSecret.nothingSent, chain.ticker + ": claim needs t");
 }
 
 static void testClaimDeadline(const ChainCase& chain) {
@@ -323,7 +328,8 @@ static void testClaimDeadline(const ChainCase& chain) {
   spv->inclusions[swap.lockTxid] = {true, spv->tip - 9, 10, true};
   check(contains(bob->claimDeadlineError(swap.params), "claim runway"),
         chain.ticker + ": the engine is told not to claim inside the runway");
-  check(contains(bob->claim(swap.params).error, "claim runway") && spv->broadcasts.empty(),
+  const ChainClientResult late = bob->claim(swap.params);
+  check(contains(late.error, "claim runway") && late.nothingSent && spv->broadcasts.empty(),
         chain.ticker + ": t is never published once Alice's refund is within the runway");
   spv->tip = swap.timeout - runway;
   check(bob->claimDeadlineError(swap.params).empty(), chain.ticker + ": exactly the runway left still claims");

@@ -323,7 +323,7 @@ ChainClientResult BtcChainClient::claim(const SwapParams& params) {
     return claimOrRefundPtlcP2tr(params);
   if (m_fullNode) return m_fullNode->claim(params);
   if (m_spvHtlc) return m_spvHtlc->claim(params);
-  return ChainClientResult::fail("BTC claim: no RPC or SPV client available");
+  return ChainClientResult::notSent("BTC claim: no RPC or SPV client available");
 }
 
 ChainClientResult BtcChainClient::refund(const SwapParams& params) {

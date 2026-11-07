@@ -406,6 +406,8 @@ public:
   bool handleCtrLocked(SwapStateMachine& sm);
   bool handleEscrowFunded(SwapStateMachine& sm, uint32_t currentHeight);
   bool handleWaitingSpv(SwapStateMachine& sm);
+  bool withdrawUnsentClaimIntent(SwapStateMachine& sm, const std::string& chainName,
+                                 const std::string& reason);
   bool handleSecretConfirmedSpv(SwapStateMachine& sm);
   bool handleAfkAccepted(SwapStateMachine& sm);
 

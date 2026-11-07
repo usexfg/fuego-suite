@@ -54,7 +54,9 @@ case "$chain" in
     cli="$PWD/litecoin-$version/bin/litecoin-cli"
     ;;
   bch)
-    version=28.0.1
+    # BCHN 28.x expired at the May 15, 2026 network upgrade and disables RPC;
+    # the gate runs the current release.
+    version=29.2.0
     # BCHN publishes binaries only on its download host: the tarball under
     # linux/, and one "SHA256SUMS.<version>.asc.<signer>" file per signer.
     base="https://download.bitcoincashnode.org/releases/$version"

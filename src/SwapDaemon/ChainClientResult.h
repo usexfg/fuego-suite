@@ -17,6 +17,7 @@ struct ChainClientResult {
   uint64_t blockHeight = 0;      // block height where tx was confirmed
   uint32_t confirmations = 0;    // number of confirmations (tip - blockHeight + 1)
   uint32_t outputIndex = 0;      // UTXO chains: index of the lock output in txId
+  bool nothingSent = false;
 
   static ChainClientResult ok(const std::string& txId) {
     return {true, false, txId, "", "", false, false, 0, 0};
@@ -26,6 +27,11 @@ struct ChainClientResult {
   }
   static ChainClientResult fail(const std::string& error) {
     return {false, false, "", error, "", false, false, 0, 0};
+  }
+  static ChainClientResult notSent(const std::string& error) {
+    ChainClientResult refused = fail(error);
+    refused.nothingSent = true;
+    return refused;
   }
 };
 

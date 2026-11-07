@@ -251,7 +251,8 @@ static void testRefundAfterTimeout(const Node& node, IChainClient& alice, IChain
   deliverLockNotice(swap, locked);
   node.mine(1);
   check(!bob.verifyLock(swap.bob).success, prefix + "Bob refuses a lock without claim runway");
-  check(!bob.claimDeadlineError(swap.bob).empty() && !bob.claim(swap.bob).success,
+  const ChainClientResult lateClaim = bob.claim(swap.bob);
+  check(!bob.claimDeadlineError(swap.bob).empty() && !lateClaim.success && lateClaim.nothingSent,
         prefix + "Bob never publishes t once Alice's refund is within the claim runway");
   check(!alice.refund(swap.alice).success, prefix + "refund before the timeout refused");
 

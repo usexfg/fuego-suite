@@ -2374,6 +2374,7 @@ bool SwapDaemon::handleCtrLocked(SwapStateMachine& sm) {
       m_logger(Logging::INFO) << "  CTR claim submitted; waiting before revealing secret or paying XFG";
       return true;
     }
+    if (result.nothingSent) return withdrawUnsentClaimIntent(sm, client->chainName(), result.error);
     m_logger(Logging::ERROR) << "  " << client->chainName()
       << " claim outcome unresolved: " << result.error
       << "; keeping swap active for reconciliation";
@@ -2745,6 +2746,16 @@ bool SwapDaemon::finalizeEscrowSpend(SwapStateMachine& sm, const std::string& lo
   return true;
 }
 
+bool SwapDaemon::withdrawUnsentClaimIntent(SwapStateMachine& sm, const std::string& chainName,
+                                           const std::string& reason) {
+  m_logger(Logging::ERROR) << "  " << chainName << " claim not sent: " << reason;
+  if (!saveSwapMerged(sm, [](SwapStateMachine& latest) {
+        if (latest.params().ctrClaimTxId.empty()) latest.params().ctrClaimAttempted = false;
+      }))
+    m_logger(Logging::ERROR) << "  Cannot persist the withdrawn claim intent; XFG refund stays held";
+  return false;
+}
+
 bool SwapDaemon::handleWaitingSpv(SwapStateMachine& sm) {
   SwapParams& params = sm.params();
   const std::string& swapId = params.swapId;
@@ -2778,6 +2789,8 @@ bool SwapDaemon::handleWaitingSpv(SwapStateMachine& sm) {
       params.ctrClaimAttempted = true;
       if (!m_db.saveSwap(sm)) return false;
       auto claimResult = client->claim(params);
+      if (!claimResult.success && claimResult.nothingSent)
+        return withdrawUnsentClaimIntent(sm, client->chainName(), claimResult.error);
       if (!claimResult.success || claimResult.txId.empty()) {
         m_logger(Logging::ERROR) << "  SPV claim outcome unresolved — "
           << claimResult.error << "; inspect CTR chain before refunding XFG";

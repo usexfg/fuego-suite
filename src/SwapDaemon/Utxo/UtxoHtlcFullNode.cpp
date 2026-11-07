@@ -160,16 +160,16 @@ bool UtxoHtlcFullNode::lockedValue(const UtxoOutpoint& lock, uint64_t& value, st
 }
 
 ChainClientResult UtxoHtlcFullNode::broadcastSpend(bool claimPath, const SwapParams& params) {
-  if (!m_hasKey) return ChainClientResult::fail(failurePrefix() + "no valid WIF key");
+  if (!m_hasKey) return ChainClientResult::notSent(failurePrefix() + "no valid WIF key");
   UtxoHtlcSpend spend;
   UtxoHtlcTerms terms;
   if (!lockScriptFromState(params, spend.htlcScript, terms))
-    return ChainClientResult::fail(failurePrefix() + "no lock script in swap state");
+    return ChainClientResult::notSent(failurePrefix() + "no lock script in swap state");
   spend.lock = lockOutpoint(params);
   spend.signingKey = m_key;
   std::string error;
   if (!lockedValue(spend.lock, spend.lockValue, error))
-    return ChainClientResult::fail(failurePrefix() + error);
+    return ChainClientResult::notSent(failurePrefix() + error);
 
   spend.destinationScript = spendDestination(m_chain, claimPath, params, m_pubKey);
   spend.fee = estimateFeeForSize(m_rpc, htlcSpendVirtualSize(m_chain.encoding, claimPath),
@@ -177,19 +177,19 @@ ChainClientResult UtxoHtlcFullNode::broadcastSpend(bool claimPath, const SwapPar
 
   uint64_t tip = 0;
   if (!fetchChainTip(m_rpc, tip, error))
-    return ChainClientResult::fail(failurePrefix() + "chain tip unavailable: " + error);
+    return ChainClientResult::notSent(failurePrefix() + "chain tip unavailable: " + error);
   std::vector<uint8_t> rawTx;
   if (claimPath) {
     const std::string late = XfgSwap::claimDeadlineError(m_chain, terms, tip);
-    if (!late.empty()) return ChainClientResult::fail(failurePrefix() + late);
+    if (!late.empty()) return ChainClientResult::notSent(failurePrefix() + late);
     if (!buildHtlcClaim(m_chain.encoding, spend, adaptorSecretBytes(params), rawTx, error))
-      return ChainClientResult::fail(failurePrefix() + "claim: " + error);
+      return ChainClientResult::notSent(failurePrefix() + "claim: " + error);
   } else {
     if (tip < terms.timeoutBlock)
-      return ChainClientResult::fail(failurePrefix() + "refund locked until height " +
-                                     std::to_string(terms.timeoutBlock));
+      return ChainClientResult::notSent(failurePrefix() + "refund locked until height " +
+                                        std::to_string(terms.timeoutBlock));
     if (!buildHtlcRefund(m_chain.encoding, spend, rawTx, error))
-      return ChainClientResult::fail(failurePrefix() + "refund: " + error);
+      return ChainClientResult::notSent(failurePrefix() + "refund: " + error);
   }
   std::string txid;
   if (!broadcastRawTransaction(m_rpc, rawTx, txid, error))
@@ -199,7 +199,7 @@ ChainClientResult UtxoHtlcFullNode::broadcastSpend(bool claimPath, const SwapPar
 
 ChainClientResult UtxoHtlcFullNode::claim(const SwapParams& params) {
   if (!hasAdaptorSecret(params))
-    return ChainClientResult::fail(failurePrefix() + "claim needs the adaptor secret");
+    return ChainClientResult::notSent(failurePrefix() + "claim needs the adaptor secret");
   return broadcastSpend(true, params);
 }
 

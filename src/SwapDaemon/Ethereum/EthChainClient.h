@@ -15,6 +15,7 @@ public:
   std::string chainName() const override { return m_chainName; }
   std::string readinessError() override;
   std::string readinessErrorFor(SwapRole) override { return readinessError(); }
+  std::string claimDeadlineError(const SwapParams& params) override;
   bool isReadyForNewSwap() override { return readinessError().empty(); }
   uint64_t configuredChainId() const override {
     return m_rpc ? m_rpc->expectedChainId() : 0;
@@ -64,6 +65,9 @@ public:
   bool hasConfirmedClaim(const SwapParams& params) override;
 
 private:
+  bool lockOpenUntil(const SwapParams& params, uint64_t minTimeoutBlock, std::string& error);
+  bool timeoutFloor(uint64_t blocks, uint64_t& floor, std::string& error);
+
   std::unique_ptr<EthRpcClient> m_rpc;
   std::string m_address;
   std::string m_chainName;

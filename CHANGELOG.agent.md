@@ -2,15 +2,17 @@
 
 **Started**: 2026-11-07
 **Agent**: Claude Code
-**Status**: DONE for BTC, LTC, BCH (full node and SPV); EVM and other transports not changed
-**Scope**: `Utxo/UtxoHtlcSwap.{h,cpp}`, `Utxo/UtxoHtlcFullNode.{h,cpp}`, `Utxo/UtxoHtlcSpv.{h,cpp}`, `IChainClient.h`, `Bitcoin/BtcChainClient.*`, `Litecoin/LtcChainClient.*`, `BitcoinCash/BchChainClient.*`, `SwapDaemon.cpp`, `tests/test_utxo_htlc_spv.cpp`, `tests/test_utxo_regtest.cpp`, `scripts/regtest-node.sh`
+**Status**: DONE for BTC, LTC, BCH (full node and SPV) and EVM HashedTimelock/PointTimelock; DOGE, DASH, ZEC, KMD, DCR, SOL not changed (not executable today)
+**Scope**: `Ethereum/EthChainClient.{h,cpp}`, `tests/test_evm_claim_deadline.cpp` (new), `src/CMakeLists.txt`, `Utxo/UtxoHtlcSwap.{h,cpp}`, `Utxo/UtxoHtlcFullNode.{h,cpp}`, `Utxo/UtxoHtlcSpv.{h,cpp}`, `IChainClient.h`, `Bitcoin/BtcChainClient.*`, `Litecoin/LtcChainClient.*`, `BitcoinCash/BchChainClient.*`, `SwapDaemon.cpp`, `tests/test_utxo_htlc_spv.cpp`, `tests/test_utxo_regtest.cpp`, `scripts/regtest-node.sh`
 
 | # | Task | Owner | Date | Status |
 |---|------|-------|------|--------|
 | review | Nothing stopped Bob from claiming after the lock's runway had shrunk: a claim that reveals t but confirms after Alice's refund becomes valid lets Alice refund the coin and still take the XFG with t. Claims now require the claim runway (`claimRunwayBlocks`) between the tip and the lock timeout; the engine asks `claimDeadlineError` before it records a claim attempt, so a late claim leaves the swap on its refund path instead of in manual reconciliation | Claude Code | 2026-11-07 | DONE; `test_utxo_htlc_spv` 154/154; regtest gate extended |
 | gate | `regtest-node.sh`: under `pipefail` an unlisted tarball ended the BCH step without a message; the checksum check now strips CRLF, accepts upper-case hashes and prints the lines naming the tarball | Claude Code | 2026-11-07 | IN PROGRESS (CI) |
 
-Not changed: EVM `HashedTimelock` claims have the same race and no claim-time check yet.
+| review | EVM: `verifyLock` and the new `claimDeadlineError` share one on-chain check (`lockOpenUntil`: open lock, agreed amount, recipient and hash or point, timeout at least a floor); the claim check uses tip + claim runway as the floor | Claude Code | 2026-11-07 | DONE; `test_evm_claim_deadline` 4/4 against a scripted JSON-RPC node |
+
+Not changed: DOGE, DASH, ZEC, KMD, DCR and SOL clients have no claim-time check; none can start a swap today.
 
 ## DeXFG remediation 3.1-3.3: PEAQ and GLEEC feed identity, Tempo plan
 

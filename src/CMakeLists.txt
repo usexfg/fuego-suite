@@ -366,6 +366,17 @@ add_executable(test_swap_keystore
 target_link_libraries(test_swap_keystore PRIVATE
     SwapDaemonLib Common Crypto CryptoNoteCore Serialization OpenSSL::SSL OpenSSL::Crypto)
 
+# UTXO transport gate against a live regtest node (remediation plan 1.9). Not a
+# CTest test: it needs bitcoind/litecoind/BCHN, which CI's regtest job starts.
+add_executable(test_utxo_regtest
+    SwapDaemon/tests/test_utxo_regtest.cpp)
+target_link_libraries(test_utxo_regtest PRIVATE
+    SwapDaemonLib Common Crypto CryptoNoteCore Serialization OpenSSL::SSL OpenSSL::Crypto)
+set_target_properties(test_utxo_regtest PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/src/test_daemons")
+target_compile_options(test_utxo_regtest PRIVATE
+    $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG> $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-UNDEBUG>)
+
 # Swap security audit regressions (AUDIT 1.2/3.2 adaptor binding, 6.1 timeout floor)
 add_executable(test_swap_audit_regressions
     SwapDaemon/tests/test_swap_audit_regressions.cpp)

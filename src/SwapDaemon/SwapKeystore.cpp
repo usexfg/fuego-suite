@@ -131,6 +131,10 @@ bool writeOwnerOnly(const std::string& path, const std::string& contents) {
   umask(previous);
   written = written && chmod(temporary.c_str(), 0600) == 0;
 #endif
+#ifdef _WIN32
+  // rename() does not replace an existing file on Windows.
+  if (written) std::remove(path.c_str());
+#endif
   if (!written || std::rename(temporary.c_str(), path.c_str()) != 0) {
     std::remove(temporary.c_str());
     return false;

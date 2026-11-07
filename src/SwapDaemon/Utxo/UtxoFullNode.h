@@ -93,8 +93,9 @@ bool lookupWalletTxBlockHeight(const UtxoRpcCall& rpc, const std::string& txid,
                                uint64_t& blockHeight, std::string& error);
 bool broadcastRawTransaction(const UtxoRpcCall& rpc, const std::vector<uint8_t>& rawTx,
                              std::string& txid, std::string& error);
-// Fee for a transaction of `virtualBytes`, from estimatesmartfee; never below
-// one base unit per vbyte and never above `ceiling`.
+// Fee for a transaction of `virtualBytes`: estimatesmartfee, never below the
+// node's relay and mempool minimums (nor 1 base unit per vbyte), and capped at
+// `ceiling` unless the minimum alone exceeds it.
 uint64_t estimateFeeForSize(const UtxoRpcCall& rpc, uint64_t virtualBytes, uint64_t ceiling);
 
 struct UtxoNodeHealth {

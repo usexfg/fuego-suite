@@ -1,3 +1,39 @@
+## DeXFG remediation Phase 0: truthful build and CI
+
+**Started**: 2026-11-07
+**Agent**: Claude Code
+**Status**: DONE — CI test step is red on one pre-existing consensus defect (F29), reported, not changed
+**Scope**: `src/CryptoNoteCore/Blockchain.cpp`, `src/SwapDaemon/tests/test_price_policy.cpp`, `CMakeLists.txt`, `src/CMakeLists.txt`, `.github/workflows/check.yml`, five docs pages, `docs/dexfg/SWAP_REMEDIATION_PLAN.md`
+
+Implements `docs/dexfg/SWAP_REMEDIATION_PLAN.md` Phase 0 (tasks 0.1-0.5; 0.6 is in Fuego Valise).
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 0.1 | Drop the explicit `CryptoNote::` qualifiers on `isHeatwaveTag` / `carriesHeatwaveTag` (defined inside `namespace CryptoNote`; no semantic change) | Claude Code | 2026-11-07 | DONE; GCC 13 full build passes |
+| 0.2 | `test_price_policy.cpp:497`: element type `int64_t{-1}` instead of `-1LL` | Claude Code | 2026-11-07 | DONE; Clang 18 full build passes |
+| 0.3 | Register every test daemon with CTest regardless of `BUILD_TESTS`; label `test_price_status`, `test_sol_e2e`, `test_xmr_live_e2e` (live network) `manual`; CI runs `ctest -LE manual` | Claude Code | 2026-11-07 | DONE |
+| 0.4 | Clang 18 Linux CI job with the same build and test steps | Claude Code | 2026-11-07 | DONE |
+| 0.5 | 51 Mintlify broken links: source-path links become code spans with repo paths; two sibling links get correct relative paths | Claude Code | 2026-11-07 | DONE; `mint broken-links` reports none |
+| — | Plan amended to 1.1 with findings F22-F29 and tasks 1.0, 1.10 | Claude Code | 2026-11-07 | DONE |
+
+Found, not changed (outside scope):
+- F29: `test_orderbook_auction` fails on both compilers. `runAuction` floors the v11 CD
+  share per taker fill, so a 2+3 HEAT fee split pays CD holders 0 at v11 (code comment
+  claims cumulative floors). This is consensus code (`OrderbookAuction.cpp`, called from
+  `Blockchain.cpp`); changing it changes v11 settlement and needs an owner decision.
+
+### Sign-off
+
+| Gate | Status | Signed | Date |
+|------|--------|--------|------|
+| Full build, GCC 13.3, Boost 1.83, Ninja (439 steps) | PASS | Claude Code | 2026-11-07 |
+| Full build, Clang 18 | PASS | Claude Code | 2026-11-07 |
+| `ctest -LE manual` (44 tests, both compilers) | 43 PASS, 1 FAIL (`test_orderbook_auction`, F29, pre-existing) | Claude Code | 2026-11-07 |
+| `mint broken-links` | PASS | Claude Code | 2026-11-07 |
+| `mint validate` | NOT RUN — needs internet; CI runs it | — | — |
+| `tests/docs/test_docs_fee_routing_alignment.py` | PASS, 7/7 | Claude Code | 2026-11-07 |
+| MSVC (Windows CI) | NOT RUN locally | — | — |
+
 ## DeXFG: operator template and docs for the 17 generic-adapter EVM pairs (ids 29-45)
 
 **Started**: 2026-11-06

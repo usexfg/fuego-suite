@@ -1120,17 +1120,24 @@ endforeach()
 # Register these with ctest. The loop above only redirected the binaries; without
 # add_test() the whole test_daemons suite was built and runnable by hand but invisible
 # to ctest and therefore to CI. Guarded on TARGET + EXECUTABLE because the list also
-# carries helper targets that produce no runnable test.
-if(BUILD_TESTS)
-  foreach(_tgt IN LISTS _TEST_DAEMON_TARGETS)
-    if(TARGET ${_tgt})
-      get_target_property(_tgt_type ${_tgt} TYPE)
-      if(_tgt_type STREQUAL "EXECUTABLE")
-        add_test(NAME ${_tgt} COMMAND ${_tgt})
+# carries helper targets that produce no runnable test. Targets that need live
+# chains or operator credentials carry the "manual" label; CI runs `ctest -LE manual`.
+set(_MANUAL_TEST_DAEMON_TARGETS
+    test_price_status
+    test_sol_e2e
+    test_xmr_live_e2e
+)
+foreach(_tgt IN LISTS _TEST_DAEMON_TARGETS)
+  if(TARGET ${_tgt})
+    get_target_property(_tgt_type ${_tgt} TYPE)
+    if(_tgt_type STREQUAL "EXECUTABLE")
+      add_test(NAME ${_tgt} COMMAND ${_tgt})
+      if(_tgt IN_LIST _MANUAL_TEST_DAEMON_TARGETS)
+        set_tests_properties(${_tgt} PROPERTIES LABELS manual)
       endif()
     endif()
-  endforeach()
-endif()
+  endif()
+endforeach()
 include(GNUInstallDirs)
 
 install(TARGETS Daemon RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

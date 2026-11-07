@@ -1,6 +1,6 @@
 # DeXFG / SwapXFG Remediation Plan
 
-> Version 1.0 — 2026-11-07 — Status: DRAFT FOR REVIEW
+> Version 1.1 — 2026-11-07 — Status: IN IMPLEMENTATION (1.1 adds F22-F29 and tasks 1.0, 1.10)
 > Scope: the defects found in the 2026-11-06/07 audit of `src/SwapDaemon/`, the swap relay,
 > CI, and Fuego Valise's swap layer, plus implementation recommendations.
 > Every phase that touches source needs a `CHANGELOG.agent.md` task list and sign-off.
@@ -30,6 +30,14 @@
 | F19 | Valise pins suite commit `c787f7f`, which neither remote serves | `git submodule update` fails with "not our ref" | Recursive checkouts and desktop CI cannot fetch the daemon source |
 | F20 | `SwapOfferRelay::getSeedRate` returns 0 above id 6 and labels cases in a different id order | `SwapOfferRelay.cpp:439` | Wrong `getswapprice` display |
 | F21 | Docs CI fails on 51 broken links in 5 files | Docs check, Mintlify `broken-links` | Docs CI is permanently red |
+| F22 | No peer message carries Alice's lock reference (txid or contract id, output index, lock script) to Bob outside the AFK flow | `PeerMessageType` has no lock notice; Bob's `verifyLock` runs with an empty `ctrLockTxId` | No standard-flow swap of any family passes Bob's lock check |
+| F23 | Bob's UTXO claim pubkey is never sent; `SwapParams::ctrPubKey` is never set by the protocol | grep: only read, never assigned | Alice's UTXO lock fails unless an operator supplies the key |
+| F24 | UTXO refunds pay `params.ctrAddress`, which both roles set to Bob's receive address | `BtcRpcClient::refundHtlc(..., params.ctrAddress, ...)`; same in LTC, BCH | Alice's refund pays Bob |
+| F25 | `sendtoaddress` amounts are formatted with `std::to_string(double)`, which keeps 6 decimals | `BtcRpcClient::lockHtlc`, `sendToAddress` | The lock differs from `ctrAmount` by up to 50 base units; short locks fail verification |
+| F26 | Claim and refund spend output 0, but `sendtoaddress` places the HTLC output at a random index | `BtcChainClient::claim`/`refund` pass vout `0` | About half of claims and refunds reference the change output |
+| F27 | P2WSH claim and refund witnesses push `0x51` and `0x00` as the `OP_IF` selector; witness v0 policy (MINIMALIF) requires `0x01` and empty | `BtcHtlcScript::createClaimWitness`, `createRefundWitness` | Bitcoin Core rejects both transactions as non-standard |
+| F28 | The claim signs with `nSequence = 0xFFFFFFFD`, but the raw-tx builder writes `0xFFFFFFFE` | `BtcRpcClient::claim` vs `BtcHtlcScript::buildRawSegWitTx` | Every BTC claim signature is invalid (BIP143 commits to nSequence) |
+| F29 | v11 Hearth CD share is floored per taker fill, so small fills pay CD holders 0 (`test_orderbook_auction` fails) | `OrderbookAuction.cpp` fee split | Consensus code outside the swap path; needs an owner decision before any change |
 
 ## 2. Roles on a UTXO chain (ground truth from code)
 
@@ -61,6 +69,7 @@ standard node RPCs that need neither a wallet watch nor `-txindex`.
 
 | Task | Change | Detail |
 |---|---|---|
+| 1.0 | Lock notice and claim key on the wire (F22, F23) | Bob sends his UTXO claim pubkey in `ADAPTOR_EXCHANGE`. Alice sends a signed `CTR_LOCKED` notice (lock reference, output index, lock script) after funding, for every family. Bob binds the first value and rejects a conflicting one. |
 | 1.1 | Carry the exact lock outpoint | Alice's `lock()` returns `txid:vout` in `chainState`; the wire and `SwapParams` keep it. No more `vout` 0..3 guessing. |
 | 1.2 | Wallet-independent lock verification (F5) | Replace `listUnspent` with `gettxout <txid> <vout>`. Derive the expected `scriptPubKey` from the redeem script (P2WSH) or tweaked key (P2TR); require exact script match, `value >= ctrAmount`, and `confirmations >= requiredConfirmations`. |
 | 1.3 | Remove `importaddress` (F6) | Not needed once 1.2 and 1.4 land. Alice's funding stays on the node wallet (`sendtoaddress`, descriptor-wallet compatible). |
@@ -69,6 +78,7 @@ standard node RPCs that need neither a wallet watch nor `-txindex`.
 | 1.6 | Network parameters (F13) | Replace hard-coded HRPs and address versions with per-network params (mainnet, testnet, regtest). |
 | 1.7 | Readiness from capability (F4) | `isReadyForNewSwap()` returns true only in full-node mode with the RPC reachable, `initialblockdownload == false`, a loaded wallet for Alice's role, and the chain id/genesis matching the configured network. SPV mode stays not-ready until Phase 2. |
 | 1.8 | Relay executability | Remove ids 3, 9, 10 from `isExecutablePair` only after 1.9 passes (see R1 for removing the hand-numbered list). |
+| 1.10 | Spendable claim and refund transactions (F24-F28) | Exact 8-decimal amounts; the lock output index read from the wallet transaction; `0x01`/empty `OP_IF` selectors; the signed `nSequence` written into the transaction; refunds pay the refunder's own key. Sighash and witness bytes checked against vectors produced by an independent implementation (python-bitcoinlib). |
 | 1.9 | Regtest end-to-end gate | Two `xfg-swapd` + fuegod testnet + `bitcoind -regtest` (then LTC, BCH). Scenarios: happy path; Bob withholds the claim txid and Alice still claims XFG; fake lock (wrong script, short amount, unconfirmed) rejected; claim block reorged out; daemon restart mid-scan; Alice timeout refund; Bob timeout refund. Runs in CI. |
 
 Rollout: BTC, then LTC and BCH (same client family), then KMD, DOGE, DASH, ZEC full-node clients

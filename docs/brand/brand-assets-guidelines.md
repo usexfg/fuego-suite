@@ -8,7 +8,7 @@ Companion documents:
 
 | Document | Role |
 |----------|------|
-| [`xfg-marketing-guidelines-copy.md`](./xfg-marketing-guidelines-copy.md) | Positioning, voice, personas, language |
+| [`xfg-marketing-guidelines-copy.md`](../marketing/xfg-marketing-guidelines-copy.md) | Positioning, voice, personas, language |
 | [`market_narrative.md`](./market_narrative.md) | Same narrative spine (strategy mirror) |
 | `dashboard/static/css/style.css` | Live UI token source of truth |
 | `docs/docs.json` | Mintlify docs theme colors |

@@ -324,7 +324,8 @@ static void generateSpvConfig() {
     << tab << R"(// funds the lock, needs a full node (*_rpc_host). KMD and DCR have no SPV)" << nl
     << tab << R"(// header validator and are not generated here.)" << nl
     << tab << R"(// 1. Keep at least three servers per chain, run by different operators, and)" << nl
-    << tab << R"(//    a quorum (spv_min_servers) of at least 2. Server lists:)" << nl
+    << tab << R"(//    a quorum (spv_min_servers) of at least 2; more than half of the listed)" << nl
+    << tab << R"(//    servers must agree even when the quorum is lower. Server lists:)" << nl
     << tab << R"(//      BTC https://raw.githubusercontent.com/spesmilo/electrum/master/electrum/chains/mainnet/servers.json)" << nl
     << tab << R"(//      LTC https://raw.githubusercontent.com/pooler/electrum-ltc/master/electrum_ltc/servers.json)" << nl
     << tab << R"(//      BCH https://raw.githubusercontent.com/Electron-Cash/Electron-Cash/master/electroncash/servers.json)" << nl

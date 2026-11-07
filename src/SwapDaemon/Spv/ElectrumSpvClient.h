@@ -26,7 +26,8 @@ namespace XfgSwap {
 class ElectrumSpvClient : public ISpvClient {
 public:
   // servers: list of "host:port" strings
-  // minServers: minimum servers that must agree for cross-check
+  // minServers: minimum servers that must agree; a strict majority of the
+  // configured servers must agree when that is more
   // checkpointHeight: height of the checkpoint anchor
   // checkpointHashDisplay: checkpoint hash in display (big-endian) hex
   ElectrumSpvClient(

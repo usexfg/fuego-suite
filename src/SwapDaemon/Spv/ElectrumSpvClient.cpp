@@ -148,7 +148,7 @@ bool ElectrumSpvClient::feeRatesPerKilobyte(uint64_t& relayFloor, uint64_t& next
 }
 
 size_t ElectrumSpvClient::quorumSize() const {
-  return m_conns.size() / 2 + 1;
+  return std::max(m_minServers, m_serverAddrs.size() / 2 + 1);
 }
 
 bool ElectrumSpvClient::startFromCheckpoint() {
@@ -623,7 +623,7 @@ bool ElectrumSpvClient::broadcastTx(const std::vector<uint8_t>& rawTx, std::stri
 // =============================================================================
 
 bool ElectrumSpvClient::ensureConnected() {
-  const bool alive = !m_conns.empty() && m_conns.size() >= m_minServers &&
+  const bool alive = !m_conns.empty() && m_conns.size() >= quorumSize() &&
                      std::all_of(m_conns.begin(), m_conns.end(), [](const std::unique_ptr<ElectrumConnection>& conn) {
                        return !conn->call("server.ping", "[]").empty();
                      });
@@ -641,7 +641,7 @@ bool ElectrumSpvClient::connectToServers() {
     if (conn->connect(endpoint) && !conn->call("server.version", R"(["FuegoSPV","1.4"])").empty())
       m_conns.push_back(std::move(conn));
   }
-  return !m_conns.empty() && m_conns.size() >= m_minServers;
+  return !m_conns.empty() && m_conns.size() >= quorumSize();
 }
 
 } // namespace XfgSwap

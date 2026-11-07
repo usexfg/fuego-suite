@@ -350,8 +350,44 @@ static void testStoreRefusesLowDifficultyUnderMainnetRules() {
   check(store.bestTip(height, hash) && height == 0, "the refused headers never reach the tip");
 }
 
+static void testQuorumCountsConfiguredServers() {
+  const Chain honest = extend({}, 0, 30, 0xaa);
+  const Chain forged = extend(honest, 3, 40, 0xee);
+  ChainServer liarA(forged), liarB(forged), honestA(honest);
+  liarA.start();
+  liarB.start();
+  honestA.start();
+  const std::string unreachableA = "127.0.0.1:1";
+  const std::string unreachableB = "127.0.0.1:2";
+  const std::string unreachableC = "127.0.0.1:3";
+
+  {
+    ElectrumSpvClient liarsOnly =
+        regtestClient({liarA.endpoint(), liarB.endpoint(), unreachableA, unreachableB, unreachableC}, honest);
+    check(!liarsOnly.syncHeaders() && tipHash(liarsOnly) != forged.back().hashDisplay(),
+          "two reachable liars of five configured servers are not a quorum");
+  }
+  {
+    ElectrumSpvClient liarsAndOneHonest =
+        regtestClient({liarA.endpoint(), liarB.endpoint(), honestA.endpoint(), unreachableA, unreachableB}, honest);
+    liarsAndOneHonest.syncHeaders();
+    check(tipHash(liarsAndOneHonest) != forged.back().hashDisplay(),
+          "two liars outvoting one honest server of five configured do not move the tip");
+    const std::string forgedTx = loneTxidOf(forged[5]);
+    liarA.proveAt(forgedTx, 5);
+    liarB.proveAt(forgedTx, 5);
+    SpvTxInclusion inclusion;
+    check(!liarsAndOneHonest.verifyTxInclusion(forgedTx, inclusion) || !inclusion.included,
+          "two liars of five configured servers cannot prove a transaction");
+  }
+  liarA.stop();
+  liarB.stop();
+  honestA.stop();
+}
+
 int main() {
   testDishonestServerOutvoted();
+  testQuorumCountsConfiguredServers();
   testReorgFollowsMostWork();
   testFeesAndBroadcastFollowTheQuorum();
   testTrustPolicy();

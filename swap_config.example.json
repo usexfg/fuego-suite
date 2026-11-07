@@ -37,7 +37,8 @@
   //
   // SPV mode (Bob only: verifies Alice's lock and claims it; cannot fund one).
   // New swaps need three servers from different operators, a quorum of at
-  // least 2 and a checkpoint; header rules exist for main and regtest.
+  // least 2 and a checkpoint; header rules exist for main and regtest. More
+  // than half of the listed servers must agree even when the quorum is lower.
   // Server list: https://raw.githubusercontent.com/spesmilo/electrum/master/electrum/chains/mainnet/servers.json
   // Checkpoint: Bitcoin Core 28.1's assume-valid block; any later block you
   // have verified shortens the first header sync.

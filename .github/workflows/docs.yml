@@ -9,6 +9,7 @@ on:
       - "src/SwapDaemon/SwapPairCatalog.h"
       - "src/SwapDaemon/AssetCatalog.cpp"
       - "scripts/gen-dexfg-chain-table.py"
+      - "scripts/probe-feed-ids.py"
       - ".github/workflows/docs.yml"
   pull_request:
     paths:
@@ -18,6 +19,7 @@ on:
       - "src/SwapDaemon/SwapPairCatalog.h"
       - "src/SwapDaemon/AssetCatalog.cpp"
       - "scripts/gen-dexfg-chain-table.py"
+      - "scripts/probe-feed-ids.py"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
 
@@ -41,6 +43,19 @@ jobs:
 
       - name: DeXFG chain table matches the pair catalog
         run: python3 scripts/gen-dexfg-chain-table.py --check
+
+  feed-identity:
+    name: Price feed identity (report only)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unpriced assets' candidate feed ids (remediation plan 3.1, 3.2)
+        run: python3 scripts/probe-feed-ids.py coingecko:peaq-2 coingecko:peaq coingecko:peaq-network coingecko:gleec-coin
+
+      - name: Live audit of the priced asset matrix
+        continue-on-error: true
+        run: python3 scripts/verify-defillama-assets.py
 
   mintlify-validate:
     name: Mintlify validate + broken links

@@ -1,3 +1,16 @@
+## DeXFG remediation 3.1/3.2: PEAQ and GLEEC feed identity
+
+**Started**: 2026-11-07
+**Agent**: Claude Code
+**Status**: IN PROGRESS — live endpoints are unreachable from the agent session; CI reports them
+**Scope**: `scripts/probe-feed-ids.py` (new), `.github/workflows/docs.yml`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 3.1/3.2 | `probe-feed-ids.py` prints what DeFiLlama and CoinGecko return for candidate ids (symbol, price, age, confidence; CoinGecko name, homepage, platforms); the docs workflow runs it for `coingecko:peaq-2`, `peaq`, `peaq-network`, `gleec-coin`, and runs the existing live matrix audit, both report-only | Claude Code | 2026-11-07 | IN PROGRESS (CI) |
+
+Known before the probe: peaq's documentation states PEAQ is the native token of chain 3338 with LayerZero OFT copies pegged 1:1. For GLEEC, CoinMarketCap describes a Komodo-smart-chain coin while chain 11169 is an EVM network with GLEEC as gas; no source found ties the two 1:1, so a `gleec-coin` price would be for an asset not shown to be the swap's settlement asset.
+
 ## DeXFG remediation F32: signed AFK fill results carry the UTXO claim key
 
 **Started**: 2026-11-07

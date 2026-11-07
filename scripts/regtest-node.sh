@@ -20,13 +20,16 @@ cd "$workdir"
 fetch() { curl -fsSL --retry 3 --retry-delay 5 -o "$2" "$1" 2>/dev/null; }
 
 verify_listed() {  # <checksum file> <tarball>; the listed path may carry a directory
-  expected="$(grep -E "^[0-9a-f]{64}[[:space:]]+\*?([^[:space:]]*/)?$2\$" "$1" | head -n 1 | cut -c1-64)"
+  expected="$(tr -d '\r' < "$1" |
+              grep -ioE "^[0-9a-f]{64}[[:space:]]+\*?([^[:space:]]*/)?$2\$" | head -n 1 | cut -c1-64 |
+              tr 'A-F' 'a-f' || true)"
   actual="$(sha256sum "$2" | cut -c1-64)"
   if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
-    echo "$2: SHA-256 $actual is not the published ${expected:-<missing>}" >&2
+    echo "$2: SHA-256 $actual is not the published ${expected:-<not listed in $1>}" >&2
+    grep -n "$2" "$1" >&2 || true
     exit 1
   fi
-  echo "$2: OK"
+  echo "$2: OK ($1)"
 }
 
 case "$chain" in
@@ -70,7 +73,7 @@ case "$chain" in
     fi
     # Every signer's checksum file must list the same hash for the tarball.
     for sums in $sums_files; do
-      fetch "$base/$sums" "$sums"
+      fetch "$base/$sums" "$sums" || { echo "could not download $base/$sums" >&2; exit 1; }
       verify_listed "$sums" "$tarball"
     done
     mkdir -p bchn && tar xzf "$tarball" -C bchn

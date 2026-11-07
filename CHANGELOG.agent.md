@@ -1,12 +1,13 @@
-## DeXFG remediation 3.1/3.2: PEAQ and GLEEC feed identity
+## DeXFG remediation 3.1-3.3: PEAQ and GLEEC feed identity, Tempo plan
 
 **Started**: 2026-11-07
 **Agent**: Claude Code
 **Status**: IN PROGRESS — live endpoints are unreachable from the agent session; CI reports them
-**Scope**: `scripts/probe-feed-ids.py` (new), `.github/workflows/docs.yml`
+**Scope**: `scripts/probe-feed-ids.py` (new), `.github/workflows/docs.yml`, `docs/dexfg/TEMPO_PLAN.md` (new), `docs/dexfg/SWAP_REMEDIATION_PLAN.md`
 
 | # | Task | Owner | Date | Status |
 |---|------|-------|------|--------|
+| 3.3 | `docs/dexfg/TEMPO_PLAN.md`: why Tempo cannot be a pair (no native coin; TIP-20 value; fees in USD TIP-20 tokens), and the work to make it one: chain facts from a node, an issuer-verified settlement token and its feed, a `TokenHashedTimelock` escrow, TIP-403 policy risk, deployment pin, `EthRpcClient` token path with fee-token selection, catalog id 46, Valise, an end-to-end gate | Claude Code | 2026-11-07 | DONE (plan only) |
 | 3.1/3.2 | `probe-feed-ids.py` prints what DeFiLlama and CoinGecko return for candidate ids (symbol, price, age, confidence; CoinGecko name, homepage, platforms); the docs workflow runs it for `coingecko:peaq-2`, `peaq`, `peaq-network`, `gleec-coin`, and runs the existing live matrix audit, both report-only | Claude Code | 2026-11-07 | IN PROGRESS (CI) |
 
 Known before the probe: peaq's documentation states PEAQ is the native token of chain 3338 with LayerZero OFT copies pegged 1:1. For GLEEC, CoinMarketCap describes a Komodo-smart-chain coin while chain 11169 is an EVM network with GLEEC as gas; no source found ties the two 1:1, so a `gleec-coin` price would be for an asset not shown to be the swap's settlement asset.

@@ -135,7 +135,7 @@ Rollout: BTC, then LTC and BCH (same client family), then KMD, DOGE, DASH, ZEC f
 | 2.1 | Done (verified TLS, pinning, loopback-only plaintext; F31) |
 | 2.2-2.6 | Done for Bob (BTC, LTC, BCH mainnet and regtest): header rules, quorum policy, Bob-only SPV path, role-aware readiness. KMD/DCR SPV refused (2.3); Valise stops writing it. Not run against public Electrum servers. Alice over SPV not implemented |
 | 3.1, 3.2 | Open: feed ids need network verification |
-| 3.3 | Open: separate Tempo plan |
+| 3.3 | Plan written (`TEMPO_PLAN.md`); not implemented. Steps 0-2 (chain facts, issuer token, feed) decide whether the pair is worth building |
 | 3.4 | Done (relay `getSeedRate` deleted) |
 | R1, R3, R4, R5, R6, R10 | Done. R4: tooling and default address only; no contract deployed |
 | R2, R8 | Done in Valise (catalog table generated; live readiness shown) |

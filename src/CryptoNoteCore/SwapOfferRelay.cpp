@@ -398,8 +398,9 @@ bool SwapOfferRelay::updateOfferAmount(const std::string& offerId, uint64_t newR
 double SwapOfferRelay::getTwap(uint8_t pair) const {
   std::lock_guard<std::mutex> lock(m_mutex);
   auto it = m_twap.find(pair);
+  // No trades means no price: 0, never an invented constant.
   if (it == m_twap.end() || it->second.sumVolume == 0.0) {
-    return getSeedRate(pair);
+    return 0.0;
   }
   return it->second.sumProduct / it->second.sumVolume;
 }
@@ -409,7 +410,7 @@ CompositePrice SwapOfferRelay::getCompositePrice(uint8_t pair) const {
   auto it = m_composite.find(pair);
   if (it == m_composite.end()) {
     CompositePrice cp;
-    cp.rate = getSeedRate(pair);
+    cp.rate = 0.0;
     cp.sourceCount = 0;
     return cp;
   }
@@ -434,19 +435,6 @@ std::vector<SwapTradeRecord> SwapOfferRelay::getRecentTrades(uint8_t pair, uint3
     }
   }
   return res;
-}
-
-double SwapOfferRelay::getSeedRate(uint8_t pair) {
-  switch (pair) {
-    case 0: return 145.0;   // XMR
-    case 1: return 3500.0;  // ETH
-    case 2: return 450.0;   // BCH
-    case 3: return 170.0;   // SOL
-    case 4: return 1800.0;  // ARB
-    case 5: return 1800.0;  // BASE
-    case 6: return 380.0;   // BNB
-    default: return 0.0;
-  }
 }
 
 std::vector<PendingSwapRequest> SwapOfferRelay::getPendingSwapRequests() {

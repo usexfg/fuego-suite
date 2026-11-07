@@ -253,7 +253,6 @@ public:
   NativeXfgPriceRange getNativeXfgPrice() const;
   std::vector<SwapTradeRecord> getRecentTrades(uint8_t pair, uint32_t limit) const;
 
-  static double getSeedRate(uint8_t pair);
 
   std::vector<PendingSwapRequest> getPendingSwapRequests();
 
@@ -298,16 +297,11 @@ public:
     return XfgSwap::isProtocolSwapPair(pair);
   }
 
-  // Order-book capacity includes reserved SwapPair values, but offers and
-  // orders require an end-to-end executable chain path. The UTXO SPV clients
-  // cannot submit locks and do not validate chain-specific difficulty; their
-  // full-node modes lack independent claim discovery. Keep the numeric gates
-  // in sync with SwapPairCatalog.h. Client readiness adds a per-config gate.
+  // Offers and orders require an end-to-end executable chain path; the
+  // catalog's support level decides (GATED and STAGED pairs are refused).
+  // Client readiness adds a per-config gate.
   static constexpr bool isExecutablePair(uint8_t pair) {
-    return isProtocolPair(pair) && pair != 2 && pair != 3 &&
-           pair != 6 && pair != 8 && pair != 9 && pair != 10 &&
-           pair != 17 && pair != 20 && pair != 21 && pair != 22 &&
-           pair != 24 && pair != 27 && pair != 28;
+    return XfgSwap::isExecutableSwapPair(pair);
   }
 
 private:

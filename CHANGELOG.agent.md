@@ -1,3 +1,25 @@
+## DeXFG remediation: catalog-driven executability (R1), generated chain table (R10), seed rates (3.4), CI build fixes
+
+**Started**: 2026-11-07
+**Agent**: Claude Code
+**Status**: DONE
+**Scope**: `SwapPairCatalog.h`, `SwapOfferRelay.{h,cpp}`, `SwapDaemon.cpp`, `Rpc/RpcServer.cpp`, `Rpc/CoreRpcServerCommandsDefinitions.h`, `swapxfg/app/rpc.go`, `Common/Int128.h`, `CryptoNoteCore/AmmPool.cpp`, seven files missing `<algorithm>`, `scripts/gen-dexfg-chain-table.py`, `docs/dexfg/DEXFG_SWAP_CHAINS.md`, `.github/workflows/docs.yml`, `test_swap_pair_catalog.cpp`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| R1 | New catalog support level GATED (appended; numeric values unchanged) for XMR, BCH, KMD, DCR, BTC, LTC, DOGE, DASH, ZEC; `isExecutableSwapPair` = ACTIVE or ADAPTER; the relay's hand-numbered exclusion list now returns it | Claude Code | 2026-11-07 | DONE; catalog test asserts 9 GATED, all protocol and none executable |
+| R10 | `scripts/gen-dexfg-chain-table.py` generates the counts, gate table and catalog table from `SwapPairCatalog.h` + `AssetCatalog.cpp`; docs CI runs `--check` | Claude Code | 2026-11-07 | DONE |
+| 3.4 | Deleted `SwapOfferRelay::getSeedRate`: its ids were shifted (id 0 SOL priced as XMR) and it stood in for TWAP and composite price on pairs with no trades; both now report 0; `seedRate` dropped from `getswapprice` and the Go client struct | Claude Code | 2026-11-07 | DONE; `go test ./app/` passes |
+| CI | Clang CI (newer libstdc++): `<algorithm>` added to 7 files; MSVC: `uint128_t::operator-(int)` and an explicit `uint128_t` operand in `ammLimitBuyCapacity` | Claude Code | 2026-11-07 | DONE locally; MSVC unverified until CI |
+
+### Sign-off
+
+| Gate | Status | Signed | Date |
+|------|--------|--------|------|
+| Clang 18 build + `ctest -LE manual` | 44/45 (F29 only) | Claude Code | 2026-11-07 |
+| `gen-dexfg-chain-table.py --check` | PASS | Claude Code | 2026-11-07 |
+| MSVC | NOT RUN locally | — | — |
+
 ## DeXFG remediation Phase 1: full-node UTXO swap path for BTC, LTC, BCH (code; e2e gate open)
 
 **Started**: 2026-11-07

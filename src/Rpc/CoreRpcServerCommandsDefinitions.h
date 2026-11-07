@@ -1839,7 +1839,6 @@ struct COMMAND_RPC_GET_SWAP_PRICE {
 
   struct response {
     std::string twap;             // atomic swap TWAP (double as string)
-    std::string seedRate;         // bootstrap seed rate
     std::string compositeRate;    // weighted avg across all sources
     uint32_t    sourceCount;      // how many sources contributed
     std::vector<price_source_rpc_entry> sources;  // source breakdown
@@ -1854,7 +1853,6 @@ struct COMMAND_RPC_GET_SWAP_PRICE {
 
     void serialize(ISerializer& s) {
       KV_MEMBER(twap)
-      KV_MEMBER(seedRate)
       KV_MEMBER(compositeRate)
       KV_MEMBER(sourceCount)
       KV_MEMBER(sources)

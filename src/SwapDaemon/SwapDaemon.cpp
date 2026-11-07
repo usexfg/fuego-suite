@@ -1025,8 +1025,8 @@ SwapDaemon::ChainReadiness SwapDaemon::getChainReadiness(SwapPair pair, bool ref
     return result;
   }
   if (!CryptoNote::SwapOfferRelay::isExecutablePair(descriptor->id)) {
-    result.error = descriptor->support == SwapPairSupport::STAGED
-        ? "implementation is staged" : "pair is not executable";
+    result.error = descriptor->support == SwapPairSupport::GATED
+        ? "transport awaits its end-to-end gate" : "implementation is staged";
     return result;
   }
   if (m_network == "testnet" && descriptor->family != SwapChainFamily::EVM) {
@@ -5306,9 +5306,10 @@ std::string SwapDaemon::buildPriceStatusJson() {
     Common::JsonValue e(Common::JsonValue::OBJECT);
     e.insert("id", static_cast<int64_t>(descriptor.id));
     e.insert("symbol", std::string(descriptor.symbol));
-    e.insert("support", std::string(
-        descriptor.support == SwapPairSupport::ACTIVE ? "ACTIVE"
-        : descriptor.support == SwapPairSupport::STAGED ? "STAGED" : "ADAPTER"));
+    std::string support = swapPairSupportToString(descriptor.support);
+    std::transform(support.begin(), support.end(), support.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+    e.insert("support", support);
     e.insert("status", std::string(quoteStatusToString(q.status)));
     e.insert("referenceRate", Common::JsonValue(q.referenceRate));
     e.insert("rateNum", static_cast<int64_t>(q.rateNum));

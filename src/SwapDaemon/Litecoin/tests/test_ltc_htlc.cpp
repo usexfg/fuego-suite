@@ -3,6 +3,7 @@
 // Tests for LTC HTLC helper methods: P2WSH scriptPubKey generation and
 // SegWit witness-based preimage parsing.
 
+#include <algorithm>
 #include <cassert>
 #include <iostream>
 #include <string>

@@ -2,6 +2,7 @@
 //
 // Tests for KmdHtlcScript and KmdChainClient SPV mode.
 
+#include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <cstring>

@@ -79,7 +79,6 @@ type PairImplied struct {
 
 type SwapPriceResponse struct {
 	Twap          string             `json:"twap"`
-	SeedRate      string             `json:"seedRate"`
 	CompositeRate string             `json:"compositeRate"`
 	SourceCount   uint32             `json:"sourceCount"`
 	Sources       []PriceSourceEntry `json:"sources"`

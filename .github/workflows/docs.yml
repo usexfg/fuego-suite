@@ -6,12 +6,18 @@ on:
       - "docs/**"
       - "tests/docs/**"
       - "src/CryptoNoteConfig.h"
+      - "src/SwapDaemon/SwapPairCatalog.h"
+      - "src/SwapDaemon/AssetCatalog.cpp"
+      - "scripts/gen-dexfg-chain-table.py"
       - ".github/workflows/docs.yml"
   pull_request:
     paths:
       - "docs/**"
       - "tests/docs/**"
       - "src/CryptoNoteConfig.h"
+      - "src/SwapDaemon/SwapPairCatalog.h"
+      - "src/SwapDaemon/AssetCatalog.cpp"
+      - "scripts/gen-dexfg-chain-table.py"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
 
@@ -32,6 +38,9 @@ jobs:
 
       - name: Run docs fee/routing alignment tests
         run: python3 tests/docs/test_docs_fee_routing_alignment.py
+
+      - name: DeXFG chain table matches the pair catalog
+        run: python3 scripts/gen-dexfg-chain-table.py --check
 
   mintlify-validate:
     name: Mintlify validate + broken links

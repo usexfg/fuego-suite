@@ -2,6 +2,7 @@
 //
 // Tests for BTC HTLC helper methods: redeemScriptToP2wshScriptPubKey and parseClaimPreimage.
 
+#include <algorithm>
 #include <cassert>
 #include <cstring>
 #include <iostream>

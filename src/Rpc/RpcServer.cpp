@@ -1236,11 +1236,8 @@ bool RpcServer::on_get_swap_price(const COMMAND_RPC_GET_SWAP_PRICE::request& req
     return true;
   }
 
-  // Per-pair TWAP + seed
-  double twap = m_swapRelay->getTwap(req.pair);
-  double seed = SwapOfferRelay::getSeedRate(req.pair);
-  res.twap = std::to_string(twap);
-  res.seedRate = std::to_string(seed);
+  // Per-pair TWAP from settled trades; 0 when the pair has none.
+  res.twap = std::to_string(m_swapRelay->getTwap(req.pair));
 
   // Composite price with source breakdown
   CompositePrice cp = m_swapRelay->getCompositePrice(req.pair);

@@ -3,6 +3,7 @@
 // Tests for BchChainClient SPV mode: verifyLock, extractSecret, and
 // BchHtlcScript::parseClaimPreimage / redeemScriptToP2shScriptPubKey.
 
+#include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <cstring>

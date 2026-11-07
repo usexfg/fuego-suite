@@ -6,9 +6,9 @@
 #   scripts/regtest-node.sh <btc|ltc|bch> <workdir> <rpc_port>
 #
 # Every binary is checked against a published SHA-256 before it runs: Bitcoin
-# Core and BCHN against the checksum file served beside the release, Litecoin
-# Core against the hash published with its v0.21.4 release. Signatures on the
-# checksum files are not checked.
+# Core against the checksum file served beside the release, Litecoin Core
+# against the hash published with its v0.21.4 release, BCHN against the digest
+# GitHub lists for its release asset. Signatures are not checked.
 set -euo pipefail
 
 chain="$1"
@@ -54,30 +54,13 @@ case "$chain" in
     cli="$PWD/litecoin-$version/bin/litecoin-cli"
     ;;
   bch)
-    # BCHN 28.x expired at the May 15, 2026 network upgrade and disables RPC;
-    # the gate runs the current release.
+    # BCHN 28.x expired at the May 15, 2026 network upgrade and disables RPC.
+    # 29.2.0 is not on download.bitcoincashnode.org and its GitHub release
+    # carries no checksum file; the hash is the digest GitHub lists for the asset.
     version=29.2.0
-    # BCHN publishes binaries only on its download host: the tarball under
-    # linux/, and one "SHA256SUMS.<version>.asc.<signer>" file per signer.
-    base="https://download.bitcoincashnode.org/releases/$version"
-    tarball="$(curl -fsSL --retry 3 "$base/linux/" 2>/dev/null |
-               grep -oE 'href="[^"/]*x86_64[^"/]*linux[^"/]*\.tar\.gz"' | grep -v -i debug |
-               sed -e 's/^href="//' -e 's/"$//' | head -n 1 || true)"
-    sums_files="$(curl -fsSL --retry 3 "$base/" 2>/dev/null |
-                  grep -oE "SHA256SUMS\.$version\.asc\.[A-Za-z0-9_.-]+" | sort -u || true)"
-    if [ -z "$tarball" ] || [ -z "$sums_files" ] || ! fetch "$base/linux/$tarball" "$tarball"; then
-      echo "BCHN $version: tarball or checksum files not found. Listings:" >&2
-      for dir in "$base/" "$base/linux/"; do
-        echo "$dir" >&2
-        curl -sSL "$dir" 2>&1 | grep -oE 'href="[^"]+"' | head -n 40 >&2 || true
-      done
-      exit 1
-    fi
-    # Every signer's checksum file must list the same hash for the tarball.
-    for sums in $sums_files; do
-      fetch "$base/$sums" "$sums" || { echo "could not download $base/$sums" >&2; exit 1; }
-      verify_listed "$sums" "$tarball"
-    done
+    tarball="bitcoin-cash-node-$version-x86_64-linux-gnu.tar.gz"
+    fetch "https://github.com/bitcoin-cash-node/bitcoin-cash-node/releases/download/v$version/$tarball" "$tarball"
+    echo "23bbe9ff749136a9b832a2a59023ce76a5391322c1ea2f4f24b5b91f035081bc  $tarball" | sha256sum -c -
     mkdir -p bchn && tar xzf "$tarball" -C bchn
     daemon="$(find "$PWD/bchn" -path '*/bin/bitcoind' -type f | head -n 1)"
     cli="$(find "$PWD/bchn" -path '*/bin/bitcoin-cli' -type f | head -n 1)"

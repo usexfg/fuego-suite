@@ -1,0 +1,120 @@
+# DeXFG / SwapXFG Remediation Plan
+
+> Version 1.0 — 2026-11-07 — Status: DRAFT FOR REVIEW
+> Scope: the defects found in the 2026-11-06/07 audit of `src/SwapDaemon/`, the swap relay,
+> CI, and Fuego Valise's swap layer, plus implementation recommendations.
+> Every phase that touches source needs a `CHANGELOG.agent.md` task list and sign-off.
+
+## 1. Findings this plan fixes
+
+| # | Finding | Evidence | Effect |
+|---|---|---|---|
+| F1 | GCC rejects `bool CryptoNote::isHeatwaveTag` / `carriesHeatwaveTag` defined inside `namespace CryptoNote` | `src/CryptoNoteCore/Blockchain.cpp:150,173`; Build check fails on Ubuntu, Sanitizers and Windows, on this branch and on `claude/usexfg-merge-redo` | No Linux or Windows build |
+| F2 | Clang on Linux rejects an initializer list (`long long` vs `long`) | `src/SwapDaemon/tests/test_price_policy.cpp:497` | Price policy tests do not build |
+| F3 | CI builds but never runs tests | `check.yml` has no `ctest`; tests are registered at `src/CMakeLists.txt:1129` | Test regressions merge silently |
+| F4 | Every UTXO client hard-codes `isReadyForNewSwap()` to `false`; the relay excludes ids 2,3,6,8,9,10,20,21,22 | `BtcChainClient.h:21` and siblings; `SwapOfferRelay::isExecutablePair` | No UTXO or XMR swap can start |
+| F5 | Full-node mode cannot verify the counterparty lock: `verifyLock` calls `listunspent`, which only sees wallet-watched addresses, and Bob's path never imports the address | `BtcRpcClient.cpp:512`, same in LTC, BCH, DOGE, DASH, ZEC | Verification always fails (fail-closed) |
+| F6 | `importaddress` is the only import path, and descriptor wallets (Bitcoin Core default since 23.0) reject it | `BtcRpcClient.cpp:432` | Watch-only setup breaks on current nodes |
+| F7 | Full-node mode cannot discover a claim; the secret is recovered only from a claim txid the counterparty sends in `SECRET_REVEAL` | `tryExtractClaimedSecret` in all UTXO clients; `SwapDaemon.cpp:4742` | A modified Bob can claim, withhold the txid, then refund XFG after `xfgTimeoutHeight`; Alice loses her coin |
+| F8 | SPV cannot lock (no coin selection or funding) | `BtcChainClient.cpp:104` | Alice's role is impossible over SPV |
+| F9 | SPV headers are checked only against their own `bits`; no retarget rules or `powLimit` | `SpvHeaderStore.cpp` `addHeader` → `SpvHeader::meetsPoW` | A server can serve a low-difficulty fake chain |
+| F10 | SPV uses double-SHA256 and 80-byte headers for every chain | `SpvHeader.cpp:87`; `ElectrumSpvClient.cpp:140`; `NeutrinoSpvClient.cpp:391` | Wrong for LTC (scrypt), KMD (Equihash, ~1487-byte headers), DCR (BLAKE-256, 180-byte headers) |
+| F11 | Electrum TLS never verifies certificates | `ElectrumConnection.cpp:38` `SSL_VERIFY_NONE` | Anyone on the path can impersonate a server; combined with F9 a lock can be forged |
+| F12 | Shipped defaults use one Electrum server per chain, so the multi-server majority cross-check is off | `*_spv_min_servers: 1`; wallet `_defaultServers`; `ElectrumSpvClient.cpp:150` | F9 + F11 need a single attacker |
+| F13 | UTXO clients hard-code mainnet address prefixes | `BtcChainClient.cpp` (`"bc"`), Litecoin (`"ltc"`) | No regtest or testnet harness possible |
+| F14 | EVM registry check accepts any contract whose `getContract` decodes | `EthRpcClient.cpp:455` | A misconfigured or malicious registry passes readiness |
+| F15 | Flat-config ACTIVE EVM chains reuse ETH's registry address | `docs/dexfg/swap-security-residual-notes.md`; `SwapDaemon.cpp` `applyHtlcConfig(..., chainCfg.ethHtlcRegistry, ...)` | Readiness fails unless the same address is deployed on each chain |
+| F16 | The example config's flat EVM keys are never read (`eth_host`, `eth_wif`, `rh_host`) | `swap_config.example.json` vs `ChainClientConfig.cpp` | Operators following it configure nothing |
+| F17 | PEAQ and GLEEC have no verified price feed id | `AssetCatalog.cpp` | New swaps refused for both |
+| F18 | Tempo has no native coin; `HashedTimelock.lock()` escrows native value only | `HashedTimelock.sol` | Tempo cannot be a pair |
+| F19 | Valise pins suite commit `c787f7f`, which neither remote serves | `git submodule update` fails with "not our ref" | Recursive checkouts and desktop CI cannot fetch the daemon source |
+| F20 | `SwapOfferRelay::getSeedRate` returns 0 above id 6 and labels cases in a different id order | `SwapOfferRelay.cpp:439` | Wrong `getswapprice` display |
+| F21 | Docs CI fails on 51 broken links in 5 files | Docs check, Mintlify `broken-links` | Docs CI is permanently red |
+
+## 2. Roles on a UTXO chain (ground truth from code)
+
+- **Alice** holds the UTXO coin and wants XFG. She **locks** on the UTXO chain, must **discover Bob's claim**
+  to learn the adaptor secret, and **refunds** after the UTXO timeout.
+- **Bob** holds XFG and wants the UTXO coin. He funds the XFG escrow, **verifies Alice's lock**, then
+  **claims** on the UTXO chain. He can refund XFG unilaterally after `xfgTimeoutHeight`.
+
+A transport is safe for Alice only with lock + independent claim discovery + refund, and for Bob only
+with independent lock verification + claim.
+
+## 3. Phases
+
+### Phase 0 — Make build and CI truthful (prerequisite for all phases)
+
+| Task | Change | Gate |
+|---|---|---|
+| 0.1 | Drop the redundant `CryptoNote::` qualifier at `Blockchain.cpp:150,173` (no semantic change) | Full build on GCC 13, Clang 18, MSVC |
+| 0.2 | Fix the initializer-list element types at `test_price_policy.cpp:497` | `test_price_policy` builds and passes on GCC and Clang |
+| 0.3 | Add `ctest --output-on-failure` after the Linux build in `check.yml`; mark manual-only targets (`test_sol_e2e`) with a CTest label and exclude it | CI red on any failing registered test |
+| 0.4 | Add a Clang job beside GCC on Linux | Both compilers green |
+| 0.5 | Repair or exclude the 51 broken links (source-path links do not resolve under Mintlify; convert them to code spans) | Docs check green |
+| 0.6 | Valise: repin `fuego-suite` to a commit that exists on `usexfg/fuego-suite` and contains `SwapPairCatalog.h` ids 29-45 | `git submodule update --init` succeeds; `fuegod-wire-check` green |
+
+### Phase 1 — Full-node UTXO path for BTC, LTC, BCH (first executable UTXO pairs)
+
+Full node first: locking already works there, and verification and discovery both reduce to
+standard node RPCs that need neither a wallet watch nor `-txindex`.
+
+| Task | Change | Detail |
+|---|---|---|
+| 1.1 | Carry the exact lock outpoint | Alice's `lock()` returns `txid:vout` in `chainState`; the wire and `SwapParams` keep it. No more `vout` 0..3 guessing. |
+| 1.2 | Wallet-independent lock verification (F5) | Replace `listUnspent` with `gettxout <txid> <vout>`. Derive the expected `scriptPubKey` from the redeem script (P2WSH) or tweaked key (P2TR); require exact script match, `value >= ctrAmount`, and `confirmations >= requiredConfirmations`. |
+| 1.3 | Remove `importaddress` (F6) | Not needed once 1.2 and 1.4 land. Alice's funding stays on the node wallet (`sendtoaddress`, descriptor-wallet compatible). |
+| 1.4 | Independent claim discovery (F7) | Record the lock block height. Scan `getblockhash`/`getblock <hash> 2` from that height to `min(tip, ctrTimeoutBlock + margin)` for an input spending the lock outpoint. Extract the secret from that block's tx hex with the existing `extractSecret` logic. Persist the scan cursor and each scanned block hash in `SwapDatabase`; on a hash mismatch, rewind (reorg). Act only after `requiredConfirmations`. `gettxspendingprevout` (Bitcoin Core 24+, mempool only) is an optional early signal where the node supports it. |
+| 1.5 | `hasConfirmedClaim` from chain data | Implement from 1.4's result, so Alice never depends on `SECRET_REVEAL`. A P2P-supplied txid becomes a hint that is re-verified on chain. |
+| 1.6 | Network parameters (F13) | Replace hard-coded HRPs and address versions with per-network params (mainnet, testnet, regtest). |
+| 1.7 | Readiness from capability (F4) | `isReadyForNewSwap()` returns true only in full-node mode with the RPC reachable, `initialblockdownload == false`, a loaded wallet for Alice's role, and the chain id/genesis matching the configured network. SPV mode stays not-ready until Phase 2. |
+| 1.8 | Relay executability | Remove ids 3, 9, 10 from `isExecutablePair` only after 1.9 passes (see R1 for removing the hand-numbered list). |
+| 1.9 | Regtest end-to-end gate | Two `xfg-swapd` + fuegod testnet + `bitcoind -regtest` (then LTC, BCH). Scenarios: happy path; Bob withholds the claim txid and Alice still claims XFG; fake lock (wrong script, short amount, unconfirmed) rejected; claim block reorged out; daemon restart mid-scan; Alice timeout refund; Bob timeout refund. Runs in CI. |
+
+Rollout: BTC, then LTC and BCH (same client family), then KMD, DOGE, DASH, ZEC full-node clients
+(same RPC pattern). Lift the "testnet counterparty support is EVM-only" gate in
+`getChainReadiness` per chain once its regtest and testnet runs pass.
+
+### Phase 2 — SPV (optional; only after Phase 1)
+
+| Task | Change |
+|---|---|
+| 2.1 | TLS: `SSL_VERIFY_PEER` with the system CA store, plus optional per-server certificate pinning for self-signed Electrum servers (F11) |
+| 2.2 | Per-chain header rules (F9, F10): a chain-params table with header size, PoW hash, `powLimit` and retarget algorithm. BTC: double-SHA256, 2016-block retarget. BCH: double-SHA256, ASERT (aserti3-2d). LTC: scrypt, 2016-block retarget. |
+| 2.3 | KMD and DCR: drop SPV; full node only, unless dedicated Equihash and BLAKE-256 header validators are written and tested |
+| 2.4 | Defaults (F12): new swaps over SPV require at least 3 servers from distinct operators; a single-server SPV client reports not-ready |
+| 2.5 | Bob-only SPV first: verification + claim over SPV, lock stays full-node. Alice-side SPV (coin selection over Electrum, local signing, fee estimation, change) is a separate task. |
+| 2.6 | Tests: fake low-difficulty chain rejected; genuine LTC header vectors accepted under scrypt; certificate mismatch rejected; one dishonest server outvoted by two honest ones |
+
+### Phase 3 — Pricing and catalog gaps
+
+| Task | Change |
+|---|---|
+| 3.1 | PEAQ feed id (F17): `coingecko:peaq` and `coingecko:peaq-network` fail; `coingecko:peaq-2` is the untested candidate. Verify against DeFiLlama and CoinGecko, add it, and flip `test_price_policy`'s PEAQ assertion. |
+| 3.2 | GLEEC feed id (F17): same procedure |
+| 3.3 | Tempo (F18): separate plan — token-escrow HTLC contract (approve + lock of a TIP-20 token), a token lock/claim/refund path in `EthRpcClient`, a chosen settlement token with a verified feed, catalog id 46 |
+| 3.4 | Seed rates (F20): delete `SwapOfferRelay::getSeedRate` or derive it from the catalog and live feeds |
+
+## 4. Implementation recommendations
+
+| # | Recommendation | Why |
+|---|---|---|
+| R1 | Put executability in the catalog: a per-pair capability (or per transport) that `isExecutablePair`, readiness and the wallet all read | The relay's hand-numbered id list is the last mirror of the catalog in the suite |
+| R2 | Generate Valise's `SwapPairSdk`, `ChainTypeSdk` ids and ticker map from the catalog (a `xfg-swapd --dump-catalog` JSON consumed by `tool/gen_chains.dart`); make `SwapPairSdk.fromId` fail closed instead of returning ETH | The wallet still mirrors the catalog by hand in three places, held together only by tests |
+| R3 | Pin the registry's runtime bytecode hash in `hasDeployedHtlcRegistry` (F14) | An ABI probe proves shape, not code |
+| R4 | Deploy `HashedTimelock` and `PointTimelock` through one deterministic CREATE2 deployer so the address is identical on every EVM chain | One address to pin and audit; the current ETH-registry default (F15) becomes correct instead of a readiness failure |
+| R5 | Retire the flat per-chain EVM fields; `evm_chains` becomes the only EVM config path, and the example config's flat EVM section goes (F16) | One parser path, no dead keys |
+| R6 | Wire `PythFeed` into the price worker as the corroborating source | Both current feeds key off the same CoinGecko ids; Pyth metadata already exists in `AssetCatalog.cpp` |
+| R7 | Store chain private keys and the XFG swap key in the OS keychain (Valise) or an encrypted keystore (daemon) instead of plaintext `swap_config.json` | The file is owner-only (0600) but still plaintext at rest |
+| R8 | Valise: show xfg-swapd's live `readinessError` in chain info instead of static text | `ChainInfo.info['BTC']` says "No setup needed" for a chain that cannot start a swap |
+| R9 | One end-to-end harness for every family: regtest UTXO nodes, `anvil` for EVM, `solana-test-validator`, two daemons; a scenario matrix per pair in CI | No pair has recorded two-daemon evidence today; the smoke scripts start no counterparty chain |
+| R10 | Generate `docs/dexfg/DEXFG_SWAP_CHAINS.md`'s table from `SwapPairCatalog.h` with a script checked in CI | The table already drifted once in the wallet docs |
+| R11 | Delete the orphan `src/SwapDaemon/CLV/` adapter or give it a catalog id | Dead code in the swap path |
+
+## 5. Order
+
+1. Phase 0 (blocks everything; no verified build exists today)
+2. Phase 1 for BTC, gated on its regtest matrix; then LTC and BCH
+3. R3 + R4 + R5 (EVM trust and config) in parallel with Phase 1
+4. Phase 3.1 / 3.2 (small, needs network access to the feeds)
+5. Phase 2 and Phase 3.3 (Tempo) only if their value justifies the work

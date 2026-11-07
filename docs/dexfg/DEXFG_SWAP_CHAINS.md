@@ -93,12 +93,27 @@ Rootstock settles in RBTC and Gnosis in xDAI.
 
 ## Configuring an EVM pair
 
-ADAPTER pairs have no flat `*_host` fields; `evm_chains` is their only config path.
-`swap_config.example.json` carries an entry for each, and
-`test_example_evm_chains_cover_every_adapter_pair` fails if that block drifts from the
-catalog. An entry needs `rpc_url`, a funded `private_key` with its `address`, and the
-`htlc_registry` deployed **on that chain**. On mainnet `chain_id` must equal the catalog
-value.
+`evm_chains` is the only EVM config path. The flat `eth_*`, `arb_*`, … fields are retired
+and the loader refuses a config that carries one, naming the `evm_chains` key to use.
+`swap_config.example.json` has an entry for every executable EVM pair except GLEEC and
+Robinhood Chain, which ship no public endpoint; `test_example_evm_chains_cover_every_adapter_pair`
+fails if that block drifts from the catalog. An entry needs `rpc_url`, a funded
+`private_key` with its `address`, and on mainnet a `chain_id` equal to the catalog value.
+
+The HTLC registry is pinned:
+
+- Readiness requires the registry's runtime code to hash (keccak-256) to the committed
+  `HashedTimelock` artifact: `6ac1a8f2…7f99`. Any other contract at the address, including
+  another build of the same source, reports not ready.
+- Without `htlc_registry`, the canonical address `0x13e6f8fb77ce4036438469097828106fd60c73a4`
+  applies: the committed artifact deployed with a zero salt through the deterministic
+  deployment proxy `0x4e59b44847b379578588920ca78fbf26c0b4956c`. `xfg-swapd
+  --print-htlc-deployment <HashedTimelock .bin>` prints the transaction (`to`, `data`) that
+  deploys it. The proxy must exist on the chain; check with `eth_getCode` first.
+- zkSync Era and Abstract (EraVM) derive CREATE2 addresses and compile bytecode
+  differently: they get no default and need `htlc_registry` plus `htlc_registry_code_hash`.
+- The PointTimelock registry (`ptlc_registry`) is not pinned: no compiled artifact is
+  committed for it.
 
 ## Price feeds
 

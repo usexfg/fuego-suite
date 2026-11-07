@@ -44,19 +44,7 @@
 #include "Ethereum/EthChainClient.h"
 #include "Solana/SolChainClient.h"
 #include "Monero/XmrChainClient.h"
-#include "BSC/BscChainClient.h"
-#include "Polygon/PolygonChainClient.h"
 #include "Decred/DcrChainClient.h"
-#include "Gleec/GleecChainClient.h"
-#include "Avalanche/AvalancheChainClient.h"
-#include "Cronos/CronosChainClient.h"
-#include "Bob/BobChainClient.h"
-#include "Monad/MonadChainClient.h"
-#include "Optimism/OptimismChainClient.h"
-#include "Plasma/PlasmaChainClient.h"
-#include "PulseChain/pulse_chain_client.h"
-#include "Unichain/UnichainChainClient.h"
-#include "RobinhoodChain/RobinhoodChainClient.h"
 #include "Doge/DogeChainClient.h"
 #include "Doge/DogeRpcClient.h"
 #include "Dash/DashChainClient.h"
@@ -269,63 +257,6 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
         << chainCfg.bchHost << ":" << chainCfg.bchPort;
     }
   }
-  if (!chainCfg.ethHost.empty()) {
-    std::unique_ptr<EthRpcClient> rpc;
-    if (!chainCfg.ethPrivKeyHex.empty() && !chainCfg.ethAddress.empty()) {
-      rpc = std::make_unique<EthRpcClient>(
-          chainCfg.ethHost, chainCfg.ethPort,
-          chainCfg.ethPrivKeyHex, chainCfg.ethAddress, chainCfg.ethChainId);
-    } else {
-      rpc = std::make_unique<EthRpcClient>(
-          chainCfg.ethHost, chainCfg.ethPort);
-    }
-    applyHtlcConfig(*rpc, chainCfg.ethHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "ETH");
-    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "ETH");
-    m_chainRegistry.registerChain(SwapPair::ETH,
-        std::make_unique<EthChainClient>(std::move(rpc), chainCfg.ethAddress));
-    m_logger(Logging::INFO) << "ETH chain client registered: "
-      << chainCfg.ethHost << ":" << chainCfg.ethPort;
-  }
-  if (!chainCfg.arbHost.empty()) {
-    std::unique_ptr<EthRpcClient> rpc;
-    if (!chainCfg.arbPrivKeyHex.empty() && !chainCfg.arbAddress.empty()) {
-      rpc = std::make_unique<EthRpcClient>(
-          chainCfg.arbHost, chainCfg.arbPort,
-          chainCfg.arbPrivKeyHex, chainCfg.arbAddress, chainCfg.arbChainId,
-          EthTxType::Eip1559);
-    } else {
-      rpc = std::make_unique<EthRpcClient>(chainCfg.arbHost, chainCfg.arbPort);
-    }
-    applyHtlcConfig(*rpc,
-                    chainCfg.arbHtlcBinPath.empty() ? chainCfg.ethHtlcBinPath : chainCfg.arbHtlcBinPath,
-                    chainCfg.ethHtlcRegistry, m_logger, "ARB");
-    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "ARB");
-    m_chainRegistry.registerChain(SwapPair::ARB,
-        std::make_unique<EthChainClient>(std::move(rpc), chainCfg.arbAddress, "ARB"));
-    m_logger(Logging::INFO) << "ARB chain client registered: "
-      << chainCfg.arbHost << ":" << chainCfg.arbPort
-      << " (chainId=" << chainCfg.arbChainId << ")";
-  }
-  if (!chainCfg.baseHost.empty()) {
-    std::unique_ptr<EthRpcClient> rpc;
-    if (!chainCfg.basePrivKeyHex.empty() && !chainCfg.baseAddress.empty()) {
-      rpc = std::make_unique<EthRpcClient>(
-          chainCfg.baseHost, chainCfg.basePort,
-          chainCfg.basePrivKeyHex, chainCfg.baseAddress, chainCfg.baseChainId,
-          EthTxType::Eip1559);
-    } else {
-      rpc = std::make_unique<EthRpcClient>(chainCfg.baseHost, chainCfg.basePort);
-    }
-    applyHtlcConfig(*rpc,
-                    chainCfg.baseHtlcBinPath.empty() ? chainCfg.ethHtlcBinPath : chainCfg.baseHtlcBinPath,
-                    chainCfg.ethHtlcRegistry, m_logger, "BASE");
-    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "BASE");
-    m_chainRegistry.registerChain(SwapPair::BASE,
-        std::make_unique<EthChainClient>(std::move(rpc), chainCfg.baseAddress, "BASE"));
-    m_logger(Logging::INFO) << "BASE chain client registered: "
-      << chainCfg.baseHost << ":" << chainCfg.basePort
-      << " (chainId=" << chainCfg.baseChainId << ")";
-  }
   if (!chainCfg.solHost.empty()) {
     auto rpc = std::make_unique<SolRpcClient>(
         chainCfg.solHost, chainCfg.solPort, chainCfg.solProgramId);
@@ -353,162 +284,12 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
     m_logger(Logging::INFO) << "XMR chain client registered: "
       << chainCfg.xmrDaemonHost << ":" << chainCfg.xmrDaemonPort;
   }
-  if (!chainCfg.bscHost.empty()) {
-    std::unique_ptr<EthRpcClient> rpc;
-    if (!chainCfg.bscPrivKeyHex.empty() && !chainCfg.bscAddress.empty()) {
-      rpc = std::make_unique<EthRpcClient>(
-          chainCfg.bscHost, chainCfg.bscPort,
-          chainCfg.bscPrivKeyHex, chainCfg.bscAddress, chainCfg.bscChainId,
-          EthTxType::Eip1559);
-    } else {
-      rpc = std::make_unique<EthRpcClient>(chainCfg.bscHost, chainCfg.bscPort);
-    }
-    applyHtlcConfig(*rpc,
-                    chainCfg.bscHtlcBinPath.empty() ? chainCfg.ethHtlcBinPath : chainCfg.bscHtlcBinPath,
-                    chainCfg.ethHtlcRegistry, m_logger, "BSC");
-    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "BSC");
-    m_chainRegistry.registerChain(SwapPair::BNB,
-        std::make_unique<BscChainClient>(std::move(rpc), chainCfg.bscAddress));
-    m_logger(Logging::INFO) << "BSC (BNB) chain client registered: "
-      << chainCfg.bscHost << ":" << chainCfg.bscPort
-      << " (chainId=" << chainCfg.bscChainId << ")";
-  }
-  if (!chainCfg.polyHost.empty()) {
-    std::unique_ptr<EthRpcClient> rpc;
-    if (!chainCfg.polyPrivKeyHex.empty() && !chainCfg.polyAddress.empty()) {
-      rpc = std::make_unique<EthRpcClient>(
-          chainCfg.polyHost, chainCfg.polyPort,
-          chainCfg.polyPrivKeyHex, chainCfg.polyAddress, chainCfg.polyChainId,
-          EthTxType::Eip1559);
-    } else {
-      rpc = std::make_unique<EthRpcClient>(chainCfg.polyHost, chainCfg.polyPort);
-    }
-    applyHtlcConfig(*rpc,
-                    chainCfg.polyHtlcBinPath.empty() ? chainCfg.ethHtlcBinPath : chainCfg.polyHtlcBinPath,
-                    chainCfg.ethHtlcRegistry, m_logger, "POLYGON");
-    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "POLYGON");
-    m_chainRegistry.registerChain(SwapPair::POLYGON,
-        std::make_unique<PolygonChainClient>(std::move(rpc), chainCfg.polyAddress));
-    m_logger(Logging::INFO) << "Polygon chain client registered: "
-      << chainCfg.polyHost << ":" << chainCfg.polyPort
-      << " (chainId=" << chainCfg.polyChainId << ")";
-  }
 
-  // GLEEC (Evmos fork) — EVM-compatible
-  if (!chainCfg.gleecHost.empty()) {
-    auto rpc = std::make_unique<EthRpcClient>(chainCfg.gleecHost, chainCfg.gleecPort,
-        chainCfg.gleecPrivKeyHex, chainCfg.gleecAddress,
-        chainCfg.gleecChainId);
-    // Registry must be GLEEC's own: the shared ethHtlcRegistry address is only
-    // valid where CREATE2 put the contract at the same address, which an
-    // Evmos fork does not guarantee.
-    if (chainCfg.gleecHtlcRegistry.empty()) {
-      m_logger(Logging::WARNING) << "GLEEC: gleec_htlc_registry not set — HTLC registry left unconfigured";
-    } else {
-      applyHtlcConfig(*rpc, chainCfg.gleecHtlcBinPath, chainCfg.gleecHtlcRegistry, m_logger, "GLEEC");
-    }
-    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "GLEEC");
-    m_chainRegistry.registerChain(SwapPair::GLEEC,
-        std::make_unique<GleecChainClient>(std::move(rpc), chainCfg.gleecAddress));
-    m_logger(Logging::INFO) << "GLEEC chain client registered: "
-      << chainCfg.gleecHost << ":" << chainCfg.gleecPort
-      << " (chainId=" << chainCfg.gleecChainId << ")";
-  }
-  // ROBINHOOD (Robinhood Chain — EVM L1)
-  if (!chainCfg.rhHost.empty()) {
-    auto rpc = std::make_unique<EthRpcClient>(chainCfg.rhHost, chainCfg.rhPort,
-        chainCfg.rhPrivKeyHex, chainCfg.rhAddress, chainCfg.rhChainId);
-    applyHtlcConfig(*rpc, chainCfg.rhHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "ROBINHOOD");
-    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "ROBINHOOD");
-    m_chainRegistry.registerChain(SwapPair::ROBINHOOD,
-        std::make_unique<RobinhoodChainClient>(std::move(rpc), chainCfg.rhAddress));
-    m_logger(Logging::INFO) << "ROBINHOOD chain client registered: "
-      << chainCfg.rhHost << ":" << chainCfg.rhPort << " (chainId=" << chainCfg.rhChainId << ")";
-  }
-  // AVAX (Avalanche C-Chain)
-  if (!chainCfg.avaxHost.empty()) {
-    auto rpc = std::make_unique<EthRpcClient>(chainCfg.avaxHost, chainCfg.avaxPort,
-        chainCfg.avaxPrivKeyHex, chainCfg.avaxAddress, chainCfg.avaxChainId);
-    applyHtlcConfig(*rpc, chainCfg.avaxHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "AVAX");
-    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "AVAX");
-    m_chainRegistry.registerChain(SwapPair::AVAX,
-        std::make_unique<AvalancheChainClient>(std::move(rpc), chainCfg.avaxAddress));
-    m_logger(Logging::INFO) << "AVAX chain client registered: " << chainCfg.avaxHost << ":" << chainCfg.avaxPort;
-  }
-  // CRO (Cronos)
-  if (!chainCfg.croHost.empty()) {
-    auto rpc = std::make_unique<EthRpcClient>(chainCfg.croHost, chainCfg.croPort,
-        chainCfg.croPrivKeyHex, chainCfg.croAddress, chainCfg.croChainId);
-    applyHtlcConfig(*rpc, chainCfg.croHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "CRO");
-    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "CRO");
-    m_chainRegistry.registerChain(SwapPair::CRO,
-        std::make_unique<CronosChainClient>(std::move(rpc), chainCfg.croAddress));
-    m_logger(Logging::INFO) << "CRO chain client registered: " << chainCfg.croHost << ":" << chainCfg.croPort;
-  }
-  // BOB (Bob — OP Stack BTC rollup)
-  if (!chainCfg.bobHost.empty()) {
-    auto rpc = std::make_unique<EthRpcClient>(chainCfg.bobHost, chainCfg.bobPort,
-        chainCfg.bobPrivKeyHex, chainCfg.bobAddress, chainCfg.bobChainId);
-    applyHtlcConfig(*rpc, chainCfg.bobHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "BOB");
-    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "BOB");
-    m_chainRegistry.registerChain(SwapPair::BOB,
-        std::make_unique<BobChainClient>(std::move(rpc), chainCfg.bobAddress));
-    m_logger(Logging::INFO) << "BOB chain client registered: " << chainCfg.bobHost << ":" << chainCfg.bobPort;
-  }
-  // UNICHAIN
-  if (!chainCfg.uniHost.empty()) {
-    auto rpc = std::make_unique<EthRpcClient>(chainCfg.uniHost, chainCfg.uniPort,
-        chainCfg.uniPrivKeyHex, chainCfg.uniAddress, chainCfg.uniChainId);
-    applyHtlcConfig(*rpc, chainCfg.uniHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "UNICHAIN");
-    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "UNICHAIN");
-    m_chainRegistry.registerChain(SwapPair::UNICHAIN,
-        std::make_unique<UnichainChainClient>(std::move(rpc), chainCfg.uniAddress));
-    m_logger(Logging::INFO) << "UNICHAIN chain client registered: " << chainCfg.uniHost << ":" << chainCfg.uniPort;
-  }
-  // PLASMA
-  if (!chainCfg.plasmaHost.empty()) {
-    auto rpc = std::make_unique<EthRpcClient>(chainCfg.plasmaHost, chainCfg.plasmaPort,
-        chainCfg.plasmaPrivKeyHex, chainCfg.plasmaAddress, chainCfg.plasmaChainId);
-    applyHtlcConfig(*rpc, chainCfg.plasmaHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "PLASMA");
-    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "PLASMA");
-    m_chainRegistry.registerChain(SwapPair::PLASMA,
-        std::make_unique<PlasmaChainClient>(std::move(rpc), chainCfg.plasmaAddress));
-    m_logger(Logging::INFO) << "PLASMA chain client registered: " << chainCfg.plasmaHost << ":" << chainCfg.plasmaPort;
-  }
-  // PULSECHAIN (native PLS — EVM, chain id 369)
-  if (!chainCfg.pulsechain_host.empty()) {
-    auto rpc = std::make_unique<EthRpcClient>(chainCfg.pulsechain_host, chainCfg.pulsechain_port,
-        chainCfg.pulsechain_priv_key_hex, chainCfg.pulsechain_address, chainCfg.pulsechain_chain_id);
-    applyHtlcConfig(*rpc, chainCfg.pulsechain_htlc_bin_path, chainCfg.ethHtlcRegistry, m_logger, "PULSECHAIN");
-    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "PULSECHAIN");
-    m_chainRegistry.registerChain(SwapPair::PULSECHAIN,
-        std::make_unique<PulseChainClient>(std::move(rpc), chainCfg.pulsechain_address));
-    m_logger(Logging::INFO) << "PULSECHAIN chain client registered: " << chainCfg.pulsechain_host << ":" << chainCfg.pulsechain_port;
-  }
-  // MONAD
-  if (!chainCfg.monadHost.empty()) {
-    auto rpc = std::make_unique<EthRpcClient>(chainCfg.monadHost, chainCfg.monadPort,
-        chainCfg.monadPrivKeyHex, chainCfg.monadAddress, chainCfg.monadChainId);
-    applyHtlcConfig(*rpc, chainCfg.monadHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "MONAD");
-    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "MONAD");
-    m_chainRegistry.registerChain(SwapPair::MONAD,
-        std::make_unique<MonadChainClient>(std::move(rpc), chainCfg.monadAddress));
-    m_logger(Logging::INFO) << "MONAD chain client registered: " << chainCfg.monadHost << ":" << chainCfg.monadPort;
-  }
-  // OPTIMISM
-  if (!chainCfg.opHost.empty()) {
-    auto rpc = std::make_unique<EthRpcClient>(chainCfg.opHost, chainCfg.opPort,
-        chainCfg.opPrivKeyHex, chainCfg.opAddress, chainCfg.opChainId);
-    applyHtlcConfig(*rpc, chainCfg.opHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "OPTIMISM");
-    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "OPTIMISM");
-    m_chainRegistry.registerChain(SwapPair::OPTIMISM,
-        std::make_unique<OptimismChainClient>(std::move(rpc), chainCfg.opAddress));
-    m_logger(Logging::INFO) << "OPTIMISM chain client registered: " << chainCfg.opHost << ":" << chainCfg.opPort;
-  }
 
-  // Data-driven EVM registrations. These entries deliberately run after the
-  // legacy flat fields so a catalog-keyed entry supersedes an old per-chain
-  // stanza without adding another subclass or another field cluster.
+  // Every EVM pair is registered from its evm_chains entry. Without an
+  // explicit htlc_registry the canonical CREATE2 address applies, except on
+  // EraVM chains (zkSync Era, Abstract), whose CREATE2 derivation and
+  // bytecode differ; readiness still requires the pinned code at the address.
   for (const auto& evmCfg : chainCfg.evmChains) {
     const auto* descriptor = swapPairDescriptor(evmCfg.pair);
     if (!descriptor || descriptor->family != SwapChainFamily::EVM ||
@@ -529,8 +310,12 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
     } else {
       rpc = std::make_unique<EthRpcClient>(evmCfg.rpcUrl, 0);
     }
-    applyHtlcConfig(*rpc, evmCfg.htlcBinPath, evmCfg.htlcRegistry,
-                    m_logger, descriptor->symbol);
+    if (!evmCfg.htlcRegistryCodeHash.empty())
+      rpc->setHtlcRegistryCodeHash(evmCfg.htlcRegistryCodeHash);
+    const bool eraVm = evmCfg.pair == SwapPair::ZKSYNC || evmCfg.pair == SwapPair::ABSTRACT;
+    const std::string registry = !evmCfg.htlcRegistry.empty() || eraVm
+        ? evmCfg.htlcRegistry : std::string(CANONICAL_HTLC_REGISTRY_ADDRESS);
+    applyHtlcConfig(*rpc, evmCfg.htlcBinPath, registry, m_logger, descriptor->symbol);
     applyPtlcConfig(*rpc, evmCfg.ptlcRegistry, m_logger, descriptor->symbol);
     m_chainRegistry.registerChain(evmCfg.pair,
         std::make_unique<EthChainClient>(std::move(rpc), evmCfg.address,

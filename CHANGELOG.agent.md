@@ -1,3 +1,24 @@
+## DeXFG remediation: EVM registry pin (R3), deterministic deployment (R4), evm_chains only (R5)
+
+**Started**: 2026-11-07
+**Agent**: Claude Code
+**Status**: DONE — contracts are not deployed (out of scope); PointTimelock is not pinned (no committed artifact)
+**Scope**: `Ethereum/EthRpcClient.{h,cpp}`, `Ethereum/EthChainClient.cpp`, `ChainClientConfig.cpp`, `SwapDaemon.{h,cpp}`, `main.cpp`, `tests/test_htlc_registry_pin.cpp` (new), `tests/test_spv_config_wiring.cpp`, `swap_config.example.json`, `docs/dexfg/DEXFG_SWAP_CHAINS.md`, `src/CMakeLists.txt`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| R3 | Readiness requires keccak-256 of the registry's runtime code to equal the committed HashedTimelock runtime (`.bin` after its 28-byte constructor prologue): `6ac1a8f2…7f99`; per-chain override `htlc_registry_code_hash` | Claude Code | 2026-11-07 | DONE; recomputed from the artifact in `test_htlc_registry_pin`; keccak checked against keccak("") |
+| R4 | `create2Address`; canonical registry `0x13e6f8fb77ce4036438469097828106fd60c73a4` (artifact via the deterministic deployment proxy, zero salt) is the default `htlc_registry` except on EraVM (zkSync Era, Abstract); `xfg-swapd --print-htlc-deployment <bin>` prints the deploying transaction | Claude Code | 2026-11-07 | DONE; formula checked against EIP-1014 examples 0 and 1 |
+| R5 | Flat per-chain EVM fields retired: 93 struct fields, their parsing and 15 registration blocks removed; the loader refuses any retired key and names the `evm_chains` key; example config moves 13 chains into `evm_chains` (GLEEC and Robinhood have no endpoint shipped); `--generate-spv-config` emits `evm_chains`; F15 (L2s sharing ETH's registry) and F16 (dead example keys) closed | Claude Code | 2026-11-07 | DONE; every flat subclass was a name-only wrapper over `EthChainClient`, which the generic path already instantiates |
+
+### Sign-off
+
+| Gate | Status | Signed | Date |
+|------|--------|--------|------|
+| Clang 18 and GCC 13.3 builds, `ctest -LE manual` | 45/46 (F29 only) | Claude Code | 2026-11-07 |
+| `test_htlc_registry_pin` | PASS, 15/15 | Claude Code | 2026-11-07 |
+| Registry deployment on any chain | NOT DONE (out of scope) | — | — |
+
 ## DeXFG remediation: catalog-driven executability (R1), generated chain table (R10), seed rates (3.4), CI build fixes
 
 **Started**: 2026-11-07

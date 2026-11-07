@@ -59,6 +59,7 @@ struct EvmChainConfig {
   std::string privateKeyHex;
   std::string address;
   std::string htlcRegistry;
+  std::string htlcRegistryCodeHash;  // empty: the canonical HashedTimelock hash
   std::string ptlcRegistry;
   std::string htlcBinPath;
 };
@@ -72,8 +73,9 @@ struct ChainClientConfig {
   // mainnet default; testnet/dev profiles must state "testnet" explicitly.
   std::string network = "mainnet";
 
-  // Preferred EVM configuration. Entries are keyed by catalog key under the
-  // `evm_chains` JSON object and supersede legacy flat fields for that pair.
+  // Every EVM pair is configured here, keyed by catalog key under the
+  // `evm_chains` JSON object. The flat per-chain EVM fields are retired: the
+  // loader rejects them with a pointer to the matching evm_chains key.
   std::vector<EvmChainConfig> evmChains;
 
   // BCH
@@ -91,10 +93,6 @@ struct ChainClientConfig {
   uint64_t  bchSpvCheckpointHeight = 0;        // checkpoint anchor height
   std::string bchSpvCheckpointHash;            // checkpoint hash (display hex)
 
-  // ETH
-  std::string ethHost;
-  uint16_t    ethPort     = 8545;
-
   // SOL
   std::string solHost;
   uint16_t    solPort     = 8899;
@@ -106,45 +104,6 @@ struct ChainClientConfig {
   std::string xmrWalletHost;
   uint16_t    xmrWalletPort = 18082;
 
-  // ── Signer credentials ────────────────────────────────────────────────────
-  // ETH private key (64 hex chars, 32 bytes) and derived address ("0x...")
-  std::string ethPrivKeyHex;
-  std::string ethAddress;
-  uint64_t    ethChainId = 1;  // EIP-155 chain ID (1=mainnet, 11155111=Sepolia)
-  // Optional: path to the pre-compiled HashedTimelock .bin file
-  std::string ethHtlcBinPath;
-  // Pre-deployed HashedTimelock registry address ("0x...")
-  std::string ethHtlcRegistry;
-  // Pre-deployed PointTimelock registry address ("0x..."). Enables pure PTLC
-  // routing on all EVM chains; empty => BRIDGE (HTLC) — unchanged behavior.
-  std::string ethPtlcRegistry;
-
-  // ARB
-  std::string arbHost;
-  uint16_t    arbPort     = 8547;
-
-  // ARB signer credentials (reuses ETH private key derivation; separate key optional)
-  std::string arbPrivKeyHex;
-  std::string arbAddress;
-  uint64_t    arbChainId = 42161;
-  std::string arbHtlcBinPath;
-
-  // BASE (Base L2 — EVM, EIP-1559)
-  std::string baseHost;
-  uint16_t    basePort     = 8545;
-  std::string basePrivKeyHex;
-  std::string baseAddress;
-  uint64_t    baseChainId  = 8453;
-  std::string baseHtlcBinPath;
-
-  // POLYGON (Polygon PoS — EVM, EIP-1559)
-  std::string polyHost;
-  uint16_t    polyPort     = 8545;
-  std::string polyPrivKeyHex;
-  std::string polyAddress;
-  uint64_t    polyChainId  = 137;
-  std::string polyHtlcBinPath;
-
   // XMR spend/view keys (64 hex chars each)
   std::string xmrSpendKeyHex;
   std::string xmrViewKeyHex;
@@ -152,14 +111,6 @@ struct ChainClientConfig {
   // Solana keypair JSON file path (as produced by `solana-keygen new`)
   std::string solKeypairPath;
   std::string solKeypairBase58;
-
-  // BNB (Binance Smart Chain — EVM)
-  std::string bscHost;
-  uint16_t    bscPort     = 8545;
-  std::string bscPrivKeyHex;
-  std::string bscAddress;
-  uint64_t    bscChainId  = 56;
-  std::string bscHtlcBinPath;
 
   // DCR (Decred — hybrid PoW/PoS UTXO)
   std::string dcrHost;
@@ -219,67 +170,10 @@ struct ChainClientConfig {
   uint64_t  kmdSpvCheckpointHeight = 0;        // checkpoint anchor height
   std::string kmdSpvCheckpointHash;            // checkpoint hash (display hex)
 
-  // GLEEC (Evmos fork)
-  std::string gleecHost;
-  uint16_t    gleecPort     = 8545;
-  std::string gleecPrivKeyHex;
-  std::string gleecAddress;
-  uint64_t    gleecChainId  = 11169;
-  std::string gleecHtlcBinPath;
-  std::string gleecHtlcRegistry;  // pre-deployed HTLC registry on Gleec
-
-  // ROBINHOOD (Robinhood Chain — EVM L1)
-  std::string rhHost;
-  uint16_t    rhPort     = 8545;
-  std::string rhPrivKeyHex;
-  std::string rhAddress;
-  uint64_t    rhChainId  = 4663;
-  std::string rhHtlcBinPath;
-
-  // AVAX (Avalanche C-Chain — EVM, EIP-1559)
-  std::string avaxHost;
-  uint16_t    avaxPort     = 8545;
-  std::string avaxPrivKeyHex;
-  std::string avaxAddress;
-  uint64_t    avaxChainId  = 43114;
-  std::string avaxHtlcBinPath;
-
-  // CRO (Cronos — EVM)
-  std::string croHost;
-  uint16_t    croPort     = 8545;
-  std::string croPrivKeyHex;
-  std::string croAddress;
-  uint64_t    croChainId  = 25;
-  std::string croHtlcBinPath;
-
-  // BOB (Bob — OP Stack BTC rollup, EVM)
-  std::string bobHost;
-  uint16_t    bobPort     = 8545;
-  std::string bobPrivKeyHex;
-  std::string bobAddress;
-  uint64_t    bobChainId  = 60808;
-  std::string bobHtlcBinPath;
-
   // Sia (SC) — siad / walletd
   std::string siaHost;
   uint16_t    siaPort = 9980;
   std::string siaApiPassword;
-
-  // UNICHAIN (Unichain — OP Stack EVM)
-  std::string uniHost;
-  uint16_t    uniPort     = 8545;
-  std::string uniPrivKeyHex;
-  std::string uniAddress;
-  uint64_t    uniChainId  = 130;
-  std::string uniHtlcBinPath;
-
-  // PLASMA (Plasma — EVM)
-  std::string plasmaHost;
-  uint16_t    plasmaPort     = 8545;
-  std::string plasmaPrivKeyHex;
-  std::string plasmaAddress;
-  uint64_t    plasmaChainId  = 9745;
-  std::string plasmaHtlcBinPath;
 
   // DOGE (Dogecoin — pre-SegWit UTXO, P2SH + legacy sighash)
   std::string dogeHost;
@@ -304,14 +198,6 @@ struct ChainClientConfig {
   std::string zecWif;          // WIF-encoded private key (mainnet prefix 0x80)
   bool        zecTestnet = false;
 
-  // PULSECHAIN (PulseChain — EVM, chain id 369, native PLS 18 decimals)
-  std::string pulsechain_host;
-  uint16_t    pulsechain_port   = 8545;
-  std::string pulsechain_priv_key_hex;
-  std::string pulsechain_address;
-  uint64_t    pulsechain_chain_id = 369;
-  std::string pulsechain_htlc_bin_path;
-
   // ZANO (CryptoNote — shared 2-of-2 address via view-key adaptor scheme)
   std::string zanoDaemonHost;
   uint16_t    zanoDaemonPort = 11211;
@@ -328,22 +214,6 @@ struct ChainClientConfig {
   std::string tonWalletKey;           // hex-encoded Ed25519 seed
   std::string tonHtlcAddress;         // deployed HTLC contract address
   int         tonWorkchain   = 0;
-
-  // Monad (EVM L1, chain id 143)
-  std::string monadHost;
-  uint16_t    monadPort       = 8545;
-  std::string monadPrivKeyHex;
-  std::string monadAddress;
-  uint64_t    monadChainId    = 143;
-  std::string monadHtlcBinPath;
-
-  // Optimism (EVM L2, OP Stack, chain id 10)
-  std::string opHost;
-  uint16_t    opPort       = 8545;
-  std::string opPrivKeyHex;
-  std::string opAddress;
-  uint64_t    opChainId    = 10;
-  std::string opHtlcBinPath;
 
   // DOT (Polkadot Relay — Substrate, SS58 prefix 0)
   std::string dotHost;

@@ -20,6 +20,8 @@
 #include "Crypto/Secp256k1Signer.h"
 #include "SwapDaemon/Komodo/KmdHtlcScript.h"
 #include "SwapDaemon/Decred/DcrHtlcScript.h"
+#include "SwapDaemon/Ethereum/EthRpcClient.h"
+#include "crypto/hash.h"
 #include <optional>
 #include <random>
 #include <array>
@@ -53,6 +55,36 @@ const uint16_t DEFAULT_MAINNET_PORT = 18180;
 const uint16_t DEFAULT_TESTNET_PORT = 28280;
 const char* DEFAULT_HOST = "127.0.0.1";
 
+// Deterministic HashedTimelock deployment (remediation R4): the transaction an
+// operator sends to the CREATE2 proxy, and the address readiness will expect.
+static bool printHtlcDeployment(const std::string& binPath) {
+  std::ifstream in(binPath);
+  std::stringstream buffer;
+  buffer << in.rdbuf();
+  std::string initHex = buffer.str();
+  while (!initHex.empty() && std::isspace(static_cast<unsigned char>(initHex.back()))) initHex.pop_back();
+  if (initHex.compare(0, 2, "0x") == 0) initHex = initHex.substr(2);
+  std::vector<uint8_t> initCode;
+  if (initHex.empty() || !Common::fromHex(initHex, initCode)) {
+    std::cerr << "Error: " << binPath << " is not hex init code" << std::endl;
+    return false;
+  }
+  const std::vector<uint8_t> salt(32, 0);
+  Crypto::Hash initCodeHash;
+  Crypto::cn_fast_hash(initCode.data(), initCode.size(), initCodeHash);
+  const std::string address =
+      XfgSwap::create2Address(XfgSwap::DETERMINISTIC_DEPLOYMENT_PROXY, salt, initCode);
+  std::cout << "{\n"
+            << "  \"to\": \"" << XfgSwap::DETERMINISTIC_DEPLOYMENT_PROXY << "\",\n"
+            << "  \"salt\": \"0x" << std::string(64, '0') << "\",\n"
+            << "  \"init_code_keccak\": \"0x" << Common::podToHex(initCodeHash) << "\",\n"
+            << "  \"address\": \"" << address << "\",\n"
+            << "  \"canonical\": " << (address == XfgSwap::CANONICAL_HTLC_REGISTRY_ADDRESS ? "true" : "false") << ",\n"
+            << "  \"data\": \"0x" << std::string(64, '0') << initHex << "\"\n"
+            << "}" << std::endl;
+  return true;
+}
+
 void printUsage() {
   std::cout <<
     "Usage: xfg-swapd [options] <command> [args...]\n"
@@ -84,6 +116,8 @@ void printUsage() {
     "  --public-endpoint <h:p> Publicly reachable swap endpoint advertised to takers\n"
     "  --testnet               Use testnet ports (fuegod: 28280)\n"
     "  --generate-spv-config   Generate SPV config template with fresh keys and addresses\n"
+    "  --print-htlc-deployment <bin>  Print the CREATE2 deployment of a HashedTimelock .bin\n"
+    "                           (proxy, salt, init-code hash, address, calldata)\n"
     "  --help                  Show this help message\n"
     "\n"
     "Amounts are in atomic units (1 XFG = 10,000,000 atomic)\n"
@@ -299,13 +333,8 @@ static void generateSpvConfig() {
     << tab << R"(// Run `fire_wallet gen_swap_key` and paste the printed secret key here.)" << nl
     << tab << R"("xfg_secret_key": "<your_xfg_secret_key>",)" << nl
     << nl
-    << tab << R"(// ── EVM chains (RPC-only, not SPV) ──)" << nl
-    << tab << R"(// These still need RPC endpoints:)" << nl
-    << tab << R"("eth_host": "",)" << nl
-    << tab << R"("bsc_host": "",)" << nl
-    << tab << R"("arb_host": "",)" << nl
-    << tab << R"("base_host": "",)" << nl
-    << tab << R"("poly_host": "")" << nl
+    << tab << R"(// ── EVM chains: one entry per catalog key (see swap_config.example.json) ──)" << nl
+    << tab << R"("evm_chains": {})" << nl
     << R"(})" << std::endl;
 }
 
@@ -432,6 +461,12 @@ int main(int argc, char* argv[]) {
     } else if (opt == "--generate-spv-config") {
       generateSpvConfig();
       return 0;
+    } else if (opt == "--print-htlc-deployment") {
+      if (++argIdx >= argc) {
+        std::cerr << "Error: --print-htlc-deployment requires a .bin path" << std::endl;
+        return 1;
+      }
+      return printHtlcDeployment(argv[argIdx]) ? 0 : 1;
     } else {
       std::cerr << "Unknown option: " << opt << std::endl;
       printUsage();

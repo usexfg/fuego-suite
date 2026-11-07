@@ -17,6 +17,8 @@
 #include "Crypto/Secp256k1Signer.h"
 #include "Crypto/RlpEncoder.h"
 #include "crypto/keccak.h"
+#include "crypto/hash.h"
+#include "Common/StringTools.h"
 #include <HTTP/httplib.h>
 
 #include <atomic>
@@ -452,6 +454,49 @@ bool EthRpcClient::isExpectedChain() {
   return m_chainId != 0 && getChainId(actual) && actual == m_chainId;
 }
 
+bool runtimeCodeMatchesHash(const std::string& runtimeCodeHex, const std::string& codeHashHex) {
+  if (runtimeCodeHex.size() <= 2 || runtimeCodeHex.compare(0, 2, "0x") != 0 ||
+      runtimeCodeHex.size() % 2 != 0 || codeHashHex.size() != 64)
+    return false;
+  std::vector<uint8_t> code;
+  code.reserve((runtimeCodeHex.size() - 2) / 2);
+  for (size_t i = 2; i < runtimeCodeHex.size(); i += 2) {
+    const std::string byteHex = runtimeCodeHex.substr(i, 2);
+    if (!std::isxdigit(static_cast<unsigned char>(byteHex[0])) ||
+        !std::isxdigit(static_cast<unsigned char>(byteHex[1])))
+      return false;
+    code.push_back(static_cast<uint8_t>(std::stoul(byteHex, nullptr, 16)));
+  }
+  Crypto::Hash digest;
+  Crypto::cn_fast_hash(code.data(), code.size(), digest);  // CryptoNote fast hash is keccak-256
+  std::string lower = codeHashHex;
+  std::transform(lower.begin(), lower.end(), lower.begin(),
+                 [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+  return Common::podToHex(digest) == lower;
+}
+
+std::string create2Address(const std::string& deployerHex, const std::vector<uint8_t>& salt32,
+                           const std::vector<uint8_t>& initCode) {
+  const std::string deployer = deployerHex.compare(0, 2, "0x") == 0 ? deployerHex.substr(2) : deployerHex;
+  if (deployer.size() != 40 || salt32.size() != 32) return "";
+  std::vector<uint8_t> preimage = {0xff};
+  for (size_t i = 0; i < deployer.size(); i += 2) {
+    const std::string byteHex = deployer.substr(i, 2);
+    if (!std::isxdigit(static_cast<unsigned char>(byteHex[0])) ||
+        !std::isxdigit(static_cast<unsigned char>(byteHex[1])))
+      return "";
+    preimage.push_back(static_cast<uint8_t>(std::stoul(byteHex, nullptr, 16)));
+  }
+  preimage.insert(preimage.end(), salt32.begin(), salt32.end());
+  Crypto::Hash initCodeHash;
+  Crypto::cn_fast_hash(initCode.data(), initCode.size(), initCodeHash);
+  const uint8_t* initHashBytes = reinterpret_cast<const uint8_t*>(&initCodeHash);
+  preimage.insert(preimage.end(), initHashBytes, initHashBytes + sizeof(initCodeHash));
+  Crypto::Hash addressHash;
+  Crypto::cn_fast_hash(preimage.data(), preimage.size(), addressHash);
+  return "0x" + Common::podToHex(addressHash).substr(24);
+}
+
 bool EthRpcClient::hasDeployedHtlcRegistry() {
   if (!isValidEvmAddress(m_htlcRegistry)) return false;
 
@@ -468,6 +513,7 @@ bool EthRpcClient::hasDeployedHtlcRegistry() {
     hasNonzeroByte |= code[i] != '0';
   }
   if (!hasNonzeroByte) return false;
+  if (!runtimeCodeMatchesHash(code, m_htlcRegistryCodeHash)) return false;
 
   // A deployed address is not necessarily our HTLC registry. Query the
   // read-only getContract ABI with an unused id before enabling new swaps.

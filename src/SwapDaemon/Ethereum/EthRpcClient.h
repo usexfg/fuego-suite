@@ -32,6 +32,27 @@ struct EthTxReceipt {
   uint64_t gasUsed = 0;
 };
 
+// keccak256 of HashedTimelock's runtime code: HashedTimelock_sol_HashedTimelock.bin
+// after its 28-byte constructor prologue (no constructor arguments, no immutables).
+// test_htlc_registry_pin recomputes it from the committed artifact.
+constexpr const char* CANONICAL_HTLC_REGISTRY_CODE_HASH =
+    "6ac1a8f24b916c9ccd80a1b52fddf75badd1295c7eda633262650253fdf77f99";
+
+// True when `runtimeCodeHex` ("0x..." from eth_getCode) hashes to `codeHashHex`.
+bool runtimeCodeMatchesHash(const std::string& runtimeCodeHex, const std::string& codeHashHex);
+
+// The deterministic deployment proxy (CREATE2 factory) deployed at the same
+// address on most EVM chains. Calldata = 32-byte salt || init code.
+constexpr const char* DETERMINISTIC_DEPLOYMENT_PROXY = "0x4e59b44847b379578588920ca78fbf26c0b4956c";
+// HashedTimelock_sol_HashedTimelock.bin deployed through that proxy with a
+// zero salt: the same address on every chain that has the proxy, so one
+// address is pinned and audited. test_htlc_registry_pin recomputes it.
+constexpr const char* CANONICAL_HTLC_REGISTRY_ADDRESS = "0x13e6f8fb77ce4036438469097828106fd60c73a4";
+
+// keccak256(0xff || deployer || salt || keccak256(initCode))[12:], "0x" + 40 hex.
+std::string create2Address(const std::string& deployerHex, const std::vector<uint8_t>& salt32,
+                           const std::vector<uint8_t>& initCode);
+
 class EthRpcClient {
 public:
   // Construct with JSON-RPC endpoint.
@@ -95,6 +116,10 @@ public:
 
   // Set the pre-deployed HashedTimelock registry address ("0x...").
   void setHtlcRegistry(const std::string& registryAddress) { m_htlcRegistry = registryAddress; }
+  // keccak256 of the registry's runtime code that readiness requires. Defaults
+  // to the committed HashedTimelock artifact; a chain whose VM compiles the
+  // contract differently configures its own (evm_chains htlc_registry_code_hash).
+  void setHtlcRegistryCodeHash(const std::string& codeHashHex) { m_htlcRegistryCodeHash = codeHashHex; }
   const std::string& htlcRegistry() const { return m_htlcRegistry; }
   static bool isValidEvmAddress(const std::string& address);
   bool hasDeployedHtlcRegistry();
@@ -300,6 +325,7 @@ private:
   std::string m_htlcBytecode;
   // Pre-deployed HashedTimelock registry address ("0x..." + 40 hex).
   std::string m_htlcRegistry;
+  std::string m_htlcRegistryCodeHash = CANONICAL_HTLC_REGISTRY_CODE_HASH;
   // Pre-deployed PointTimelock registry address ("0x..." + 40 hex).
   // Empty => pure PTLC routing disabled (BRIDGE fallback at negotiation).
   std::string m_ptlcRegistry;

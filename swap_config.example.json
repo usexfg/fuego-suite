@@ -87,88 +87,37 @@
   // later makes existing swap state unreadable. Back it up.
   "xfg_secret_key": "<your_xfg_secret_key_64_hex_chars>",
 
-  // ── EVM Chains (Light Client — no full node required) ─────────────────────
-  // Connect to public RPC endpoints. No credentials needed for public endpoints.
-  // Point to your own node for higher throughput or private transactions.
-  //
-  // ETH — Ethereum Mainnet (chain ID 1)
-  "eth_mode": "rpc",
-  "eth_host": "eth.llamarpc.com",           // Free public RPC
-  "eth_port": 443,
-  "eth_wif": "<64_hex_private_key>",
-  //
-  // ARB — Arbitrum One (chain ID 42161)
-  "arb_mode": "rpc",
-  "arb_host": "arb1.arbitrum.io",
-  "arb_port": 443,
-  "arb_wif": "<64_hex_private_key>",
-  //
-  // BASE — Base L2 (chain ID 8453)
-  "base_mode": "rpc",
-  "base_host": "mainnet.base.org",
-  "base_port": 443,
-  "base_wif": "<64_hex_private_key>",
-  //
-  // BSC — BNB Smart Chain (chain ID 56)
-  "bsc_mode": "rpc",
-  "bsc_host": "bsc-dataseed.binance.org",
-  "bsc_port": 443,
-  "bsc_wif": "<64_hex_private_key>",
-
-  // POLYGON — Polygon PoS (chain ID 137)
-  "poly_mode": "rpc",
-  "poly_host": "polygon-rpc.com",
-  "poly_port": 443,
-  "poly_wif": "<64_hex_private_key>",
-
-  // ROBINHOOD — Robinhood Chain L2 (chain ID 4663)
-  "rh_host": "rpc.robinhood.vercel.app",
-  "rh_port": 443,
-  "rh_priv_key": "<64_hex_private_key>",
-  // AVAX — Avalanche C-Chain (chain ID 43114)
-  "avax_host": "api.avax.network",
-  "avax_port": 443,
-  "avax_priv_key": "<64_hex_private_key>",
-  // CRO — Crypto.com (chain ID 25)
-  "cro_host": "evm.cronos.org",
-  "cro_port": 443,
-  "cro_priv_key": "<64_hex_private_key>",
-  // BOB — Bob BTC rollup (chain ID 60808)
-  "bob_host": "rpc.gobob.xyz",
-  "bob_port": 443,
-  "bob_priv_key": "<64_hex_private_key>",
-  // UNICHAIN — Unichain (chain ID 130)
-  "uni_host": "mainnet.unichain.org",
-  "uni_port": 443,
-  "uni_priv_key": "<64_hex_private_key>",
-  // PLASMA — Plasma (chain ID 9745)
-  "plasma_host": "rpc.plasma.to",
-  "plasma_port": 443,
-  "plasma_priv_key": "<64_hex_private_key>",
-  // PULSECHAIN — PulseChain native PLS (chain ID 369)
-  "pulsechain_rpc_host": "rpc.pulsechain.com",
-  "pulsechain_rpc_port": 443,
-  "pulsechain_priv_key": "<64_hex_private_key>",
-  // MONAD — Monad (chain ID 143)
-  "monad_host": "rpc.monad.xyz",
-  "monad_port": 443,
-  "monad_priv_key": "<64_hex_private_key>",
-  // OPTIMISM — Optimism L2 (chain ID 10)
-  "op_host": "mainnet.optimism.io",
-  "op_port": 443,
-  "op_priv_key": "<64_hex_private_key>",
-
-  // ── Generic-adapter EVM chains (SwapPairCatalog ids 29-45) ────────────────
-  // These have no flat *_host fields; evm_chains is their only config path.
+  // ── EVM chains ────────────────────────────────────────────────────────────
+  // evm_chains is the only EVM config path; the flat eth_*/arb_*/... fields are
+  // retired and refused by the loader. Keys are SwapPairCatalog config keys.
   // As shipped, each entry is a read-only client and reports not ready. To
   // lock funds, add to that entry:
   //   "private_key":   "<64_hex_private_key>",       // funded signer
   //   "address":       "<0x signer address>",        // set together with the key
-  //   "htlc_registry": "<0x HashedTimelock deployed on THIS chain>",
-  //   "ptlc_registry": "<0x PtlcTimelock deployed on THIS chain>"  // optional
-  // chain_id must equal the catalog value on mainnet. Delete unused entries.
-  // PEAQ parses, but new PEAQ swaps are refused: no verified price feed.
+  //   "htlc_registry": "<0x HashedTimelock on THIS chain>"   // optional, see below
+  //   "ptlc_registry": "<0x PointTimelock on THIS chain>"    // optional
+  // Without htlc_registry the canonical CREATE2 address applies (print it and its
+  // deployment calldata with `xfg-swapd --print-htlc-deployment <HashedTimelock .bin>`);
+  // readiness requires that address to hold exactly the committed HashedTimelock
+  // runtime code. zkSync Era and Abstract (EraVM) need an explicit htlc_registry and
+  // htlc_registry_code_hash. chain_id must equal the catalog value on mainnet.
+  // GLEEC (gleec, 11169) and Robinhood Chain (rh, 4663) have no endpoint here: add
+  // one you operate or trust. PEAQ parses, but new PEAQ swaps are refused: no
+  // verified price feed. Delete unused entries.
   "evm_chains": {
+    "eth":       { "rpc_url": "https://eth.llamarpc.com", "chain_id": 1 },
+    "arb":       { "rpc_url": "https://arb1.arbitrum.io/rpc", "chain_id": 42161 },
+    "base":      { "rpc_url": "https://mainnet.base.org", "chain_id": 8453 },
+    "bsc":       { "rpc_url": "https://bsc-dataseed.binance.org", "chain_id": 56 },
+    "poly":      { "rpc_url": "https://polygon-rpc.com", "chain_id": 137 },
+    "avax":      { "rpc_url": "https://api.avax.network/ext/bc/C/rpc", "chain_id": 43114 },
+    "cro":       { "rpc_url": "https://evm.cronos.org", "chain_id": 25 },
+    "bob":       { "rpc_url": "https://rpc.gobob.xyz", "chain_id": 60808 },
+    "uni":       { "rpc_url": "https://mainnet.unichain.org", "chain_id": 130 },
+    "xpl":       { "rpc_url": "https://rpc.plasma.to", "chain_id": 9745 },
+    "pls":       { "rpc_url": "https://rpc.pulsechain.com", "chain_id": 369 },
+    "monad":     { "rpc_url": "https://rpc.monad.xyz", "chain_id": 143 },
+    "op":        { "rpc_url": "https://mainnet.optimism.io", "chain_id": 10 },
     "linea":     { "rpc_url": "https://rpc.linea.build", "chain_id": 59144 },
     "zksync":    { "rpc_url": "https://mainnet.era.zksync.io", "chain_id": 324 },
     "hyperevm":  { "rpc_url": "https://rpc.hyperliquid.xyz/evm", "chain_id": 999 },

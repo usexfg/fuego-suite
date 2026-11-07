@@ -80,7 +80,7 @@ std::string EthChainClient::readinessError() {
   if (!EthRpcClient::isValidEvmAddress(m_rpc->htlcRegistry()))
     return "HTLC registry address is not configured";
   if (!m_rpc->hasDeployedHtlcRegistry())
-    return "HTLC registry code or ABI probe failed";
+    return "HTLC registry runtime code does not match the pinned HashedTimelock hash, or its ABI probe failed";
   return "";
 }
 

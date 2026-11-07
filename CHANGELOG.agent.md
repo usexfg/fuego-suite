@@ -3,13 +3,15 @@
 **Started**: 2026-11-07
 **Agent**: Claude Code
 **Status**: IN PROGRESS — gate runs in CI; results recorded below when green
-**Scope**: `tests/test_utxo_regtest.cpp` (new), `scripts/regtest-node.sh` (new), `.github/workflows/check.yml`, `src/CMakeLists.txt`, `Utxo/UtxoFullNode.{h,cpp}`, `SwapKeystore.cpp`
+**Scope**: `tests/test_utxo_regtest.cpp` (new), `scripts/regtest-node.sh` (new), `.github/workflows/check.yml`, `src/CMakeLists.txt`, `Utxo/UtxoFullNode.{h,cpp}`, `SwapKeystore.cpp`, `Bitcoin/BtcHtlcScript.cpp`, `Litecoin/LtcRpcClient.cpp`, `tests/test_utxo_htlc.cpp`
 
 | # | Task | Owner | Date | Status |
 |---|------|-------|------|--------|
 | 1.9a | `test_utxo_regtest`: the real BTC/LTC/BCH clients against bitcoind 28.1, litecoind 0.21.4, BCHN 28.0.1 regtest — happy path with the claim txid withheld from Alice, idempotent lock, unconfirmed/short/other-output/other-hash/wrong-key locks refused, wrong-secret claim refused, 6-confirmation finality, reorg (invalidate/reconsider), restart rediscovery, refund refused before and accepted at timeout, refund reveals no secret | Claude Code | 2026-11-07 | IN PROGRESS (CI) |
 | 1.9b | CI job `utxo-regtest-gate` (matrix btc/ltc/bch): node binaries verified by SHA-256 before running | Claude Code | 2026-11-07 | IN PROGRESS (CI) |
 | review | Fee floor now the node's `relayfee`/`mempoolminfee` (Litecoin relays above 1 unit/vbyte); keystore replace works on Windows (`rename` does not overwrite there) | Claude Code | 2026-11-07 | DONE |
+| gate fix | P2WSH bech32 (`BtcHtlcScript::witnessScriptToAddress`, `ltcWitnessScriptToAddress`) regrouped the witness version together with the program, producing addresses no node accepts; the version is now its own 5-bit value (BIP173). Found by the first gate run ("Invalid Bitcoin address"). `test_utxo_htlc` checks exact BTC/LTC addresses and the BIP173 P2WSH vector | Claude Code | 2026-11-07 | DONE; `test_utxo_htlc` 65/65 |
+| gate fix | BCHN 28.0.1 is not at `download.bitcoincashnode.org/releases/<v>/linux/`; `regtest-node.sh` takes the tarball and checksum links from the GitLab release API, falls back to the download host, and lists what GitLab returned when neither has it | Claude Code | 2026-11-07 | IN PROGRESS (CI) |
 
 Not covered by 1.9a: the XFG leg. A two-daemon XFG+UTXO run needs a mining fuegod testnet with spendable decoys; `scripts/e2e-xfg-local.sh` documents those blockers and AGENTS.md the block-serving RPC hang.
 

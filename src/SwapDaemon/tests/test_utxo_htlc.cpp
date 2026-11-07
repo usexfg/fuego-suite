@@ -284,9 +284,21 @@ static void testAmountsAndKeys() {
         "regtest P2PKH address round-trips");
   check(!p2pkhScriptForAddress(bitcoinNetworkParams(UtxoNetwork::MAINNET), address, script),
         "regtest address refused on mainnet");
-  check(htlcFundingAddress(UtxoHtlcEncoding::P2WSH, bitcoinNetworkParams(UtxoNetwork::REGTEST), f.script)
-                .compare(0, 5, "bcrt1") == 0,
-        "regtest lock address uses the bcrt HRP");
+  // References: python-bitcoinlib segwit_addr.encode, which reproduces BIP173's vectors.
+  check(htlcFundingAddress(UtxoHtlcEncoding::P2WSH, bitcoinNetworkParams(UtxoNetwork::REGTEST), f.script) ==
+            "bcrt1q2jw0l8yerf4rrkyjvwsz45dw240t8lnpk0ww2973xy870ywsvp7qltr72w",
+        "regtest P2WSH lock address");
+  check(htlcFundingAddress(UtxoHtlcEncoding::P2WSH, bitcoinNetworkParams(UtxoNetwork::MAINNET), f.script) ==
+            "bc1q2jw0l8yerf4rrkyjvwsz45dw240t8lnpk0ww2973xy870ywsvp7q96lh9m",
+        "mainnet P2WSH lock address");
+  check(htlcFundingAddress(UtxoHtlcEncoding::P2WSH, litecoinNetworkParams(UtxoNetwork::REGTEST), f.script) ==
+            "rltc1q2jw0l8yerf4rrkyjvwsz45dw240t8lnpk0ww2973xy870ywsvp7qhgfp9r",
+        "Litecoin regtest P2WSH lock address");
+  const std::vector<uint8_t> bip173Script = hex(
+      "210279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798ac");
+  check(htlcFundingAddress(UtxoHtlcEncoding::P2WSH, bitcoinNetworkParams(UtxoNetwork::TESTNET), bip173Script) ==
+            "tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q0sl5k7",
+        "BIP173 P2WSH test vector");
 }
 
 // ── A scripted full node ─────────────────────────────────────────────────

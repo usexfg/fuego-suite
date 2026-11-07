@@ -16,6 +16,7 @@ struct ChainClientResult {
   bool spvVerified = false;      // true if verified via SPV (Merkle proof)
   uint64_t blockHeight = 0;      // block height where tx was confirmed
   uint32_t confirmations = 0;    // number of confirmations (tip - blockHeight + 1)
+  uint32_t outputIndex = 0;      // UTXO chains: index of the lock output in txId
 
   static ChainClientResult ok(const std::string& txId) {
     return {true, false, txId, "", "", false, false, 0, 0};

@@ -15,6 +15,7 @@
 
 #include "SwapDaemon.h"
 #include "Common/JsonValue.h"
+#include "Utxo/UtxoFullNode.h"
 
 #include <fstream>
 #include <sstream>
@@ -382,6 +383,7 @@ bool loadChainClientConfig(const std::string& path,
   out.solKeypairPath = jsonGetStr(json, "sol_keypair_path");
   out.solKeypairBase58 = jsonGetStr(json, "sol_keypair");
   out.bchWif          = jsonGetStr(json, "bch_wif");
+  out.bchNetwork = jsonGetStr(json, "bch_network", "main");
 
   // ── Signer credentials ──
   out.ethPrivKeyHex  = jsonGetStr(json, "eth_priv_key");
@@ -588,6 +590,7 @@ bool loadChainClientConfig(const std::string& path,
   out.btcRpcUser = jsonGetStr(json, "btc_rpc_user");
   out.btcRpcPass = jsonGetStr(json, "btc_rpc_pass");
   out.btcWif     = jsonGetStr(json, "btc_wif");
+  out.btcNetwork = jsonGetStr(json, "btc_network", "main");
 
   // BTC SPV mode configuration
   out.btcMode = jsonGetStr(json, "btc_mode", "");
@@ -609,6 +612,7 @@ bool loadChainClientConfig(const std::string& path,
   out.ltcRpcUser = jsonGetStr(json, "ltc_rpc_user");
   out.ltcRpcPass = jsonGetStr(json, "ltc_rpc_pass");
   out.ltcWif     = jsonGetStr(json, "ltc_wif");
+  out.ltcNetwork = jsonGetStr(json, "ltc_network", "main");
 
   // LTC SPV mode configuration
   out.ltcMode = jsonGetStr(json, "ltc_mode", "");
@@ -681,6 +685,16 @@ bool loadChainClientConfig(const std::string& path,
   if (!spvCheck(out.kmdMode, out.kmdWif, out.kmdSpvServers, "kmd")) return false;
   if (!spvCheck(out.bchMode, out.bchWif, out.bchSpvServers, "bch")) return false;
   if (!spvCheck(out.dcrMode, out.dcrWif, out.dcrSpvServers, "dcr")) return false;
+
+  for (const auto& network : {std::make_pair(std::string("btc"), out.btcNetwork),
+                              std::make_pair(std::string("ltc"), out.ltcNetwork),
+                              std::make_pair(std::string("bch"), out.bchNetwork)}) {
+    XfgSwap::UtxoNetwork parsed;
+    if (!XfgSwap::parseUtxoNetwork(network.second, parsed)) {
+      errorMsg = network.first + "_network must be main, test, signet or regtest";
+      return false;
+    }
+  }
 
   // ── Validate ──
   if (!validateHex(out.ethPrivKeyHex, 32, "eth_priv_key", errorMsg)) return false;

@@ -25,13 +25,17 @@
   // 4. No full node required — uses public infrastructure.
 
   // ── BTC ──
-  // RPC mode (requires bitcoind with -txindex and a funded wallet):
-  //   "btc_host": "127.0.0.1",
-  //   "btc_port": 8332,
+  // Full-node mode (the only mode that can start a swap): bitcoind with a
+  // loaded wallet that holds private keys. -txindex is not required; the lock
+  // is checked with gettxout and claims are found by scanning blocks.
+  //   "btc_rpc_host": "127.0.0.1",
+  //   "btc_rpc_port": 8332,
   //   "btc_rpc_user": "your_rpc_user",
   //   "btc_rpc_pass": "your_rpc_pass",
+  //   "btc_network": "main",          // main | test | signet | regtest
+  //   "btc_wif": "<compressed-key WIF for the same network>",
   //
-  // SPV mode (light client, no full node needed):
+  // SPV mode (cannot start new swaps; recovery of existing swaps only):
   "btc_mode": "spv",
   "btc_spv_server_0": "electrum.blockstream.info:50002",
   "btc_spv_min_servers": 1,
@@ -39,9 +43,9 @@
   "btc_spv_checkpoint_hash": "00000000000000000002a7c4c1e8d3c5d5e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b",
   "btc_wif": "replace_with_your_btc_wif",  // P2PKH address: 1... (send BTC here)
 
-  // ── LTC ──
-  // "ltc_host": "127.0.0.1",
-  // "ltc_port": 9332,
+  // ── LTC ──  (full node: ltc_rpc_host, ltc_rpc_port, ltc_rpc_user, ltc_rpc_pass, ltc_network)
+  // "ltc_rpc_host": "127.0.0.1",
+  // "ltc_rpc_port": 9332,
   "ltc_mode": "spv",
   "ltc_spv_server_0": "ltc.merkle.io:50002",
   "ltc_spv_min_servers": 1,
@@ -55,9 +59,9 @@
   "kmd_spv_min_servers": 1,
   "kmd_wif": "replace_with_your_kmd_wif",  // P2PKH address: R... (send KMD here)
 
-  // ── BCH ──
-  // "bch_host": "127.0.0.1",
-  // "bch_port": 8332,
+  // ── BCH ──  (full node: bch_rpc_host, bch_rpc_port, bch_rpc_user, bch_rpc_pass, bch_network)
+  // "bch_rpc_host": "127.0.0.1",
+  // "bch_rpc_port": 8332,
   "bch_mode": "spv",
   "bch_spv_server_0": "electroncash.org:50002",
   "bch_spv_min_servers": 1,

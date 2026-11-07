@@ -3,6 +3,7 @@
 #include "../IChainClient.h"
 #include "../Spv/ISpvClient.h"
 #include "LtcRpcClient.h"
+#include "../Utxo/UtxoHtlcFullNode.h"
 #include <string>
 #include <memory>
 
@@ -11,17 +12,23 @@ namespace XfgSwap {
 class LtcChainClient : public IChainClient {
 public:
   // Full-node mode
-  LtcChainClient(std::unique_ptr<LtcRpcClient> rpc, const std::string& wif);
+  LtcChainClient(std::unique_ptr<LtcRpcClient> rpc, const std::string& wif,
+                 UtxoNetwork network = UtxoNetwork::MAINNET);
 
   // SPV mode (no RPC client required)
   LtcChainClient(std::shared_ptr<ISpvClient> spvClient, const std::string& wif);
 
   std::string chainName() const override { return "LTC"; }
   bool usesSpvVerification() const override { return m_spvClient != nullptr; }
-  bool isReadyForNewSwap() override { return false; } // Neither transport has a complete safe swap path
+  bool isReadyForNewSwap() override;
+  std::string readinessError() override;
+  std::string getClaimPubKey() const override;
+  bool hasConfirmedClaim(const SwapParams& params) override;
   bool supportsPtlc() const override { return true; }
   // Pure PTLC (P2TR key-path, no H(t)) per PTLC_PURE_PLAN P2.3 (mirror of BTC).
-  bool supportsPurePtlc() const override { return true; }
+  // A full node cannot recover t from a key-path spend without the adaptor
+  // presig, so the full-node transport negotiates the on-chain HTLC only.
+  bool supportsPurePtlc() const override { return !m_fullNode; }
 
   std::string getReceiveAddress() const override;
   ChainClientResult lock(const SwapParams& params) override;
@@ -62,6 +69,7 @@ private:
   ChainClientResult claimOrRefundPtlcP2tr(const SwapParams& params);
 
   std::unique_ptr<LtcRpcClient> m_rpc;    // null in SPV mode
+  std::unique_ptr<UtxoHtlcFullNode> m_fullNode;  // HTLC swap path over m_rpc
   std::string m_wif;                       // empty in SPV mode
   std::shared_ptr<ISpvClient> m_spvClient; // null in full-node mode
 };

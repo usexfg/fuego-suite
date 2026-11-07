@@ -19,96 +19,38 @@ static bool isZeroSecret(const Crypto::SecretKey& s) {
 }
 
 std::string BchChainClient::getReceiveAddress() const {
+  if (m_fullNode) return m_fullNode->receiveAddress();
   if (m_wif.empty()) return "";
   std::vector<uint8_t> h;
   if (!KmdHtlcScript::wifToPubkeyHash(m_wif, h)) return "";
   return KmdHtlcScript::base58CheckEncode(0x00, h);
 }
-BchChainClient::BchChainClient(std::unique_ptr<BchRpcClient> rpc, const std::string& wif)
-  : m_rpc(std::move(rpc)), m_wif(wif) {}
+BchChainClient::BchChainClient(std::unique_ptr<BchRpcClient> rpc, const std::string& wif,
+                               UtxoNetwork network)
+  : m_rpc(std::move(rpc)), m_wif(wif) {
+  if (!m_rpc) return;
+  BchRpcClient* node = m_rpc.get();
+  m_fullNode.reset(new UtxoHtlcFullNode(
+      {"BCH", SwapPair::BCH, UtxoHtlcEncoding::P2SH_FORKID, bitcoinCashNetworkParams(network)},
+      [node](const std::string& method, const std::string& paramsJson,
+             Common::JsonValue& result, std::string& error) {
+        return node->callJson(method, paramsJson, result, error);
+      },
+      wif));
+}
 
 BchChainClient::BchChainClient(std::shared_ptr<ISpvClient> spvClient, const std::string& wif)
   : m_spvClient(std::move(spvClient)), m_wif(wif) {}
 
 ChainClientResult BchChainClient::lock(const SwapParams& params) {
-  if (!m_rpc)
-    return ChainClientResult::fail("BCH lock: RPC client not available (SPV mode does not support lock)");
-
-  // Hashlock: Alice-locks uses published H(t)=SHA256(t); Bob-with-secret can derive.
-  std::string hashHex;
-  if (!isZeroSecret(params.adaptorSecret)) {
-    hashHex = bchHashLockHex(params.adaptorSecret);
-  } else {
-    bool nonzero = false;
-    for (size_t i = 0; i < sizeof(params.hashLock); ++i)
-      if (reinterpret_cast<const uint8_t*>(&params.hashLock)[i]) { nonzero = true; break; }
-    if (!nonzero)
-      return ChainClientResult::fail("BCH lock: no adaptor secret or hashLock (need H(t) from Bob)");
-    hashHex = Common::podToHex(params.hashLock);
-  }
-
-  // Recipient compressed pubkey for claim path. Prefer ctrPubKey; try getaddressinfo.
-  std::string recipientKey = params.ctrPubKey;
-  if (recipientKey.empty() && params.ctrAddress.size() == 66) {
-    try {
-      auto bytes = BchHtlcScript::hexToBytes(params.ctrAddress);
-      if (bytes.size() == 33 && (bytes[0] == 0x02 || bytes[0] == 0x03))
-        recipientKey = params.ctrAddress;
-    } catch (const std::exception&) {}
-  }
-  if (recipientKey.size() != 66 && !params.ctrAddress.empty()) {
-    std::string resolved;
-    if (m_rpc->getAddressPubkey(params.ctrAddress, resolved) && resolved.size() == 66)
-      recipientKey = resolved;
-  }
-  if (recipientKey.size() != 66)
-    return ChainClientResult::fail(
-        "BCH lock: ctrPubKey must be 33-byte compressed pubkey hex (66 chars). "
-        "Cashaddr cannot be inverted to a pubkey; set ctrPubKey or use a wallet-known address.");
-
-  std::string lockTxId;
-  std::string redeemScriptHex;
-  bool ok = m_rpc->lockHtlc(
-      m_wif,
-      recipientKey,
-      hashHex,
-      static_cast<uint32_t>(params.ctrTimeoutBlock),
-      params.ctrAmount64(),
-      lockTxId,
-      redeemScriptHex);
-  if (!ok) return ChainClientResult::fail("BCH lockHtlc failed");
-  return ChainClientResult::okWithState(lockTxId, redeemScriptHex);
+  if (m_fullNode) return m_fullNode->lock(params);
+  return ChainClientResult::fail("BCH lock: SPV mode cannot fund a lock");
 }
 
 ChainClientResult BchChainClient::verifyLock(const SwapParams& params) {
-  if (m_spvClient) {
-    return verifyLockSpv(params);
-  }
-
-  if (!m_rpc)
-    return ChainClientResult::fail("BCH verifyLock: no RPC or SPV client available");
-
-  // ctrLockTxId is the funding txid; chainState holds redeemScript hex when
-  // available. Prefer P2SH address from redeem script (correct API for
-  // listunspent) over treating txid as an address.
-  std::string htlcAddress;
-  if (!params.chainState.empty()) {
-    auto redeem = BchHtlcScript::hexToBytes(params.chainState);
-    if (redeem.empty())
-      return ChainClientResult::fail("BCH verifyLock: invalid redeem script in chainState");
-    htlcAddress = BchHtlcScript::computeP2shAddress(redeem, /*testnet=*/false);
-  } else if (!params.ctrAddress.empty() && params.ctrAddress.size() != 64) {
-    // ctrAddress may already be the P2SH cashaddr/base58 (not a 64-char txid)
-    htlcAddress = params.ctrAddress;
-  } else {
-    return ChainClientResult::fail(
-        "BCH verifyLock: need chainState (redeem script) or P2SH address — "
-        "cannot listunspent by txid alone");
-  }
-
-  bool ok = m_rpc->verifyLock(htlcAddress, params.ctrAmount64());
-  if (!ok) return ChainClientResult::fail("BCH lock not verified at " + htlcAddress);
-  return ChainClientResult::ok(params.ctrLockTxId);
+  if (m_spvClient) return verifyLockSpv(params);
+  if (m_fullNode) return m_fullNode->verifyLock(params);
+  return ChainClientResult::fail("BCH verifyLock: no RPC or SPV client available");
 }
 
 ChainClientResult BchChainClient::verifyLockSpv(const SwapParams& params) {
@@ -278,113 +220,93 @@ ChainClientResult BchChainClient::verifyLockSpv(const SwapParams& params) {
 }
 
 ChainClientResult BchChainClient::claim(const SwapParams& params) {
-  if (!m_rpc) {
-    if (m_wif.empty())
-      return ChainClientResult::fail("BCH claim: no RPC or WIF available (SPV mode needs WIF for local signing)");
+  if (m_fullNode) return m_fullNode->claim(params);
+  if (!m_spvClient)
+    return ChainClientResult::fail("BCH claim: no RPC or SPV client available");
+  if (m_wif.empty())
+    return ChainClientResult::fail("BCH claim: no RPC or WIF available (SPV mode needs WIF for local signing)");
 
-    std::array<uint8_t, 32> privKey{};
-    if (!BchHtlcScript::wifToPrivKey(m_wif, privKey))
-      return ChainClientResult::fail("BCH claim: invalid WIF");
+  std::array<uint8_t, 32> privKey{};
+  if (!BchHtlcScript::wifToPrivKey(m_wif, privKey))
+    return ChainClientResult::fail("BCH claim: invalid WIF");
 
-    auto redeemScript = BchHtlcScript::hexToBytes(params.chainState);
-    auto preimageBytes = BchHtlcScript::hexToBytes(Common::podToHex(params.adaptorSecret));
+  auto redeemScript = BchHtlcScript::hexToBytes(params.chainState);
+  auto preimageBytes = BchHtlcScript::hexToBytes(Common::podToHex(params.adaptorSecret));
 
-    uint8_t addrVersion = 0;
-    std::vector<uint8_t> pubKeyHash;
-    if (!BchHtlcScript::base58CheckDecode(params.ctrAddress, addrVersion, pubKeyHash))
-      return ChainClientResult::fail("BCH claim: invalid destination address");
-    auto outputScript = BchHtlcScript::buildP2pkhScriptPubKey(pubKeyHash);
+  uint8_t addrVersion = 0;
+  std::vector<uint8_t> pubKeyHash;
+  if (!BchHtlcScript::base58CheckDecode(params.ctrAddress, addrVersion, pubKeyHash))
+    return ChainClientResult::fail("BCH claim: invalid destination address");
+  auto outputScript = BchHtlcScript::buildP2pkhScriptPubKey(pubKeyHash);
 
-    uint64_t fee = 1000;
-    if (params.ctrAmount64() <= fee)
-      return ChainClientResult::fail("BCH claim: amount too small for fee");
-    uint64_t outputAmount = params.ctrAmount64() - fee;
+  uint64_t fee = 1000;
+  if (params.ctrAmount64() <= fee)
+    return ChainClientResult::fail("BCH claim: amount too small for fee");
+  uint64_t outputAmount = params.ctrAmount64() - fee;
 
-    const uint32_t nSequence = 0xFFFFFFFD;
+  const uint32_t nSequence = 0xFFFFFFFD;
 
-    auto der = BchHtlcScript::signInput(privKey, 1, 0, nSequence,
-        params.ctrLockTxId, 0, redeemScript, params.ctrAmount64(),
-        outputScript, outputAmount);
-    if (der.empty())
-      return ChainClientResult::fail("BCH claim SPV: signing failed");
+  auto der = BchHtlcScript::signInput(privKey, 1, 0, nSequence,
+      params.ctrLockTxId, 0, redeemScript, params.ctrAmount64(),
+      outputScript, outputAmount);
+  if (der.empty())
+    return ChainClientResult::fail("BCH claim SPV: signing failed");
 
-    auto scriptSig = BchHtlcScript::createClaimScriptSig(der, preimageBytes, redeemScript);
+  auto scriptSig = BchHtlcScript::createClaimScriptSig(der, preimageBytes, redeemScript);
 
-    auto rawTx = BchHtlcScript::buildRawTransaction(
-        params.ctrLockTxId, 0, params.ctrAmount64(),
-        scriptSig, params.ctrAddress, outputAmount, 0);
-
-    std::string txid;
-    if (!m_spvClient->broadcastTx(rawTx, txid))
-      return ChainClientResult::fail("BCH claim SPV: broadcast failed");
-    return ChainClientResult::ok(txid);
-  }
-
-  std::string claimTxId;
-  bool ok = m_rpc->claim(
-      m_wif,
+  auto rawTx = BchHtlcScript::buildRawTransaction(
       params.ctrLockTxId, 0, params.ctrAmount64(),
-      params.chainState,
-      Common::podToHex(params.adaptorSecret),
-      params.ctrAddress,
-      claimTxId);
-  if (!ok) return ChainClientResult::fail("BCH claim failed");
-  return ChainClientResult::ok(claimTxId);
+      scriptSig, params.ctrAddress, outputAmount, 0);
+
+  std::string txid;
+  if (!m_spvClient->broadcastTx(rawTx, txid))
+    return ChainClientResult::fail("BCH claim SPV: broadcast failed");
+  return ChainClientResult::ok(txid);
 }
 
 ChainClientResult BchChainClient::refund(const SwapParams& params) {
-  if (!m_rpc) {
-    if (m_wif.empty())
-      return ChainClientResult::fail("BCH refund: no RPC or WIF available (SPV mode needs WIF for local signing)");
+  if (m_fullNode) return m_fullNode->refund(params);
+  if (!m_spvClient)
+    return ChainClientResult::fail("BCH refund: no RPC or SPV client available");
+  if (m_wif.empty())
+    return ChainClientResult::fail("BCH refund: no RPC or WIF available (SPV mode needs WIF for local signing)");
 
-    std::array<uint8_t, 32> privKey{};
-    if (!BchHtlcScript::wifToPrivKey(m_wif, privKey))
-      return ChainClientResult::fail("BCH refund: invalid WIF");
+  std::array<uint8_t, 32> privKey{};
+  if (!BchHtlcScript::wifToPrivKey(m_wif, privKey))
+    return ChainClientResult::fail("BCH refund: invalid WIF");
 
-    auto redeemScript = BchHtlcScript::hexToBytes(params.chainState);
+  auto redeemScript = BchHtlcScript::hexToBytes(params.chainState);
 
-    uint32_t nLocktime = static_cast<uint32_t>(params.ctrTimeoutBlock);
+  uint32_t nLocktime = static_cast<uint32_t>(params.ctrTimeoutBlock);
 
-    uint8_t addrVersion = 0;
-    std::vector<uint8_t> pubKeyHash;
-    if (!BchHtlcScript::base58CheckDecode(params.ctrAddress, addrVersion, pubKeyHash))
-      return ChainClientResult::fail("BCH refund: invalid destination address");
-    auto outputScript = BchHtlcScript::buildP2pkhScriptPubKey(pubKeyHash);
+  uint8_t addrVersion = 0;
+  std::vector<uint8_t> pubKeyHash;
+  if (!BchHtlcScript::base58CheckDecode(params.ctrAddress, addrVersion, pubKeyHash))
+    return ChainClientResult::fail("BCH refund: invalid destination address");
+  auto outputScript = BchHtlcScript::buildP2pkhScriptPubKey(pubKeyHash);
 
-    uint64_t fee = 1000;
-    if (params.ctrAmount64() <= fee)
-      return ChainClientResult::fail("BCH refund: amount too small for fee");
-    uint64_t outputAmount = params.ctrAmount64() - fee;
+  uint64_t fee = 1000;
+  if (params.ctrAmount64() <= fee)
+    return ChainClientResult::fail("BCH refund: amount too small for fee");
+  uint64_t outputAmount = params.ctrAmount64() - fee;
 
-    auto der = BchHtlcScript::signInput(privKey, 1, nLocktime,
-        0xFFFFFFFE,
-        params.ctrLockTxId, 0, redeemScript, params.ctrAmount64(),
-        outputScript, outputAmount);
-    if (der.empty())
-      return ChainClientResult::fail("BCH refund SPV: signing failed");
+  auto der = BchHtlcScript::signInput(privKey, 1, nLocktime,
+      0xFFFFFFFE,
+      params.ctrLockTxId, 0, redeemScript, params.ctrAmount64(),
+      outputScript, outputAmount);
+  if (der.empty())
+    return ChainClientResult::fail("BCH refund SPV: signing failed");
 
-    auto scriptSig = BchHtlcScript::createRefundScriptSig(der, redeemScript);
+  auto scriptSig = BchHtlcScript::createRefundScriptSig(der, redeemScript);
 
-    auto rawTx = BchHtlcScript::buildRawTransaction(
-        params.ctrLockTxId, 0, params.ctrAmount64(),
-        scriptSig, params.ctrAddress, outputAmount, nLocktime);
-
-    std::string txid;
-    if (!m_spvClient->broadcastTx(rawTx, txid))
-      return ChainClientResult::fail("BCH refund SPV: broadcast failed");
-    return ChainClientResult::ok(txid);
-  }
-
-  std::string refundTxId;
-  bool ok = m_rpc->refundHtlc(
-      m_wif,
+  auto rawTx = BchHtlcScript::buildRawTransaction(
       params.ctrLockTxId, 0, params.ctrAmount64(),
-      params.chainState,
-      static_cast<uint32_t>(params.ctrTimeoutBlock),
-      params.ctrAddress,
-      refundTxId);
-  if (!ok) return ChainClientResult::fail("BCH refundHtlc failed");
-  return ChainClientResult::ok(refundTxId);
+      scriptSig, params.ctrAddress, outputAmount, nLocktime);
+
+  std::string txid;
+  if (!m_spvClient->broadcastTx(rawTx, txid))
+    return ChainClientResult::fail("BCH refund SPV: broadcast failed");
+  return ChainClientResult::ok(txid);
 }
 
 ChainClientResult BchChainClient::verifyReserveProof(const std::string& expectedMessage,
@@ -465,6 +387,11 @@ ChainClientResult BchChainClient::getTransactionDetails(const std::string& txId,
     return result;
   }
 
+  if (m_fullNode) {
+    result = m_fullNode->transactionDetails(txId);
+    return result;
+  }
+
   if (m_rpc) {
     // Full-node RPC mode: use gettransaction
     BchTxInfo txInfo;
@@ -532,47 +459,34 @@ std::string BchChainClient::extractSecretSpv(const std::string& spendingTxid,
 }
 
 std::string BchChainClient::tryExtractClaimedSecret(const SwapParams& params) {
-  if (params.chainState.empty() || params.ctrLockTxId.empty()) return {};
+  if (m_fullNode) return m_fullNode->tryExtractClaimedSecret(params);
+  if (!m_spvClient || params.chainState.empty() || params.ctrLockTxId.empty()) return {};
 
-  // chainState is redeem-script hex; optional suffix ":<claimTxid>" if Bob told us the claim.
-  std::string redeemHex = params.chainState;
-  std::string knownClaimTxid;
-  auto colon = params.chainState.find(':');
-  if (colon != std::string::npos && colon + 1 < params.chainState.size()) {
-    // Only treat as claim suffix if left part looks like hex redeem (even length)
-    std::string left = params.chainState.substr(0, colon);
-    std::string right = params.chainState.substr(colon + 1);
-    if (!left.empty() && (left.size() % 2) == 0 && right.size() == 64) {
-      redeemHex = left;
-      knownClaimTxid = right;
-    }
-  }
+  SpvSpend spend;
+  if (!m_spvClient->findSpend(params.ctrLockTxId, params.ctrLockVout, spend) ||
+      !isVerifiedSpvSpend(spend, params.requiredConfirmations ? params.requiredConfirmations : 6) ||
+      spend.spendingTxid.empty())
+    return {};
+  return extractSecret(spend.spendingTxid, lockScriptHex(params.chainState));
+}
 
-  // Prefer SPV findSpend on the lock tx (vout 0 is typical for single-output HTLC fund)
-  if (m_spvClient) {
-    for (uint32_t vout = 0; vout < 4; ++vout) {
-      SpvSpend spend;
-      if (!m_spvClient->findSpend(params.ctrLockTxId, vout, spend) ||
-          !isVerifiedSpvSpend(spend, params.requiredConfirmations ?
-                                   params.requiredConfirmations : 6))
-        continue;
-      if (spend.spendingTxid.empty()) continue;
-      std::string secret = extractSecret(spend.spendingTxid, redeemHex);
-      if (!secret.empty()) return secret;
-    }
-  }
+bool BchChainClient::hasConfirmedClaim(const SwapParams& params) {
+  return m_fullNode && params.chainState.rfind("p2tr:", 0) != 0 &&
+         m_fullNode->hasConfirmedClaim(params);
+}
 
-  // Full-node: if we already know the claim txid (P2P or chainState suffix), parse it.
-  if (m_rpc && !knownClaimTxid.empty()) {
-    std::string rawHex;
-    if (!m_rpc->getRawTransaction(knownClaimTxid, rawHex) ||
-        !spends_utxo_lock_output(BchHtlcScript::hexToBytes(rawHex),
-                              params.ctrLockTxId)) return {};
-    std::string secret = extractSecret(knownClaimTxid, redeemHex);
-    if (!secret.empty()) return secret;
-  }
+bool BchChainClient::isReadyForNewSwap() {
+  return readinessError().empty();
+}
 
-  return {};
+std::string BchChainClient::readinessError() {
+  if (m_fullNode) return m_fullNode->readinessError();
+  return "BCH SPV mode cannot start new swaps: it cannot fund a lock and its headers are not "
+         "validated against retarget rules";
+}
+
+std::string BchChainClient::getClaimPubKey() const {
+  return m_fullNode ? m_fullNode->claimPubKeyHex() : std::string();
 }
 
 } // namespace XfgSwap

@@ -13,6 +13,23 @@
 
 namespace XfgSwap {
 
+// Where and how to reach one Electrum server.
+//   "ssl://host:port"                  TLS, system CA chain and hostname verified
+//   "ssl://host:port#sha256=<64 hex>"  TLS, leaf certificate pinned (self-signed servers)
+//   "tcp://host:port"                  plaintext, loopback hosts only
+//   "host:port"                        plaintext on loopback, otherwise verified TLS
+struct ElectrumEndpoint {
+  std::string host;
+  uint16_t port = 0;
+  bool useTls = true;
+  std::string pinnedSha256Hex;  // empty: verify against the system CA store
+};
+
+// False for malformed specs, unknown schemes, bad pins and plaintext to a
+// non-loopback host.
+bool parseElectrumEndpoint(const std::string& spec, ElectrumEndpoint& endpoint);
+bool isLoopbackHost(const std::string& host);
+
 class ElectrumConnection {
 public:
   ElectrumConnection();
@@ -21,10 +38,8 @@ public:
   ElectrumConnection(const ElectrumConnection&) = delete;
   ElectrumConnection& operator=(const ElectrumConnection&) = delete;
 
-  // Connect to an Electrum server. Returns true on success.
-  // useTls: when true, wrap the socket in OpenSSL TLS (Electrum SSL ports, e.g. 50002).
-  // Default false preserves historical plaintext Electrum (roadmap TLS deferred → optional now).
-  bool connect(const std::string& host, uint16_t port, bool useTls = false);
+  // Connect to an Electrum server; TLS is verified per the endpoint.
+  bool connect(const ElectrumEndpoint& endpoint);
 
   // Disconnect.
   void disconnect();
@@ -51,7 +66,8 @@ private:
   uint32_t m_readTimeout = 30;
   uint64_t m_callId = 0;
 
-  bool sslHandshake();
+  bool sslHandshake(const ElectrumEndpoint& endpoint);
+  bool peerCertificateMatchesPin(const std::string& pinnedSha256Hex) const;
   ssize_t sslWrite(const void* buf, size_t len);
   ssize_t sslRead(void* buf, size_t len);
 };

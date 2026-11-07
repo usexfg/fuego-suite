@@ -127,6 +127,7 @@ static bool readVarInt(const uint8_t*& p, const uint8_t* end, uint64_t& out) {
 }
 
 std::string LtcChainClient::getReceiveAddress() const {
+  if (m_fullNode) return m_fullNode->receiveAddress();
   if (m_wif.empty()) return "";
   std::vector<uint8_t> h;
   if (!KmdHtlcScript::wifToPubkeyHash(m_wif, h)) return "";
@@ -138,59 +139,27 @@ static bool isZeroSecret(const Crypto::SecretKey& s) {
   return true;
 }
 
-LtcChainClient::LtcChainClient(std::unique_ptr<LtcRpcClient> rpc, const std::string& wif)
-  : m_rpc(std::move(rpc)), m_wif(wif) {}
+LtcChainClient::LtcChainClient(std::unique_ptr<LtcRpcClient> rpc, const std::string& wif,
+                               UtxoNetwork network)
+  : m_rpc(std::move(rpc)), m_wif(wif) {
+  if (!m_rpc) return;
+  LtcRpcClient* node = m_rpc.get();
+  m_fullNode.reset(new UtxoHtlcFullNode(
+      {"LTC", SwapPair::LTC, UtxoHtlcEncoding::P2WSH, litecoinNetworkParams(network)},
+      [node](const std::string& method, const std::string& paramsJson,
+             Common::JsonValue& result, std::string& error) {
+        return node->callJson(method, paramsJson, result, error);
+      },
+      wif));
+}
 
 LtcChainClient::LtcChainClient(std::shared_ptr<ISpvClient> spvClient, const std::string& wif)
   : m_spvClient(std::move(spvClient)), m_wif(wif) {}
 
 ChainClientResult LtcChainClient::lock(const SwapParams& params) {
   if (params.lockType == SwapLockType::PTLC) return lockPtlc(params);
-  if (!m_rpc)
-    return ChainClientResult::fail("LTC lock: RPC client not available (SPV mode does not support lock)");
-
-  std::string hashHex;
-  if (!isZeroSecret(params.adaptorSecret)) {
-    hashHex = bchHashLockHex(params.adaptorSecret);
-  } else {
-    bool nonzero = false;
-    for (size_t i = 0; i < sizeof(params.hashLock); ++i)
-      if (reinterpret_cast<const uint8_t*>(&params.hashLock)[i]) { nonzero = true; break; }
-    if (!nonzero)
-      return ChainClientResult::fail("LTC lock: no adaptor secret or hashLock (need H(t) from Bob)");
-    hashHex = Common::podToHex(params.hashLock);
-  }
-
-  std::string recipientKey = params.ctrPubKey;
-  if (recipientKey.empty() && params.ctrAddress.size() == 66) {
-    try {
-      auto bytes = BtcHtlcScript::hexToBytes(params.ctrAddress);
-      if (bytes.size() == 33 && (bytes[0] == 0x02 || bytes[0] == 0x03))
-        recipientKey = params.ctrAddress;
-    } catch (const std::exception&) {}
-  }
-  if (recipientKey.size() != 66 && !params.ctrAddress.empty()) {
-    std::string resolved;
-    if (m_rpc->getAddressPubkey(params.ctrAddress, resolved) && resolved.size() == 66)
-      recipientKey = resolved;
-  }
-  if (recipientKey.size() != 66)
-    return ChainClientResult::fail(
-        "LTC lock: ctrPubKey must be 33-byte compressed pubkey hex (66 chars). "
-        "Cannot derive pubkey from address; set ctrPubKey or use a wallet-known address.");
-
-  std::string lockTxId;
-  std::string redeemScriptHex;
-  bool ok = m_rpc->lockHtlc(
-      m_wif,
-      recipientKey,
-      hashHex,
-      static_cast<uint32_t>(params.ctrTimeoutBlock),
-      params.ctrAmount64(),
-      lockTxId,
-      redeemScriptHex);
-  if (!ok) return ChainClientResult::fail("LTC lockHtlc failed");
-  return ChainClientResult::okWithState(lockTxId, redeemScriptHex);
+  if (m_fullNode) return m_fullNode->lock(params);
+  return ChainClientResult::fail("LTC lock: SPV mode cannot fund a lock");
 }
 
 ChainClientResult LtcChainClient::lockPtlc(const SwapParams& params) {
@@ -456,32 +425,10 @@ ChainClientResult LtcChainClient::verifyPtlcLock(const SwapParams& params) {
 }
 
 ChainClientResult LtcChainClient::verifyLock(const SwapParams& params) {
-  // Pure PTLC state routes through the P2TR verifier.
   if (params.chainState.rfind("p2tr:", 0) == 0) return verifyPtlcLock(params);
-  if (m_spvClient) {
-    return verifyLockSpv(params);
-  }
-
-  if (!m_rpc)
-    return ChainClientResult::fail("LTC verifyLock: no RPC or SPV client available");
-
-  std::string htlcAddress;
-  if (!params.chainState.empty()) {
-    std::string redeemHexRaw = params.chainState;
-    { auto p=redeemHexRaw.find('|'); if(p!=std::string::npos) redeemHexRaw=redeemHexRaw.substr(0,p); auto c=redeemHexRaw.find(':'); if(c!=std::string::npos) redeemHexRaw=redeemHexRaw.substr(0,c); }
-    auto redeem = BtcHtlcScript::hexToBytes(redeemHexRaw);
-    if (redeem.empty())
-      return ChainClientResult::fail("LTC verifyLock: invalid redeem script in chainState");
-    htlcAddress = BtcHtlcScript::witnessScriptToAddress(redeem, "ltc");
-  } else {
-    return ChainClientResult::fail(
-        "LTC verifyLock: need chainState (redeem script) — "
-        "cannot listunspent by txid alone");
-  }
-
-  bool ok = m_rpc->verifyLock(htlcAddress, params.ctrAmount64());
-  if (!ok) return ChainClientResult::fail("LTC lock not verified at " + htlcAddress);
-  return ChainClientResult::ok(params.ctrLockTxId);
+  if (m_spvClient) return verifyLockSpv(params);
+  if (m_fullNode) return m_fullNode->verifyLock(params);
+  return ChainClientResult::fail("LTC verifyLock: no RPC or SPV client available");
 }
 
 ChainClientResult LtcChainClient::verifyLockSpv(const SwapParams& params) {
@@ -583,63 +530,51 @@ ChainClientResult LtcChainClient::claim(const SwapParams& params) {
   if (params.lockType == SwapLockType::PTLC && params.chainState.rfind("p2tr:", 0) == 0)
     return claimOrRefundPtlcP2tr(params);
 
-  if (!m_rpc) {
-    if (m_wif.empty())
-      return ChainClientResult::fail("LTC claim: no RPC or WIF available (SPV mode needs WIF for local signing)");
+  if (m_fullNode) return m_fullNode->claim(params);
+  if (!m_spvClient)
+    return ChainClientResult::fail("LTC claim: no RPC or SPV client available");
+  if (m_wif.empty())
+    return ChainClientResult::fail("LTC claim: no RPC or WIF available (SPV mode needs WIF for local signing)");
 
-    std::array<uint8_t, 32> privKey{};
-    if (!LtcHtlcScript::wifToPrivKey(m_wif, privKey))
-      return ChainClientResult::fail("LTC claim: invalid WIF");
+  std::array<uint8_t, 32> privKey{};
+  if (!LtcHtlcScript::wifToPrivKey(m_wif, privKey))
+    return ChainClientResult::fail("LTC claim: invalid WIF");
 
-    std::string redeemHexRawC = params.chainState;
-    { auto p=redeemHexRawC.find('|'); if(p!=std::string::npos) redeemHexRawC=redeemHexRawC.substr(0,p); auto c=redeemHexRawC.find(':'); if(c!=std::string::npos) redeemHexRawC=redeemHexRawC.substr(0,c); }
-    auto witnessScript = LtcHtlcScript::hexToBytes(redeemHexRawC);
-    auto preimageBytes = LtcHtlcScript::hexToBytes(Common::podToHex(params.adaptorSecret));
+  std::string redeemHexRawC = params.chainState;
+  { auto p=redeemHexRawC.find('|'); if(p!=std::string::npos) redeemHexRawC=redeemHexRawC.substr(0,p); auto c=redeemHexRawC.find(':'); if(c!=std::string::npos) redeemHexRawC=redeemHexRawC.substr(0,c); }
+  auto witnessScript = LtcHtlcScript::hexToBytes(redeemHexRawC);
+  auto preimageBytes = LtcHtlcScript::hexToBytes(Common::podToHex(params.adaptorSecret));
 
-    uint8_t addrVersion = 0;
-    std::vector<uint8_t> pubKeyHash;
-    if (!LtcHtlcScript::base58CheckDecode(params.ctrAddress, addrVersion, pubKeyHash))
-      return ChainClientResult::fail("LTC claim: invalid destination address");
-    auto outputScript = LtcHtlcScript::buildP2pkhScriptPubKey(pubKeyHash);
+  uint8_t addrVersion = 0;
+  std::vector<uint8_t> pubKeyHash;
+  if (!LtcHtlcScript::base58CheckDecode(params.ctrAddress, addrVersion, pubKeyHash))
+    return ChainClientResult::fail("LTC claim: invalid destination address");
+  auto outputScript = LtcHtlcScript::buildP2pkhScriptPubKey(pubKeyHash);
 
-    uint64_t fee = 1000;
-    if (params.ctrAmount64() <= fee)
-      return ChainClientResult::fail("LTC claim: amount too small for fee");
-    uint64_t outputAmount = params.ctrAmount64() - fee;
+  uint64_t fee = 1000;
+  if (params.ctrAmount64() <= fee)
+    return ChainClientResult::fail("LTC claim: amount too small for fee");
+  uint64_t outputAmount = params.ctrAmount64() - fee;
 
-    const uint32_t nSequence = 0xFFFFFFFD;
+  const uint32_t nSequence = 0xFFFFFFFD;
 
-    auto der = LtcHtlcScript::signInput(privKey, 2, 0, nSequence,
-        params.ctrLockTxId, 0, witnessScript, params.ctrAmount64(),
-        outputScript, outputAmount);
-    if (der.empty())
-      return ChainClientResult::fail("LTC claim SPV: signing failed");
+  auto der = LtcHtlcScript::signInput(privKey, 2, 0, nSequence,
+      params.ctrLockTxId, 0, witnessScript, params.ctrAmount64(),
+      outputScript, outputAmount);
+  if (der.empty())
+    return ChainClientResult::fail("LTC claim SPV: signing failed");
 
-    std::vector<uint8_t> emptyScriptSig;
-    auto witnessStack = LtcHtlcScript::createClaimWitness(der, preimageBytes, witnessScript);
+  std::vector<uint8_t> emptyScriptSig;
+  auto witnessStack = LtcHtlcScript::createClaimWitness(der, preimageBytes, witnessScript);
 
-    auto rawTx = LtcHtlcScript::buildRawSegWitTx(
-        params.ctrLockTxId, 0, params.ctrAmount64(),
-        emptyScriptSig, witnessStack, params.ctrAddress, outputAmount, 0);
-
-    std::string txid;
-    if (!m_spvClient->broadcastTx(rawTx, txid))
-      return ChainClientResult::fail("LTC claim SPV: broadcast failed");
-    return ChainClientResult::ok(txid);
-  }
-
-  std::string redeemHexRawC2 = params.chainState;
-  { auto p=redeemHexRawC2.find('|'); if(p!=std::string::npos) redeemHexRawC2=redeemHexRawC2.substr(0,p); auto c=redeemHexRawC2.find(':'); if(c!=std::string::npos) redeemHexRawC2=redeemHexRawC2.substr(0,c); }
-  std::string claimTxId;
-  bool ok = m_rpc->claim(
-      m_wif,
+  auto rawTx = LtcHtlcScript::buildRawSegWitTx(
       params.ctrLockTxId, 0, params.ctrAmount64(),
-      redeemHexRawC2,
-      Common::podToHex(params.adaptorSecret),
-      params.ctrAddress,
-      claimTxId);
-  if (!ok) return ChainClientResult::fail("LTC claim failed");
-  return ChainClientResult::ok(claimTxId);
+      emptyScriptSig, witnessStack, params.ctrAddress, outputAmount, 0);
+
+  std::string txid;
+  if (!m_spvClient->broadcastTx(rawTx, txid))
+    return ChainClientResult::fail("LTC claim SPV: broadcast failed");
+  return ChainClientResult::ok(txid);
 }
 
 ChainClientResult LtcChainClient::refund(const SwapParams& params) {
@@ -648,63 +583,51 @@ ChainClientResult LtcChainClient::refund(const SwapParams& params) {
   if (params.lockType == SwapLockType::PTLC && params.chainState.rfind("p2tr:", 0) == 0)
     return claimOrRefundPtlcP2tr(params);
 
-  if (!m_rpc) {
-    if (m_wif.empty())
-      return ChainClientResult::fail("LTC refund: no RPC or WIF available (SPV mode needs WIF for local signing)");
+  if (m_fullNode) return m_fullNode->refund(params);
+  if (!m_spvClient)
+    return ChainClientResult::fail("LTC refund: no RPC or SPV client available");
+  if (m_wif.empty())
+    return ChainClientResult::fail("LTC refund: no RPC or WIF available (SPV mode needs WIF for local signing)");
 
-    std::array<uint8_t, 32> privKey{};
-    if (!LtcHtlcScript::wifToPrivKey(m_wif, privKey))
-      return ChainClientResult::fail("LTC refund: invalid WIF");
+  std::array<uint8_t, 32> privKey{};
+  if (!LtcHtlcScript::wifToPrivKey(m_wif, privKey))
+    return ChainClientResult::fail("LTC refund: invalid WIF");
 
-    std::string redeemHexRawL0 = params.chainState;
-    { auto p=redeemHexRawL0.find('|'); if(p!=std::string::npos) redeemHexRawL0=redeemHexRawL0.substr(0,p); auto c=redeemHexRawL0.find(':'); if(c!=std::string::npos) redeemHexRawL0=redeemHexRawL0.substr(0,c); }
-    auto witnessScript = LtcHtlcScript::hexToBytes(redeemHexRawL0);
+  std::string redeemHexRawL0 = params.chainState;
+  { auto p=redeemHexRawL0.find('|'); if(p!=std::string::npos) redeemHexRawL0=redeemHexRawL0.substr(0,p); auto c=redeemHexRawL0.find(':'); if(c!=std::string::npos) redeemHexRawL0=redeemHexRawL0.substr(0,c); }
+  auto witnessScript = LtcHtlcScript::hexToBytes(redeemHexRawL0);
 
-    uint32_t nLocktime = static_cast<uint32_t>(params.ctrTimeoutBlock);
+  uint32_t nLocktime = static_cast<uint32_t>(params.ctrTimeoutBlock);
 
-    uint8_t addrVersion = 0;
-    std::vector<uint8_t> pubKeyHash;
-    if (!LtcHtlcScript::base58CheckDecode(params.ctrAddress, addrVersion, pubKeyHash))
-      return ChainClientResult::fail("LTC refund: invalid destination address");
-    auto outputScript = LtcHtlcScript::buildP2pkhScriptPubKey(pubKeyHash);
+  uint8_t addrVersion = 0;
+  std::vector<uint8_t> pubKeyHash;
+  if (!LtcHtlcScript::base58CheckDecode(params.ctrAddress, addrVersion, pubKeyHash))
+    return ChainClientResult::fail("LTC refund: invalid destination address");
+  auto outputScript = LtcHtlcScript::buildP2pkhScriptPubKey(pubKeyHash);
 
-    uint64_t fee = 1000;
-    if (params.ctrAmount64() <= fee)
-      return ChainClientResult::fail("LTC refund: amount too small for fee");
-    uint64_t outputAmount = params.ctrAmount64() - fee;
+  uint64_t fee = 1000;
+  if (params.ctrAmount64() <= fee)
+    return ChainClientResult::fail("LTC refund: amount too small for fee");
+  uint64_t outputAmount = params.ctrAmount64() - fee;
 
-    auto der = LtcHtlcScript::signInput(privKey, 2, nLocktime,
-        0xFFFFFFFE,
-        params.ctrLockTxId, 0, witnessScript, params.ctrAmount64(),
-        outputScript, outputAmount);
-    if (der.empty())
-      return ChainClientResult::fail("LTC refund SPV: signing failed");
+  auto der = LtcHtlcScript::signInput(privKey, 2, nLocktime,
+      0xFFFFFFFE,
+      params.ctrLockTxId, 0, witnessScript, params.ctrAmount64(),
+      outputScript, outputAmount);
+  if (der.empty())
+    return ChainClientResult::fail("LTC refund SPV: signing failed");
 
-    std::vector<uint8_t> emptyScriptSig;
-    auto witnessStack = LtcHtlcScript::createRefundWitness(der, witnessScript);
+  std::vector<uint8_t> emptyScriptSig;
+  auto witnessStack = LtcHtlcScript::createRefundWitness(der, witnessScript);
 
-    auto rawTx = LtcHtlcScript::buildRawSegWitTx(
-        params.ctrLockTxId, 0, params.ctrAmount64(),
-        emptyScriptSig, witnessStack, params.ctrAddress, outputAmount, nLocktime);
-
-    std::string txid;
-    if (!m_spvClient->broadcastTx(rawTx, txid))
-      return ChainClientResult::fail("LTC refund SPV: broadcast failed");
-    return ChainClientResult::ok(txid);
-  }
-
-  std::string redeemHexRawL1 = params.chainState;
-  { auto p=redeemHexRawL1.find('|'); if(p!=std::string::npos) redeemHexRawL1=redeemHexRawL1.substr(0,p); auto c=redeemHexRawL1.find(':'); if(c!=std::string::npos) redeemHexRawL1=redeemHexRawL1.substr(0,c); }
-  std::string refundTxId;
-  bool ok = m_rpc->refundHtlc(
-      m_wif,
+  auto rawTx = LtcHtlcScript::buildRawSegWitTx(
       params.ctrLockTxId, 0, params.ctrAmount64(),
-      redeemHexRawL1,
-      static_cast<uint32_t>(params.ctrTimeoutBlock),
-      params.ctrAddress,
-      refundTxId);
-  if (!ok) return ChainClientResult::fail("LTC refundHtlc failed");
-  return ChainClientResult::ok(refundTxId);
+      emptyScriptSig, witnessStack, params.ctrAddress, outputAmount, nLocktime);
+
+  std::string txid;
+  if (!m_spvClient->broadcastTx(rawTx, txid))
+    return ChainClientResult::fail("LTC refund SPV: broadcast failed");
+  return ChainClientResult::ok(txid);
 }
 
 ChainClientResult LtcChainClient::verifyReserveProof(const std::string& expectedMessage,
@@ -780,6 +703,11 @@ ChainClientResult LtcChainClient::getTransactionDetails(const std::string& txId,
     result.spvVerified = inclusion.merkleVerified;
     result.blockHeight = inclusion.blockHeight;
     result.confirmations = inclusion.depth;
+    return result;
+  }
+
+  if (m_fullNode) {
+    result = m_fullNode->transactionDetails(txId);
     return result;
   }
 
@@ -893,43 +821,34 @@ std::string LtcChainClient::tryExtractClaimedSecret(const SwapParams& params) {
     return Common::podToHex(t);
   }
 
-  if (params.chainState.empty() || params.ctrLockTxId.empty()) return {};
+  if (m_fullNode) return m_fullNode->tryExtractClaimedSecret(params);
+  if (!m_spvClient || params.chainState.empty() || params.ctrLockTxId.empty()) return {};
 
-  std::string redeemHex = params.chainState;
-  std::string knownClaimTxid;
-  auto colon = params.chainState.find(':');
-  if (colon != std::string::npos && colon + 1 < params.chainState.size()) {
-    std::string left = params.chainState.substr(0, colon);
-    std::string right = params.chainState.substr(colon + 1);
-    if (!left.empty() && (left.size() % 2) == 0 && right.size() == 64) {
-      redeemHex = left;
-      knownClaimTxid = right;
-    }
-  }
+  SpvSpend spend;
+  if (!m_spvClient->findSpend(params.ctrLockTxId, params.ctrLockVout, spend) ||
+      !isVerifiedSpvSpend(spend, params.requiredConfirmations ? params.requiredConfirmations : 6) ||
+      spend.spendingTxid.empty())
+    return {};
+  return extractSecret(spend.spendingTxid, lockScriptHex(params.chainState));
+}
 
-  if (m_spvClient) {
-    for (uint32_t vout = 0; vout < 4; ++vout) {
-      SpvSpend spend;
-      if (!m_spvClient->findSpend(params.ctrLockTxId, vout, spend) ||
-          !isVerifiedSpvSpend(spend, params.requiredConfirmations ?
-                                   params.requiredConfirmations : 6))
-        continue;
-      if (spend.spendingTxid.empty()) continue;
-      std::string secret = extractSecret(spend.spendingTxid, redeemHex);
-      if (!secret.empty()) return secret;
-    }
-  }
+bool LtcChainClient::hasConfirmedClaim(const SwapParams& params) {
+  return m_fullNode && params.chainState.rfind("p2tr:", 0) != 0 &&
+         m_fullNode->hasConfirmedClaim(params);
+}
 
-  if (m_rpc && !knownClaimTxid.empty()) {
-    std::string rawHex;
-    if (!m_rpc->getRawTransaction(knownClaimTxid, rawHex) ||
-        !spends_utxo_lock_output(LtcHtlcScript::hexToBytes(rawHex),
-                              params.ctrLockTxId)) return {};
-    std::string secret = extractSecret(knownClaimTxid, redeemHex);
-    if (!secret.empty()) return secret;
-  }
+bool LtcChainClient::isReadyForNewSwap() {
+  return readinessError().empty();
+}
 
-  return {};
+std::string LtcChainClient::readinessError() {
+  if (m_fullNode) return m_fullNode->readinessError();
+  return "LTC SPV mode cannot start new swaps: it cannot fund a lock and its headers are not "
+         "validated against retarget rules";
+}
+
+std::string LtcChainClient::getClaimPubKey() const {
+  return m_fullNode ? m_fullNode->claimPubKeyHex() : std::string();
 }
 
 } // namespace XfgSwap

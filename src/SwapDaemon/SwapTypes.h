@@ -266,6 +266,7 @@ struct SwapParams {
   // Chain state
   uint32_t htlcOutputIndex;     // global HTLC output index on Fuego
   std::string ctrLockTxId;      // counterparty lock tx hash
+  uint32_t ctrLockVout = 0;     // UTXO chains: lock output index in ctrLockTxId
   std::string ctrClaimTxId;     // counterparty claim tx hash (Bob's on-chain claim of CTR)
   // Persisted before calling claim(): an RPC failure may mean the transaction
   // was submitted but its response was lost. While true, absence of a txid is

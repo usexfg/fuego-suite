@@ -487,7 +487,7 @@ static void test_fullNode_mode_no_spv() {
   memset(&params.adaptorSecret, 0x42, sizeof(params.adaptorSecret));
   auto result = client.lock(params);
   assert(!result.success);
-  assert(result.error.find("RPC client not available") != std::string::npos);
+  assert(result.error.find("SPV mode cannot fund a lock") != std::string::npos);
 
   // claim() should fail — no RPC
   result = client.claim(params);

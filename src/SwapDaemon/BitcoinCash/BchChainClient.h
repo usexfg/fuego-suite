@@ -3,6 +3,7 @@
 #include "../IChainClient.h"
 #include "../Spv/ISpvClient.h"
 #include "BchRpcClient.h"
+#include "../Utxo/UtxoHtlcFullNode.h"
 #include <string>
 #include <memory>
 
@@ -11,14 +12,18 @@ namespace XfgSwap {
 class BchChainClient : public IChainClient {
 public:
   // Full-node mode (existing)
-  BchChainClient(std::unique_ptr<BchRpcClient> rpc, const std::string& wif);
+  BchChainClient(std::unique_ptr<BchRpcClient> rpc, const std::string& wif,
+                 UtxoNetwork network = UtxoNetwork::MAINNET);
 
   // SPV mode (no RPC client required)
   BchChainClient(std::shared_ptr<ISpvClient> spvClient, const std::string& wif);
 
   std::string chainName() const override { return "BCH"; }
   bool usesSpvVerification() const override { return m_spvClient != nullptr; }
-  bool isReadyForNewSwap() override { return false; } // Neither transport has a complete safe swap path
+  bool isReadyForNewSwap() override;
+  std::string readinessError() override;
+  std::string getClaimPubKey() const override;
+  bool hasConfirmedClaim(const SwapParams& params) override;
 
   std::string getReceiveAddress() const override;
   ChainClientResult lock(const SwapParams& params) override;
@@ -50,6 +55,7 @@ private:
                                const std::vector<uint8_t>& htlcP2shScriptPubKey);
 
   std::unique_ptr<BchRpcClient> m_rpc;   // null in SPV mode
+  std::unique_ptr<UtxoHtlcFullNode> m_fullNode;  // HTLC swap path over m_rpc
   std::string m_wif;                      // empty in SPV mode
   std::shared_ptr<ISpvClient> m_spvClient;  // null in full-node mode
 };

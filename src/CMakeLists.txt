@@ -310,6 +310,9 @@ add_library(SwapDaemonLib STATIC
     SwapDaemon/Komodo/KmdHtlcScript.cpp
     SwapDaemon/Komodo/KmdChainClient.cpp
     SwapDaemon/Bitcoin/BtcRpcClient.cpp
+    SwapDaemon/Utxo/UtxoFullNode.cpp
+    SwapDaemon/Utxo/UtxoHtlc.cpp
+    SwapDaemon/Utxo/UtxoHtlcFullNode.cpp
     SwapDaemon/Litecoin/LtcRpcClient.cpp
     SwapDaemon/Komodo/KmdRpcClient.cpp
     SwapDaemon/Decred/DcrRpcClient.cpp
@@ -334,6 +337,19 @@ target_include_directories(SwapDaemonLib PUBLIC
 )
 target_link_libraries(SwapDaemonLib PUBLIC Common Crypto Serialization CryptoNoteCore OpenSSL::SSL OpenSSL::Crypto secp256k1)
 target_include_directories(SwapDaemonLib SYSTEM PUBLIC ${JSONCPP_INCLUDE_DIRS})
+
+# Full-node UTXO HTLC engine: script layout, signed claim/refund bytes checked
+# against independently computed BIP143 digests, spend discovery with reorgs.
+add_executable(test_utxo_htlc
+    SwapDaemon/tests/test_utxo_htlc.cpp)
+target_link_libraries(test_utxo_htlc PRIVATE
+    SwapDaemonLib Common Crypto CryptoNoteCore Serialization OpenSSL::SSL OpenSSL::Crypto secp256k1)
+
+# CTR_LOCKED notice and ADAPTOR_EXCHANGE claim key: signed, bounded, round-trip.
+add_executable(test_ctr_lock_notice
+    SwapDaemon/tests/test_ctr_lock_notice.cpp)
+target_link_libraries(test_ctr_lock_notice PRIVATE
+    SwapDaemonLib Common Crypto CryptoNoteCore Serialization OpenSSL::SSL OpenSSL::Crypto)
 
 # Swap security audit regressions (AUDIT 1.2/3.2 adaptor binding, 6.1 timeout floor)
 add_executable(test_swap_audit_regressions
@@ -759,6 +775,9 @@ add_executable(SwapDaemon
     SwapDaemon/Komodo/KmdHtlcScript.cpp
     SwapDaemon/Komodo/KmdChainClient.cpp
     SwapDaemon/Bitcoin/BtcRpcClient.cpp
+    SwapDaemon/Utxo/UtxoFullNode.cpp
+    SwapDaemon/Utxo/UtxoHtlc.cpp
+    SwapDaemon/Utxo/UtxoHtlcFullNode.cpp
     SwapDaemon/Litecoin/LtcRpcClient.cpp
     SwapDaemon/Komodo/KmdRpcClient.cpp
     SwapDaemon/Decred/DcrRpcClient.cpp
@@ -1066,6 +1085,8 @@ set_property(TARGET SwapDaemon PROPERTY OUTPUT_NAME "xfg-swapd")
 # --------------------------
 set(_TEST_DAEMON_TARGETS
     test_swap_pair_catalog
+    test_utxo_htlc
+    test_ctr_lock_notice
     test_adaptor_roundtrip
     test_price_oracle_arb
     test_price_policy
@@ -1115,6 +1136,11 @@ set(_TEST_DAEMON_TARGETS
 foreach(_tgt IN LISTS _TEST_DAEMON_TARGETS)
   set_target_properties(${_tgt} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/src/test_daemons")
+  # Release adds -DNDEBUG, which would compile every assert() in these tests
+  # away and let them pass without checking anything.
+  target_compile_options(${_tgt} PRIVATE
+    $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG>
+    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-UNDEBUG>)
 endforeach()
 
 # Register these with ctest. The loop above only redirected the binaries; without

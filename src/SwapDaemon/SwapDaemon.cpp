@@ -22,6 +22,7 @@
 #include "SwapTxBuilder.h"
 #include "../Treasury/VaultKeys.h"
 #include "SwapPeerProtocol.h"
+#include "Utxo/UtxoHtlcFullNode.h"
 #include "Common/StringTools.h"
 #include "Common/JsonValue.h"
 #include "CryptoNoteCore/CryptoNoteTools.h"
@@ -149,6 +150,15 @@ void applyPtlcConfig(XfgSwap::EthRpcClient& rpc, const std::string& ptlcRegistry
 
 namespace XfgSwap {
 
+namespace {
+// ChainClientConfig validation already rejected unknown names.
+UtxoNetwork utxoNetworkFromConfig(const std::string& name) {
+  UtxoNetwork network = UtxoNetwork::MAINNET;
+  parseUtxoNetwork(name, network);
+  return network;
+}
+}  // namespace
+
 // ── Base58 encode (Bitcoin alphabet, matches SolRpcClient) ───────────────
 namespace {
 static const char kBase58Alpha[] =
@@ -253,7 +263,8 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
           chainCfg.bchHost, chainCfg.bchPort,
           chainCfg.bchRpcUser, chainCfg.bchRpcPass);
       m_chainRegistry.registerChain(SwapPair::BCH,
-          std::make_unique<BchChainClient>(std::move(rpc), chainCfg.bchWif));
+          std::make_unique<BchChainClient>(std::move(rpc), chainCfg.bchWif,
+                                           utxoNetworkFromConfig(chainCfg.bchNetwork)));
       m_logger(Logging::INFO) << "BCH chain client registered: "
         << chainCfg.bchHost << ":" << chainCfg.bchPort;
     }
@@ -612,7 +623,8 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
           chainCfg.btcHost, chainCfg.btcPort,
           chainCfg.btcRpcUser, chainCfg.btcRpcPass);
       m_chainRegistry.registerChain(SwapPair::BTC,
-          std::make_unique<BtcChainClient>(std::move(rpc), chainCfg.btcWif));
+          std::make_unique<BtcChainClient>(std::move(rpc), chainCfg.btcWif,
+                                           utxoNetworkFromConfig(chainCfg.btcNetwork)));
       m_logger(Logging::INFO) << "BTC chain client registered: "
         << chainCfg.btcHost << ":" << chainCfg.btcPort;
     }
@@ -637,7 +649,8 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
           chainCfg.ltcHost, chainCfg.ltcPort,
           chainCfg.ltcRpcUser, chainCfg.ltcRpcPass);
       m_chainRegistry.registerChain(SwapPair::LTC,
-          std::make_unique<LtcChainClient>(std::move(rpc), chainCfg.ltcWif));
+          std::make_unique<LtcChainClient>(std::move(rpc), chainCfg.ltcWif,
+                                           utxoNetworkFromConfig(chainCfg.ltcNetwork)));
       m_logger(Logging::INFO) << "LTC chain client registered: "
         << chainCfg.ltcHost << ":" << chainCfg.ltcPort;
     }
@@ -1680,6 +1693,8 @@ SwapDaemon::AcceptResult SwapDaemon::accept(const std::string& swapId) {
     ax.adaptorExchange.requirePtlc = params.requirePtlc;
     // Cross-curve secp point T_secp = t·G_secp for counterparty-chain PTLC
     ax.adaptorExchange.secpPubHex = params.secpPubHex;
+    if (IChainClient* ctrClient = m_chainRegistry.getClient(params.pair))
+      ax.adaptorExchange.ctrClaimPubKeyHex = ctrClient->getClaimPubKey();
     signPeerMessage(ax, params.ourSwapPubKey, params.ourSwapSecKey);
     if (deliverPeerMessage(ax)) {
       m_logger(Logging::INFO) << "Delivered ADAPTOR_EXCHANGE (T + H(t)) to peer";
@@ -2331,11 +2346,13 @@ bool SwapDaemon::handlePreSigsReady(SwapStateMachine& sm) {
       m_logger(Logging::INFO) << "  " << client->chainName()
         << " locked, ref: " << result.txId;
       params.ctrLockTxId = result.txId;
+      params.ctrLockVout = result.outputIndex;
       if (!result.chainState.empty()) {
         params.chainState = result.chainState;
       }
       sm.transition(SwapState::ADAPTOR_CTR_LOCKED);
       m_db.saveSwap(sm);
+      announceCounterpartyLock(params);
       return true;
     }
     m_logger(Logging::ERROR) << "  " << client->chainName()
@@ -2575,6 +2592,7 @@ bool SwapDaemon::handleCtrLocked(SwapStateMachine& sm) {
 
   std::string claimedHex = client->tryExtractClaimedSecret(params);
   if (claimedHex.empty() || claimedHex.size() != 64) {
+    announceCounterpartyLock(params);
     m_logger(Logging::INFO) << "  " << swapPairToString(params.pair)
       << " locked. Waiting for Bob to claim (on-chain preimage)...";
     return false;
@@ -4338,6 +4356,69 @@ bool SwapDaemon::buildAndBroadcastEscrowTx(SwapParams& params,
   return true;
 }
 
+namespace {
+
+bool isLockReference(const std::string& ref) {
+  return !ref.empty() && std::all_of(ref.begin(), ref.end(), [](unsigned char c) {
+    return std::isalnum(c) != 0;
+  });
+}
+
+bool isLockState(const std::string& state) {
+  return std::all_of(state.begin(), state.end(), [](unsigned char c) {
+    return std::isalnum(c) != 0 || c == ':' || c == '|';
+  });
+}
+
+// The lock part of chainState, without a ":<claimTxid>" suffix appended later.
+std::string announcedLockState(const SwapParams& params) {
+  return params.chainState.rfind("p2tr:", 0) == 0 ? params.chainState
+                                                  : lockScriptHex(params.chainState);
+}
+
+}  // namespace
+
+void SwapDaemon::announceCounterpartyLock(const SwapParams& params) {
+  if (params.role != SwapRole::ALICE || params.pair == SwapPair::XMR ||
+      params.peerEndpoint.empty() || params.ctrLockTxId.empty())
+    return;
+  PeerMessage notice;
+  notice.type = PeerMessageType::CTR_LOCKED;
+  notice.swapId = params.swapId;
+  notice.ctrLocked.lockRef = params.ctrLockTxId;
+  notice.ctrLocked.lockOutputIndex = params.ctrLockVout;
+  notice.ctrLocked.lockState = announcedLockState(params);
+  if (signPeerMessage(notice, params.ourSwapPubKey, params.ourSwapSecKey) &&
+      !deliverPeerMessage(notice))
+    m_logger(Logging::WARNING) << "  CTR_LOCKED delivery failed — will retry next tick";
+}
+
+bool SwapDaemon::acceptCounterpartyLockNotice(SwapStateMachine& sm, const MsgCtrLocked& notice) {
+  SwapParams& params = sm.params();
+  if (params.role != SwapRole::BOB || params.pair == SwapPair::XMR || sm.isTerminal()) {
+    m_logger(Logging::WARNING) << "CTR_LOCKED ignored for swap " << params.swapId;
+    return false;
+  }
+  if (!isLockReference(notice.lockRef) || !isLockState(notice.lockState)) {
+    m_logger(Logging::ERROR) << "CTR_LOCKED rejected: malformed lock reference or state";
+    return false;
+  }
+  if (!params.ctrLockTxId.empty() || !params.chainState.empty()) {
+    const bool identical = params.ctrLockTxId == notice.lockRef &&
+                           params.ctrLockVout == notice.lockOutputIndex &&
+                           announcedLockState(params) == notice.lockState;
+    if (!identical)
+      m_logger(Logging::ERROR) << "Conflicting CTR_LOCKED rejected for swap " << params.swapId;
+    return identical;
+  }
+  params.ctrLockTxId = notice.lockRef;
+  params.ctrLockVout = notice.lockOutputIndex;
+  params.chainState = notice.lockState;
+  m_logger(Logging::INFO) << "  Received CTR_LOCKED: " << notice.lockRef << ":"
+                          << notice.lockOutputIndex << " — verifying on chain";
+  return true;
+}
+
 bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
   // Dispatch incoming peer messages to the appropriate swap and phase.
   m_logger(Logging::INFO) << "Peer message for swap " << msg.swapId
@@ -4434,6 +4515,14 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
             return false;
           }
         }
+        if (!msg.adaptorExchange.ctrClaimPubKeyHex.empty()) {
+          std::vector<uint8_t> claimKey;
+          if (!decodeHex(msg.adaptorExchange.ctrClaimPubKeyHex, claimKey) ||
+              !isCompressedPublicKey(claimKey)) {
+            m_logger(Logging::ERROR) << "ADAPTOR_EXCHANGE rejected: malformed claim key";
+            return false;
+          }
+        }
         static const Crypto::PublicKey ZERO_PK{};
         const bool alreadyBound =
             std::memcmp(&params.adaptorPoint, &ZERO_PK, sizeof(ZERO_PK)) != 0;
@@ -4449,7 +4538,8 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
                           sizeof(ZERO_PK)) != 0 ||
               std::memcmp(&params.hashLock, &msg.adaptorExchange.htlcHashLock,
                           sizeof(Crypto::Hash)) != 0 ||
-              secpConflict) {
+              secpConflict ||
+              params.ctrPubKey != msg.adaptorExchange.ctrClaimPubKeyHex) {
             m_logger(Logging::ERROR) << "Conflicting duplicate ADAPTOR_EXCHANGE rejected";
             return false;
           }
@@ -4463,6 +4553,7 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
         params.lockType = msg.adaptorExchange.lockType;
         params.ptlcPoint = msg.adaptorExchange.ptlcPoint;
         params.secpPubHex = msg.adaptorExchange.secpPubHex;
+        params.ctrPubKey = msg.adaptorExchange.ctrClaimPubKeyHex;
         // Preserve local requirePtlc OR with peer's (if either requires, enforce)
         params.requirePtlc = localRequire || msg.adaptorExchange.requirePtlc;
         // Downgrade check: if we require PTLC but peer sent HTLC, abort
@@ -4487,6 +4578,7 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
           std::memset(&params.adaptorDleqProof, 0, sizeof(params.adaptorDleqProof));
           std::memset(&params.hashLock, 0, sizeof(params.hashLock));
           params.secpPubHex.clear();
+          params.ctrPubKey.clear();
           return false;
         }
         return true;
@@ -4721,6 +4813,9 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
         m_logger(Logging::INFO) << "Received peer XMR spend share";
         return true;
       }
+
+      case PeerMessageType::CTR_LOCKED:
+        return acceptCounterpartyLockNotice(sm, msg.ctrLocked);
 
       case PeerMessageType::SECRET_REVEAL: {
         // Alice receives adaptor preimage t from Bob.

@@ -833,24 +833,13 @@ bool ElectrumSpvClient::connectToServers() {
 
   size_t connected = 0;
   for (const auto& addr : m_serverAddrs) {
-    // Parse "host:port"
-    auto colon = addr.rfind(':');
-    if (colon == std::string::npos) {
-      continue;
-    }
-
-    std::string host = addr.substr(0, colon);
-    uint16_t port = 0;
-    try {
-      port = static_cast<uint16_t>(std::stoi(addr.substr(colon + 1)));
-    } catch (const std::exception&) {
-      continue;
-    }
+    ElectrumEndpoint endpoint;
+    if (!parseElectrumEndpoint(addr, endpoint)) continue;
 
     auto conn = std::make_unique<ElectrumConnection>();
     conn->setConnectTimeout(5);
     conn->setReadTimeout(30);
-    if (conn->connect(host, port)) {
+    if (conn->connect(endpoint)) {
       m_conns.push_back(std::move(conn));
       ++connected;
     }

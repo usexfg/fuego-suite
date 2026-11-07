@@ -1,3 +1,42 @@
+## DeXFG remediation Phase 1: full-node UTXO swap path for BTC, LTC, BCH (code; e2e gate open)
+
+**Started**: 2026-11-07
+**Agent**: Claude Code
+**Status**: CODE DONE / E2E GATE OPEN — tasks 1.8 and 1.9 not done: no regtest node could be built in this session, so ids 3, 9, 10 stay non-executable
+**Scope**: `src/SwapDaemon/Utxo/` (new), `Bitcoin/`, `Litecoin/`, `BitcoinCash/` clients and RPC clients, `SwapPeerProtocol.*`, `SwapDaemon.*`, `SwapTypes.h`, `SwapStateMachine.cpp`, `ChainClientConfig.cpp`, `IChainClient.h`, `ChainClientResult.h`, `Spv/ElectrumConnection.*`, `Spv/ElectrumSpvClient.cpp`, `src/CMakeLists.txt`, tests, `swap_config.example.json`, plan
+
+Implements `docs/dexfg/SWAP_REMEDIATION_PLAN.md` tasks 1.0-1.7 and 1.10, plus 2.1 and F30 found on the way.
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1.0 | `ADAPTOR_EXCHANGE` carries Bob's claim key (signed, tagged digest segment; legacy digest unchanged when absent); new signed `CTR_LOCKED` (lock ref, output index, lock script) sent by Alice after funding and every tick until the claim is seen; Bob binds the first notice, rejects conflicts, accepts alphanumeric refs only | Claude Code | 2026-11-07 | DONE; `test_ctr_lock_notice` 12/12 |
+| 1.1 | Lock outpoint carried end to end: `ChainClientResult::outputIndex`, `SwapParams::ctrLockVout` (persisted), output index read from the wallet transaction by script | Claude Code | 2026-11-07 | DONE |
+| 1.2 | Lock verification with `gettxout` (no wallet): exact P2WSH/P2SH script, value >= amount, confirmations >= required; lock script parsed byte-exact, hash = H(t), recipient = our key, timeout leaves the catalog claim runway | Claude Code | 2026-11-07 | DONE |
+| 1.3 | `importaddress` and `listunspent` gone from the HTLC path; pure-P2TR PTLC is not negotiated in full-node mode (t is unrecoverable without the presig) | Claude Code | 2026-11-07 | DONE |
+| 1.4 | `UtxoSpendTracker`: claim discovery from `getblockhash`/`getblock 2`, bounded per call, rewinds on a reorg of the recorded spend or last scanned block, optional `gettxspendingprevout` mempool signal; restart rescans from the lock block (not persisted) | Claude Code | 2026-11-07 | DONE; 7 scenarios incl. two reorgs |
+| 1.5 | `hasConfirmedClaim` from chain data; the `SECRET_REVEAL` txid is only a hint re-checked against the outpoint and hash lock | Claude Code | 2026-11-07 | DONE |
+| 1.6 | Network parameters (`btc_network`, `ltc_network`, `bch_network`: main/test/signet/regtest) for HRP, P2PKH/P2SH/WIF versions; WIF must match the network | Claude Code | 2026-11-07 | DONE |
+| 1.7 | Readiness from capability: valid key, node chain matches, IBD done, wallet with private keys loaded; SPV reports a reason | Claude Code | 2026-11-07 | DONE |
+| 1.8 | Remove ids 3, 9, 10 from `isExecutablePair` | — | — | NOT DONE (gated on 1.9) |
+| 1.9 | Regtest two-daemon end-to-end gate | — | — | NOT DONE; building bitcoind from source was refused in this session |
+| 1.10 | One HTLC engine (`UtxoHtlc`) for P2WSH and P2SH/FORKID: exact 8-decimal amounts, `0x01`/empty selectors, signed nSequence written, refunds pay the refunder's key, fee from `estimatesmartfee` capped at 10% of the lock, lock funding idempotent via `listtransactions`; dead RPC claim/refund code removed | Claude Code | 2026-11-07 | DONE; signatures verify against python-bitcoinlib 0.11.2 digests (`tests/vectors/utxo_htlc_sighash.py`) |
+| 2.1 | Electrum TLS: `ssl://` CA chain + hostname, `#sha256=` leaf pin, plaintext only to loopback; previously every connection was plaintext (F31) | Claude Code | 2026-11-07 | DONE |
+| F30 | Test targets compile with `-UNDEBUG`; exposed and fixed two stale `parseClaimPreimage` fixtures and one message check | Claude Code | 2026-11-07 | DONE |
+
+Not changed, reported:
+- F32: AFK fill results carry no claim key, so UTXO pairs are interactive-only.
+- SPV claim/refund still use the old builder (F26-F28 apply there); SPV cannot start swaps. Phase 2.5 moves it to the engine.
+
+### Sign-off
+
+| Gate | Status | Signed | Date |
+|------|--------|--------|------|
+| Full build, Clang 18 | PASS | Claude Code | 2026-11-07 |
+| Full build, GCC 13.3 | PASS | Claude Code | 2026-11-07 |
+| `ctest -LE manual`, asserts enabled (45 tests) | 44 PASS, 1 FAIL (`test_orderbook_auction`, F29, pre-existing) | Claude Code | 2026-11-07 |
+| `test_utxo_htlc` | PASS, 62/62 | Claude Code | 2026-11-07 |
+| Regtest end-to-end (1.9) | NOT RUN — no bitcoind | — | — |
+
 ## DeXFG remediation Phase 0: truthful build and CI
 
 **Started**: 2026-11-07

@@ -82,6 +82,7 @@ struct ChainClientConfig {
   std::string bchRpcUser;
   std::string bchRpcPass;
   std::string bchWif;          // WIF-encoded private key for HTLC signing
+  std::string bchNetwork;       // main | test | signet | regtest (full-node mode)
 
   // BCH SPV mode — when bchMode == "spv", use ElectrumSpvClient instead of RPC
   std::string bchMode;                         // "rpc" (default) or "spv"
@@ -180,6 +181,7 @@ struct ChainClientConfig {
   std::string btcRpcUser;
   std::string btcRpcPass;
   std::string btcWif;
+  std::string btcNetwork;       // main | test | signet | regtest (full-node mode)
 
   // BTC SPV mode — when btcMode == "spv", use ElectrumSpvClient instead of RPC
   std::string btcMode;                         // "rpc" (default) or "spv"
@@ -194,6 +196,7 @@ struct ChainClientConfig {
   std::string ltcRpcUser;
   std::string ltcRpcPass;
   std::string ltcWif;
+  std::string ltcNetwork;       // main | test | signet | regtest (full-node mode)
 
   // LTC SPV mode — when ltcMode == "spv", use ElectrumSpvClient instead of RPC
   std::string ltcMode;                         // "rpc" (default) or "spv"
@@ -394,6 +397,10 @@ public:
   // Send a signed PeerMessage to the swap's peerEndpoint over SwapP2P.
   // Returns false if P2P is down, peerEndpoint empty, or send fails.
   bool deliverPeerMessage(const PeerMessage& msg);
+  // Alice → Bob: signed notice of where the counterparty lock is (F22).
+  void announceCounterpartyLock(const SwapParams& params);
+  // Bob: bind the first lock notice; reject a conflicting one.
+  bool acceptCounterpartyLockNotice(SwapStateMachine& sm, const MsgCtrLocked& notice);
 
   // Configure wallet RPC endpoint for escrow funding.
   // Must be called before processSwap() can fund escrow.

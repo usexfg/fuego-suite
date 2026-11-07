@@ -52,6 +52,10 @@ public:
   // configured or not derivable.
   virtual std::string getReceiveAddress() const { return ""; }
 
+  // UTXO HTLC chains: the compressed secp256k1 key (hex) this daemon claims
+  // with. Bob sends it to Alice, whose lock script pays it. Empty elsewhere.
+  virtual std::string getClaimPubKey() const { return ""; }
+
   // Verify a counterparty reserve proof.
   // expectedMessage: the proof's signed message must equal this (binds the proof
   //   to a specific swap/offer — pass the offerId). Empty disables the binding check.

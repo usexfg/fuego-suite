@@ -38,6 +38,9 @@
 | F27 | P2WSH claim and refund witnesses push `0x51` and `0x00` as the `OP_IF` selector; witness v0 policy (MINIMALIF) requires `0x01` and empty | `BtcHtlcScript::createClaimWitness`, `createRefundWitness` | Bitcoin Core rejects both transactions as non-standard |
 | F28 | The claim signs with `nSequence = 0xFFFFFFFD`, but the raw-tx builder writes `0xFFFFFFFE` | `BtcRpcClient::claim` vs `BtcHtlcScript::buildRawSegWitTx` | Every BTC claim signature is invalid (BIP143 commits to nSequence) |
 | F29 | v11 Hearth CD share is floored per taker fill, so small fills pay CD holders 0 (`test_orderbook_auction` fails) | `OrderbookAuction.cpp` fee split | Consensus code outside the swap path; needs an owner decision before any change |
+| F30 | Release builds pass `-DNDEBUG`, so the ~600 `assert()` checks in 21 test files compile to nothing; CTest reported them as passing | `CMakeLists.txt` `CMAKE_CXX_FLAGS_RELEASE`; `#include <cassert>` tests | Three tests had been failing unseen (`test_btc_htlc`, `test_ltc_htlc` fixtures; one BCH message check) |
+| F31 | Electrum connections never use TLS: `connectToServers` calls `connect(host, port)` with TLS defaulted off, including for the shipped `:50002` TLS ports | `ElectrumSpvClient::connectToServers` | Every SPV query is plaintext and unauthenticated |
+| F32 | The AFK flow (taker locks from a maker's fill result) carries the maker's receive address but no claim key | `SwapRequestResult` has `ctrAddress` only | UTXO pairs cannot run through AFK; they are interactive-only until the relay carries the key |
 
 ## 2. Roles on a UTXO chain (ground truth from code)
 

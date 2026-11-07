@@ -52,25 +52,30 @@ case "$chain" in
     ;;
   bch)
     version=28.0.1
-    tarball="bitcoin-cash-node-$version-x86_64-linux-gnu.tar.gz"
-    # BCHN publishes binaries only on its download host, beside one
-    # "<signer>-sha256sums.<version>.asc" file per release signer.
+    # BCHN publishes binaries only on its download host: the tarball under
+    # linux/, and one "SHA256SUMS.<version>.asc.<signer>" file per signer.
     base="https://download.bitcoincashnode.org/releases/$version"
-    for dir in "$base/linux" "$base"; do
-      fetch "$dir/$tarball" "$tarball" && break
-    done
-    sums_name="$(curl -fsSL --retry 3 "$base/" 2>/dev/null |
-                 grep -oE "[A-Za-z0-9_.-]+-sha256sums\.$version\.asc" | head -n 1 || true)"
-    [ -n "$sums_name" ] && fetch "$base/$sums_name" SHA256SUMS
-    if [ ! -s "$tarball" ] || [ ! -s SHA256SUMS ]; then
-      echo "BCHN $version: tarball or checksum file not found under $base" >&2
-      curl -sSL "$base/" 2>&1 | grep -oE 'href="[^"]+"' | head -n 40 >&2 || true
+    tarball="$(curl -fsSL --retry 3 "$base/linux/" 2>/dev/null |
+               grep -oE 'href="[^"/]*x86_64[^"/]*linux[^"/]*\.tar\.gz"' | grep -v -i debug |
+               sed -e 's/^href="//' -e 's/"$//' | head -n 1 || true)"
+    sums_files="$(curl -fsSL --retry 3 "$base/" 2>/dev/null |
+                  grep -oE "SHA256SUMS\.$version\.asc\.[A-Za-z0-9_.-]+" | sort -u || true)"
+    if [ -z "$tarball" ] || [ -z "$sums_files" ] || ! fetch "$base/linux/$tarball" "$tarball"; then
+      echo "BCHN $version: tarball or checksum files not found. Listings:" >&2
+      for dir in "$base/" "$base/linux/"; do
+        echo "$dir" >&2
+        curl -sSL "$dir" 2>&1 | grep -oE 'href="[^"]+"' | head -n 40 >&2 || true
+      done
       exit 1
     fi
-    verify_listed SHA256SUMS "$tarball"
-    tar xzf "$tarball"
-    daemon="$PWD/bitcoin-cash-node-$version/bin/bitcoind"
-    cli="$PWD/bitcoin-cash-node-$version/bin/bitcoin-cli"
+    # Every signer's checksum file must list the same hash for the tarball.
+    for sums in $sums_files; do
+      fetch "$base/$sums" "$sums"
+      verify_listed "$sums" "$tarball"
+    done
+    mkdir -p bchn && tar xzf "$tarball" -C bchn
+    daemon="$(find "$PWD/bchn" -path '*/bin/bitcoind' -type f | head -n 1)"
+    cli="$(find "$PWD/bchn" -path '*/bin/bitcoin-cli' -type f | head -n 1)"
     ;;
   *)
     echo "unknown chain: $chain" >&2

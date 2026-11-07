@@ -3,7 +3,7 @@
 **Started**: 2026-11-07
 **Agent**: Claude Code
 **Status**: IN PROGRESS (CI) — Solana (`solana-test-validator`) and two-daemon runs not built
-**Scope**: `src/SwapDaemon/tests/test_evm_anvil_gate.cpp` (new), `src/CMakeLists.txt`, `.github/workflows/check.yml`
+**Scope**: `src/SwapDaemon/tests/test_evm_anvil_gate.cpp` (new), `src/CMakeLists.txt`, `.github/workflows/check.yml`, `docs/dexfg/SWAP_REMEDIATION_PLAN.md` (status: 0.1-0.5 Windows green, 1.9 BTC/LTC pass, R9)
 
 | # | Task | Owner | Date | Status |
 |---|------|-------|------|--------|

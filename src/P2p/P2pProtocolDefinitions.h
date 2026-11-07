@@ -416,7 +416,9 @@ namespace CryptoNote
       std::string hashLock;      // hex, H(t) — counterparty-family hash
       std::string preSig;        // hex, maker's adaptor pre-signature
       std::string ctrAddress;    // maker's counterparty-chain receive address
+      std::string ctrClaimPubKey; // hex, maker's UTXO claim key; empty elsewhere
       uint64_t    createdAt;
+      std::string makerSignature; // hex, offer maker's signature over swapRequestResultHash
 
       void serialize(ISerializer& s) {
         KV_MEMBER(takerPubKey)
@@ -427,7 +429,9 @@ namespace CryptoNote
         KV_MEMBER(hashLock)
         KV_MEMBER(preSig)
         KV_MEMBER(ctrAddress)
+        KV_MEMBER(ctrClaimPubKey)
         KV_MEMBER(createdAt)
+        KV_MEMBER(makerSignature)
       }
     };
     typedef EMPTY_STRUCT response;

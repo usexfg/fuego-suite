@@ -4917,7 +4917,12 @@ bool SwapDaemon::handleSwapRequest(const std::string& offerId, uint64_t amount,
           result.hashLock = hashLock;
           result.preSig = preSig;
           result.ctrAddress = ctrAddress;
+          result.ctrClaimPubKey = client->getClaimPubKey();
           result.createdAt = std::time(nullptr);
+          Crypto::Signature makerSignature;
+          Crypto::generate_signature(CryptoNote::swapRequestResultHash(takerPubKey, result),
+                                     m_makerPublicKey, m_makerSecretKey, makerSignature);
+          result.makerSignature = Common::podToHex(makerSignature);
           m_swapRelay->recordSwapRequestResult(takerPubKey, result);
           m_logger(Logging::INFO) << "AFK fill result published for taker "
             << takerPubKey.substr(0, 16) << "...";

@@ -143,7 +143,7 @@ Rollout: BTC, then LTC and BCH (same client family), then KMD, DOGE, DASH, ZEC f
 | R9 | Open: needs regtest/anvil/solana-test-validator nodes |
 | R11 | Open: deleting `src/SwapDaemon/CLV/` needs the owner's explicit approval |
 | F29 | Open: consensus fee split; owner decision |
-| F30-F32 | F30, F31 fixed; F32 (AFK claim key) open |
+| F30-F32 | F30, F31 fixed. F32 fixed: fill results carry the claim key and are signed by the offer's maker (they were unsigned gossip); AFK itself stays disabled by `AFK_SOFT_ORDER_EXECUTION_ENABLED` |
 
 ## 6. Order
 

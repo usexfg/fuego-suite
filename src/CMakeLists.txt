@@ -524,6 +524,12 @@ add_executable(test_swap_state_machine_spv
 target_link_libraries(test_swap_state_machine_spv PRIVATE
     SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
 
+# F32: AFK fill results are signed by the offer's maker and carry the claim key.
+add_executable(test_afk_fill_result
+    SwapDaemon/tests/test_afk_fill_result.cpp)
+target_link_libraries(test_afk_fill_result PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
 # SwapDaemon unit test: BCH HTLC helpers (parseClaimPreimage, redeemScriptToP2sh)
 add_executable(test_bch_htlc
     SwapDaemon/BitcoinCash/tests/test_bch_htlc.cpp)
@@ -1099,6 +1105,7 @@ if (${CMAKE_SYSTEM_NAME} STREQUAL "Linux" OR APPLE AND NOT ANDROID)
   target_link_libraries(Optimizer PRIVATE -lresolv)
   target_link_libraries(SwapDaemon PRIVATE -lresolv)
   target_link_libraries(test_swap_state_machine_spv PRIVATE -lresolv)
+  target_link_libraries(test_afk_fill_result PRIVATE -lresolv)
   # core_tests builds a real Blockchain (rebuildCache regression), which links
   # the DNS checkpoint lookup.
   target_link_libraries(core_tests PRIVATE -lresolv)
@@ -1164,6 +1171,7 @@ set(_TEST_DAEMON_TARGETS
     test_spv_quorum
     test_spv_config_wiring
     test_swap_state_machine_spv
+    test_afk_fill_result
     test_bch_htlc
     test_bch_chain_client
     test_btc_htlc

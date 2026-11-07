@@ -1,3 +1,24 @@
+## DeXFG remediation F32: signed AFK fill results carry the UTXO claim key
+
+**Started**: 2026-11-07
+**Agent**: Claude Code
+**Status**: DONE in code; AFK stays disabled (`AFK_SOFT_ORDER_EXECUTION_ENABLED = false`), so no AFK swap runs until the owner enables it
+**Scope**: `CryptoNoteCore/SwapOfferRelay.{h,cpp}`, `P2p/P2pProtocolDefinitions.h`, `CryptoNoteProtocol/CryptoNoteProtocolHandler.cpp`, `Rpc/CoreRpcServerCommandsDefinitions.h`, `Rpc/RpcServer.cpp`, `SwapDaemon/SwapDaemon.cpp`, `SwapDaemon/RpcServer.{h,cpp}`, `SwapDaemon/tests/test_afk_fill_result.cpp` (new), `src/CMakeLists.txt`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| F32 | The fill result carries `ctrClaimPubKey` (the maker's UTXO claim key) through the P2P message, the relay and `/getswaprequests`; the taker's `initiate_swap` sets it as Bob's claim key, so UTXO pairs can run AFK | Claude Code | 2026-11-07 | DONE |
+| review | Fill results were unsigned gossip: any peer could publish one for a taker key with its own hash lock and receive address, and the taker's xfg-swapd locked the counterparty coin against it. The maker now signs a length-prefixed digest of every field plus the taker key with the offer's key; fuegod keeps only results whose offer it knows and whose signature verifies; the taker's xfg-swapd refuses AFK material not signed by the pinned `expected_peer_pubkey`. While AFK is disabled, fuegod drops gossiped results and xfg-swapd refuses AFK initiation outright | Claude Code | 2026-11-07 | DONE; `test_afk_fill_result` 14/14 |
+
+Compatibility: the two new P2P fields are optional to the KV serializer; results from nodes without them carry no signature and are dropped.
+
+### Sign-off
+
+| Gate | Status | Signed | Date |
+|------|--------|--------|------|
+| Clang 18 build, `ctest -LE manual` | 50/51 (F29 only) | Claude Code | 2026-11-07 |
+| GCC build, AFK/SPV/UTXO tests | 9/9 | Claude Code | 2026-11-07 |
+
 ## DeXFG remediation Phase 2: SPV for Bob (2.2-2.6); gate and CI fixes
 
 **Started**: 2026-11-07

@@ -5,6 +5,13 @@ Identity audit: `scripts/verify-defillama-assets.py` (live; exit 0 = identities 
 
 Status: audited 2026-10-01 against `https://coins.llama.fi/prices/current/<coingecko ids>`.
 
+## Update — 2026-11-07
+
+PEAQ is priced from `coingecko:peaq-2`: DeFiLlama returns symbol PEAQ (confidence 0.999) and
+CoinGecko's `peaq-2` names homepage peaq.xyz and asset platform peaq. `coingecko:gleec-coin`
+resolves on neither provider, so GLEEC stays unpriced. The JSON matrix now carries the
+catalog's names (ZCASH, ROOTSTOCK) and support levels (GATED), and the audit checks both.
+
 ## Integration update — 2026-10-04
 
 The current protocol catalog is `src/SwapDaemon/SwapPairCatalog.h`: **46 pairs**,
@@ -86,7 +93,7 @@ is the wrong input for pair 4.
 | 41 | DOMA | ETH | 1e18 | `coingecko:ethereum` | ETH | priced |
 | 42 | BEAM | BEAM | 1e18 | — | BEAM | unpriced |
 | 43 | MOONRIVER | MOVR | 1e18 | — | MOVR | unpriced |
-| 44 | PEAQ | PEAQ | 1e18 | — | PEAQ | unpriced |
+| 44 | PEAQ | PEAQ | 1e18 | `coingecko:peaq-2` | PEAQ | priced |
 | 45 | SEI | SEI | 1e18 | — | SEI | unpriced |
 
 Totals: 29 pairs, **21 distinct priced assets** (7 pairs share ETH: Ethereum itself plus ARB,

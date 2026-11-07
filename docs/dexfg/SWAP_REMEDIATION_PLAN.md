@@ -134,7 +134,7 @@ Rollout: BTC, then LTC and BCH (same client family), then KMD, DOGE, DASH, ZEC f
 | 1.8, 1.9 | 1.9 runs in CI (`utxo-regtest-gate`) against bitcoind 28.1, litecoind 0.21.4, BCHN 28.0.1; results in the agent changelog. 1.8 open: BTC, LTC, BCH stay GATED until the gate is green and the owner accepts a transport-only gate (no two-daemon XFG run) |
 | 2.1 | Done (verified TLS, pinning, loopback-only plaintext; F31) |
 | 2.2-2.6 | Done for Bob (BTC, LTC, BCH mainnet and regtest): header rules, quorum policy, Bob-only SPV path, role-aware readiness. KMD/DCR SPV refused (2.3); Valise stops writing it. Not run against public Electrum servers. Alice over SPV not implemented |
-| 3.1, 3.2 | Open: feed ids need network verification |
+| 3.1, 3.2 | 3.1 done: PEAQ priced from `coingecko:peaq-2` (identity checked live in CI). 3.2: no feed exists for GLEEC (`gleec-coin` resolves nowhere); GLEEC stays UNPRICED |
 | 3.3 | Plan written (`TEMPO_PLAN.md`); not implemented. Steps 0-2 (chain facts, issuer token, feed) decide whether the pair is worth building |
 | 3.4 | Done (relay `getSeedRate` deleted) |
 | R1, R3, R4, R5, R6, R10 | Done. R4: tooling and default address only; no contract deployed |

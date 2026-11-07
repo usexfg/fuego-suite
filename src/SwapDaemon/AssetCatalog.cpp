@@ -179,7 +179,7 @@ static const AssetDescriptor kFeedMeta[] = {
    "",
    "MOVR"},
   {"PEAQ",
-   "",
+   "coingecko:peaq-2",
    "",
    "",
    "PEAQ"},

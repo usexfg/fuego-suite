@@ -16,7 +16,7 @@
 //
 // CoinGecko replaced Pyth as the second source. Unlike Pyth, which answered on-chain
 // with data 47-641 days stale for the 9 ids that had not reverted, CoinGecko prices
-// all 31 catalog ids in a single request. That is the whole point of batching: the
+// all 32 catalog ids in a single request. That is the whole point of batching: the
 // keyless tier allows 3 requests per minute (measured 2026-10-04: 200,200,200,429,
 // 429,429,429,429), so one call per poll is a hard requirement, not an optimisation.
 //
@@ -52,7 +52,7 @@ int main() {
   const CoinGeckoWanted wanted = coinGeckoWanted();
 
   // Coverage must be at least the DeFiLlama set: same ids, one source.
-  check(wanted.size() == 31, "31 priced assets have a coingecko id");
+  check(wanted.size() == 32, "32 priced assets have a coingecko id");
   {
     bool hasEth = false, hasGram = false;
     for (const auto& w : wanted) {

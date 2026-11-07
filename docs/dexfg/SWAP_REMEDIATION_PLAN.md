@@ -124,7 +124,28 @@ Rollout: BTC, then LTC and BCH (same client family), then KMD, DOGE, DASH, ZEC f
 | R10 | Generate `docs/dexfg/DEXFG_SWAP_CHAINS.md`'s table from `SwapPairCatalog.h` with a script checked in CI | The table already drifted once in the wallet docs |
 | R11 | Delete the orphan `src/SwapDaemon/CLV/` adapter or give it a catalog id | Dead code in the swap path |
 
-## 5. Order
+## 5. Implementation status (2026-11-07)
+
+| Item | Status |
+|---|---|
+| 0.1-0.5 | Done. CI: GCC and Clang builds pass, sanitizers and macOS pass; tests fail only on F29. MSVC fix (`uint128_t`) pushed, its CI run not yet seen passing |
+| 0.6 | Done in Valise (pin `a2df2f3`) |
+| 1.0-1.7, 1.10 | Done (`src/SwapDaemon/Utxo/`); signatures verified against python-bitcoinlib digests |
+| 1.8, 1.9 | Open. No regtest node could be built in the session; BTC, LTC, BCH stay GATED |
+| 2.1 | Done (verified TLS, pinning, loopback-only plaintext; F31) |
+| 2.2-2.6 | Open. Bitcoin Core `pow_tests.cpp` vectors are available for BTC retargeting; LTC (scrypt) and BCH (ASERT) need reference vectors. SPV still cannot start a swap. 2.3 would break Valise, which writes `kmd_mode`/`dcr_mode` `spv` |
+| 3.1, 3.2 | Open: feed ids need network verification |
+| 3.3 | Open: separate Tempo plan |
+| 3.4 | Done (relay `getSeedRate` deleted) |
+| R1, R3, R4, R5, R6, R10 | Done. R4: tooling and default address only; no contract deployed |
+| R2, R8 | Done in Valise (catalog table generated; live readiness shown) |
+| R7 | Daemon: done (encrypted keystore). Valise: open until the suite pin carries the keystore |
+| R9 | Open: needs regtest/anvil/solana-test-validator nodes |
+| R11 | Open: deleting `src/SwapDaemon/CLV/` needs the owner's explicit approval |
+| F29 | Open: consensus fee split; owner decision |
+| F30-F32 | F30, F31 fixed; F32 (AFK claim key) open |
+
+## 6. Order
 
 1. Phase 0 (blocks everything; no verified build exists today)
 2. Phase 1 for BTC, gated on its regtest matrix; then LTC and BCH

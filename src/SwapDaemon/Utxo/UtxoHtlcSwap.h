@@ -51,6 +51,10 @@ bool expectedHashLock(const SwapParams& params, std::vector<uint8_t>& hashLock);
 std::string lockTermsError(const UtxoHtlcChain& chain, const SwapParams& params,
                            const std::vector<uint8_t>& claimPubKey, uint64_t tip);
 
+// Why Bob must not publish t now: the claim needs the claim runway to confirm
+// before Alice's refund becomes valid at the lock timeout. Empty when it has it.
+std::string claimDeadlineError(const UtxoHtlcChain& chain, const UtxoHtlcTerms& terms, uint64_t tip);
+
 // A claim pays Bob's configured P2PKH address of this network when there is
 // one; a refund always pays the refunder's own key.
 std::vector<uint8_t> spendDestination(const UtxoHtlcChain& chain, bool claimPath, const SwapParams& params,

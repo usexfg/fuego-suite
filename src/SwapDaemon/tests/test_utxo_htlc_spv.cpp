@@ -313,6 +313,22 @@ static void testClaim(const ChainCase& chain) {
   check(contains(bob->claim(noSecret).error, "adaptor secret"), chain.ticker + ": claim needs t");
 }
 
+static void testClaimDeadline(const ChainCase& chain) {
+  auto spv = std::make_shared<ScriptedSpv>();
+  auto bob = chain.makeClient(spv, chain.bobWif);
+  Swap swap = makeSwap(chain, *spv, static_cast<uint32_t>(spv->tip + claimWindow(chain.pair) + 10));
+  check(bob->claimDeadlineError(swap.params).empty(), chain.ticker + ": a claim with its runway may proceed");
+  const uint64_t runway = claimRunwayBlocks(chain.pair);
+  spv->tip = swap.timeout - runway + 1;
+  spv->inclusions[swap.lockTxid] = {true, spv->tip - 9, 10, true};
+  check(contains(bob->claimDeadlineError(swap.params), "claim runway"),
+        chain.ticker + ": the engine is told not to claim inside the runway");
+  check(contains(bob->claim(swap.params).error, "claim runway") && spv->broadcasts.empty(),
+        chain.ticker + ": t is never published once Alice's refund is within the runway");
+  spv->tip = swap.timeout - runway;
+  check(bob->claimDeadlineError(swap.params).empty(), chain.ticker + ": exactly the runway left still claims");
+}
+
 static void testRefundAndDiscovery(const ChainCase& chain) {
   auto bobSpv = std::make_shared<ScriptedSpv>();
   auto bob = chain.makeClient(bobSpv, chain.bobWif);
@@ -428,6 +444,7 @@ int main() {
     testReadiness(chain);
     testVerifyLock(chain);
     testClaim(chain);
+    testClaimDeadline(chain);
     testRefundAndDiscovery(chain);
     testTransactionDetails(chain);
   }

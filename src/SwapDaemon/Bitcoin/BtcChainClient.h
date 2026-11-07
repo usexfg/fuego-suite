@@ -25,6 +25,7 @@ public:
   bool isReadyForNewSwap() override;
   std::string readinessError() override;
   std::string readinessErrorFor(SwapRole role) override;
+  std::string claimDeadlineError(const SwapParams& params) override;
   bool supportsPtlc() const override { return true; }
   // Pure PTLC (P2TR key-path, no H(t)) per PTLC_PURE_PLAN P2.2. A full node
   // cannot recover t from a key-path spend without the adaptor presig, so the

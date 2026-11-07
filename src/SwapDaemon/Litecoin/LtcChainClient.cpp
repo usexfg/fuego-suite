@@ -566,6 +566,12 @@ std::string LtcChainClient::readinessError() {
   return readinessErrorFor(SwapRole::ALICE);
 }
 
+std::string LtcChainClient::claimDeadlineError(const SwapParams& params) {
+  if (params.chainState.rfind("p2tr:", 0) == 0) return "";
+  if (m_fullNode) return m_fullNode->claimDeadlineError(params);
+  return m_spvHtlc ? m_spvHtlc->claimDeadlineError(params) : std::string();
+}
+
 std::string LtcChainClient::readinessErrorFor(SwapRole role) {
   if (m_fullNode) return m_fullNode->readinessError();
   if (m_spvHtlc) return m_spvHtlc->readinessErrorFor(role);

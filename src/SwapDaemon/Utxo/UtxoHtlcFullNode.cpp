@@ -175,14 +175,16 @@ ChainClientResult UtxoHtlcFullNode::broadcastSpend(bool claimPath, const SwapPar
   spend.fee = estimateFeeForSize(m_rpc, htlcSpendVirtualSize(m_chain.encoding, claimPath),
                                  spendFeeCeiling(spend.lockValue));
 
+  uint64_t tip = 0;
+  if (!fetchChainTip(m_rpc, tip, error))
+    return ChainClientResult::fail(failurePrefix() + "chain tip unavailable: " + error);
   std::vector<uint8_t> rawTx;
   if (claimPath) {
+    const std::string late = XfgSwap::claimDeadlineError(m_chain, terms, tip);
+    if (!late.empty()) return ChainClientResult::fail(failurePrefix() + late);
     if (!buildHtlcClaim(m_chain.encoding, spend, adaptorSecretBytes(params), rawTx, error))
       return ChainClientResult::fail(failurePrefix() + "claim: " + error);
   } else {
-    uint64_t tip = 0;
-    if (!fetchChainTip(m_rpc, tip, error))
-      return ChainClientResult::fail(failurePrefix() + "chain tip unavailable: " + error);
     if (tip < terms.timeoutBlock)
       return ChainClientResult::fail(failurePrefix() + "refund locked until height " +
                                      std::to_string(terms.timeoutBlock));
@@ -199,6 +201,17 @@ ChainClientResult UtxoHtlcFullNode::claim(const SwapParams& params) {
   if (!hasAdaptorSecret(params))
     return ChainClientResult::fail(failurePrefix() + "claim needs the adaptor secret");
   return broadcastSpend(true, params);
+}
+
+std::string UtxoHtlcFullNode::claimDeadlineError(const SwapParams& params) {
+  std::vector<uint8_t> script;
+  UtxoHtlcTerms terms;
+  uint64_t tip = 0;
+  std::string error;
+  if (!lockScriptFromState(params, script, terms)) return failurePrefix() + "no lock script in swap state";
+  if (!fetchChainTip(m_rpc, tip, error)) return failurePrefix() + "chain tip unavailable: " + error;
+  const std::string late = XfgSwap::claimDeadlineError(m_chain, terms, tip);
+  return late.empty() ? late : failurePrefix() + late;
 }
 
 ChainClientResult UtxoHtlcFullNode::refund(const SwapParams& params) {

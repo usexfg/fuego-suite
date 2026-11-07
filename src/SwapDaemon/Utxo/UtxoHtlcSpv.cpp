@@ -161,6 +161,8 @@ ChainClientResult UtxoHtlcSpv::broadcastSpend(bool claimPath, const SwapParams& 
 
   std::vector<uint8_t> rawTx;
   if (claimPath) {
+    const std::string late = XfgSwap::claimDeadlineError(m_chain, terms, tip);
+    if (!late.empty()) return ChainClientResult::fail(failurePrefix() + late);
     if (!buildHtlcClaim(m_chain.encoding, spend, adaptorSecretBytes(params), rawTx, error))
       return ChainClientResult::fail(failurePrefix() + "claim: " + error);
   } else {
@@ -180,6 +182,17 @@ ChainClientResult UtxoHtlcSpv::claim(const SwapParams& params) {
   if (!hasAdaptorSecret(params))
     return ChainClientResult::fail(failurePrefix() + "claim needs the adaptor secret");
   return broadcastSpend(true, params);
+}
+
+std::string UtxoHtlcSpv::claimDeadlineError(const SwapParams& params) {
+  std::vector<uint8_t> script;
+  UtxoHtlcTerms terms;
+  uint64_t tip = 0;
+  std::string error;
+  if (!lockScriptFromState(params, script, terms)) return failurePrefix() + "no lock script in swap state";
+  if (!syncedTip(tip, error)) return failurePrefix() + error;
+  const std::string late = XfgSwap::claimDeadlineError(m_chain, terms, tip);
+  return late.empty() ? late : failurePrefix() + late;
 }
 
 ChainClientResult UtxoHtlcSpv::refund(const SwapParams& params) {

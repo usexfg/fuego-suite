@@ -1,3 +1,17 @@
+## DeXFG review: Bob never publishes t inside the claim runway
+
+**Started**: 2026-11-07
+**Agent**: Claude Code
+**Status**: DONE for BTC, LTC, BCH (full node and SPV); EVM and other transports not changed
+**Scope**: `Utxo/UtxoHtlcSwap.{h,cpp}`, `Utxo/UtxoHtlcFullNode.{h,cpp}`, `Utxo/UtxoHtlcSpv.{h,cpp}`, `IChainClient.h`, `Bitcoin/BtcChainClient.*`, `Litecoin/LtcChainClient.*`, `BitcoinCash/BchChainClient.*`, `SwapDaemon.cpp`, `tests/test_utxo_htlc_spv.cpp`, `tests/test_utxo_regtest.cpp`, `scripts/regtest-node.sh`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| review | Nothing stopped Bob from claiming after the lock's runway had shrunk: a claim that reveals t but confirms after Alice's refund becomes valid lets Alice refund the coin and still take the XFG with t. Claims now require the claim runway (`claimRunwayBlocks`) between the tip and the lock timeout; the engine asks `claimDeadlineError` before it records a claim attempt, so a late claim leaves the swap on its refund path instead of in manual reconciliation | Claude Code | 2026-11-07 | DONE; `test_utxo_htlc_spv` 154/154; regtest gate extended |
+| gate | `regtest-node.sh`: under `pipefail` an unlisted tarball ended the BCH step without a message; the checksum check now strips CRLF, accepts upper-case hashes and prints the lines naming the tarball | Claude Code | 2026-11-07 | IN PROGRESS (CI) |
+
+Not changed: EVM `HashedTimelock` claims have the same race and no claim-time check yet.
+
 ## DeXFG remediation 3.1-3.3: PEAQ and GLEEC feed identity, Tempo plan
 
 **Started**: 2026-11-07

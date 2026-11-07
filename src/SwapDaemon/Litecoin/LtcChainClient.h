@@ -25,6 +25,7 @@ public:
   bool isReadyForNewSwap() override;
   std::string readinessError() override;
   std::string readinessErrorFor(SwapRole role) override;
+  std::string claimDeadlineError(const SwapParams& params) override;
   std::string getClaimPubKey() const override;
   bool hasConfirmedClaim(const SwapParams& params) override;
   bool supportsPtlc() const override { return true; }

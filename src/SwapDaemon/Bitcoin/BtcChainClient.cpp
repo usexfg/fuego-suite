@@ -557,6 +557,12 @@ std::string BtcChainClient::readinessError() {
   return readinessErrorFor(SwapRole::ALICE);
 }
 
+std::string BtcChainClient::claimDeadlineError(const SwapParams& params) {
+  if (params.chainState.rfind("p2tr:", 0) == 0) return "";
+  if (m_fullNode) return m_fullNode->claimDeadlineError(params);
+  return m_spvHtlc ? m_spvHtlc->claimDeadlineError(params) : std::string();
+}
+
 std::string BtcChainClient::readinessErrorFor(SwapRole role) {
   if (m_fullNode) return m_fullNode->readinessError();
   if (m_spvHtlc) return m_spvHtlc->readinessErrorFor(role);

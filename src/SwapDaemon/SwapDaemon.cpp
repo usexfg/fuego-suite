@@ -2341,6 +2341,11 @@ bool SwapDaemon::handleCtrLocked(SwapStateMachine& sm) {
         deliverPeerMessage(rev);
       return true;
     }
+    const std::string lateClaim = client->claimDeadlineError(params);
+    if (!lateClaim.empty()) {
+      m_logger(Logging::ERROR) << "  Not claiming " << client->chainName() << ": " << lateClaim;
+      return false;
+    }
     params.ctrClaimAttempted = true;
     if (!m_db.saveSwap(sm)) {
       m_logger(Logging::ERROR) << "  Cannot persist CTR claim intent";
@@ -2763,6 +2768,11 @@ bool SwapDaemon::handleWaitingSpv(SwapStateMachine& sm) {
   // Alice-locks + SPV: Bob claims with t; Alice waits for on-chain preimage.
   if (params.role == SwapRole::BOB && !isZeroSecret(params.adaptorSecret)) {
     if (!params.ctrClaimAttempted) {
+      const std::string lateClaim = client->claimDeadlineError(params);
+      if (!lateClaim.empty()) {
+        m_logger(Logging::ERROR) << "  Not claiming " << client->chainName() << ": " << lateClaim;
+        return false;
+      }
       // Save the intent before the external call: a lost RPC response does not
       // prove the claim failed and must not authorize an XFG refund later.
       params.ctrClaimAttempted = true;

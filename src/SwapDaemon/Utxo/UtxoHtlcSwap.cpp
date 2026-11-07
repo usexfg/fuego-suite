@@ -96,6 +96,14 @@ std::string lockTermsError(const UtxoHtlcChain& chain, const SwapParams& params,
   return "";
 }
 
+std::string claimDeadlineError(const UtxoHtlcChain& chain, const UtxoHtlcTerms& terms, uint64_t tip) {
+  const uint64_t runway = claimRunwayBlocks(chain.pair);
+  if (runway == 0 || tip > std::numeric_limits<uint64_t>::max() - runway || terms.timeoutBlock < tip + runway)
+    return "lock timeout " + std::to_string(terms.timeoutBlock) + " is within the " + std::to_string(runway) +
+           "-block claim runway of tip " + std::to_string(tip) + "; publishing t now could let Alice refund and claim";
+  return "";
+}
+
 std::vector<uint8_t> spendDestination(const UtxoHtlcChain& chain, bool claimPath, const SwapParams& params,
                                       const std::vector<uint8_t>& ownPubKey) {
   std::vector<uint8_t> destination;

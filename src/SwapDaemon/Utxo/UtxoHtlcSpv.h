@@ -42,6 +42,7 @@ public:
   ChainClientResult verifyLock(const SwapParams& params);
   ChainClientResult claim(const SwapParams& params);
   ChainClientResult refund(const SwapParams& params);
+  std::string claimDeadlineError(const SwapParams& params);
   ChainClientResult transactionDetails(const std::string& txid);
   std::string tryExtractClaimedSecret(const SwapParams& params);
   bool hasConfirmedClaim(const SwapParams& params);

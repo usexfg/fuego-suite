@@ -99,6 +99,14 @@ public:
     return {};
   }
 
+  // Why Bob must not claim (publish t) now, before anything is broadcast;
+  // empty when the claim may proceed. Transports with a lock timeout check
+  // that the claim can confirm before the refund becomes valid.
+  virtual std::string claimDeadlineError(const SwapParams& params) {
+    (void)params;
+    return "";
+  }
+
   // Chain-state proof that this exact lock was claimed with sufficient
   // finality. Alice cannot depend on Bob sending a claim transaction ID.
   virtual bool hasConfirmedClaim(const SwapParams& params) {

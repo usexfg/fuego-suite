@@ -42,6 +42,11 @@ std::string BchChainClient::readinessError() {
   return readinessErrorFor(SwapRole::ALICE);
 }
 
+std::string BchChainClient::claimDeadlineError(const SwapParams& params) {
+  if (m_fullNode) return m_fullNode->claimDeadlineError(params);
+  return m_spvHtlc ? m_spvHtlc->claimDeadlineError(params) : std::string();
+}
+
 std::string BchChainClient::readinessErrorFor(SwapRole role) {
   if (m_fullNode) return m_fullNode->readinessError();
   if (m_spvHtlc) return m_spvHtlc->readinessErrorFor(role);

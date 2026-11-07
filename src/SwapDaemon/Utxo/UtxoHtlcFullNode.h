@@ -48,7 +48,7 @@ public:
   bool hasConfirmedClaim(const SwapParams& params);
 
 private:
-  bool findPriorLockSend(const std::string& address, uint64_t amount, std::string& txid);
+  bool findPriorLockSend(const std::vector<uint8_t>& lockScriptPubKey, uint64_t amount, std::string& txid);
   bool lockedValue(const UtxoOutpoint& lock, uint64_t& value, std::string& error);
   ChainClientResult broadcastSpend(bool claimPath, const SwapParams& params);
   bool findClaimSpend(const SwapParams& params, UtxoSpend& spend);

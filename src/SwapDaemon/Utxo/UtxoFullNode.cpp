@@ -318,9 +318,8 @@ bool fetchChainTip(const UtxoRpcCall& rpc, uint64_t& height, std::string& error)
   return true;
 }
 
-bool findWalletOutputIndex(const UtxoRpcCall& rpc, const std::string& txid,
-                           const std::vector<uint8_t>& scriptPubKey, uint32_t& vout,
-                           std::string& error) {
+static bool readWalletTransactionOutputs(const UtxoRpcCall& rpc, const std::string& txid,
+                                         std::vector<UtxoTxOutput>& outputs, std::string& error) {
   if (!isTxidHex(txid)) {
     error = "malformed txid";
     return false;
@@ -329,12 +328,18 @@ bool findWalletOutputIndex(const UtxoRpcCall& rpc, const std::string& txid,
   if (!rpc("gettransaction", "[" + quoted(lowercase(txid)) + "]", result, error)) return false;
   std::string hex;
   std::vector<uint8_t> raw;
-  std::vector<UtxoTxOutput> outputs;
-  if (!readString(result, "hex", hex) || !decodeHex(hex, raw) ||
-      !parseTransactionOutputs(raw, outputs)) {
+  if (!readString(result, "hex", hex) || !decodeHex(hex, raw) || !parseTransactionOutputs(raw, outputs)) {
     error = "gettransaction returned no parsable transaction";
     return false;
   }
+  return true;
+}
+
+bool findWalletOutputIndex(const UtxoRpcCall& rpc, const std::string& txid,
+                           const std::vector<uint8_t>& scriptPubKey, uint32_t& vout,
+                           std::string& error) {
+  std::vector<UtxoTxOutput> outputs;
+  if (!readWalletTransactionOutputs(rpc, txid, outputs, error)) return false;
   for (size_t i = 0; i < outputs.size(); ++i) {
     if (outputs[i].scriptPubKey == scriptPubKey) {
       vout = static_cast<uint32_t>(i);
@@ -343,6 +348,16 @@ bool findWalletOutputIndex(const UtxoRpcCall& rpc, const std::string& txid,
   }
   error = "wallet transaction " + txid + " has no output paying the lock script";
   return false;
+}
+
+bool walletTransactionPays(const UtxoRpcCall& rpc, const std::string& txid,
+                           const std::vector<uint8_t>& scriptPubKey, uint64_t value) {
+  std::vector<UtxoTxOutput> outputs;
+  std::string error;
+  if (!readWalletTransactionOutputs(rpc, txid, outputs, error)) return false;
+  return std::any_of(outputs.begin(), outputs.end(), [&](const UtxoTxOutput& output) {
+    return output.scriptPubKey == scriptPubKey && output.value == value;
+  });
 }
 
 bool lookupWalletTxBlockHeight(const UtxoRpcCall& rpc, const std::string& txid,

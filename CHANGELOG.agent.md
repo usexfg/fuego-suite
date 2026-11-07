@@ -1,3 +1,15 @@
+## DeXFG remediation 1.9 (BCH) and plan 1.2: duplicate-lock guard on BCHN; F33 recorded
+
+**Started**: 2026-11-07
+**Agent**: Claude Code
+**Status**: DONE for the guard (CI rerun pending); F33 open (owner decision)
+**Scope**: `Utxo/UtxoFullNode.{h,cpp}`, `Utxo/UtxoHtlcFullNode.{h,cpp}`, `tests/test_utxo_htlc.cpp`, `docs/dexfg/SWAP_REMEDIATION_PLAN.md`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1.9 | First BCH gate run on BCHN 29.2.0: 27 of 28 checks passed (CI run 42408064285). "A repeated lock reuses the funding" failed: BCHN's `listtransactions` reports CashAddr while the lock funds a base58 P2SH address, so the guard against a lost `sendtoaddress` response never matched and a retry would fund the lock twice. Prior sends are now matched by the wallet transaction's output script and exact value (`walletTransactionPays`), independent of address format | Claude Code | 2026-11-07 | DONE; `test_utxo_htlc` 69/69; BCH gate rerun in CI |
+| plan | F33 and R12 added: the hash lock Alice funds is not bound to the adaptor point, so a modified XFG-side daemon can take the counterparty coin on every hash-locked pair; R12 lists three bindings and the interim choice for the owner | Claude Code | 2026-11-07 | RECORDED; not implemented |
+
 ## DeXFG review: a peer cannot select the disabled pure-PTLC lock
 
 **Started**: 2026-11-07

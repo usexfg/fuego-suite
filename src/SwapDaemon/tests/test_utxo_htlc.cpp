@@ -478,6 +478,24 @@ static void testWalletOutputIndex() {
         "absent script reported");
 }
 
+static void testWalletTransactionPays() {
+  FakeNode node;
+  node.walletTxJson = std::string("{\"hex\":\"") + P2WSH_CLAIM + "\"}";
+  Fixture f;
+  std::vector<uint8_t> raw;
+  std::vector<UtxoTxOutput> outputs;
+  check(decodeHex(P2WSH_CLAIM, raw) && parseTransactionOutputs(raw, outputs) && !outputs.empty(),
+        "claim vector parses");
+  if (outputs.empty()) return;
+  const std::vector<uint8_t> paid = p2pkhScriptForPubKey(f.bobPub);
+  check(walletTransactionPays(node.rpc(), LOCK_TXID, paid, outputs[0].value),
+        "a prior send is recognised by script and exact value, whatever address format the node reports");
+  check(!walletTransactionPays(node.rpc(), LOCK_TXID, paid, outputs[0].value + 1),
+        "a send of another amount is not the lock");
+  check(!walletTransactionPays(node.rpc(), LOCK_TXID, p2pkhScriptForPubKey(f.alicePub), outputs[0].value),
+        "a send to another script is not the lock");
+}
+
 static void testNodeHealth() {
   FakeNode node;
   check(checkNodeHealth(node.rpc(), "regtest").ready, "synced regtest node with wallet is ready");
@@ -501,6 +519,7 @@ int main() {
   testSpendTracker();
   testLockVerification();
   testWalletOutputIndex();
+  testWalletTransactionPays();
   testNodeHealth();
   std::printf("%d checks, %d failures\n", g_checks, g_failures);
   return g_failures == 0 ? 0 : 1;

@@ -62,10 +62,12 @@ bool UtxoHtlcFullNode::currentHeight(uint64_t& height) {
   return fetchChainTip(m_rpc, height, error);
 }
 
-bool UtxoHtlcFullNode::findPriorLockSend(const std::string& address, uint64_t amount,
+bool UtxoHtlcFullNode::findPriorLockSend(const std::vector<uint8_t>& lockScriptPubKey, uint64_t amount,
                                          std::string& txid) {
   // A lost sendtoaddress response must not fund the same lock twice: look for
-  // a wallet send of exactly this amount to exactly this address first.
+  // a wallet send whose transaction pays exactly this amount to the lock
+  // script. Outputs are compared by script, since nodes report addresses in
+  // their own format (BCHN: CashAddr).
   Common::JsonValue sends;
   std::string error;
   if (!m_rpc("listtransactions",
@@ -76,12 +78,11 @@ bool UtxoHtlcFullNode::findPriorLockSend(const std::string& address, uint64_t am
     const Common::JsonValue& entry = sends[i];
     uint64_t sent = 0;
     if (!entry.isObject() || !entry.contains("category") || !entry("category").isString() ||
-        entry("category").getString() != "send" || !entry.contains("address") ||
-        !entry("address").isString() || entry("address").getString() != address ||
-        !entry.contains("amount") || !parseWalletSendAmount(entry("amount"), sent) ||
-        !entry.contains("txid") || !entry("txid").isString())
+        entry("category").getString() != "send" || !entry.contains("amount") ||
+        !parseWalletSendAmount(entry("amount"), sent) || sent != amount || !entry.contains("txid") ||
+        !entry("txid").isString() || !isTxidHex(entry("txid").getString()))
       continue;
-    if (sent == amount && isTxidHex(entry("txid").getString())) {
+    if (walletTransactionPays(m_rpc, entry("txid").getString(), lockScriptPubKey, amount)) {
       txid = entry("txid").getString();
       return true;
     }
@@ -106,9 +107,10 @@ ChainClientResult UtxoHtlcFullNode::lock(const SwapParams& params) {
   if (script.empty()) return ChainClientResult::fail(failurePrefix() + "invalid lock terms");
 
   const std::string address = htlcFundingAddress(m_chain.encoding, m_chain.network, script);
+  const std::vector<uint8_t> lockScriptPubKey = htlcScriptPubKey(m_chain.encoding, script);
   const uint64_t amount = params.ctrAmount64();
   std::string txid;
-  if (!findPriorLockSend(address, amount, txid)) {
+  if (!findPriorLockSend(lockScriptPubKey, amount, txid)) {
     Common::JsonValue result;
     std::string error;
     if (!m_rpc("sendtoaddress", "[" + quoted(address) + "," + formatCoinAmount(amount) + "]",
@@ -121,7 +123,7 @@ ChainClientResult UtxoHtlcFullNode::lock(const SwapParams& params) {
 
   uint32_t vout = 0;
   std::string error;
-  if (!findWalletOutputIndex(m_rpc, txid, htlcScriptPubKey(m_chain.encoding, script), vout, error))
+  if (!findWalletOutputIndex(m_rpc, txid, lockScriptPubKey, vout, error))
     return ChainClientResult::fail(failurePrefix() + error);
   ChainClientResult locked = ChainClientResult::okWithState(txid, encodeHex(script));
   locked.outputIndex = vout;

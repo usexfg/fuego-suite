@@ -1,6 +1,6 @@
 # DeXFG / SwapXFG Remediation Plan
 
-> Version 1.1 — 2026-11-07 — Status: IN IMPLEMENTATION (1.1 adds F22-F29 and tasks 1.0, 1.10)
+> Version 1.2 — 2026-11-07 — Status: IN IMPLEMENTATION (1.1 adds F22-F29 and tasks 1.0, 1.10; 1.2 adds F33 and R12)
 > Scope: the defects found in the 2026-11-06/07 audit of `src/SwapDaemon/`, the swap relay,
 > CI, and Fuego Valise's swap layer, plus implementation recommendations.
 > Every phase that touches source needs a `CHANGELOG.agent.md` task list and sign-off.
@@ -41,6 +41,7 @@
 | F30 | Release builds pass `-DNDEBUG`, so the ~600 `assert()` checks in 21 test files compile to nothing; CTest reported them as passing | `CMakeLists.txt` `CMAKE_CXX_FLAGS_RELEASE`; `#include <cassert>` tests | Three tests had been failing unseen (`test_btc_htlc`, `test_ltc_htlc` fixtures; one BCH message check) |
 | F31 | Electrum connections never use TLS: `connectToServers` calls `connect(host, port)` with TLS defaulted off, including for the shipped `:50002` TLS ports | `ElectrumSpvClient::connectToServers` | Every SPV query is plaintext and unauthenticated |
 | F32 | The AFK flow (taker locks from a maker's fill result) carries the maker's receive address but no claim key | `SwapRequestResult` has `ctrAddress` only | UTXO pairs cannot run through AFK; they are interactive-only until the relay carries the key |
+| F33 | Alice locks the counterparty coin to the hash lock Bob sends in `ADAPTOR_EXCHANGE`, but nothing proves that hash is H(t) for the t behind the adaptor point T. The DLEQ proves only log_G(T) = log_E(Q); Alice's pre-lock gate checks that the hash is non-zero; the match of the preimage to T is checked only after Bob has claimed | `SwapDaemon.cpp`: `ADAPTOR_EXCHANGE` sets `params.hashLock` from the message; the CTR lock gate; the post-claim check in `handleCtrLocked` | A modified Bob publishes hash(p) for a p of his choosing, claims Alice's coin with p, and refunds his XFG after `xfgTimeoutHeight`. Alice's check rejects p, after the loss. It applies to every hash-locked pair: SOL, the ACTIVE and ADAPTER EVM chains, and the GATED UTXO chains |
 
 ## 2. Roles on a UTXO chain (ground truth from code)
 
@@ -123,6 +124,7 @@ Rollout: BTC, then LTC and BCH (same client family), then KMD, DOGE, DASH, ZEC f
 | R9 | One end-to-end harness for every family: regtest UTXO nodes, `anvil` for EVM, `solana-test-validator`, two daemons; a scenario matrix per pair in CI | No pair has recorded two-daemon evidence today; the smoke scripts start no counterparty chain |
 | R10 | Generate `docs/dexfg/DEXFG_SWAP_CHAINS.md`'s table from `SwapPairCatalog.h` with a script checked in CI | The table already drifted once in the wallet docs |
 | R11 | Delete the orphan `src/SwapDaemon/CLV/` adapter or give it a catalog id | Dead code in the swap path |
+| R12 | Bind every counterparty lock to T (F33). (a) Recommended: a cross-group DLEQ proof (ed25519 to secp256k1, bit-decomposition construction, as in COMIT's xmr-btc-swap) plus point locks: `PointTimelock` on EVM, Taproot adaptor signatures on BTC and LTC. This is also the proof AUDIT 3.9 lacks, so it unblocks pure PTLC. (b) A zero-knowledge proof that hash(t) = H and t·G = T on ed25519, keeping the hash contracts; the proof covers SHA-256 or keccak plus non-native ed25519 arithmetic. (c) EVM only: a timelock whose claim checks p·G = T on ed25519 on chain; gas cost to be measured. Until one ships, hash-locked pairs are atomic only against an unmodified XFG-side daemon | F33 lets the XFG side take the counterparty coin at no cost |
 
 ## 5. Implementation status (2026-11-07)
 
@@ -131,7 +133,7 @@ Rollout: BTC, then LTC and BCH (same client family), then KMD, DOGE, DASH, ZEC f
 | 0.1-0.5 | Done. CI: GCC, Clang, MSVC (Windows) and macOS builds pass, sanitizers pass; `ctest` fails only on F29 (`test_orderbook_auction`) |
 | 0.6 | Done in Valise (pin `a2df2f3`) |
 | 1.0-1.7, 1.10 | Done (`src/SwapDaemon/Utxo/`); signatures verified against python-bitcoinlib digests |
-| 1.8, 1.9 | 1.9 (transport): BTC and LTC pass in CI against bitcoind 28.1 and litecoind 0.21.4; BCH (BCHN 28.0.1) in progress. Claims are refused inside the claim runway (review fix). 1.8 open: BTC, LTC, BCH stay GATED until the owner accepts a transport-only gate; no two-daemon XFG run exists |
+| 1.8, 1.9 | 1.9 (transport): BTC and LTC pass in CI against bitcoind 28.1 and litecoind 0.21.4. BCH runs against BCHN 29.2.0 (28.x expired at the May 2026 upgrade): 27 of 28 checks passed; the failing one found that BCHN reports CashAddr, so the duplicate-lock guard never matched (fixed: outputs compared by script). Claims are refused inside the claim runway (review fix). 1.8 open: BTC, LTC, BCH stay GATED until the owner accepts a transport-only gate; no two-daemon XFG run exists; F33 applies to them as well |
 | 2.1 | Done (verified TLS, pinning, loopback-only plaintext; F31) |
 | 2.2-2.6 | Done for Bob (BTC, LTC, BCH mainnet and regtest): header rules, quorum policy, Bob-only SPV path, role-aware readiness. KMD/DCR SPV refused (2.3); Valise stops writing it. Not run against public Electrum servers. Alice over SPV not implemented |
 | 3.1, 3.2 | 3.1 done: PEAQ priced from `coingecko:peaq-2` (identity checked live in CI). 3.2: no feed exists for GLEEC (`gleec-coin` resolves nowhere); GLEEC stays UNPRICED |
@@ -140,9 +142,10 @@ Rollout: BTC, then LTC and BCH (same client family), then KMD, DOGE, DASH, ZEC f
 | R1, R3, R4, R5, R6, R10 | Done. R4: tooling and default address only; no contract deployed |
 | R2, R8 | Done in Valise (catalog table generated; live readiness shown) |
 | R7 | Daemon: done (encrypted keystore). Valise: open until the suite pin carries the keystore |
-| R9 | UTXO transport gate (1.9) and an EVM gate against anvil (`evm-anvil-gate`) run in CI. Open: Solana (`solana-test-validator`), and two-daemon runs with an XFG testnet |
+| R9 | UTXO transport gate (1.9) in CI; EVM gate against anvil passes 19/19 (CI run 42406472393). Open: Solana (`solana-test-validator`), and two-daemon runs with an XFG testnet |
 | R11 | Open: deleting `src/SwapDaemon/CLV/` needs the owner's explicit approval |
 | F29 | Open: consensus fee split; owner decision |
+| F33, R12 | Open: protocol change; the owner chooses (a), (b) or (c), and whether hash-locked pairs stay ACTIVE meanwhile |
 | F30-F32 | F30, F31 fixed. F32 fixed: fill results carry the claim key and are signed by the offer's maker (they were unsigned gossip); AFK itself stays disabled by `AFK_SOFT_ORDER_EXECUTION_ENABLED` |
 
 ## 6. Order

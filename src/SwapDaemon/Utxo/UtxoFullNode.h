@@ -89,6 +89,8 @@ bool fetchChainTip(const UtxoRpcCall& rpc, uint64_t& height, std::string& error)
 bool findWalletOutputIndex(const UtxoRpcCall& rpc, const std::string& txid,
                            const std::vector<uint8_t>& scriptPubKey, uint32_t& vout,
                            std::string& error);
+bool walletTransactionPays(const UtxoRpcCall& rpc, const std::string& txid,
+                           const std::vector<uint8_t>& scriptPubKey, uint64_t value);
 bool lookupWalletTxBlockHeight(const UtxoRpcCall& rpc, const std::string& txid,
                                uint64_t& blockHeight, std::string& error);
 bool broadcastRawTransaction(const UtxoRpcCall& rpc, const std::vector<uint8_t>& rawTx,

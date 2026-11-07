@@ -236,6 +236,14 @@ static void testVerifyLock(const ChainCase& chain) {
   SwapParams unknownTx = swap.params;
   unknownTx.ctrLockTxId = std::string(64, 'e');
   check(contains(bob->verifyLock(unknownTx).error, "unavailable"), chain.ticker + ": unknown lock tx refused");
+  SwapParams taprootStateOnHtlc = swap.params;
+  taprootStateOnHtlc.chainState = "p2tr:02" + std::string(64, '3') + "|ptlc:" + std::string(64, '4');
+  check(!bob->verifyLock(taprootStateOnHtlc).success && !bob->claimDeadlineError(taprootStateOnHtlc).empty(),
+        chain.ticker + ": a p2tr lock state on a swap not negotiated as pure PTLC is refused");
+  SwapParams malformedTaproot = taprootStateOnHtlc;
+  malformedTaproot.lockType = SwapLockType::PTLC;
+  malformedTaproot.chainState = "p2tr:zz";
+  check(!bob->verifyLock(malformedTaproot).success, chain.ticker + ": a malformed p2tr lock state is refused");
 
   Swap otherRecipient = makeSwap(chain, *spv, timeout, 0x66);
   check(contains(bob->verifyLock(otherRecipient.params).error, "does not pay our claim key"),

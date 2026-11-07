@@ -172,7 +172,35 @@ std::shared_ptr<ElectrumSpvClient> makeElectrumClient(SwapPair pair, UtxoNetwork
     return std::make_shared<ElectrumSpvClient>(servers, minServers, checkpointHeight, checkpointHash, rules);
   return std::make_shared<ElectrumSpvClient>(servers, minServers, checkpointHeight, checkpointHash);
 }
+
+// FEATURE_PURE_PTLC (PTLC_PURE_PLAN P4.2): read once per process, cached.
+// Unset/0/false/off => pure PTLC disabled.
+bool purePtlcFeatureFlag() {
+  static const bool enabled = [] {
+    const char* v = std::getenv("FEATURE_PURE_PTLC");
+    if (v == nullptr) return false;
+    std::string s(v);
+    std::transform(s.begin(), s.end(), s.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return !(s.empty() || s == "0" || s == "false" || s == "off");
+  }();
+  return enabled;
+}
+
+// AUDIT 3.9 — fail-closed: the pure-secp PTLC path binds an Ed25519 adaptor
+// secret to a secp256k1 point (params.secpPubHex) but there is no genuine
+// cross-curve DLEQ proving the two points share the same discrete log —
+// crypto/dleq.cpp is same-curve only. Until a reviewed Ed25519<->secp256k1
+// DLEQ lands, pure PTLC must stay disabled regardless of FEATURE_PURE_PTLC,
+// so no swap can be locked to an unprovable cross-curve point. The
+// PTLC_HTLC_BRIDGE path (on-chain hashlock) is unaffected.
+constexpr bool CROSS_CURVE_DLEQ_AVAILABLE = false;
 }  // namespace
+
+bool SwapDaemon::purePtlcAllowed(SwapPair pair) const {
+  IChainClient* client = m_chainRegistry.getClient(pair);
+  return purePtlcFeatureFlag() && CROSS_CURVE_DLEQ_AVAILABLE && client != nullptr && client->supportsPurePtlc();
+}
 
 // ── Base58 encode (Bitcoin alphabet, matches SolRpcClient) ───────────────
 namespace {
@@ -1209,36 +1237,14 @@ bool SwapDaemon::initiate(SwapParams& params) {
 
   // ── PTLC negotiation ──
   {
-    // FEATURE_PURE_PTLC (PTLC_PURE_PLAN P4.2): read once per process, cached.
-    // Unset/0/false/off => pure PTLC disabled, negotiation stays exactly as before.
-    static const bool kPurePtlcEnabled = [] {
-      const char* v = std::getenv("FEATURE_PURE_PTLC");
-      if (v == nullptr) return false;
-      std::string s(v);
-      std::transform(s.begin(), s.end(), s.begin(),
-                     [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-      return !(s.empty() || s == "0" || s == "false" || s == "off");
-    }();
-
     IChainClient* ctrClient = m_chainRegistry.getClient(params.pair);
     bool localPtlc = ctrClient && ctrClient->supportsPtlc();
-
-    // AUDIT 3.9 — fail-closed: the pure-secp PTLC path binds an Ed25519 adaptor
-    // secret to a secp256k1 point (params.secpPubHex) but there is no genuine
-    // cross-curve DLEQ proving the two points share the same discrete log —
-    // crypto/dleq.cpp is same-curve only. Until a reviewed Ed25519<->secp256k1
-    // DLEQ lands, pure PTLC must stay disabled regardless of FEATURE_PURE_PTLC,
-    // so no swap can be locked to an unprovable cross-curve point. The
-    // PTLC_HTLC_BRIDGE path (on-chain hashlock) is unaffected.
-    static constexpr bool kCrossCurveDleqAvailable = false;
 
     // Pure PTLC gate: env flag + local PURE capability. The peer half arrives
     // later via MsgAdaptorExchange caps; initiate gates on local only — an
     // HTLC-only peer still downgrades/aborts on wire negotiation
     // (requirePtlc abort path unchanged).
-    bool localPure =
-      kPurePtlcEnabled && kCrossCurveDleqAvailable &&
-      ctrClient != nullptr && ctrClient->supportsPurePtlc();
+    bool localPure = purePtlcAllowed(params.pair);
     if (isPtlcNativePair(params.pair)) localPtlc = true;
     if (params.lockType == SwapLockType::HTLC) {
       if (localPure) {
@@ -4338,6 +4344,12 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
         if (params.role != SwapRole::ALICE) {
           m_logger(Logging::WARNING) << "ADAPTOR_EXCHANGE ignored (not Alice)";
           return true;
+        }
+        if (msg.adaptorExchange.lockType == SwapLockType::PTLC && !isPtlcNativePair(params.pair) &&
+            !purePtlcAllowed(params.pair)) {
+          m_logger(Logging::ERROR) << "ADAPTOR_EXCHANGE rejected: pure PTLC is disabled for "
+                                   << swapPairToString(params.pair);
+          return false;
         }
         // Cross-curve point format gate: fail closed on malformed secpPubHex
         // (66 hex chars, compressed prefix 02 or 03).

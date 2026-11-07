@@ -164,7 +164,9 @@ ChainClientResult BtcChainClient::verifyPtlcLock(const SwapParams& params) {
   Crypto::SecpAdaptorPresig presig;
   bool havePresig = false;
   if (!parsePtlcP2trState(params.chainState, tweaked33, ptlcX, presig, havePresig))
-    return verifyLock(params); // bridge state → legacy HTLC verification
+    return isPurePtlcP2trLock(params)
+               ? ChainClientResult::fail("BTC verifyPtlcLock: malformed p2tr lock state")
+               : verifyLock(params);
 
   std::string p2trAddress;
   try {
@@ -311,7 +313,7 @@ ChainClientResult BtcChainClient::lockPtlcPureP2tr(const SwapParams& params) {
 
 ChainClientResult BtcChainClient::verifyLock(const SwapParams& params) {
   // Pure PTLC state routes through the P2TR verifier.
-  if (params.chainState.rfind("p2tr:", 0) == 0) return verifyPtlcLock(params);
+  if (isPurePtlcP2trLock(params)) return verifyPtlcLock(params);
   if (m_spvHtlc) return m_spvHtlc->verifyLock(params);
   if (m_fullNode) return m_fullNode->verifyLock(params);
   return ChainClientResult::fail("BTC verifyLock: no RPC or SPV client available");
@@ -319,7 +321,7 @@ ChainClientResult BtcChainClient::verifyLock(const SwapParams& params) {
 
 ChainClientResult BtcChainClient::claim(const SwapParams& params) {
   // Pure PTLC: key-path Schnorr spend of the P2TR output.
-  if (params.lockType == SwapLockType::PTLC && params.chainState.rfind("p2tr:", 0) == 0)
+  if (isPurePtlcP2trLock(params))
     return claimOrRefundPtlcP2tr(params);
   if (m_fullNode) return m_fullNode->claim(params);
   if (m_spvHtlc) return m_spvHtlc->claim(params);
@@ -329,7 +331,7 @@ ChainClientResult BtcChainClient::claim(const SwapParams& params) {
 ChainClientResult BtcChainClient::refund(const SwapParams& params) {
   // Pure PTLC: the locker's internal key spends the P2TR via key path at any
   // height — timeout-independent (no script path needed for this construction).
-  if (params.lockType == SwapLockType::PTLC && params.chainState.rfind("p2tr:", 0) == 0)
+  if (isPurePtlcP2trLock(params))
     return claimOrRefundPtlcP2tr(params);
   if (m_fullNode) return m_fullNode->refund(params);
   if (m_spvHtlc) return m_spvHtlc->refund(params);
@@ -493,7 +495,7 @@ ChainClientResult BtcChainClient::getTransactionDetails(const std::string& txId,
 
 std::string BtcChainClient::tryExtractClaimedSecret(const SwapParams& params) {
   // ── Pure PTLC (P2.2): t = s' − s via BtcTaprootPtlc::parseClaimSecret ──
-  if (params.chainState.rfind("p2tr:", 0) == 0) {
+  if (isPurePtlcP2trLock(params)) {
     std::vector<uint8_t> tweaked33;
     std::array<uint8_t, 32> ptlcX{};
     Crypto::SecpAdaptorPresig presig;
@@ -544,7 +546,7 @@ std::string BtcChainClient::tryExtractClaimedSecret(const SwapParams& params) {
 }
 
 bool BtcChainClient::hasConfirmedClaim(const SwapParams& params) {
-  if (params.chainState.rfind("p2tr:", 0) == 0) return false;
+  if (isPurePtlcP2trLock(params)) return false;
   if (m_fullNode) return m_fullNode->hasConfirmedClaim(params);
   return m_spvHtlc && m_spvHtlc->hasConfirmedClaim(params);
 }
@@ -558,7 +560,7 @@ std::string BtcChainClient::readinessError() {
 }
 
 std::string BtcChainClient::claimDeadlineError(const SwapParams& params) {
-  if (params.chainState.rfind("p2tr:", 0) == 0) return "";
+  if (isPurePtlcP2trLock(params)) return "";
   if (m_fullNode) return m_fullNode->claimDeadlineError(params);
   return m_spvHtlc ? m_spvHtlc->claimDeadlineError(params) : std::string();
 }

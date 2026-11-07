@@ -1,13 +1,25 @@
+## DeXFG review: a peer cannot select the disabled pure-PTLC lock
+
+**Started**: 2026-11-07
+**Agent**: Claude Code
+**Status**: DONE
+**Scope**: `SwapDaemon.{h,cpp}`, `SwapPtlcLock.{h,cpp}`, `Bitcoin/BtcChainClient.cpp`, `Litecoin/LtcChainClient.cpp`, `tests/test_swap_state_machine_spv.cpp`, `tests/test_utxo_htlc_spv.cpp`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| review | AUDIT 3.9 keeps pure PTLC off (no cross-curve DLEQ), but only the initiator's negotiation honoured that: Alice copied `lockType` from Bob's signed `ADAPTOR_EXCHANGE`, so a peer could put a BTC or LTC swap on the pure-PTLC path, where Alice funds a Taproot output to Bob's unprovable point and Bob's HTLC checks (H(t), key, runway) do not run. `ADAPTOR_EXCHANGE` now refuses `PTLC` for a non-native pair unless `purePtlcAllowed` (feature flag, cross-curve DLEQ, client capability), the same gate the initiator uses | Claude Code | 2026-11-07 | DONE; `test_swap_state_machine_spv` 20/20 (a valid signed bundle selecting PTLC is refused, the same bundle as BRIDGE accepted; the PTLC case fails with the gate removed) |
+| review | BTC/LTC routed any `p2tr:` chain state to the Taproot paths regardless of the negotiated lock type, and `verifyPtlcLock` fell back to `verifyLock` on an unparsable `p2tr:` state, which routed back: a malformed state from a peer recursed until the daemon crashed. The Taproot paths now need `lockType == PTLC` (`isPurePtlcP2trLock`), and a malformed `p2tr:` state on a PTLC swap is refused | Claude Code | 2026-11-07 | DONE; `test_utxo_htlc_spv` 160/160 (the previous BTC client segfaults on the new check) |
+
 ## DeXFG remediation R9 (EVM part): transport gate against anvil
 
 **Started**: 2026-11-07
 **Agent**: Claude Code
-**Status**: IN PROGRESS (CI) — Solana (`solana-test-validator`) and two-daemon runs not built
+**Status**: DONE for EVM — Solana (`solana-test-validator`) and two-daemon runs not built
 **Scope**: `src/SwapDaemon/tests/test_evm_anvil_gate.cpp` (new), `src/CMakeLists.txt`, `.github/workflows/check.yml`, `docs/dexfg/SWAP_REMEDIATION_PLAN.md` (status: 0.1-0.5 Windows green, 1.9 BTC/LTC pass, R9)
 
 | # | Task | Owner | Date | Status |
 |---|------|-------|------|--------|
-| R9 | CI job `evm-anvil-gate`: anvil (foundry-toolchain action, tag-pinned `v1`), the committed `HashedTimelock` artifact deployed through the deterministic deployer and checked at `0x13e6…73a4`, then the real `EthChainClient` for anvil dev accounts 0 and 1: lock one ether, Bob verifies; other hash, other recipient and one wei short refused; claim inside the runway; Alice reads t from the registry at six blocks without the claim txid; a claimed lock is not claimed again; short-timeout lock refused by Bob, refund refused before and accepted after the timeout, no secret revealed | Claude Code | 2026-11-07 | IN PROGRESS (CI) |
+| R9 | CI job `evm-anvil-gate`: anvil (foundry-toolchain action, tag-pinned `v1`), the committed `HashedTimelock` artifact deployed through the deterministic deployer and checked at `0x13e6…73a4`, then the real `EthChainClient` for anvil dev accounts 0 and 1: lock one ether, Bob verifies; other hash, other recipient and one wei short refused; claim inside the runway; Alice reads t from the registry at six blocks without the claim txid; a claimed lock is not claimed again; short-timeout lock refused by Bob, refund refused before and accepted after the timeout, no secret revealed | Claude Code | 2026-11-07 | PASS 19/19 (CI run 42406472393, commit 070f476) |
 
 ## DeXFG review: Bob never publishes t inside the claim runway
 

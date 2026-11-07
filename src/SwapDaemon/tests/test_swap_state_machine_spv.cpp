@@ -16,6 +16,8 @@
 #include "SwapDaemon/SwapDaemon.h"
 #include "SwapDaemon/RpcServer.h"
 #include "SwapDaemon/IChainClient.h"
+#include "SwapDaemon/AdaptorSwap.h"
+#include "SwapDaemon/SwapPeerProtocol.h"
 #include "Logging/ConsoleLogger.h"
 #include <HTTP/httplib.h>
 
@@ -875,9 +877,85 @@ static bool test_unsent_claim_keeps_xfg_refund_open() {
   return ok;
 }
 
+namespace {
+struct AdaptorPair {
+  SwapParams alice{};
+  SwapParams bob{};
+};
+
+AdaptorPair btcAdaptorPair(const std::string& swapId) {
+  AdaptorPair pair;
+  pair.alice.role = SwapRole::ALICE;
+  pair.bob.role = SwapRole::BOB;
+  adaptor_generate_keys(pair.alice);
+  adaptor_generate_keys(pair.bob);
+  pair.alice.peerSwapPubKey = pair.bob.ourSwapPubKey;
+  pair.bob.peerSwapPubKey = pair.alice.ourSwapPubKey;
+  for (SwapParams* side : {&pair.alice, &pair.bob}) {
+    side->swapId = swapId;
+    side->pair = SwapPair::BTC;
+    side->xfgAmount = 1000000000;
+    side->ctrAmount = AtomicAmount("100000");
+    adaptor_key_aggregate(*side);
+  }
+  adaptor_generate_adaptor(pair.bob, pair.bob.escrowPubKey);
+  return pair;
+}
+
+PeerMessage signedAdaptorExchange(const AdaptorPair& pair, SwapLockType lockType) {
+  PeerMessage message{};
+  message.type = PeerMessageType::ADAPTOR_EXCHANGE;
+  message.swapId = pair.bob.swapId;
+  message.adaptorExchange.adaptorPoint = pair.bob.adaptorPoint;
+  message.adaptorExchange.adaptorDleqQ = pair.bob.adaptorDleqQ;
+  message.adaptorExchange.dleqProof = pair.bob.adaptorDleqProof;
+  message.adaptorExchange.htlcHashLock = pair.bob.hashLock;
+  message.adaptorExchange.lockType = lockType;
+  message.adaptorExchange.ptlcPoint = pair.bob.adaptorPoint;
+  signPeerMessage(message, pair.bob.ourSwapPubKey, pair.bob.ourSwapSecKey);
+  return message;
+}
+
+bool aliceAcceptsAdaptorExchange(const std::filesystem::path& dir, SwapLockType lockType, SwapLockType& stored) {
+  const AdaptorPair pair = btcAdaptorPair("ptlc-gate");
+  Logging::ConsoleLogger logger(Logging::FATAL);
+  SwapDaemon daemon("127.0.0.1", 1, dir.string(), logger);
+  daemon.database().setEncryptionKey("ptlc-gate-test-key");
+  if (!daemon.database().saveSwap(SwapStateMachine(pair.alice))) return false;
+  const bool accepted = SwapDaemonTestAccess::handlePeerMessage(daemon, signedAdaptorExchange(pair, lockType));
+  SwapStateMachine persisted;
+  daemon.database().loadSwap("ptlc-gate", persisted);
+  stored = persisted.params().lockType;
+  return accepted;
+}
+} // namespace
+
+static bool test_peer_cannot_select_disabled_pure_ptlc() {
+  std::cout << "  test_peer_cannot_select_disabled_pure_ptlc... ";
+  namespace fs = std::filesystem;
+  const fs::path base = fs::temp_directory_path() /
+      ("xfg-ptlc-gate-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+  fs::create_directories(base);
+  bool ok = true;
+  SwapLockType stored = SwapLockType::HTLC;
+  if (!aliceAcceptsAdaptorExchange(base / "bridge", SwapLockType::PTLC_HTLC_BRIDGE, stored) ||
+      stored != SwapLockType::PTLC_HTLC_BRIDGE) {
+    std::cout << " [a valid bridge bundle was refused]";
+    ok = false;
+  }
+  if (aliceAcceptsAdaptorExchange(base / "pure", SwapLockType::PTLC, stored) || stored == SwapLockType::PTLC) {
+    std::cout << " [a peer selected pure PTLC for BTC while it is disabled]";
+    ok = false;
+  }
+  std::error_code ignored;
+  fs::remove_all(base, ignored);
+  std::cout << (ok ? "PASS\n" : "FAIL\n");
+  return ok;
+}
+
 int main() {
   std::cout << "=== SwapStateMachine SPV state tests ===\n\n";
-  int pass = 0, total = 19;
+  int pass = 0, total = 20;
   if (test_spv_waiting_to_confirmed())    ++pass;
   if (test_spv_waiting_stays_on_retry())  ++pass;
   if (test_spv_waiting_to_refunded())     ++pass;
@@ -897,6 +975,7 @@ int main() {
   if (test_non_evm_overflow_rejected_before_record_creation()) ++pass;
   if (test_expected_peer_key_is_not_a_completed_exchange()) ++pass;
   if (test_unsent_claim_keeps_xfg_refund_open()) ++pass;
+  if (test_peer_cannot_select_disabled_pure_ptlc()) ++pass;
 
   std::cout << "\n=== " << pass << "/" << total << " tests passed ===\n";
   return (pass == total) ? 0 : 1;

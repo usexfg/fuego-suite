@@ -408,6 +408,7 @@ public:
   bool handleWaitingSpv(SwapStateMachine& sm);
   bool withdrawUnsentClaimIntent(SwapStateMachine& sm, const std::string& chainName,
                                  const std::string& reason);
+  bool purePtlcAllowed(SwapPair pair) const;
   bool handleSecretConfirmedSpv(SwapStateMachine& sm);
   bool handleAfkAccepted(SwapStateMachine& sm);
 

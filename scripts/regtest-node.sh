@@ -21,7 +21,7 @@ fetch() { curl -fsSL --retry 3 --retry-delay 5 -o "$2" "$1" 2>/dev/null; }
 
 verify_listed() {  # <checksum file> <tarball>; the listed path may carry a directory
   expected="$(tr -d '\r' < "$1" |
-              grep -ioE "^[0-9a-f]{64}[[:space:]]+\*?([^[:space:]]*/)?$2\$" | head -n 1 | cut -c1-64 |
+              grep -ioE "^[0-9a-f]{64}[[:space:]]+\*?([^[:space:]]*/)?$2[[:space:]]*\$" | head -n 1 | cut -c1-64 |
               tr 'A-F' 'a-f' || true)"
   actual="$(sha256sum "$2" | cut -c1-64)"
   if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then

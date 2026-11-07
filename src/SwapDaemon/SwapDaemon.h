@@ -28,6 +28,7 @@
 #include "PriceWorker.h"
 #include "DefiLlamaFeed.h"
 #include "CoinGeckoFeed.h"
+#include "PythFeed.h"
 #include "../Logging/ILogger.h"
 #include "../Logging/LoggerRef.h"
 #include "ChainRegistry.h"
@@ -77,6 +78,12 @@ struct ChainClientConfig {
   // `evm_chains` JSON object. The flat per-chain EVM fields are retired: the
   // loader rejects them with a pointer to the matching evm_chains key.
   std::vector<EvmChainConfig> evmChains;
+
+  // Pyth on-chain price contract used as the corroborating price source.
+  // All three or none; there is no default endpoint or contract.
+  std::string pythRpcUrl;
+  std::string pythContract;
+  uint64_t    pythChainId = 0;
 
   // BCH
   std::string bchHost;
@@ -267,6 +274,9 @@ public:
   // Send a signed PeerMessage to the swap's peerEndpoint over SwapP2P.
   // Returns false if P2P is down, peerEndpoint empty, or send fails.
   bool deliverPeerMessage(const PeerMessage& msg);
+  // The corroborating price source: Pyth when configured, because DeFiLlama
+  // and CoinGecko resolve the same CoinGecko ids; CoinGecko otherwise.
+  PriceFeed* corroboratingFeed(const ChainClientConfig& chainCfg);
   // Alice → Bob: signed notice of where the counterparty lock is (F22).
   void announceCounterpartyLock(const SwapParams& params);
   // Bob: bind the first lock notice; reject a conflicting one.
@@ -504,6 +514,7 @@ public:
   PricePolicy   m_pricePolicy;
   DefiLlamaFeed m_defiLlamaFeed;
   CoinGeckoFeed m_coinGeckoFeed;
+  PythFeed      m_pythFeed;
   PriceWorker   m_priceWorker;
    Logging::LoggerRef m_logger;
    ChainRegistry m_chainRegistry;

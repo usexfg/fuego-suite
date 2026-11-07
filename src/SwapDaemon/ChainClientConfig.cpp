@@ -279,6 +279,16 @@ bool loadChainClientConfig(const std::string& path,
   }
   if (!rejectRetiredEvmKeys(root, errorMsg)) return false;
 
+  out.pythRpcUrl = jsonGetStr(json, "pyth_rpc_url", "");
+  out.pythContract = jsonGetStr(json, "pyth_contract", "");
+  out.pythChainId = jsonGetUint(json, "pyth_chain_id", 0);
+  const bool anyPyth = !out.pythRpcUrl.empty() || !out.pythContract.empty() || out.pythChainId != 0;
+  if (anyPyth && (out.pythRpcUrl.empty() || out.pythContract.empty() || out.pythChainId == 0)) {
+    errorMsg = "pyth_rpc_url, pyth_contract and pyth_chain_id must be set together";
+    return false;
+  }
+  if (!validateEvmAddress(out.pythContract, "pyth_contract", errorMsg)) return false;
+
   out.network = "mainnet";
   if (root.contains("network")) {
     if (!root("network").isString()) {

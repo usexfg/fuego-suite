@@ -229,7 +229,7 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
                         const std::string& profile)
   : m_rpc(fuegodHost, fuegodPort)
   , m_db(dataDir)
-  , m_priceWorker(&m_defiLlamaFeed, &m_coinGeckoFeed, m_pricePolicy)
+  , m_priceWorker(&m_defiLlamaFeed, corroboratingFeed(chainCfg), m_pricePolicy)
   , m_logger(logger, "SwapDaemon")
   , m_network(network)
   , m_profile(profile) {
@@ -4163,6 +4163,14 @@ std::string announcedLockState(const SwapParams& params) {
 
 }  // namespace
 
+PriceFeed* SwapDaemon::corroboratingFeed(const ChainClientConfig& chainCfg) {
+  if (chainCfg.pythRpcUrl.empty()) return &m_coinGeckoFeed;
+  m_pythFeed.setRpcUrl(chainCfg.pythRpcUrl);
+  m_pythFeed.setContract(chainCfg.pythContract);
+  m_pythFeed.setChainId(chainCfg.pythChainId);
+  return &m_pythFeed;
+}
+
 void SwapDaemon::announceCounterpartyLock(const SwapParams& params) {
   if (params.role != SwapRole::ALICE || params.pair == SwapPair::XMR ||
       params.peerEndpoint.empty() || params.ctrLockTxId.empty())
@@ -5065,12 +5073,13 @@ std::string SwapDaemon::buildPriceStatusJson() {
   Common::JsonValue feeds(Common::JsonValue::OBJECT);
   if (haveSnapshot) {
     feeds.insert("defillama", feedToJson(snapshot.primary));
-    feeds.insert("coingecko", feedToJson(snapshot.secondary));
+    feeds.insert(snapshot.secondary.feedName.empty() ? "secondary" : snapshot.secondary.feedName,
+                 feedToJson(snapshot.secondary));
   } else {
     FeedResult none;
     none.transportReason = "no snapshot yet";
     feeds.insert("defillama", feedToJson(none));
-    feeds.insert("coingecko", feedToJson(none));
+    feeds.insert("secondary", feedToJson(none));
   }
   out.insert("feeds", feeds);
 

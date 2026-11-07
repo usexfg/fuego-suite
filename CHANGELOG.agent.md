@@ -1,3 +1,23 @@
+## DeXFG remediation R6: Pyth as the corroborating price source
+
+**Started**: 2026-11-07
+**Agent**: Claude Code
+**Status**: DONE — no Pyth endpoint is shipped; the operator configures one
+**Scope**: `SwapDaemon.{h,cpp}`, `ChainClientConfig.cpp`, `tests/test_spv_config_wiring.cpp`, `swap_config.example.json`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| R6 | `pyth_rpc_url`, `pyth_contract`, `pyth_chain_id` (all or none, contract syntax checked); when set, `PythFeed` replaces CoinGecko as the price worker's second source, so corroboration no longer compares two readers of the same CoinGecko ids; status JSON names the second feed by its own name | Claude Code | 2026-11-07 | DONE; `test_pyth_corroboration_config` |
+
+Not changed: `PricePolicy::requireCorroboration` stays false by default; turning it on refuses single-source assets and is a policy decision.
+
+### Sign-off
+
+| Gate | Status | Signed | Date |
+|------|--------|--------|------|
+| Clang 18 build, `test_spv_config_wiring` | PASS | Claude Code | 2026-11-07 |
+| Live Pyth read | NOT RUN — no network to an EVM RPC from this session | — | — |
+
 ## DeXFG remediation: EVM registry pin (R3), deterministic deployment (R4), evm_chains only (R5)
 
 **Started**: 2026-11-07

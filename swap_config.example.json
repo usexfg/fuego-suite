@@ -167,6 +167,14 @@
   "dot_port": 443,
   "dot_address": "<ss58_address>",
 
+  // ── Price corroboration (optional) ────────────────────────────────────────
+  // DeFiLlama and CoinGecko both resolve CoinGecko ids, so they are not
+  // independent. Configure an EVM RPC and the Pyth price contract on that chain
+  // to make Pyth the corroborating source instead of CoinGecko. All or none:
+  //   "pyth_rpc_url":  "<https RPC of a chain where Pyth is deployed>",
+  //   "pyth_contract": "<0x Pyth contract address on that chain>",
+  //   "pyth_chain_id": <chain id>,
+
   // ── SOL (Solana — Light Client) ───────────────────────────────────────────
   // Connect to any Solana JSON-RPC endpoint. Public endpoints are free.
   "sol_mode": "rpc",

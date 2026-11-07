@@ -289,6 +289,27 @@ static void test_example_evm_chains_cover_every_adapter_pair() {
   std::cout << "  PASS: test_example_evm_chains_cover_every_adapter_pair" << std::endl;
 }
 
+// Pyth corroboration (plan R6): all three settings or none.
+static void test_pyth_corroboration_config() {
+  const std::string contract = "0x0123456789abcdef0123456789abcdef01234567";
+  struct Case { std::string json; bool loads; const char* label; } cases[] = {
+    {"{}", true, "no Pyth settings load"},
+    {"{\"pyth_rpc_url\":\"https://rpc.example.invalid\",\"pyth_contract\":\"" + contract +
+         "\",\"pyth_chain_id\":1}", true, "complete Pyth settings load"},
+    {"{\"pyth_rpc_url\":\"https://rpc.example.invalid\"}", false, "Pyth URL alone refused"},
+    {"{\"pyth_rpc_url\":\"https://rpc.example.invalid\",\"pyth_contract\":\"0x12\",\"pyth_chain_id\":1}",
+     false, "malformed Pyth contract refused"},
+  };
+  for (const auto& c : cases) {
+    const std::string path = writeTempConfig(c.json);
+    ChainClientConfig cfg;
+    std::string errMsg;
+    expectConfig(loadChainClientConfig(path, cfg, errMsg) == c.loads, c.label);
+    std::remove(path.c_str());
+  }
+  std::cout << "  PASS: test_pyth_corroboration_config" << std::endl;
+}
+
 static void test_gleec_registry_syntax_preserves_recovery_config() {
   const std::string validAddress = "0x0123456789abcdef0123456789abcdef01234567";
   expectConfig(EthRpcClient::isValidEvmAddress(validAddress), "valid GLEEC registry rejected");
@@ -495,6 +516,7 @@ int main() {
   test_config_spv_server_gap();
   test_config_spv_overrides_rpc();
   test_retired_flat_evm_keys_rejected();
+  test_pyth_corroboration_config();
   test_example_evm_chains_cover_every_adapter_pair();
   test_gleec_registry_syntax_preserves_recovery_config();
   test_chain_clients_expose_spv_mode();

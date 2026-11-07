@@ -4,6 +4,7 @@
 #include "../Spv/ISpvClient.h"
 #include "BtcRpcClient.h"
 #include "../Utxo/UtxoHtlcFullNode.h"
+#include "../Utxo/UtxoHtlcSpv.h"
 #include <string>
 #include <memory>
 
@@ -15,13 +16,15 @@ public:
   BtcChainClient(std::unique_ptr<BtcRpcClient> rpc, const std::string& wif,
                  UtxoNetwork network = UtxoNetwork::MAINNET);
 
-  // SPV mode (no RPC client)
-  BtcChainClient(std::shared_ptr<ISpvClient> spvClient, const std::string& wif);
+  // SPV mode (no RPC client): Bob's verification and claim; no lock funding.
+  BtcChainClient(std::shared_ptr<ISpvClient> spvClient, const std::string& wif,
+                 UtxoNetwork network = UtxoNetwork::MAINNET);
 
   std::string chainName() const override { return "BTC"; }
   bool usesSpvVerification() const override { return m_spvClient != nullptr; }
   bool isReadyForNewSwap() override;
   std::string readinessError() override;
+  std::string readinessErrorFor(SwapRole role) override;
   bool supportsPtlc() const override { return true; }
   // Pure PTLC (P2TR key-path, no H(t)) per PTLC_PURE_PLAN P2.2. A full node
   // cannot recover t from a key-path spend without the adaptor presig, so the
@@ -45,17 +48,7 @@ public:
 
   std::string tryExtractClaimedSecret(const SwapParams& params) override;
 
-  // Extract the HTLC claim preimage from a spending transaction.
-  // In SPV mode, fetches the raw tx via the SPV client.
-  // In full-node mode, uses the RPC client.
-  // Returns empty string on failure.
-  std::string extractSecret(const std::string& spendingTxid,
-                            const std::string& htlcRedeemScriptHex);
-
 private:
-  // SPV-mode verifyLock: fetch raw tx, parse outputs for P2WSH, verify amount and inclusion
-  ChainClientResult verifyLockSpv(const SwapParams& params);
-
   // Pure-PTLC P2TR key-path spend (claim + refund share the path: the locker's
   // internal WIF key signs the tweaked key sk_q = sk_internal + tapTweak).
   // chainState format: "p2tr:<tweakedPub33hex>|ptlc:<ptlcPointHex>"
@@ -65,14 +58,11 @@ private:
   // pubkey) and fund it via wallet sendtoaddress.
   ChainClientResult lockPtlcPureP2tr(const SwapParams& params);
 
-  // SPV-mode extractSecret: fetch raw spending tx, parse witness data
-  std::string extractSecretSpv(const std::string& spendingTxid,
-                               const std::vector<uint8_t>& htlcP2wshScriptPubKey);
-
   std::unique_ptr<BtcRpcClient> m_rpc;    // null in SPV mode
   std::unique_ptr<UtxoHtlcFullNode> m_fullNode;  // HTLC swap path over m_rpc
   std::string m_wif;                       // empty in SPV mode
   std::shared_ptr<ISpvClient> m_spvClient; // null in full-node mode
+  std::unique_ptr<UtxoHtlcSpv> m_spvHtlc;  // HTLC swap path over m_spvClient
 };
 
 } // namespace XfgSwap

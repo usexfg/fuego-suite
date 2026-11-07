@@ -7,7 +7,8 @@
 #
 # Every binary is checked against a published SHA-256 before it runs: Bitcoin
 # Core and BCHN against the checksum file served beside the release, Litecoin
-# Core against the hash published with its v0.21.4 release.
+# Core against the hash published with its v0.21.4 release. Signatures on the
+# checksum files are not checked.
 set -euo pipefail
 
 chain="$1"
@@ -18,8 +19,14 @@ cd "$workdir"
 
 fetch() { curl -fsSL --retry 3 --retry-delay 5 -o "$2" "$1" 2>/dev/null; }
 
-verify_listed() {  # <checksum file> <tarball>
-  grep -E "[[:space:]]\*?$2\$" "$1" | head -n 1 | sed 's/\*//' | sha256sum -c -
+verify_listed() {  # <checksum file> <tarball>; the listed path may carry a directory
+  expected="$(grep -E "^[0-9a-f]{64}[[:space:]]+\*?([^[:space:]]*/)?$2\$" "$1" | head -n 1 | cut -c1-64)"
+  actual="$(sha256sum "$2" | cut -c1-64)"
+  if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
+    echo "$2: SHA-256 $actual is not the published ${expected:-<missing>}" >&2
+    exit 1
+  fi
+  echo "$2: OK"
 }
 
 case "$chain" in
@@ -46,24 +53,18 @@ case "$chain" in
   bch)
     version=28.0.1
     tarball="bitcoin-cash-node-$version-x86_64-linux-gnu.tar.gz"
-    # BCHN publishes releases on GitLab; take the asset links it lists.
-    api="https://gitlab.com/api/v4/projects/bitcoin-cash-node%2Fbitcoin-cash-node/releases/v$version"
-    links="$(curl -fsSL --retry 3 "$api" | jq -r '.assets.links[] | "\(.name) \(.url)"' || true)"
-    tar_url="$(echo "$links" | awk -v f="$tarball" '$1 == f {print $2}' | head -n 1)"
-    sums_url="$(echo "$links" | awk 'tolower($1) ~ /sha256sums/ {print $2}' | head -n 1)"
-    for candidate in "$tar_url" \
-        "https://download.bitcoincashnode.org/releases/$version/linux/$tarball" \
-        "https://download.bitcoincashnode.org/releases/$version/$tarball"; do
-      [ -n "$candidate" ] && fetch "$candidate" "$tarball" && break
+    # BCHN publishes binaries only on its download host, beside one
+    # "<signer>-sha256sums.<version>.asc" file per release signer.
+    base="https://download.bitcoincashnode.org/releases/$version"
+    for dir in "$base/linux" "$base"; do
+      fetch "$dir/$tarball" "$tarball" && break
     done
-    for candidate in "$sums_url" \
-        "https://download.bitcoincashnode.org/releases/$version/bitcoin-cash-node-sha256sums.$version.asc" \
-        "https://download.bitcoincashnode.org/releases/$version/SHA256SUMS.$version.asc"; do
-      [ -n "$candidate" ] && fetch "$candidate" SHA256SUMS && break
-    done
+    sums_name="$(curl -fsSL --retry 3 "$base/" 2>/dev/null |
+                 grep -oE "[A-Za-z0-9_.-]+-sha256sums\.$version\.asc" | head -n 1 || true)"
+    [ -n "$sums_name" ] && fetch "$base/$sums_name" SHA256SUMS
     if [ ! -s "$tarball" ] || [ ! -s SHA256SUMS ]; then
-      echo "BCHN $version release assets not found. GitLab lists:" >&2
-      echo "$links" >&2
+      echo "BCHN $version: tarball or checksum file not found under $base" >&2
+      curl -sSL "$base/" 2>&1 | grep -oE 'href="[^"]+"' | head -n 40 >&2 || true
       exit 1
     fi
     verify_listed SHA256SUMS "$tarball"

@@ -131,9 +131,9 @@ Rollout: BTC, then LTC and BCH (same client family), then KMD, DOGE, DASH, ZEC f
 | 0.1-0.5 | Done. CI: GCC and Clang builds pass, sanitizers and macOS pass; tests fail only on F29. MSVC fix (`uint128_t`) pushed, its CI run not yet seen passing |
 | 0.6 | Done in Valise (pin `a2df2f3`) |
 | 1.0-1.7, 1.10 | Done (`src/SwapDaemon/Utxo/`); signatures verified against python-bitcoinlib digests |
-| 1.8, 1.9 | Open. No regtest node could be built in the session; BTC, LTC, BCH stay GATED |
+| 1.8, 1.9 | 1.9 runs in CI (`utxo-regtest-gate`) against bitcoind 28.1, litecoind 0.21.4, BCHN 28.0.1; results in the agent changelog. 1.8 open: BTC, LTC, BCH stay GATED until the gate is green and the owner accepts a transport-only gate (no two-daemon XFG run) |
 | 2.1 | Done (verified TLS, pinning, loopback-only plaintext; F31) |
-| 2.2-2.6 | Open. Bitcoin Core `pow_tests.cpp` vectors are available for BTC retargeting; LTC (scrypt) and BCH (ASERT) need reference vectors. SPV still cannot start a swap. 2.3 would break Valise, which writes `kmd_mode`/`dcr_mode` `spv` |
+| 2.2-2.6 | Done for Bob (BTC, LTC, BCH mainnet and regtest): header rules, quorum policy, Bob-only SPV path, role-aware readiness. KMD/DCR SPV refused (2.3); Valise stops writing it. Not run against public Electrum servers. Alice over SPV not implemented |
 | 3.1, 3.2 | Open: feed ids need network verification |
 | 3.3 | Open: separate Tempo plan |
 | 3.4 | Done (relay `getSeedRate` deleted) |

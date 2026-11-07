@@ -13,6 +13,8 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "SpvHeaderStore.h"
+
+#include <ctime>
 #include <algorithm>
 #include <cassert>
 
@@ -22,7 +24,7 @@ namespace XfgSwap {
 // Construction
 // =============================================================================
 
-SpvHeaderStore::SpvHeaderStore() : m_bestTipHeight(0), m_maxHeightDelta(0) {}
+SpvHeaderStore::SpvHeaderStore() = default;
 
 // =============================================================================
 // Public API
@@ -47,6 +49,63 @@ bool SpvHeaderStore::anchor(uint64_t checkpointHeight,
   return true;
 }
 
+void SpvHeaderStore::setRules(const SpvChainRules& rules) {
+  std::lock_guard<std::recursive_mutex> lock(m_mutex);
+  m_rules = rules;
+  m_hasRules = true;
+}
+
+bool SpvHeaderStore::hasRules() const {
+  std::lock_guard<std::recursive_mutex> lock(m_mutex);
+  return m_hasRules;
+}
+
+std::string SpvHeaderStore::lastRejection() const {
+  std::lock_guard<std::recursive_mutex> lock(m_mutex);
+  return m_lastRejection;
+}
+
+bool SpvHeaderStore::addCheckpointHeader(const SpvHeader& header) {
+  return addCheckpointHistory({header});
+}
+
+bool SpvHeaderStore::addCheckpointHistory(const std::vector<SpvHeader>& headers) {
+  std::lock_guard<std::recursive_mutex> lock(m_mutex);
+  if (!m_hasCheckpoint || !m_chain.entries.empty() || headers.empty() || headers.size() > m_checkpointHeight + 1 ||
+      headers.back().hashDisplay() != m_checkpointHash) {
+    m_lastRejection = "header is not the configured checkpoint";
+    return false;
+  }
+  for (size_t i = 1; i < headers.size(); ++i) {
+    if (headers[i].prevHash != headers[i - 1].hash()) {
+      m_lastRejection = "checkpoint history does not link to the checkpoint";
+      return false;
+    }
+  }
+  uint64_t height = m_checkpointHeight + 1 - headers.size();
+  long double work = 0;
+  for (const SpvHeader& header : headers) {
+    ChainEntry entry;
+    entry.header = header;
+    entry.hashDisplay = header.hashDisplay();
+    entry.prevHashDisplay = header.prevHashDisplay();
+    work += header.work();
+    entry.cumulativeWork = work;
+    m_chain.entries[height++].push_back(entry);
+  }
+  m_chain.bestTipHeight = m_checkpointHeight;
+  m_chain.bestTipHash = m_checkpointHash;
+  m_lastRejection.clear();
+  return true;
+}
+
+bool SpvHeaderStore::rejectsUnderRules(const SpvHeader& header, uint64_t height, const SpvHeader& parent) {
+  const SpvAncestorLookup ancestorAt = [this](uint64_t h, SpvHeader& out) { return headerAtHeight(h, out); };
+  m_lastRejection = headerRuleViolation(m_rules, height, header, parent, ancestorAt,
+                                        static_cast<int64_t>(std::time(nullptr)));
+  return !m_lastRejection.empty();
+}
+
 // =============================================================================
 // Add header (best-chain extension)
 // =============================================================================
@@ -56,8 +115,13 @@ bool SpvHeaderStore::addHeader(const SpvHeader& header) {
   std::string headerHash = header.hashDisplay();
   std::string prevDisplay = header.prevHashDisplay();
 
-  // Special case: empty store — accept as genesis at height 0
-  if (m_entries.empty()) {
+  // Special case: empty store — accept as genesis at height 0. An anchored
+  // store starts from its checkpoint header instead.
+  if (m_chain.entries.empty()) {
+    if (m_hasCheckpoint || m_hasRules) {
+      m_lastRejection = "store must start from its checkpoint header";
+      return false;
+    }
     if (!header.meetsPoW()) {
       return false;
     }
@@ -68,9 +132,9 @@ bool SpvHeaderStore::addHeader(const SpvHeader& header) {
     entry.prevHashDisplay = prevDisplay;
     entry.cumulativeWork = header.work();
 
-    m_entries[0].push_back(entry);
-    m_bestTipHeight = 0;
-    m_bestTipHash = headerHash;
+    m_chain.entries[0].push_back(entry);
+    m_chain.bestTipHeight = 0;
+    m_chain.bestTipHash = headerHash;
     return true;
   }
 
@@ -101,25 +165,26 @@ bool SpvHeaderStore::addHeader(const SpvHeader& header) {
     }
   }
 
-  // PoW validation
-  if (!header.meetsPoW()) {
+  // PoW and the chain's difficulty schedule
+  const SpvHeader& parentHeader = m_chain.entries[parentHeight][parentLoc.second].header;
+  if (m_hasRules ? rejectsUnderRules(header, height, parentHeader) : !header.meetsPoW()) {
     return false;
   }
 
   // Build chain entry
-  long double parentWork = m_entries[parentHeight][parentLoc.second].cumulativeWork;
+  long double parentWork = m_chain.entries[parentHeight][parentLoc.second].cumulativeWork;
   ChainEntry entry;
   entry.header = header;
   entry.hashDisplay = headerHash;
   entry.prevHashDisplay = prevDisplay;
   entry.cumulativeWork = parentWork + header.work();
 
-  m_entries[height].push_back(entry);
+  m_chain.entries[height].push_back(entry);
 
   // Update best tip
-  if (height > m_bestTipHeight) {
-    m_bestTipHeight = height;
-    m_bestTipHash = headerHash;
+  if (height > m_chain.bestTipHeight) {
+    m_chain.bestTipHeight = height;
+    m_chain.bestTipHash = headerHash;
   } else {
     updateBestTip();
   }
@@ -153,11 +218,11 @@ bool SpvHeaderStore::addHeaderAtHeight(const SpvHeader& header, uint64_t height)
     entry.prevHashDisplay = prevDisplay;
     entry.cumulativeWork = header.work();
 
-    m_entries[0].push_back(entry);
+    m_chain.entries[0].push_back(entry);
 
-    if (m_bestTipHeight == 0 && m_bestTipHash.empty()) {
-      m_bestTipHeight = 0;
-      m_bestTipHash = headerHash;
+    if (m_chain.bestTipHeight == 0 && m_chain.bestTipHash.empty()) {
+      m_chain.bestTipHeight = 0;
+      m_chain.bestTipHash = headerHash;
     } else {
       updateBestTip();
     }
@@ -191,7 +256,7 @@ bool SpvHeaderStore::addHeaderAtHeight(const SpvHeader& header, uint64_t height)
   } else {
     auto parentLoc2 = findHeaderByHash(prevDisplay);
     if (parentLoc2.first >= 0 && static_cast<uint64_t>(parentLoc2.first) == height - 1) {
-      parentWork = m_entries[height - 1][parentLoc2.second].cumulativeWork;
+      parentWork = m_chain.entries[height - 1][parentLoc2.second].cumulativeWork;
     }
   }
 
@@ -201,12 +266,12 @@ bool SpvHeaderStore::addHeaderAtHeight(const SpvHeader& header, uint64_t height)
   entry.prevHashDisplay = prevDisplay;
   entry.cumulativeWork = parentWork + header.work();
 
-  m_entries[height].push_back(entry);
+  m_chain.entries[height].push_back(entry);
 
   // Update best tip
-  if (height > m_bestTipHeight) {
-    m_bestTipHeight = height;
-    m_bestTipHash = headerHash;
+  if (height > m_chain.bestTipHeight) {
+    m_chain.bestTipHeight = height;
+    m_chain.bestTipHash = headerHash;
   } else {
     updateBestTip();
   }
@@ -220,18 +285,18 @@ bool SpvHeaderStore::addHeaderAtHeight(const SpvHeader& header, uint64_t height)
 
 bool SpvHeaderStore::bestTip(uint64_t& height, std::string& hashDisplay) const {
   std::lock_guard<std::recursive_mutex> lock(m_mutex);
-  if (m_bestTipHeight == 0 && m_bestTipHash.empty()) {
+  if (m_chain.bestTipHeight == 0 && m_chain.bestTipHash.empty()) {
     return false;
   }
-  height = m_bestTipHeight;
-  hashDisplay = m_bestTipHash;
+  height = m_chain.bestTipHeight;
+  hashDisplay = m_chain.bestTipHash;
   return true;
 }
 
 bool SpvHeaderStore::merkleRootAt(uint64_t height, std::vector<uint8_t>& rootLE) const {
   std::lock_guard<std::recursive_mutex> lock(m_mutex);
-  auto it = m_entries.find(height);
-  if (it == m_entries.end()) {
+  auto it = m_chain.entries.find(height);
+  if (it == m_chain.entries.end()) {
     return false;
   }
 
@@ -247,15 +312,16 @@ bool SpvHeaderStore::merkleRootAt(uint64_t height, std::vector<uint8_t>& rootLE)
 
 uint32_t SpvHeaderStore::depthOf(uint64_t height) const {
   std::lock_guard<std::recursive_mutex> lock(m_mutex);
-  if (height > m_bestTipHeight) {
+  if (height > m_chain.bestTipHeight) {
     return 0;
   }
-  return static_cast<uint32_t>(m_bestTipHeight - height + 1);
+  return static_cast<uint32_t>(m_chain.bestTipHeight - height + 1);
 }
 
 bool SpvHeaderStore::headerAtHeight(uint64_t height, SpvHeader& header) const {
-  auto it = m_entries.find(height);
-  if (it == m_entries.end()) {
+  std::lock_guard<std::recursive_mutex> lock(m_mutex);
+  auto it = m_chain.entries.find(height);
+  if (it == m_chain.entries.end()) {
     return false;
   }
 
@@ -270,8 +336,9 @@ bool SpvHeaderStore::headerAtHeight(uint64_t height, SpvHeader& header) const {
 }
 
 long double SpvHeaderStore::cumulativeWorkAt(uint64_t height) const {
-  auto it = m_entries.find(height);
-  if (it == m_entries.end()) {
+  std::lock_guard<std::recursive_mutex> lock(m_mutex);
+  auto it = m_chain.entries.find(height);
+  if (it == m_chain.entries.end()) {
     return 0;
   }
 
@@ -290,39 +357,45 @@ long double SpvHeaderStore::cumulativeWorkAt(uint64_t height) const {
 
 std::pair<int64_t, size_t> SpvHeaderStore::findHeaderByHash(
     const std::string& hashDisplay) const {
-  for (const auto& heightPair : m_entries) {
-    for (size_t i = 0; i < heightPair.second.size(); ++i) {
-      if (heightPair.second[i].hashDisplay == hashDisplay) {
-        return {static_cast<int64_t>(heightPair.first), i};
+  for (auto level = m_chain.entries.rbegin(); level != m_chain.entries.rend(); ++level) {
+    for (size_t i = 0; i < level->second.size(); ++i) {
+      if (level->second[i].hashDisplay == hashDisplay) {
+        return {static_cast<int64_t>(level->first), i};
       }
     }
   }
   return {-1, 0};
 }
 
+const SpvHeaderStore::ChainEntry* SpvHeaderStore::entryAt(uint64_t height,
+                                                          const std::string& hashDisplay) const {
+  auto level = m_chain.entries.find(height);
+  if (level == m_chain.entries.end()) return nullptr;
+  for (const auto& entry : level->second)
+    if (entry.hashDisplay == hashDisplay) return &entry;
+  return nullptr;
+}
+
 bool SpvHeaderStore::isOnBestChain(uint64_t height,
                                    const std::string& hashDisplay) const {
-  if (m_bestTipHash.empty()) {
+  if (m_chain.bestTipHash.empty()) {
     return false;
   }
 
   // Walk from tip back to the target height following prevHash pointers
-  std::string curHash = m_bestTipHash;
-  uint64_t curHeight = m_bestTipHeight;
+  std::string curHash = m_chain.bestTipHash;
+  uint64_t curHeight = m_chain.bestTipHeight;
 
   while (curHeight >= height) {
     if (curHeight == height) {
       return curHash == hashDisplay;
     }
 
-    // Find entry for curHash at curHeight
-    auto loc = findHeaderByHash(curHash);
-    if (loc.first < 0 || static_cast<uint64_t>(loc.first) != curHeight) {
+    const ChainEntry* entry = entryAt(curHeight, curHash);
+    if (!entry) {
       return false;
     }
-
-    const ChainEntry& e = m_entries.at(curHeight)[loc.second];
-    curHash = e.prevHashDisplay;
+    curHash = entry->prevHashDisplay;
     curHeight--;
   }
 
@@ -330,21 +403,21 @@ bool SpvHeaderStore::isOnBestChain(uint64_t height,
 }
 
 void SpvHeaderStore::updateBestTip() {
-  if (m_entries.empty()) {
-    m_bestTipHeight = 0;
-    m_bestTipHash.clear();
+  if (m_chain.entries.empty()) {
+    m_chain.bestTipHeight = 0;
+    m_chain.bestTipHash.clear();
     return;
   }
 
   // Find the highest height with entries
-  uint64_t maxHeight = m_entries.rbegin()->first;
+  uint64_t maxHeight = m_chain.entries.rbegin()->first;
 
   // Find the entry with highest cumulative work at maxHeight
   std::string bestHash;
   long double bestWork = -1;
 
-  auto tipIt = m_entries.find(maxHeight);
-  if (tipIt != m_entries.end()) {
+  auto tipIt = m_chain.entries.find(maxHeight);
+  if (tipIt != m_chain.entries.end()) {
     for (const auto& entry : tipIt->second) {
       if (entry.cumulativeWork > bestWork) {
         bestWork = entry.cumulativeWork;
@@ -354,9 +427,43 @@ void SpvHeaderStore::updateBestTip() {
   }
 
   if (!bestHash.empty()) {
-    m_bestTipHeight = maxHeight;
-    m_bestTipHash = bestHash;
+    m_chain.bestTipHeight = maxHeight;
+    m_chain.bestTipHash = bestHash;
   }
+}
+
+SpvHeaderStore::Snapshot SpvHeaderStore::snapshot() const {
+  std::lock_guard<std::recursive_mutex> lock(m_mutex);
+  Snapshot saved;
+  saved.state = m_chain;
+  return saved;
+}
+
+void SpvHeaderStore::restore(const Snapshot& saved) {
+  std::lock_guard<std::recursive_mutex> lock(m_mutex);
+  m_chain = saved.state;
+}
+
+bool SpvHeaderStore::rewindTo(uint64_t height) {
+  std::lock_guard<std::recursive_mutex> lock(m_mutex);
+  SpvHeader kept;
+  if ((m_hasCheckpoint && height < m_checkpointHeight) || !headerAtHeight(height, kept)) return false;
+  m_chain.entries.erase(m_chain.entries.upper_bound(height), m_chain.entries.end());
+  m_chain.bestTipHeight = height;
+  m_chain.bestTipHash = kept.hashDisplay();
+  return true;
+}
+
+long double SpvHeaderStore::tipWork() const {
+  std::lock_guard<std::recursive_mutex> lock(m_mutex);
+  return cumulativeWorkAt(m_chain.bestTipHeight);
+}
+
+bool SpvHeaderStore::lowestRewindHeight(uint64_t& height) const {
+  std::lock_guard<std::recursive_mutex> lock(m_mutex);
+  if (m_chain.entries.empty()) return false;
+  height = std::max(m_chain.entries.begin()->first, m_hasCheckpoint ? m_checkpointHeight : uint64_t{0});
+  return true;
 }
 
 // Remove headers older than the retention limit.
@@ -366,17 +473,13 @@ void SpvHeaderStore::pruneOldHeaders() {
   }
   // Determine the lowest height to keep
   uint64_t keepMinHeight = 0;
-  if (m_bestTipHeight > m_maxHeightDelta) {
-    keepMinHeight = m_bestTipHeight - m_maxHeightDelta;
-  }
-  // Ensure we keep at least the checkpoint height (if set)
-  if (m_hasCheckpoint && m_checkpointHeight > keepMinHeight) {
-    keepMinHeight = m_checkpointHeight;
+  if (m_chain.bestTipHeight > m_maxHeightDelta) {
+    keepMinHeight = m_chain.bestTipHeight - m_maxHeightDelta;
   }
   // Remove all entries with height < keepMinHeight
-  for (auto it = m_entries.begin(); it != m_entries.end(); ) {
+  for (auto it = m_chain.entries.begin(); it != m_chain.entries.end(); ) {
     if (it->first < keepMinHeight) {
-      it = m_entries.erase(it);
+      it = m_chain.entries.erase(it);
     } else {
       ++it;
     }

@@ -397,17 +397,20 @@ uint64_t nodeFeeRate(const UtxoRpcCall& rpc, const char* method, const char* par
 
 }  // namespace
 
+uint64_t boundedFee(uint64_t floorRate, uint64_t targetRate, uint64_t virtualBytes, uint64_t ceiling) {
+  const uint64_t floorFee = (floorRate * virtualBytes + 999) / 1000;
+  const uint64_t targetFee = (std::max(floorRate, targetRate) * virtualBytes + 999) / 1000;
+  return std::min(targetFee, std::max(ceiling, floorFee));
+}
+
 uint64_t estimateFeeForSize(const UtxoRpcCall& rpc, uint64_t virtualBytes, uint64_t ceiling) {
   // The node's relay and mempool minimums bound the fee from below (Litecoin's
   // default relay fee is ten times Bitcoin's); estimatesmartfee raises it.
   const uint64_t floorRate = std::max({uint64_t{1000},
                                        nodeFeeRate(rpc, "getnetworkinfo", "[]", "relayfee"),
                                        nodeFeeRate(rpc, "getmempoolinfo", "[]", "mempoolminfee")});
-  const uint64_t estimatedRate =
-      std::max(floorRate, nodeFeeRate(rpc, "estimatesmartfee", "[2]", "feerate"));
-  const uint64_t floorFee = (floorRate * virtualBytes + 999) / 1000;
-  const uint64_t estimated = (estimatedRate * virtualBytes + 999) / 1000;
-  return std::min(estimated, std::max(ceiling, floorFee));
+  return boundedFee(floorRate, nodeFeeRate(rpc, "estimatesmartfee", "[2]", "feerate"), virtualBytes,
+                    ceiling);
 }
 
 UtxoNodeHealth checkNodeHealth(const UtxoRpcCall& rpc, const std::string& expectedChain) {

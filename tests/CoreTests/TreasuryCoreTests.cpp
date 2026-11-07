@@ -30,9 +30,21 @@
 #include <string>
 #include <vector>
 #include <filesystem>
+#ifdef _WIN32
+#include <process.h>
+#else
 #include <unistd.h>
+#endif
 
 using namespace CryptoNote;
+
+static long currentProcessId() {
+#ifdef _WIN32
+  return _getpid();
+#else
+  return static_cast<long>(::getpid());
+#endif
+}
 
 static int tests_run = 0;
 static int tests_passed = 0;
@@ -745,7 +757,7 @@ struct TestChain {
         pool(currency, chain, timeProvider, log),
         chain(currency, pool, log, false, false),
         dir(std::filesystem::temp_directory_path() /
-            ("fuego_core_tests_" + tag + "_" + std::to_string(::getpid()))) {
+            ("fuego_core_tests_" + tag + "_" + std::to_string(currentProcessId()))) {
     std::filesystem::remove_all(dir);
     std::filesystem::create_directories(dir);
     ok = chain.init(dir.string(), false);

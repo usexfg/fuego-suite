@@ -7,6 +7,7 @@
 #include <cassert>
 #include <iostream>
 #include <iterator>
+#include <cstring>
 #include <set>
 #include <string>
 #include <vector>
@@ -33,6 +34,10 @@ static void expectConfig(bool condition, const char* message) {
   if (!condition) throw std::runtime_error(message);
 }
 
+static void expectConfig(bool condition, const std::string& message) {
+  expectConfig(condition, message.c_str());
+}
+
 // =============================================================================
 // Helper: write a temp JSON config file and return its path
 // =============================================================================
@@ -44,9 +49,7 @@ static std::string writeTempConfig(const std::string& jsonContent) {
     return "";
   }
   std::string path(name);
-  std::ofstream f(path, std::ios::out);
-  f << jsonContent;
-  f.close();
+  std::ofstream(path, std::ios::out) << jsonContent;
   return path;
 #else
   char tmpl[] = "/tmp/spv_config_test_XXXXXX";
@@ -232,6 +235,56 @@ static std::string jsonObjectAfterKey(const std::string& text, const std::string
     if (text[i] == '}' && --depth == 0) return text.substr(open, i - open + 1);
   }
   return "";
+}
+
+// The example's SPV sections meet the new-swap trust policy (plan 2.4) and
+// carry no SPV mode for KMD or DCR, which have no header validator (plan 2.3).
+static std::string exampleUtxoChainSettings() {
+  std::ifstream example(exampleConfigPath());
+  std::string line;
+  std::vector<std::string> settings;
+  while (std::getline(example, line)) {
+    const size_t start = line.find_first_not_of(' ');
+    if (start == std::string::npos || line.compare(start, 1, "\"") != 0) continue;
+    for (const char* prefix : {"\"btc_", "\"ltc_", "\"bch_", "\"kmd_", "\"dcr_"})
+      if (line.compare(start, std::strlen(prefix), prefix) == 0) settings.push_back(line.substr(0, line.find("//")));
+  }
+  std::string json = "{";
+  for (size_t i = 0; i < settings.size(); ++i) {
+    std::string setting = settings[i];
+    setting.erase(setting.find_last_not_of(" ,") + 1);
+    json += (i ? "," : "") + setting;
+  }
+  return json + "}";
+}
+
+static void test_example_spv_sections_meet_trust_policy() {
+  ChainClientConfig cfg;
+  std::string errMsg;
+  const std::string path = writeTempConfig(exampleUtxoChainSettings());
+  expectConfig(loadChainClientConfig(path, cfg, errMsg), "example UTXO settings did not load: " + errMsg);
+  std::remove(path.c_str());
+  const struct {
+    const char* chain;
+    const std::vector<std::string>& servers;
+    size_t minServers;
+    uint64_t checkpointHeight;
+    const std::string& checkpointHash;
+  } sections[] = {
+      {"btc", cfg.btcSpvServers, cfg.btcSpvMinServers, cfg.btcSpvCheckpointHeight, cfg.btcSpvCheckpointHash},
+      {"ltc", cfg.ltcSpvServers, cfg.ltcSpvMinServers, cfg.ltcSpvCheckpointHeight, cfg.ltcSpvCheckpointHash},
+      {"bch", cfg.bchSpvServers, cfg.bchSpvMinServers, cfg.bchSpvCheckpointHeight, cfg.bchSpvCheckpointHash},
+  };
+  for (const auto& section : sections) {
+    std::set<std::string> hosts;
+    for (const auto& server : section.servers) hosts.insert(server.substr(0, server.rfind(':')));
+    expectConfig(section.servers.size() >= 3 && hosts.size() == section.servers.size(),
+                 std::string(section.chain) + " example needs three servers on distinct hosts");
+    expectConfig(section.minServers >= 2, std::string(section.chain) + " example quorum below 2");
+    expectConfig(section.checkpointHeight > 0 && section.checkpointHash.size() == 64,
+                 std::string(section.chain) + " example has no checkpoint");
+  }
+  expectConfig(cfg.kmdMode.empty() && cfg.dcrMode.empty(), "example still configures KMD or DCR SPV");
 }
 
 // Flat per-chain EVM fields are retired (plan R5). A config carrying one,
@@ -518,6 +571,7 @@ int main() {
   test_retired_flat_evm_keys_rejected();
   test_pyth_corroboration_config();
   test_example_evm_chains_cover_every_adapter_pair();
+  test_example_spv_sections_meet_trust_policy();
   test_gleec_registry_syntax_preserves_recovery_config();
   test_chain_clients_expose_spv_mode();
   test_generic_evm_config();

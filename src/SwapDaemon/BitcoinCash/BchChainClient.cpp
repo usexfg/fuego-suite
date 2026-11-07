@@ -1,33 +1,10 @@
 #include "BchChainClient.h"
-#include "HtlcScript.h"
-#include "Common/StringTools.h"
-#include "../SwapHashLock.h"
-#include "../utxo_claim_proof.h"
-
-#include <array>
-#include <cstring>
-#include <algorithm>
-#include <stdexcept>
-#include "Komodo/KmdHtlcScript.h"
 
 namespace XfgSwap {
 
-static bool isZeroSecret(const Crypto::SecretKey& s) {
-  const uint8_t* p = reinterpret_cast<const uint8_t*>(&s);
-  for (size_t i = 0; i < sizeof(Crypto::SecretKey); ++i) if (p[i]) return false;
-  return true;
-}
-
-std::string BchChainClient::getReceiveAddress() const {
-  if (m_fullNode) return m_fullNode->receiveAddress();
-  if (m_wif.empty()) return "";
-  std::vector<uint8_t> h;
-  if (!KmdHtlcScript::wifToPubkeyHash(m_wif, h)) return "";
-  return KmdHtlcScript::base58CheckEncode(0x00, h);
-}
 BchChainClient::BchChainClient(std::unique_ptr<BchRpcClient> rpc, const std::string& wif,
                                UtxoNetwork network)
-  : m_rpc(std::move(rpc)), m_wif(wif) {
+  : m_rpc(std::move(rpc)) {
   if (!m_rpc) return;
   BchRpcClient* node = m_rpc.get();
   m_fullNode.reset(new UtxoHtlcFullNode(
@@ -39,274 +16,60 @@ BchChainClient::BchChainClient(std::unique_ptr<BchRpcClient> rpc, const std::str
       wif));
 }
 
-BchChainClient::BchChainClient(std::shared_ptr<ISpvClient> spvClient, const std::string& wif)
-  : m_spvClient(std::move(spvClient)), m_wif(wif) {}
+BchChainClient::BchChainClient(std::shared_ptr<ISpvClient> spvClient, const std::string& wif,
+                               UtxoNetwork network) {
+  if (spvClient)
+    m_spvHtlc.reset(new UtxoHtlcSpv(
+        {"BCH", SwapPair::BCH, UtxoHtlcEncoding::P2SH_FORKID, bitcoinCashNetworkParams(network)},
+        std::move(spvClient), wif));
+}
+
+std::string BchChainClient::getReceiveAddress() const {
+  if (m_fullNode) return m_fullNode->receiveAddress();
+  return m_spvHtlc ? m_spvHtlc->receiveAddress() : std::string();
+}
+
+std::string BchChainClient::getClaimPubKey() const {
+  if (m_fullNode) return m_fullNode->claimPubKeyHex();
+  return m_spvHtlc ? m_spvHtlc->claimPubKeyHex() : std::string();
+}
+
+bool BchChainClient::isReadyForNewSwap() {
+  return readinessError().empty();
+}
+
+std::string BchChainClient::readinessError() {
+  return readinessErrorFor(SwapRole::ALICE);
+}
+
+std::string BchChainClient::readinessErrorFor(SwapRole role) {
+  if (m_fullNode) return m_fullNode->readinessError();
+  if (m_spvHtlc) return m_spvHtlc->readinessErrorFor(role);
+  return "BCH: no RPC or SPV client available";
+}
 
 ChainClientResult BchChainClient::lock(const SwapParams& params) {
   if (m_fullNode) return m_fullNode->lock(params);
-  return ChainClientResult::fail("BCH lock: SPV mode cannot fund a lock");
+  if (m_spvHtlc) return m_spvHtlc->lock(params);
+  return ChainClientResult::fail("BCH lock: no RPC or SPV client available");
 }
 
 ChainClientResult BchChainClient::verifyLock(const SwapParams& params) {
-  if (m_spvClient) return verifyLockSpv(params);
   if (m_fullNode) return m_fullNode->verifyLock(params);
+  if (m_spvHtlc) return m_spvHtlc->verifyLock(params);
   return ChainClientResult::fail("BCH verifyLock: no RPC or SPV client available");
-}
-
-ChainClientResult BchChainClient::verifyLockSpv(const SwapParams& params) {
-  // Fetch the raw locking tx
-  std::vector<uint8_t> rawTx;
-  if (!m_spvClient->getRawTx(params.ctrLockTxId, rawTx)) {
-    return ChainClientResult::fail("BCH verifyLock SPV: getRawTx failed for " + params.ctrLockTxId);
-  }
-
-  // Parse the raw tx to find outputs paying to a P2SH address.
-  // We look for any P2SH output (OP_HASH160 <20-byte-hash> OP_EQUAL) whose
-  // value matches the expected amount.
-  const uint8_t* p = rawTx.data();
-  const uint8_t* end = rawTx.data() + rawTx.size();
-
-  // Skip version (4 bytes)
-  if (p + 4 > end)
-    return ChainClientResult::fail("BCH verifyLock SPV: raw tx too short");
-  p += 4;
-
-  // Read vin count
-  uint64_t vinCount = 0;
-  // Inline varint reader
-  if (p >= end) return ChainClientResult::fail("BCH verifyLock SPV: truncated tx");
-  uint8_t first = *p++;
-  if (first < 0xFD) {
-    vinCount = first;
-  } else if (first == 0xFD) {
-    if (p + 2 > end) return ChainClientResult::fail("BCH verifyLock SPV: truncated tx");
-    vinCount = static_cast<uint64_t>(p[0]) | (static_cast<uint64_t>(p[1]) << 8);
-    p += 2;
-  } else if (first == 0xFE) {
-    if (p + 4 > end) return ChainClientResult::fail("BCH verifyLock SPV: truncated tx");
-    vinCount = static_cast<uint64_t>(p[0]) | (static_cast<uint64_t>(p[1]) << 8) |
-              (static_cast<uint64_t>(p[2]) << 16) | (static_cast<uint64_t>(p[3]) << 24);
-    p += 4;
-  } else {
-    if (p + 8 > end) return ChainClientResult::fail("BCH verifyLock SPV: truncated tx");
-    vinCount = 0;
-    for (int i = 0; i < 8; ++i) {
-      vinCount |= static_cast<uint64_t>(p[i]) << (i * 8);
-    }
-    p += 8;
-  }
-
-  // Skip inputs (each: 32-byte txid + 4-byte vout + varint scriptSigLen + scriptSig + 4-byte sequence)
-  for (uint64_t i = 0; i < vinCount; ++i) {
-    if (p + 36 > end) return ChainClientResult::fail("BCH verifyLock SPV: truncated tx inputs");
-    p += 36;  // txid + vout
-    uint64_t sigLen = 0;
-    if (*p < 0xFD) {
-      sigLen = *p++;
-    } else if (*p == 0xFD) {
-      ++p;
-      if (p + 2 > end) return ChainClientResult::fail("BCH verifyLock SPV: truncated");
-      sigLen = static_cast<uint64_t>(p[0]) | (static_cast<uint64_t>(p[1]) << 8);
-      p += 2;
-    } else {
-      return ChainClientResult::fail("BCH verifyLock SPV: oversized scriptSig");
-    }
-    p += sigLen;
-    if (p + 4 > end) return ChainClientResult::fail("BCH verifyLock SPV: truncated sequence");
-    p += 4;  // sequence
-  }
-
-  // Read vout count
-  uint64_t voutCount = 0;
-  if (p >= end) return ChainClientResult::fail("BCH verifyLock SPV: no vouts");
-  first = *p++;
-  if (first < 0xFD) {
-    voutCount = first;
-  } else if (first == 0xFD) {
-    if (p + 2 > end) return ChainClientResult::fail("BCH verifyLock SPV: truncated vout count");
-    voutCount = static_cast<uint64_t>(p[0]) | (static_cast<uint64_t>(p[1]) << 8);
-    p += 2;
-  } else if (first == 0xFE) {
-    if (p + 4 > end) return ChainClientResult::fail("BCH verifyLock SPV: truncated vout count");
-    voutCount = static_cast<uint64_t>(p[0]) | (static_cast<uint64_t>(p[1]) << 8) |
-               (static_cast<uint64_t>(p[2]) << 16) | (static_cast<uint64_t>(p[3]) << 24);
-    p += 4;
-  } else {
-    if (p + 8 > end) return ChainClientResult::fail("BCH verifyLock SPV: truncated vout count");
-    voutCount = 0;
-    for (int i = 0; i < 8; ++i) {
-      voutCount |= static_cast<uint64_t>(p[i]) << (i * 8);
-    }
-    p += 8;
-  }
-
-  // Extract the expected P2SH script hash from swap params for verification.
-  // The redeem script hex is stored in params.chainState from the lock() call.
-  std::vector<uint8_t> expectedScriptHash;
-  bool haveExpectedHash = false;
-  if (!params.chainState.empty()) {
-    auto redeemScript = BchHtlcScript::hexToBytes(params.chainState);
-    if (!redeemScript.empty()) {
-      expectedScriptHash = BchHtlcScript::hash160(redeemScript);
-      haveExpectedHash = true;
-    }
-  }
-
-  bool foundP2sh = false;
-  std::vector<uint8_t> onChainScriptHash;
-  for (uint64_t i = 0; i < voutCount; ++i) {
-    if (p + 8 > end) return ChainClientResult::fail("BCH verifyLock SPV: truncated output value");
-    uint64_t value = 0;
-    for (int j = 0; j < 8; ++j) {
-      value |= static_cast<uint64_t>(p[j]) << (j * 8);
-    }
-    p += 8;
-
-    // Read scriptPubKey
-    uint64_t spkLen = 0;
-    if (*p < 0xFD) {
-      spkLen = *p++;
-    } else if (*p == 0xFD) {
-      ++p;
-      if (p + 2 > end) return ChainClientResult::fail("BCH verifyLock SPV: truncated");
-      spkLen = static_cast<uint64_t>(p[0]) | (static_cast<uint64_t>(p[1]) << 8);
-      p += 2;
-    } else {
-      return ChainClientResult::fail("BCH verifyLock SPV: oversized scriptPubKey");
-    }
-    if (p + spkLen > end) return ChainClientResult::fail("BCH verifyLock SPV: truncated scriptPubKey");
-
-    // Check if this is a P2SH output: OP_HASH160 <20 bytes> OP_EQUAL (23 bytes)
-    if (spkLen == 23 && p[0] == 0xA9 && p[1] == 0x14 && p[22] == 0x87) {
-      if (value >= params.ctrAmount64()) {
-        foundP2sh = true;
-        onChainScriptHash.assign(p + 2, p + 22);
-      }
-    }
-
-    p += spkLen;
-  }
-
-  if (!foundP2sh) {
-    return ChainClientResult::fail("BCH verifyLock SPV: no P2SH output with expected amount " +
-                                   std::to_string(params.ctrAmount64()));
-  }
-
-  // Fail closed: must bind to expected redeem script (no amount-only P2SH).
-  if (!haveExpectedHash || expectedScriptHash.empty()) {
-    return ChainClientResult::fail(
-        "BCH verifyLock SPV: chainState redeem script required to verify P2SH script hash");
-  }
-  if (onChainScriptHash != expectedScriptHash) {
-    return ChainClientResult::fail(
-        "BCH verifyLock SPV: P2SH script hash does not match expected HTLC contract");
-  }
-
-  // Verify inclusion via SPV
-  SpvTxInclusion inclusion;
-  if (!m_spvClient->verifyTxInclusion(params.ctrLockTxId, inclusion)) {
-    return ChainClientResult::fail("BCH verifyLock SPV: verifyTxInclusion failed");
-  }
-
-  uint64_t tipHeight = 0;
-  m_spvClient->getTipHeight(tipHeight);
-
-  ChainClientResult result = ChainClientResult::ok(params.ctrLockTxId);
-  result.confirmed = inclusion.included;
-  result.spvVerified = inclusion.merkleVerified;
-  result.blockHeight = inclusion.blockHeight;
-  result.confirmations = inclusion.depth;
-  return result;
 }
 
 ChainClientResult BchChainClient::claim(const SwapParams& params) {
   if (m_fullNode) return m_fullNode->claim(params);
-  if (!m_spvClient)
-    return ChainClientResult::fail("BCH claim: no RPC or SPV client available");
-  if (m_wif.empty())
-    return ChainClientResult::fail("BCH claim: no RPC or WIF available (SPV mode needs WIF for local signing)");
-
-  std::array<uint8_t, 32> privKey{};
-  if (!BchHtlcScript::wifToPrivKey(m_wif, privKey))
-    return ChainClientResult::fail("BCH claim: invalid WIF");
-
-  auto redeemScript = BchHtlcScript::hexToBytes(params.chainState);
-  auto preimageBytes = BchHtlcScript::hexToBytes(Common::podToHex(params.adaptorSecret));
-
-  uint8_t addrVersion = 0;
-  std::vector<uint8_t> pubKeyHash;
-  if (!BchHtlcScript::base58CheckDecode(params.ctrAddress, addrVersion, pubKeyHash))
-    return ChainClientResult::fail("BCH claim: invalid destination address");
-  auto outputScript = BchHtlcScript::buildP2pkhScriptPubKey(pubKeyHash);
-
-  uint64_t fee = 1000;
-  if (params.ctrAmount64() <= fee)
-    return ChainClientResult::fail("BCH claim: amount too small for fee");
-  uint64_t outputAmount = params.ctrAmount64() - fee;
-
-  const uint32_t nSequence = 0xFFFFFFFD;
-
-  auto der = BchHtlcScript::signInput(privKey, 1, 0, nSequence,
-      params.ctrLockTxId, 0, redeemScript, params.ctrAmount64(),
-      outputScript, outputAmount);
-  if (der.empty())
-    return ChainClientResult::fail("BCH claim SPV: signing failed");
-
-  auto scriptSig = BchHtlcScript::createClaimScriptSig(der, preimageBytes, redeemScript);
-
-  auto rawTx = BchHtlcScript::buildRawTransaction(
-      params.ctrLockTxId, 0, params.ctrAmount64(),
-      scriptSig, params.ctrAddress, outputAmount, 0);
-
-  std::string txid;
-  if (!m_spvClient->broadcastTx(rawTx, txid))
-    return ChainClientResult::fail("BCH claim SPV: broadcast failed");
-  return ChainClientResult::ok(txid);
+  if (m_spvHtlc) return m_spvHtlc->claim(params);
+  return ChainClientResult::fail("BCH claim: no RPC or SPV client available");
 }
 
 ChainClientResult BchChainClient::refund(const SwapParams& params) {
   if (m_fullNode) return m_fullNode->refund(params);
-  if (!m_spvClient)
-    return ChainClientResult::fail("BCH refund: no RPC or SPV client available");
-  if (m_wif.empty())
-    return ChainClientResult::fail("BCH refund: no RPC or WIF available (SPV mode needs WIF for local signing)");
-
-  std::array<uint8_t, 32> privKey{};
-  if (!BchHtlcScript::wifToPrivKey(m_wif, privKey))
-    return ChainClientResult::fail("BCH refund: invalid WIF");
-
-  auto redeemScript = BchHtlcScript::hexToBytes(params.chainState);
-
-  uint32_t nLocktime = static_cast<uint32_t>(params.ctrTimeoutBlock);
-
-  uint8_t addrVersion = 0;
-  std::vector<uint8_t> pubKeyHash;
-  if (!BchHtlcScript::base58CheckDecode(params.ctrAddress, addrVersion, pubKeyHash))
-    return ChainClientResult::fail("BCH refund: invalid destination address");
-  auto outputScript = BchHtlcScript::buildP2pkhScriptPubKey(pubKeyHash);
-
-  uint64_t fee = 1000;
-  if (params.ctrAmount64() <= fee)
-    return ChainClientResult::fail("BCH refund: amount too small for fee");
-  uint64_t outputAmount = params.ctrAmount64() - fee;
-
-  auto der = BchHtlcScript::signInput(privKey, 1, nLocktime,
-      0xFFFFFFFE,
-      params.ctrLockTxId, 0, redeemScript, params.ctrAmount64(),
-      outputScript, outputAmount);
-  if (der.empty())
-    return ChainClientResult::fail("BCH refund SPV: signing failed");
-
-  auto scriptSig = BchHtlcScript::createRefundScriptSig(der, redeemScript);
-
-  auto rawTx = BchHtlcScript::buildRawTransaction(
-      params.ctrLockTxId, 0, params.ctrAmount64(),
-      scriptSig, params.ctrAddress, outputAmount, nLocktime);
-
-  std::string txid;
-  if (!m_spvClient->broadcastTx(rawTx, txid))
-    return ChainClientResult::fail("BCH refund SPV: broadcast failed");
-  return ChainClientResult::ok(txid);
+  if (m_spvHtlc) return m_spvHtlc->refund(params);
+  return ChainClientResult::fail("BCH refund: no RPC or SPV client available");
 }
 
 ChainClientResult BchChainClient::verifyReserveProof(const std::string& expectedMessage,
@@ -343,150 +106,26 @@ ChainClientResult BchChainClient::verifyReserveProof(const std::string& expected
 }
 
 bool BchChainClient::getCurrentHeight(uint64_t& height) {
-  if (m_spvClient) {
-    return m_spvClient->getTipHeight(height);
-  }
-  if (m_rpc) {
-    return m_rpc->getBlockCount(height);
-  }
-  return false;
+  if (m_fullNode) return m_fullNode->currentHeight(height);
+  return m_spvHtlc && m_spvHtlc->currentHeight(height);
 }
 
 ChainClientResult BchChainClient::getTransactionDetails(const std::string& txId,
                                                         ChainClientResult& result) {
-  if (m_spvClient) {
-    // SPV mode: check if tx is confirmed via header chain
-    uint64_t tipHeight = 0;
-    if (!m_spvClient->getTipHeight(tipHeight)) {
-      result = ChainClientResult::fail("BCH SPV: cannot get tip height");
-      return result;
-    }
-
-    // Try to verify tx inclusion (fetches header + merkle proof)
-    SpvTxInclusion inclusion;
-    if (!m_spvClient->verifyTxInclusion(txId, inclusion)) {
-      // Tx not yet found — may still be unconfirmed or not relayed
-      result = ChainClientResult::fail("BCH SPV: tx not found or not yet included in a block");
-      result.confirmed = false;
-      result.confirmations = 0;
-      return result;
-    }
-
-    if (!inclusion.included || !inclusion.merkleVerified ||
-        inclusion.blockHeight == 0 || inclusion.blockHeight > tipHeight ||
-        inclusion.depth == 0) {
-      result = ChainClientResult::fail("SPV: transaction inclusion proof invalid");
-      return result;
-    }
-    result = ChainClientResult::ok(txId);
-    result.success = true;
-    result.confirmed = inclusion.included;
-    result.spvVerified = inclusion.merkleVerified;
-    result.blockHeight = inclusion.blockHeight;
-    result.confirmations = inclusion.depth;
-    return result;
-  }
-
-  if (m_fullNode) {
-    result = m_fullNode->transactionDetails(txId);
-    return result;
-  }
-
-  if (m_rpc) {
-    // Full-node RPC mode: use gettransaction
-    BchTxInfo txInfo;
-    if (!m_rpc->getTransaction(txId, txInfo)) {
-      result = ChainClientResult::fail("BCH RPC: gettransaction failed for " + txId);
-      return result;
-    }
-
-    uint64_t tipHeight = 0;
-    m_rpc->getBlockCount(tipHeight);
-
-    result.success = true;
-    result.confirmed = txInfo.confirmations > 0;
-    result.spvVerified = false;  // RPC mode: no SPV proof
-    result.blockHeight = txInfo.blockHeight;
-    result.confirmations = txInfo.confirmations;
-    return result;
-  }
-
-  result = ChainClientResult::fail("BCH: no RPC or SPV client available");
+  if (m_fullNode) result = m_fullNode->transactionDetails(txId);
+  else if (m_spvHtlc) result = m_spvHtlc->transactionDetails(txId);
+  else result = ChainClientResult::fail("BCH: no RPC or SPV client available");
   return result;
-}
-
-std::string BchChainClient::extractSecret(const std::string& spendingTxid,
-                                           const std::string& htlcRedeemScriptHex) {
-  std::vector<uint8_t> redeemScript = BchHtlcScript::hexToBytes(htlcRedeemScriptHex);
-  std::vector<uint8_t> p2shScriptPubKey = BchHtlcScript::redeemScriptToP2shScriptPubKey(redeemScript);
-
-  if (m_spvClient) {
-    return extractSecretSpv(spendingTxid, p2shScriptPubKey);
-  }
-
-  // RPC mode: fetch raw tx via getrawtransaction, then parse
-  if (!m_rpc) {
-    return {};
-  }
-
-  std::string rawTxHex;
-  if (!m_rpc->getRawTransaction(spendingTxid, rawTxHex)) {
-    return {};
-  }
-
-  std::vector<uint8_t> rawTx = BchHtlcScript::hexToBytes(rawTxHex);
-  std::vector<uint8_t> preimage = BchHtlcScript::parseClaimPreimage(rawTx, p2shScriptPubKey);
-  if (preimage.empty()) {
-    return {};
-  }
-
-  return BchHtlcScript::bytesToHex(preimage);
-}
-
-std::string BchChainClient::extractSecretSpv(const std::string& spendingTxid,
-                                              const std::vector<uint8_t>& htlcP2shScriptPubKey) {
-  std::vector<uint8_t> rawSpendingTx;
-  if (!m_spvClient->getRawTx(spendingTxid, rawSpendingTx)) {
-    return {};
-  }
-
-  std::vector<uint8_t> preimage = BchHtlcScript::parseClaimPreimage(rawSpendingTx, htlcP2shScriptPubKey);
-  if (preimage.empty()) {
-    return {};
-  }
-
-  return BchHtlcScript::bytesToHex(preimage);
 }
 
 std::string BchChainClient::tryExtractClaimedSecret(const SwapParams& params) {
   if (m_fullNode) return m_fullNode->tryExtractClaimedSecret(params);
-  if (!m_spvClient || params.chainState.empty() || params.ctrLockTxId.empty()) return {};
-
-  SpvSpend spend;
-  if (!m_spvClient->findSpend(params.ctrLockTxId, params.ctrLockVout, spend) ||
-      !isVerifiedSpvSpend(spend, params.requiredConfirmations ? params.requiredConfirmations : 6) ||
-      spend.spendingTxid.empty())
-    return {};
-  return extractSecret(spend.spendingTxid, lockScriptHex(params.chainState));
+  return m_spvHtlc ? m_spvHtlc->tryExtractClaimedSecret(params) : std::string();
 }
 
 bool BchChainClient::hasConfirmedClaim(const SwapParams& params) {
-  return m_fullNode && params.chainState.rfind("p2tr:", 0) != 0 &&
-         m_fullNode->hasConfirmedClaim(params);
+  if (m_fullNode) return m_fullNode->hasConfirmedClaim(params);
+  return m_spvHtlc && m_spvHtlc->hasConfirmedClaim(params);
 }
 
-bool BchChainClient::isReadyForNewSwap() {
-  return readinessError().empty();
-}
-
-std::string BchChainClient::readinessError() {
-  if (m_fullNode) return m_fullNode->readinessError();
-  return "BCH SPV mode cannot start new swaps: it cannot fund a lock and its headers are not "
-         "validated against retarget rules";
-}
-
-std::string BchChainClient::getClaimPubKey() const {
-  return m_fullNode ? m_fullNode->claimPubKeyHex() : std::string();
-}
-
-} // namespace XfgSwap
+}  // namespace XfgSwap

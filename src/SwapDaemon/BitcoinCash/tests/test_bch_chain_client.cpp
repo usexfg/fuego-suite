@@ -1,7 +1,8 @@
 // Copyright (c) 2017-2026 Fuego Developers
 //
-// Tests for BchChainClient SPV mode: verifyLock, extractSecret, and
-// BchHtlcScript::parseClaimPreimage / redeemScriptToP2shScriptPubKey.
+// Tests for BchHtlcScript::parseClaimPreimage / redeemScriptToP2shScriptPubKey
+// and BchChainClient's SPV dispatch. The SPV swap path itself is covered by
+// test_utxo_htlc_spv.
 
 #include <algorithm>
 #include <cassert>
@@ -280,171 +281,6 @@ static void test_parseClaimPreimage_noP2shInput() {
   std::cout << "  PASSED" << std::endl;
 }
 
-static void test_checkSwapStatus_spv_mode() {
-  std::cout << "test_checkSwapStatus_spv_mode..." << std::endl;
-
-  auto mock = std::make_shared<MockSpvClient>();
-  mock->m_tipHeight = 500;
-
-  // Build a raw locking tx with a P2SH output
-  const auto redeemScript = BchHtlcScript::createRedeemScript(
-      std::vector<uint8_t>(32, 0xaa), std::vector<uint8_t>(33, 0x02),
-      std::vector<uint8_t>(33, 0x03), 500000);
-  const auto p2shScriptPubKey =
-      BchHtlcScript::redeemScriptToP2shScriptPubKey(redeemScript);
-
-  uint64_t lockAmount = 100000;
-  auto rawTx = buildMinimalRawTx(p2shScriptPubKey, lockAmount);
-
-  std::string lockTxId = "aabbccdd11223344aabbccdd11223344aabbccdd11223344aabbccdd11223344";
-  mock->m_rawTxs[lockTxId] = rawTx;
-  mock->m_inclusions[lockTxId] = {true, 498, 3, true};  // included, height 498, depth 3
-
-  BchChainClient client(mock, "");
-
-  SwapParams params;
-  params.ctrLockTxId = lockTxId;
-  params.ctrAmount = lockAmount;
-  params.chainState = BchHtlcScript::bytesToHex(redeemScript);
-
-  auto result = client.verifyLock(params);
-  assert(result.success);
-  assert(result.confirmed);
-  assert(result.spvVerified);
-  assert(result.blockHeight == 498);
-  assert(result.confirmations == 3);
-
-  std::cout << "  PASSED" << std::endl;
-}
-
-static void test_verifyLock_spv_wrong_amount() {
-  std::cout << "test_verifyLock_spv_wrong_amount..." << std::endl;
-
-  auto mock = std::make_shared<MockSpvClient>();
-  mock->m_tipHeight = 500;
-
-  const auto redeemScript = BchHtlcScript::createRedeemScript(
-      std::vector<uint8_t>(32, 0xaa), std::vector<uint8_t>(33, 0x02),
-      std::vector<uint8_t>(33, 0x03), 500000);
-  const auto p2shScriptPubKey =
-      BchHtlcScript::redeemScriptToP2shScriptPubKey(redeemScript);
-
-  uint64_t lockAmount = 100000;
-  auto rawTx = buildMinimalRawTx(p2shScriptPubKey, lockAmount);
-
-  std::string lockTxId = "aabbccdd11223344aabbccdd11223344aabbccdd11223344aabbccdd11223344";
-  mock->m_rawTxs[lockTxId] = rawTx;
-  mock->m_inclusions[lockTxId] = {true, 498, 3, true};
-
-  BchChainClient client(mock, "");
-
-  SwapParams params;
-  params.ctrLockTxId = lockTxId;
-  params.ctrAmount = 200000;  // Higher than locked amount
-
-  auto result = client.verifyLock(params);
-  assert(!result.success);
-  assert(result.error.find("no P2SH output") != std::string::npos);
-
-  std::cout << "  PASSED" << std::endl;
-}
-
-static void test_verifyLock_spv_not_found() {
-  std::cout << "test_verifyLock_spv_not_found..." << std::endl;
-
-  auto mock = std::make_shared<MockSpvClient>();
-  BchChainClient client(mock, "");
-
-  SwapParams params;
-  params.ctrLockTxId = "nonexistent";
-  params.ctrAmount = 100000;
-
-  auto result = client.verifyLock(params);
-  assert(!result.success);
-  assert(result.error.find("getRawTx failed") != std::string::npos);
-
-  std::cout << "  PASSED" << std::endl;
-}
-
-static void test_verifyLock_spv_not_confirmed() {
-  std::cout << "test_verifyLock_spv_not_confirmed..." << std::endl;
-
-  auto mock = std::make_shared<MockSpvClient>();
-  mock->m_tipHeight = 500;
-
-  const auto redeemScript = BchHtlcScript::createRedeemScript(
-      std::vector<uint8_t>(32, 0xaa), std::vector<uint8_t>(33, 0x02),
-      std::vector<uint8_t>(33, 0x03), 500000);
-  const auto p2shScriptPubKey =
-      BchHtlcScript::redeemScriptToP2shScriptPubKey(redeemScript);
-
-  auto rawTx = buildMinimalRawTx(p2shScriptPubKey, 100000);
-
-  std::string lockTxId = "aabbccdd11223344aabbccdd11223344aabbccdd11223344aabbccdd11223344";
-  mock->m_rawTxs[lockTxId] = rawTx;
-  mock->m_inclusions[lockTxId] = {false, 0, 0, false};  // not included
-
-  BchChainClient client(mock, "");
-
-  SwapParams params;
-  params.ctrLockTxId = lockTxId;
-  params.ctrAmount = 100000;
-  params.chainState = BchHtlcScript::bytesToHex(redeemScript);
-
-  auto result = client.verifyLock(params);
-  // verifyTxInclusion returns true but inclusion.included is false
-  assert(result.success);  // The lock amount matched, but confirmed is false
-  assert(!result.confirmed);
-
-  std::cout << "  PASSED" << std::endl;
-}
-
-static void test_extractSecret_spv_mode() {
-  std::cout << "test_extractSecret_spv_mode..." << std::endl;
-
-  auto mock = std::make_shared<MockSpvClient>();
-
-  // Build an HTLC redeem script
-  std::vector<uint8_t> hashLockSha256(32, 0xCC);
-  std::vector<uint8_t> recipientPubKey(33, 0x02);
-  std::vector<uint8_t> senderPubKey(33, 0x03);
-  auto redeemScript = BchHtlcScript::createRedeemScript(
-      hashLockSha256, recipientPubKey, senderPubKey, 500000);
-  auto redeemScriptHex = BchHtlcScript::bytesToHex(redeemScript);
-
-  // Build a claim spending tx
-  std::vector<uint8_t> signature(72, 0x30);
-  std::vector<uint8_t> preimage = {0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE,
-                                    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-                                    0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10,
-                                    0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18};
-  auto spendingTx = buildClaimSpendingTx(signature, preimage, redeemScript);
-
-  std::string spendingTxid = "1122334455667788112233445566778811223344556677881122334455667788";
-  mock->m_rawTxs[spendingTxid] = spendingTx;
-
-  BchChainClient client(mock, "");
-
-  auto result = client.extractSecret(spendingTxid, redeemScriptHex);
-  assert(!result.empty());
-  assert(result == BchHtlcScript::bytesToHex(preimage));
-
-  std::cout << "  PASSED" << std::endl;
-}
-
-static void test_extractSecret_spv_not_found() {
-  std::cout << "test_extractSecret_spv_not_found..." << std::endl;
-
-  auto mock = std::make_shared<MockSpvClient>();
-  BchChainClient client(mock, "");
-
-  std::vector<uint8_t> redeemScript(10, 0x55);
-  auto result = client.extractSecret("nonexistent", BchHtlcScript::bytesToHex(redeemScript));
-  assert(result.empty());
-
-  std::cout << "  PASSED" << std::endl;
-}
-
 static void test_getCurrentHeight_spv_mode() {
   std::cout << "test_getCurrentHeight_spv_mode..." << std::endl;
 
@@ -462,15 +298,16 @@ static void test_getCurrentHeight_spv_mode() {
 }
 
 static void test_transaction_details_reject_invalid_merkle_proof() {
+  const std::string claimTxid(64, 'c');
   auto mock = std::make_shared<MockSpvClient>();
-  mock->m_inclusions["claim-tx"] = {false, 0, 0, false};
+  mock->m_inclusions[claimTxid] = {false, 0, 0, false};
   BchChainClient client(mock, "");
   ChainClientResult result;
-  client.getTransactionDetails("claim-tx", result);
-  assert(!result.success && !result.confirmed && !result.spvVerified);
+  client.getTransactionDetails(claimTxid, result);
+  assert(result.success && !result.confirmed && !result.spvVerified);
 
-  mock->m_inclusions["claim-tx"] = {true, 995, 6, true};
-  client.getTransactionDetails("claim-tx", result);
+  mock->m_inclusions[claimTxid] = {true, 995, 6, true};
+  client.getTransactionDetails(claimTxid, result);
   assert(result.success && result.confirmed && result.spvVerified);
   assert(result.confirmations == 6 && result.blockHeight == 995);
 }
@@ -488,7 +325,7 @@ static void test_fullNode_mode_no_spv() {
   memset(&params.adaptorSecret, 0x42, sizeof(params.adaptorSecret));
   auto result = client.lock(params);
   assert(!result.success);
-  assert(result.error.find("SPV mode cannot fund a lock") != std::string::npos);
+  assert(result.error.find("cannot fund a lock") != std::string::npos);
 
   // claim() should fail — no RPC
   result = client.claim(params);
@@ -531,12 +368,6 @@ int main() {
   test_parseClaimPreimage_basic();
   test_parseClaimPreimage_wrongP2sh();
   test_parseClaimPreimage_noP2shInput();
-  test_checkSwapStatus_spv_mode();
-  test_verifyLock_spv_wrong_amount();
-  test_verifyLock_spv_not_found();
-  test_verifyLock_spv_not_confirmed();
-  test_extractSecret_spv_mode();
-  test_extractSecret_spv_not_found();
   test_getCurrentHeight_spv_mode();
   test_transaction_details_reject_invalid_merkle_proof();
   test_fullNode_mode_no_spv();

@@ -72,6 +72,10 @@ bool buildHtlcRefund(UtxoHtlcEncoding encoding, const UtxoHtlcSpend& spend,
                      std::vector<uint8_t>& rawTx, std::string& error);
 uint64_t htlcSpendVirtualSize(UtxoHtlcEncoding encoding, bool claimPath);
 
+// Output `vout` of a serialized transaction (legacy or segwit encoding).
+bool readTransactionOutput(const std::vector<uint8_t>& rawTx, uint32_t vout, uint64_t& value,
+                           std::vector<uint8_t>& scriptPubKey);
+
 // The preimage revealed by the input of `rawTx` that spends `lock` through the
 // claim branch of `htlcScript`, only if its SHA256 equals the script's hash lock.
 bool extractHtlcPreimage(UtxoHtlcEncoding encoding, const std::vector<uint8_t>& rawTx,

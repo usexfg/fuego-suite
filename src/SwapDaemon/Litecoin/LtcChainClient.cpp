@@ -128,11 +128,9 @@ static bool readVarInt(const uint8_t*& p, const uint8_t* end, uint64_t& out) {
 
 std::string LtcChainClient::getReceiveAddress() const {
   if (m_fullNode) return m_fullNode->receiveAddress();
-  if (m_wif.empty()) return "";
-  std::vector<uint8_t> h;
-  if (!KmdHtlcScript::wifToPubkeyHash(m_wif, h)) return "";
-  return KmdHtlcScript::base58CheckEncode(0x30, h);
+  return m_spvHtlc ? m_spvHtlc->receiveAddress() : std::string();
 }
+
 static bool isZeroSecret(const Crypto::SecretKey& s) {
   const uint8_t* p = reinterpret_cast<const uint8_t*>(&s);
   for (size_t i = 0; i < sizeof(Crypto::SecretKey); ++i) if (p[i]) return false;
@@ -153,13 +151,19 @@ LtcChainClient::LtcChainClient(std::unique_ptr<LtcRpcClient> rpc, const std::str
       wif));
 }
 
-LtcChainClient::LtcChainClient(std::shared_ptr<ISpvClient> spvClient, const std::string& wif)
-  : m_spvClient(std::move(spvClient)), m_wif(wif) {}
+LtcChainClient::LtcChainClient(std::shared_ptr<ISpvClient> spvClient, const std::string& wif,
+                               UtxoNetwork network)
+  : m_wif(wif), m_spvClient(std::move(spvClient)) {
+  if (m_spvClient)
+    m_spvHtlc.reset(new UtxoHtlcSpv(
+        {"LTC", SwapPair::LTC, UtxoHtlcEncoding::P2WSH, litecoinNetworkParams(network)}, m_spvClient, wif));
+}
 
 ChainClientResult LtcChainClient::lock(const SwapParams& params) {
   if (params.lockType == SwapLockType::PTLC) return lockPtlc(params);
   if (m_fullNode) return m_fullNode->lock(params);
-  return ChainClientResult::fail("LTC lock: SPV mode cannot fund a lock");
+  if (m_spvHtlc) return m_spvHtlc->lock(params);
+  return ChainClientResult::fail("LTC lock: no RPC or SPV client available");
 }
 
 ChainClientResult LtcChainClient::lockPtlc(const SwapParams& params) {
@@ -426,155 +430,18 @@ ChainClientResult LtcChainClient::verifyPtlcLock(const SwapParams& params) {
 
 ChainClientResult LtcChainClient::verifyLock(const SwapParams& params) {
   if (params.chainState.rfind("p2tr:", 0) == 0) return verifyPtlcLock(params);
-  if (m_spvClient) return verifyLockSpv(params);
+  if (m_spvHtlc) return m_spvHtlc->verifyLock(params);
   if (m_fullNode) return m_fullNode->verifyLock(params);
   return ChainClientResult::fail("LTC verifyLock: no RPC or SPV client available");
-}
-
-ChainClientResult LtcChainClient::verifyLockSpv(const SwapParams& params) {
-  // Fetch the raw locking tx
-  std::vector<uint8_t> rawTx;
-  if (!m_spvClient->getRawTx(params.ctrLockTxId, rawTx)) {
-    return ChainClientResult::fail("LTC verifyLock SPV: getRawTx failed for " + params.ctrLockTxId);
-  }
-
-  // Parse the raw tx to find outputs paying to a P2WSH or P2SH address.
-  // P2WSH scriptPubKey: OP_0 (0x00) PUSH32 (0x20) <32-byte-hash>  — 34 bytes
-  // P2SH scriptPubKey:  OP_HASH160 (0xA9) PUSH20 (0x14) <20-byte-hash> OP_EQUAL (0x87) — 23 bytes
-  const uint8_t* p = rawTx.data();
-  const uint8_t* end = rawTx.data() + rawTx.size();
-
-  // Skip version (4 bytes)
-  if (p + 4 > end)
-    return ChainClientResult::fail("LTC verifyLock SPV: raw tx too short");
-  p += 4;
-
-  // Detect SegWit (marker + flag)
-  bool isSegWit = false;
-  if (p + 2 <= end && *p == 0x00 && *(p + 1) == 0x01) {
-    isSegWit = true;
-    p += 2;
-  }
-
-  // Read vin count
-  uint64_t vinCount = 0;
-  if (!readVarInt(p, end, vinCount)) return ChainClientResult::fail("LTC verifyLock SPV: truncated tx");
-
-  // Skip inputs
-  for (uint64_t i = 0; i < vinCount; ++i) {
-    if (p + 36 > end) return ChainClientResult::fail("LTC verifyLock SPV: truncated tx inputs");
-    p += 36;
-
-    uint64_t sigLen = 0;
-    if (!readVarInt(p, end, sigLen)) return ChainClientResult::fail("LTC verifyLock SPV: truncated");
-    if (p + sigLen > end) return ChainClientResult::fail("LTC verifyLock SPV: truncated");
-    p += sigLen;
-
-    if (p + 4 > end) return ChainClientResult::fail("LTC verifyLock SPV: truncated sequence");
-    p += 4;
-  }
-
-  // Read vout count
-  uint64_t voutCount = 0;
-  if (!readVarInt(p, end, voutCount)) return ChainClientResult::fail("LTC verifyLock SPV: no vouts");
-
-  bool foundOutput = false;
-  for (uint64_t i = 0; i < voutCount; ++i) {
-    if (p + 8 > end) return ChainClientResult::fail("LTC verifyLock SPV: truncated output value");
-    uint64_t value = 0;
-    for (int j = 0; j < 8; ++j) {
-      value |= static_cast<uint64_t>(p[j]) << (j * 8);
-    }
-    p += 8;
-
-    uint64_t spkLen = 0;
-    if (!readVarInt(p, end, spkLen)) return ChainClientResult::fail("LTC verifyLock SPV: truncated scriptPubKey length");
-    if (p + spkLen > end) return ChainClientResult::fail("LTC verifyLock SPV: truncated scriptPubKey");
-
-    // Check for P2WSH output (34 bytes): OP_0 PUSH32 <32-byte-hash>
-    // Require chainState redeem script so we bind to the negotiated HTLC.
-    if (spkLen == 34 && p[0] == 0x00 && p[1] == 0x20 && value >= params.ctrAmount64()) {
-      if (!params.chainState.empty()) {
-        auto redeemScript = LtcHtlcScript::hexToBytes(params.chainState);
-        auto expectedHash = LtcHtlcScript::sha256(redeemScript);
-        if (expectedHash.size() == 32 && std::memcmp(p + 2, expectedHash.data(), 32) == 0) {
-          foundOutput = true;
-        }
-      }
-      // Fail closed without chainState — never accept any P2WSH of matching amount.
-    }
-
-    p += spkLen;
-  }
-
-  if (!foundOutput) {
-    return ChainClientResult::fail("LTC verifyLock SPV: no matching P2WSH HTLC output (need chainState redeem script)");
-  }
-
-  // Verify inclusion via SPV
-  SpvTxInclusion inclusion;
-  if (!m_spvClient->verifyTxInclusion(params.ctrLockTxId, inclusion)) {
-    return ChainClientResult::fail("LTC verifyLock SPV: verifyTxInclusion failed");
-  }
-
-  ChainClientResult result = ChainClientResult::ok(params.ctrLockTxId);
-  result.confirmed = inclusion.included;
-  result.spvVerified = inclusion.merkleVerified;
-  result.blockHeight = inclusion.blockHeight;
-  result.confirmations = inclusion.depth;
-  return result;
 }
 
 ChainClientResult LtcChainClient::claim(const SwapParams& params) {
   // Pure PTLC: key-path Schnorr spend of the P2TR output.
   if (params.lockType == SwapLockType::PTLC && params.chainState.rfind("p2tr:", 0) == 0)
     return claimOrRefundPtlcP2tr(params);
-
   if (m_fullNode) return m_fullNode->claim(params);
-  if (!m_spvClient)
-    return ChainClientResult::fail("LTC claim: no RPC or SPV client available");
-  if (m_wif.empty())
-    return ChainClientResult::fail("LTC claim: no RPC or WIF available (SPV mode needs WIF for local signing)");
-
-  std::array<uint8_t, 32> privKey{};
-  if (!LtcHtlcScript::wifToPrivKey(m_wif, privKey))
-    return ChainClientResult::fail("LTC claim: invalid WIF");
-
-  std::string redeemHexRawC = params.chainState;
-  { auto p=redeemHexRawC.find('|'); if(p!=std::string::npos) redeemHexRawC=redeemHexRawC.substr(0,p); auto c=redeemHexRawC.find(':'); if(c!=std::string::npos) redeemHexRawC=redeemHexRawC.substr(0,c); }
-  auto witnessScript = LtcHtlcScript::hexToBytes(redeemHexRawC);
-  auto preimageBytes = LtcHtlcScript::hexToBytes(Common::podToHex(params.adaptorSecret));
-
-  uint8_t addrVersion = 0;
-  std::vector<uint8_t> pubKeyHash;
-  if (!LtcHtlcScript::base58CheckDecode(params.ctrAddress, addrVersion, pubKeyHash))
-    return ChainClientResult::fail("LTC claim: invalid destination address");
-  auto outputScript = LtcHtlcScript::buildP2pkhScriptPubKey(pubKeyHash);
-
-  uint64_t fee = 1000;
-  if (params.ctrAmount64() <= fee)
-    return ChainClientResult::fail("LTC claim: amount too small for fee");
-  uint64_t outputAmount = params.ctrAmount64() - fee;
-
-  const uint32_t nSequence = 0xFFFFFFFD;
-
-  auto der = LtcHtlcScript::signInput(privKey, 2, 0, nSequence,
-      params.ctrLockTxId, 0, witnessScript, params.ctrAmount64(),
-      outputScript, outputAmount);
-  if (der.empty())
-    return ChainClientResult::fail("LTC claim SPV: signing failed");
-
-  std::vector<uint8_t> emptyScriptSig;
-  auto witnessStack = LtcHtlcScript::createClaimWitness(der, preimageBytes, witnessScript);
-
-  auto rawTx = LtcHtlcScript::buildRawSegWitTx(
-      params.ctrLockTxId, 0, params.ctrAmount64(),
-      emptyScriptSig, witnessStack, params.ctrAddress, outputAmount, 0);
-
-  std::string txid;
-  if (!m_spvClient->broadcastTx(rawTx, txid))
-    return ChainClientResult::fail("LTC claim SPV: broadcast failed");
-  return ChainClientResult::ok(txid);
+  if (m_spvHtlc) return m_spvHtlc->claim(params);
+  return ChainClientResult::fail("LTC claim: no RPC or SPV client available");
 }
 
 ChainClientResult LtcChainClient::refund(const SwapParams& params) {
@@ -582,52 +449,9 @@ ChainClientResult LtcChainClient::refund(const SwapParams& params) {
   // height — timeout-independent for this construction.
   if (params.lockType == SwapLockType::PTLC && params.chainState.rfind("p2tr:", 0) == 0)
     return claimOrRefundPtlcP2tr(params);
-
   if (m_fullNode) return m_fullNode->refund(params);
-  if (!m_spvClient)
-    return ChainClientResult::fail("LTC refund: no RPC or SPV client available");
-  if (m_wif.empty())
-    return ChainClientResult::fail("LTC refund: no RPC or WIF available (SPV mode needs WIF for local signing)");
-
-  std::array<uint8_t, 32> privKey{};
-  if (!LtcHtlcScript::wifToPrivKey(m_wif, privKey))
-    return ChainClientResult::fail("LTC refund: invalid WIF");
-
-  std::string redeemHexRawL0 = params.chainState;
-  { auto p=redeemHexRawL0.find('|'); if(p!=std::string::npos) redeemHexRawL0=redeemHexRawL0.substr(0,p); auto c=redeemHexRawL0.find(':'); if(c!=std::string::npos) redeemHexRawL0=redeemHexRawL0.substr(0,c); }
-  auto witnessScript = LtcHtlcScript::hexToBytes(redeemHexRawL0);
-
-  uint32_t nLocktime = static_cast<uint32_t>(params.ctrTimeoutBlock);
-
-  uint8_t addrVersion = 0;
-  std::vector<uint8_t> pubKeyHash;
-  if (!LtcHtlcScript::base58CheckDecode(params.ctrAddress, addrVersion, pubKeyHash))
-    return ChainClientResult::fail("LTC refund: invalid destination address");
-  auto outputScript = LtcHtlcScript::buildP2pkhScriptPubKey(pubKeyHash);
-
-  uint64_t fee = 1000;
-  if (params.ctrAmount64() <= fee)
-    return ChainClientResult::fail("LTC refund: amount too small for fee");
-  uint64_t outputAmount = params.ctrAmount64() - fee;
-
-  auto der = LtcHtlcScript::signInput(privKey, 2, nLocktime,
-      0xFFFFFFFE,
-      params.ctrLockTxId, 0, witnessScript, params.ctrAmount64(),
-      outputScript, outputAmount);
-  if (der.empty())
-    return ChainClientResult::fail("LTC refund SPV: signing failed");
-
-  std::vector<uint8_t> emptyScriptSig;
-  auto witnessStack = LtcHtlcScript::createRefundWitness(der, witnessScript);
-
-  auto rawTx = LtcHtlcScript::buildRawSegWitTx(
-      params.ctrLockTxId, 0, params.ctrAmount64(),
-      emptyScriptSig, witnessStack, params.ctrAddress, outputAmount, nLocktime);
-
-  std::string txid;
-  if (!m_spvClient->broadcastTx(rawTx, txid))
-    return ChainClientResult::fail("LTC refund SPV: broadcast failed");
-  return ChainClientResult::ok(txid);
+  if (m_spvHtlc) return m_spvHtlc->refund(params);
+  return ChainClientResult::fail("LTC refund: no RPC or SPV client available");
 }
 
 ChainClientResult LtcChainClient::verifyReserveProof(const std::string& expectedMessage,
@@ -665,114 +489,17 @@ ChainClientResult LtcChainClient::verifyReserveProof(const std::string& expected
 }
 
 bool LtcChainClient::getCurrentHeight(uint64_t& height) {
-  if (m_spvClient) {
-    return m_spvClient->getTipHeight(height);
-  }
-  if (m_rpc) {
-    return m_rpc->getBlockCount(height);
-  }
+  if (m_spvHtlc) return m_spvHtlc->currentHeight(height);
+  if (m_rpc) return m_rpc->getBlockCount(height);
   return false;
 }
 
 ChainClientResult LtcChainClient::getTransactionDetails(const std::string& txId,
                                                         ChainClientResult& result) {
-  if (m_spvClient) {
-    uint64_t tipHeight = 0;
-    if (!m_spvClient->getTipHeight(tipHeight)) {
-      result = ChainClientResult::fail("LTC SPV: cannot get tip height");
-      return result;
-    }
-
-    SpvTxInclusion inclusion;
-    if (!m_spvClient->verifyTxInclusion(txId, inclusion)) {
-      result = ChainClientResult::fail("LTC SPV: tx not found or not yet included in a block");
-      result.confirmed = false;
-      result.confirmations = 0;
-      return result;
-    }
-
-    if (!inclusion.included || !inclusion.merkleVerified ||
-        inclusion.blockHeight == 0 || inclusion.blockHeight > tipHeight ||
-        inclusion.depth == 0) {
-      result = ChainClientResult::fail("SPV: transaction inclusion proof invalid");
-      return result;
-    }
-    result = ChainClientResult::ok(txId);
-    result.success = true;
-    result.confirmed = inclusion.included;
-    result.spvVerified = inclusion.merkleVerified;
-    result.blockHeight = inclusion.blockHeight;
-    result.confirmations = inclusion.depth;
-    return result;
-  }
-
-  if (m_fullNode) {
-    result = m_fullNode->transactionDetails(txId);
-    return result;
-  }
-
-  if (m_rpc) {
-    LtcTxInfo txInfo;
-    if (!m_rpc->getTransaction(txId, txInfo)) {
-      result = ChainClientResult::fail("LTC RPC: gettransaction failed for " + txId);
-      return result;
-    }
-
-    uint64_t tipHeight = 0;
-    m_rpc->getBlockCount(tipHeight);
-
-    result.success = true;
-    result.confirmed = txInfo.confirmations > 0;
-    result.spvVerified = false;
-    result.blockHeight = txInfo.blockHeight;
-    result.confirmations = txInfo.confirmations;
-    return result;
-  }
-
-  result = ChainClientResult::fail("LTC: no RPC or SPV client available");
+  if (m_spvHtlc) result = m_spvHtlc->transactionDetails(txId);
+  else if (m_fullNode) result = m_fullNode->transactionDetails(txId);
+  else result = ChainClientResult::fail("LTC: no RPC or SPV client available");
   return result;
-}
-
-std::string LtcChainClient::extractSecret(const std::string& spendingTxid,
-                                           const std::string& htlcRedeemScriptHex) {
-  std::vector<uint8_t> redeemScript = LtcHtlcScript::hexToBytes(htlcRedeemScriptHex);
-  std::vector<uint8_t> p2wshScriptPubKey = LtcHtlcScript::redeemScriptToP2wshScriptPubKey(redeemScript);
-
-  if (m_spvClient) {
-    return extractSecretSpv(spendingTxid, p2wshScriptPubKey);
-  }
-
-  if (!m_rpc) {
-    return {};
-  }
-
-  std::string rawTxHex;
-  if (!m_rpc->getRawTransaction(spendingTxid, rawTxHex)) {
-    return {};
-  }
-
-  std::vector<uint8_t> rawTx = LtcHtlcScript::hexToBytes(rawTxHex);
-  std::vector<uint8_t> preimage = LtcHtlcScript::parseClaimPreimage(rawTx, p2wshScriptPubKey);
-  if (preimage.empty()) {
-    return {};
-  }
-
-  return LtcHtlcScript::bytesToHex(preimage);
-}
-
-std::string LtcChainClient::extractSecretSpv(const std::string& spendingTxid,
-                                              const std::vector<uint8_t>& htlcP2wshScriptPubKey) {
-  std::vector<uint8_t> rawSpendingTx;
-  if (!m_spvClient->getRawTx(spendingTxid, rawSpendingTx)) {
-    return {};
-  }
-
-  std::vector<uint8_t> preimage = LtcHtlcScript::parseClaimPreimage(rawSpendingTx, htlcP2wshScriptPubKey);
-  if (preimage.empty()) {
-    return {};
-  }
-
-  return LtcHtlcScript::bytesToHex(preimage);
 }
 
 std::string LtcChainClient::tryExtractClaimedSecret(const SwapParams& params) {
@@ -822,19 +549,13 @@ std::string LtcChainClient::tryExtractClaimedSecret(const SwapParams& params) {
   }
 
   if (m_fullNode) return m_fullNode->tryExtractClaimedSecret(params);
-  if (!m_spvClient || params.chainState.empty() || params.ctrLockTxId.empty()) return {};
-
-  SpvSpend spend;
-  if (!m_spvClient->findSpend(params.ctrLockTxId, params.ctrLockVout, spend) ||
-      !isVerifiedSpvSpend(spend, params.requiredConfirmations ? params.requiredConfirmations : 6) ||
-      spend.spendingTxid.empty())
-    return {};
-  return extractSecret(spend.spendingTxid, lockScriptHex(params.chainState));
+  return m_spvHtlc ? m_spvHtlc->tryExtractClaimedSecret(params) : std::string();
 }
 
 bool LtcChainClient::hasConfirmedClaim(const SwapParams& params) {
-  return m_fullNode && params.chainState.rfind("p2tr:", 0) != 0 &&
-         m_fullNode->hasConfirmedClaim(params);
+  if (params.chainState.rfind("p2tr:", 0) == 0) return false;
+  if (m_fullNode) return m_fullNode->hasConfirmedClaim(params);
+  return m_spvHtlc && m_spvHtlc->hasConfirmedClaim(params);
 }
 
 bool LtcChainClient::isReadyForNewSwap() {
@@ -842,13 +563,18 @@ bool LtcChainClient::isReadyForNewSwap() {
 }
 
 std::string LtcChainClient::readinessError() {
+  return readinessErrorFor(SwapRole::ALICE);
+}
+
+std::string LtcChainClient::readinessErrorFor(SwapRole role) {
   if (m_fullNode) return m_fullNode->readinessError();
-  return "LTC SPV mode cannot start new swaps: it cannot fund a lock and its headers are not "
-         "validated against retarget rules";
+  if (m_spvHtlc) return m_spvHtlc->readinessErrorFor(role);
+  return "LTC: no RPC or SPV client available";
 }
 
 std::string LtcChainClient::getClaimPubKey() const {
-  return m_fullNode ? m_fullNode->claimPubKeyHex() : std::string();
+  if (m_fullNode) return m_fullNode->claimPubKeyHex();
+  return m_spvHtlc ? m_spvHtlc->claimPubKeyHex() : std::string();
 }
 
 } // namespace XfgSwap

@@ -15,20 +15,12 @@
 #pragma once
 
 #include "UtxoFullNode.h"
-#include "UtxoHtlc.h"
-#include "SwapDaemon/SwapTypes.h"
+#include "UtxoHtlcSwap.h"
 
 #include <array>
 #include <string>
 
 namespace XfgSwap {
-
-struct UtxoHtlcChain {
-  std::string ticker;
-  SwapPair pair;
-  UtxoHtlcEncoding encoding;
-  UtxoNetworkParams network;
-};
 
 // The full-node half of a hash-time-locked swap on a Bitcoin-family chain.
 //   Alice (holds the coin): lock, refund, and discovery of Bob's claim from
@@ -55,9 +47,6 @@ public:
   bool hasConfirmedClaim(const SwapParams& params);
 
 private:
-  bool expectedHashLock(const SwapParams& params, std::vector<uint8_t>& hashLock) const;
-  bool lockScriptFromState(const SwapParams& params, std::vector<uint8_t>& script,
-                           UtxoHtlcTerms& terms) const;
   bool findPriorLockSend(const std::string& address, uint64_t amount, std::string& txid);
   bool lockedValue(const UtxoOutpoint& lock, uint64_t& value, std::string& error);
   ChainClientResult broadcastSpend(bool claimPath, const SwapParams& params);
@@ -72,10 +61,5 @@ private:
   bool m_hasKey = false;
   UtxoSpendTracker m_spends;
 };
-
-// Lock outpoint as carried by SwapParams.
-UtxoOutpoint lockOutpoint(const SwapParams& params);
-// The lock script hex at the head of chainState ("<script>[:<claimTxid>][|...]").
-std::string lockScriptHex(const std::string& chainState);
 
 }  // namespace XfgSwap

@@ -1,3 +1,33 @@
+## DeXFG remediation Phase 2: SPV for Bob (2.2-2.6); gate and CI fixes
+
+**Started**: 2026-11-07
+**Agent**: Claude Code
+**Status**: DONE in code and unit tests; no run against public Electrum servers (blocked from this session)
+**Scope**: `Spv/SpvChainRules.{h,cpp}` (new), `Spv/SpvHeaderStore.{h,cpp}`, `Spv/ElectrumSpvClient.{h,cpp}`, `Spv/ISpvClient.h`, `Utxo/UtxoHtlcSwap.{h,cpp}` (new), `Utxo/UtxoHtlcSpv.{h,cpp}` (new), `Utxo/UtxoHtlc.{h,cpp}`, `Utxo/UtxoHtlcFullNode.{h,cpp}`, `Utxo/UtxoFullNode.{h,cpp}`, `Bitcoin/BtcChainClient.*`, `Litecoin/LtcChainClient.*`, `BitcoinCash/BchChainClient.*`, `Komodo/KmdChainClient.h`, `Decred/DcrChainClient.h`, `IChainClient.h`, `Ethereum/EthChainClient.h`, `SwapDaemon.{h,cpp}`, `main.cpp`, `swap_config.example.json`, tests, `scripts/regtest-node.sh`, `scripts/gen-dexfg-chain-table.py`, `docs/dexfg/DEXFG_SWAP_CHAINS.md`, `tests/CoreTests/TreasuryCoreTests.cpp`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 2.2 | Per-chain header rules: BTC double-SHA256 + 2016-block retarget, LTC scrypt(1024,1,1) + Litecoin retarget, BCH ASERT (aserti3-2d, anchor 661647), regtest fixed difficulty; powLimit, compact-encoding validity, median time past, two-hour future limit. Rules are chosen per pair and network; testnet/signet get none and report untrusted. The checkpoint is fetched with the headers before it (one retarget window, or 11 for ASERT/regtest), authenticated by hash links back from the checkpoint hash, so the first retarget after it is computed exactly | Claude Code | 2026-11-07 | DONE; `test_spv_chain_rules` 58/58 (Core `pow_tests` vectors, 5 LTC scrypt vectors, BCHN ASERT table, real BTC/LTC headers) |
+| 2.3 | KMD and DCR: SPV refused for new swaps with the reason (no Equihash / BLAKE-256 validator); the example config and `--generate-spv-config` no longer configure KMD/DCR SPV | Claude Code | 2026-11-07 | DONE |
+| 2.4 | New-swap trust policy: at least 3 Electrum servers on distinct hosts, quorum 2..n, a checkpoint, header rules, BCH checkpoint at or above the ASERT anchor, and a completed sync. Headers come from one server at a time; a batch whose tip a strict majority does not serve (by block hash, not Merkle root) is undone and the next server is tried. Tip = median of server tips. Reorgs rewind to the common ancestor (within 100 blocks, never below the checkpoint) and switch only to more work. Inclusion needs a strict majority of servers proving the same height. Raw transactions and spends are read from every server (bytes authenticate against the txid); broadcasts go to every server. Fee rates are the medians of `relayfee` and `estimatefee` | Claude Code | 2026-11-07 | DONE; `test_spv_quorum` 34/34, `test_spv_electrum` |
+| 2.5 | Bob-only SPV (`UtxoHtlcSpv`): lock verified at the exact outpoint (script commitment, H(t), Bob's key, claim runway against the quorum tip, value, quorum Merkle proof at the required depth); the claim is broadcast only against a lock buried that deep, pays Bob's configured P2PKH address, fee from the median rates capped at a tenth of the value. Refund (to the refunder's own key) and claim discovery remain for existing swaps. Alice is refused over SPV ("cannot fund a lock"). Readiness is per role (`readinessErrorFor`), cached per pair and role; the status JSON adds `readyRoles` | Claude Code | 2026-11-07 | DONE; `test_utxo_htlc_spv` 142/142 over BTC, LTC, BCH |
+| 2.6 | Tests: low-difficulty chain refused under mainnet rules; real LTC header accepted under scrypt; one dishonest server outvoted by two honest ones (headers and proofs); reorg to more work followed, less work refused; certificate pinning (2.1, earlier) | Claude Code | 2026-11-07 | DONE |
+| review | The old SPV HTLC code is gone: it claimed vout 0 only, paid refunds to the counterparty address, used a fixed 1000-unit fee, accepted unconfirmed locks as success and broadcast to one server | Claude Code | 2026-11-07 | DONE |
+| review | Header store: no headers survive a refused quorum check (snapshot/restore); best-chain walks look up one height instead of scanning the store; public queries take the lock | Claude Code | 2026-11-07 | DONE |
+| review | `--generate-spv-config` wrote uncompressed-key WIFs the HTLC code refuses; it now writes compressed WIFs, three servers per chain from the Electrum, Electrum-LTC and Electron Cash server lists, quorum 2, and checkpoints from Bitcoin Core 28.1 / Litecoin Core 0.21.4 assume-valid blocks and a BCHN 28.0.1 checkpoint. The previous BTC checkpoint hash and two documentation links could not be verified and were removed | Claude Code | 2026-11-07 | DONE |
+| gate | Alice's lock reads only the H(t) Bob published (`agreedHashLock`), never a secret field; the regtest gate exposed it with an uninitialized fixture | Claude Code | 2026-11-07 | DONE; rerun in CI |
+| gate | BCHN binaries are not linked from GitLab releases; `regtest-node.sh` fetches them from download.bitcoincashnode.org and finds the signer checksum file from the release index; checksum lines may carry a directory | Claude Code | 2026-11-07 | IN PROGRESS (CI) |
+| CI | Windows: `TreasuryCoreTests.cpp` included `unistd.h`; `test_spv_config_wiring` called `close()` on a stream that WinCompat's `close` macro rewrites. Docs: generated-table markers used HTML comments, which Mintlify's MDX parser refuses | Claude Code | 2026-11-07 | DONE; rerun in CI |
+
+Not covered: a run against public Electrum servers (blocked from this session); Alice over SPV (coin selection, local signing, change); BTC testnet/signet SPV rules (minimum-difficulty exception, signet block signatures).
+
+### Sign-off
+
+| Gate | Status | Signed | Date |
+|------|--------|--------|------|
+| Clang 18 build, `ctest -LE manual` | 49/50 (F29 only) | Claude Code | 2026-11-07 |
+| GCC build, SPV/UTXO tests | 14/14 | Claude Code | 2026-11-07 |
+
 ## DeXFG remediation 1.9: UTXO transport gate against live regtest nodes; review fixes
 
 **Started**: 2026-11-07

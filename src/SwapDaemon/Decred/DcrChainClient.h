@@ -35,6 +35,10 @@ public:
   // claim depth or extract Alice's preimage. Retain the client for recovery,
   // but do not admit new DCR swaps until both modes are complete.
   bool isReadyForNewSwap() override { return false; }
+  std::string readinessError() override {
+    return m_spvClient ? "DCR SPV has no BLAKE-256 header validator and cannot broadcast; DCR swaps need a full node"
+                       : "DCR full-node path cannot prove claim depth or extract the preimage";
+  }
 
   std::string getReceiveAddress() const override;
   ChainClientResult lock(const SwapParams& params) override;

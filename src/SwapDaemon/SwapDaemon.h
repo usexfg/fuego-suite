@@ -316,7 +316,7 @@ public:
     bool ready = false;
     std::string error;
   };
-  ChainReadiness getChainReadiness(SwapPair pair, bool refresh = false);
+  ChainReadiness getChainReadiness(SwapPair pair, SwapRole role, bool refresh = false);
 
   // Gate A: can this node actually fund an escrow right now?
   // Fails CLOSED -- an unreachable or unparseable wallet RPC means "cannot prove
@@ -479,7 +479,7 @@ public:
 
   // Applies only to creating/offering/accepting new swaps. Existing records
   // keep their client for claim/refund even when current readiness fails.
-  bool canStartNewSwap(SwapPair pair, std::string* reason = nullptr,
+  bool canStartNewSwap(SwapPair pair, SwapRole role, std::string* reason = nullptr,
                        bool refresh = true);
 
   // Build an unsigned escrow-spend tx, run collaborative ring sig rounds
@@ -538,7 +538,7 @@ public:
     std::chrono::steady_clock::time_point checkedAt{};
   };
   FundingCacheEntry m_fundingCache;
-   std::map<SwapPair, ReadinessCacheEntry> m_readinessCache;
+   std::map<std::pair<SwapPair, SwapRole>, ReadinessCacheEntry> m_readinessCache;
    std::unique_ptr<SwapP2P> m_p2p;
 
     CryptoNote::SwapOfferRelay* m_swapRelay = nullptr;

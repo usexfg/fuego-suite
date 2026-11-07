@@ -16,9 +16,10 @@
 #include "ISpvClient.h"
 #include "SpvHeaderStore.h"
 #include "ElectrumConnection.h"
+#include <memory>
+#include <set>
 #include <string>
 #include <vector>
-#include <memory>
 
 namespace XfgSwap {
 
@@ -34,13 +35,28 @@ public:
       uint64_t checkpointHeight,
       const std::string& checkpointHashDisplay);
 
+  // As above, validating every header against `rules` from the checkpoint on.
+  ElectrumSpvClient(
+      const std::vector<std::string>& servers,
+      size_t minServers,
+      uint64_t checkpointHeight,
+      const std::string& checkpointHashDisplay,
+      const SpvChainRules& rules);
+
+  // Three servers on distinct hosts, a strict-majority quorum of at least
+  // two, verified transports, a checkpoint, the chain's header rules, and a
+  // completed header sync.
+  std::string newSwapTrustError() override;
+  bool feeRatesPerKilobyte(uint64_t& relayFloor, uint64_t& nextBlocks) override;
+
+  static constexpr size_t MIN_TRUSTED_SERVERS = 3;
+
   ~ElectrumSpvClient();
 
   std::string protocolName() const override;
   bool syncHeaders() override;
   bool getTipHeight(uint64_t& height) override;
 
-  // Stubbed for now (Tasks 7-8)
   bool verifyTxInclusion(const std::string& txid, SpvTxInclusion& out) override;
   bool findSpend(const std::string& txid, uint32_t vout, SpvSpend& out) override;
   bool getRawTx(const std::string& txid, std::vector<uint8_t>& rawTx) override;
@@ -54,19 +70,29 @@ public:
   const SpvHeaderStore& store() const { return m_store; }
 
 private:
+  enum class ProofCheck { UNAVAILABLE, MISMATCH, PROVEN };
+
+  // Reuses live connections; reconnects every server when one stops answering.
+  bool ensureConnected();
   bool connectToServers();
+  bool startFromCheckpoint();
+  std::string quorumPolicyError() const;
+  // Strict majority of the connected servers.
+  size_t quorumSize() const;
+  bool quorumTipHeight(uint64_t& height);
 
-  // Eclipse mitigation: verify a header's merkle root against a majority
-  // of connected servers. Returns true if a strict majority agree.
-  bool crossCheckHeader(uint64_t blockHeight, const std::string& merkleRootDisplay);
+  bool syncFrom(ElectrumConnection& source, uint64_t target);
+  bool resumeHeight(ElectrumConnection& source, uint64_t target, uint64_t& next, bool& switchedBranch);
+  bool appendHeaders(ElectrumConnection& source, uint64_t from, uint64_t target);
+  // True when a quorum of servers serves the header with this hash at this height.
+  bool crossCheckHeader(uint64_t blockHeight, const std::string& hashDisplay);
 
-  // Eclipse mitigation: after one server claims a tx inclusion, verify
-  // independently with other servers. Returns the verified inclusion
-  // or a rejected (empty) inclusion if not enough servers agree.
-  SpvTxInclusion crossCheckTxVerify(const std::string& txid, const SpvTxInclusion& serverInclusion);
+  ProofCheck provenHeight(ElectrumConnection& server, const std::string& txid, uint64_t& height);
+  std::set<std::string> scriptHistory(const std::vector<uint8_t>& scriptPubKey);
 
   std::vector<std::string> m_serverAddrs;
   size_t m_minServers;
+  uint64_t m_checkpointHeight = 0;
   SpvHeaderStore m_store;
   std::vector<std::unique_ptr<ElectrumConnection>> m_conns;
 };

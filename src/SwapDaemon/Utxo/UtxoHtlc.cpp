@@ -254,6 +254,11 @@ struct ParsedInput {
   std::vector<std::vector<uint8_t>> witness;
 };
 
+struct ParsedOutput {
+  uint64_t value = 0;
+  std::vector<uint8_t> scriptPubKey;
+};
+
 bool readVarInt(const uint8_t*& p, const uint8_t* end, uint64_t& value) {
   if (p >= end) return false;
   const uint8_t prefix = *p++;
@@ -277,7 +282,8 @@ bool readSlice(const uint8_t*& p, const uint8_t* end, std::vector<uint8_t>& out)
   return true;
 }
 
-bool parseInputs(const std::vector<uint8_t>& rawTx, std::vector<ParsedInput>& inputs) {
+bool parseTransaction(const std::vector<uint8_t>& rawTx, std::vector<ParsedInput>& inputs,
+                      std::vector<ParsedOutput>& outputs) {
   const uint8_t* p = rawTx.data();
   const uint8_t* end = p + rawTx.size();
   if (end - p < 4) return false;
@@ -302,12 +308,13 @@ bool parseInputs(const std::vector<uint8_t>& rawTx, std::vector<ParsedInput>& in
     p += 4;
   }
   uint64_t outputCount = 0;
-  if (!readVarInt(p, end, outputCount)) return false;
-  for (uint64_t i = 0; i < outputCount; ++i) {
-    std::vector<uint8_t> script;
+  if (!readVarInt(p, end, outputCount) || outputCount > static_cast<uint64_t>(end - p) / 9) return false;
+  std::vector<ParsedOutput> parsedOutputs(static_cast<size_t>(outputCount));
+  for (auto& output : parsedOutputs) {
     if (end - p < 8) return false;
+    for (size_t i = 0; i < 8; ++i) output.value |= static_cast<uint64_t>(p[i]) << (8 * i);
     p += 8;
-    if (!readSlice(p, end, script)) return false;
+    if (!readSlice(p, end, output.scriptPubKey)) return false;
   }
   if (hasWitness) {
     for (auto& input : parsed) {
@@ -320,6 +327,7 @@ bool parseInputs(const std::vector<uint8_t>& rawTx, std::vector<ParsedInput>& in
   }
   if (end - p != 4) return false;
   inputs = std::move(parsed);
+  outputs = std::move(parsedOutputs);
   return true;
 }
 
@@ -517,12 +525,23 @@ uint64_t htlcSpendVirtualSize(UtxoHtlcEncoding encoding, bool claimPath) {
   return claimPath ? 320 : 285;
 }
 
+bool readTransactionOutput(const std::vector<uint8_t>& rawTx, uint32_t vout, uint64_t& value,
+                           std::vector<uint8_t>& scriptPubKey) {
+  std::vector<ParsedInput> inputs;
+  std::vector<ParsedOutput> outputs;
+  if (!parseTransaction(rawTx, inputs, outputs) || vout >= outputs.size()) return false;
+  value = outputs[vout].value;
+  scriptPubKey = outputs[vout].scriptPubKey;
+  return true;
+}
+
 bool extractHtlcPreimage(UtxoHtlcEncoding encoding, const std::vector<uint8_t>& rawTx,
                          const UtxoOutpoint& lock, const std::vector<uint8_t>& htlcScript,
                          std::vector<uint8_t>& preimage) {
   UtxoHtlcTerms terms;
   std::vector<ParsedInput> inputs;
-  if (!isTxidHex(lock.txid) || !parseHtlcScript(htlcScript, terms) || !parseInputs(rawTx, inputs))
+  std::vector<ParsedOutput> outputs;
+  if (!isTxidHex(lock.txid) || !parseHtlcScript(htlcScript, terms) || !parseTransaction(rawTx, inputs, outputs))
     return false;
   const std::array<uint8_t, 32> lockTxid = littleEndianTxid(lock.txid);
   for (const auto& input : inputs) {

@@ -14,34 +14,15 @@
 
 #include "UtxoHtlcFullNode.h"
 
-#include "SwapDaemon/SwapTimelock.h"
 
 #include <algorithm>
-#include <cctype>
 #include <limits>
 
 namespace XfgSwap {
 
 namespace {
 
-constexpr uint32_t DEFAULT_REQUIRED_CONFIRMATIONS = 6;
-constexpr uint64_t MAX_FEE_SHARE_DIVISOR = 10;  // a fee never takes more than 10% of the lock
 constexpr size_t RECENT_WALLET_TRANSACTIONS = 1000;
-
-bool isZero(const void* data, size_t size) {
-  const uint8_t* bytes = static_cast<const uint8_t*>(data);
-  return std::all_of(bytes, bytes + size, [](uint8_t b) { return b == 0; });
-}
-
-std::vector<uint8_t> podBytes(const void* data, size_t size) {
-  const uint8_t* bytes = static_cast<const uint8_t*>(data);
-  return std::vector<uint8_t>(bytes, bytes + size);
-}
-
-uint32_t requiredConfirmations(const SwapParams& params) {
-  return params.requiredConfirmations ? params.requiredConfirmations
-                                      : DEFAULT_REQUIRED_CONFIRMATIONS;
-}
 
 std::string quoted(const std::string& s) { return "\"" + s + "\""; }
 
@@ -53,19 +34,6 @@ bool parseWalletSendAmount(const Common::JsonValue& value, uint64_t& units) {
 }
 
 }  // namespace
-
-UtxoOutpoint lockOutpoint(const SwapParams& params) {
-  UtxoOutpoint outpoint;
-  outpoint.txid = params.ctrLockTxId;
-  std::transform(outpoint.txid.begin(), outpoint.txid.end(), outpoint.txid.begin(),
-                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-  outpoint.vout = params.ctrLockVout;
-  return outpoint;
-}
-
-std::string lockScriptHex(const std::string& chainState) {
-  return chainState.substr(0, chainState.find_first_of(":|"));
-}
 
 UtxoHtlcFullNode::UtxoHtlcFullNode(UtxoHtlcChain chain, UtxoRpcCall rpc, const std::string& wif)
     : m_chain(std::move(chain)), m_rpc(std::move(rpc)) {
@@ -92,22 +60,6 @@ std::string UtxoHtlcFullNode::readinessError() {
 bool UtxoHtlcFullNode::currentHeight(uint64_t& height) {
   std::string error;
   return fetchChainTip(m_rpc, height, error);
-}
-
-bool UtxoHtlcFullNode::expectedHashLock(const SwapParams& params,
-                                        std::vector<uint8_t>& hashLock) const {
-  if (!isZero(&params.adaptorSecret, sizeof(params.adaptorSecret))) {
-    hashLock = sha256Digest(podBytes(&params.adaptorSecret, sizeof(params.adaptorSecret)));
-    return true;
-  }
-  if (isZero(&params.hashLock, sizeof(params.hashLock))) return false;
-  hashLock = podBytes(&params.hashLock, sizeof(params.hashLock));
-  return true;
-}
-
-bool UtxoHtlcFullNode::lockScriptFromState(const SwapParams& params, std::vector<uint8_t>& script,
-                                           UtxoHtlcTerms& terms) const {
-  return decodeHex(lockScriptHex(params.chainState), script) && parseHtlcScript(script, terms);
 }
 
 bool UtxoHtlcFullNode::findPriorLockSend(const std::string& address, uint64_t amount,
@@ -140,7 +92,7 @@ bool UtxoHtlcFullNode::findPriorLockSend(const std::string& address, uint64_t am
 ChainClientResult UtxoHtlcFullNode::lock(const SwapParams& params) {
   if (!m_hasKey) return ChainClientResult::fail(failurePrefix() + "no valid WIF key");
   UtxoHtlcTerms terms;
-  if (!expectedHashLock(params, terms.hashLock))
+  if (!agreedHashLock(params, terms.hashLock))
     return ChainClientResult::fail(failurePrefix() + "no hash lock H(t) from Bob");
   if (!decodeHex(params.ctrPubKey, terms.recipientPubKey) ||
       !isCompressedPublicKey(terms.recipientPubKey))
@@ -178,27 +130,16 @@ ChainClientResult UtxoHtlcFullNode::lock(const SwapParams& params) {
 
 ChainClientResult UtxoHtlcFullNode::verifyLock(const SwapParams& params) {
   if (!m_hasKey) return ChainClientResult::fail(failurePrefix() + "no valid WIF key");
-  std::vector<uint8_t> script;
-  UtxoHtlcTerms terms;
-  if (!lockScriptFromState(params, script, terms))
-    return ChainClientResult::fail(failurePrefix() + "no lock script received from Alice");
-  std::vector<uint8_t> hashLock;
-  if (!expectedHashLock(params, hashLock) || terms.hashLock != hashLock)
-    return ChainClientResult::fail(failurePrefix() + "lock script hash differs from H(t)");
-  if (terms.recipientPubKey != m_pubKey)
-    return ChainClientResult::fail(failurePrefix() + "lock script does not pay our claim key");
-
   uint64_t tip = 0;
-  uint64_t window = 0;
   std::string error;
   if (!fetchChainTip(m_rpc, tip, error))
     return ChainClientResult::fail(failurePrefix() + "chain tip unavailable: " + error);
-  if (!minimumCounterpartyWindowBlocks(m_chain.pair, requiredConfirmations(params), window) ||
-      tip > std::numeric_limits<uint64_t>::max() - window || terms.timeoutBlock < tip + window)
-    return ChainClientResult::fail(failurePrefix() + "lock timeout " +
-                                   std::to_string(terms.timeoutBlock) +
-                                   " leaves too few blocks to claim");
+  const std::string termsError = lockTermsError(m_chain, params, m_pubKey, tip);
+  if (!termsError.empty()) return ChainClientResult::fail(failurePrefix() + termsError);
 
+  std::vector<uint8_t> script;
+  UtxoHtlcTerms terms;
+  lockScriptFromState(params, script, terms);
   UtxoLockExpectation expectation;
   expectation.scriptPubKey = htlcScriptPubKey(m_chain.encoding, script);
   expectation.minValue = params.ctrAmount64();
@@ -230,17 +171,13 @@ ChainClientResult UtxoHtlcFullNode::broadcastSpend(bool claimPath, const SwapPar
   if (!lockedValue(spend.lock, spend.lockValue, error))
     return ChainClientResult::fail(failurePrefix() + error);
 
-  // Bob's claim pays his configured address when it is a P2PKH address of
-  // this network; a refund always pays the refunder's own key.
-  if (!claimPath || !p2pkhScriptForAddress(m_chain.network, params.ctrAddress, spend.destinationScript))
-    spend.destinationScript = p2pkhScriptForPubKey(m_pubKey);
+  spend.destinationScript = spendDestination(m_chain, claimPath, params, m_pubKey);
   spend.fee = estimateFeeForSize(m_rpc, htlcSpendVirtualSize(m_chain.encoding, claimPath),
-                                 spend.lockValue / MAX_FEE_SHARE_DIVISOR);
+                                 spendFeeCeiling(spend.lockValue));
 
   std::vector<uint8_t> rawTx;
   if (claimPath) {
-    const std::vector<uint8_t> secret = podBytes(&params.adaptorSecret, sizeof(params.adaptorSecret));
-    if (!buildHtlcClaim(m_chain.encoding, spend, secret, rawTx, error))
+    if (!buildHtlcClaim(m_chain.encoding, spend, adaptorSecretBytes(params), rawTx, error))
       return ChainClientResult::fail(failurePrefix() + "claim: " + error);
   } else {
     uint64_t tip = 0;
@@ -259,7 +196,7 @@ ChainClientResult UtxoHtlcFullNode::broadcastSpend(bool claimPath, const SwapPar
 }
 
 ChainClientResult UtxoHtlcFullNode::claim(const SwapParams& params) {
-  if (isZero(&params.adaptorSecret, sizeof(params.adaptorSecret)))
+  if (!hasAdaptorSecret(params))
     return ChainClientResult::fail(failurePrefix() + "claim needs the adaptor secret");
   return broadcastSpend(true, params);
 }

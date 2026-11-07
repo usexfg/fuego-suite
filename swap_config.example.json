@@ -2,7 +2,7 @@
   // ── Swap Daemon Chain Config ───────────────────────────────────────────────
   //
   // Each chain can run in one of several modes:
-  //   SPV mode (BTC/LTC/KMD/BCH): light client, no full node needed.
+  //   SPV mode (BTC/LTC/BCH): light client for Bob's side of a swap.
   //   RPC mode (ETH/ARB/BASE/BSC/SOL): connect to any JSON-RPC endpoint.
   //
   // Generate a complete SPV config with fresh keys:
@@ -10,7 +10,7 @@
   //
   // ── SPV Setup Summary ──
   // 1. Generate keys:    xfg-swapd --generate-spv-config > my-config.json
-  // 2. Edit servers:     Replace the placeholder Electrum server addresses
+  // 2. Check servers:    Three Electrum servers per chain, different operators
   // 3. Fund addresses:   Send each chain's native token to the P2PKH address
   //                      shown in comments. The daemon needs funds for fees.
   // 4. Add XFG key:      Run `fire_wallet gen_swap_key` and paste the printed
@@ -25,7 +25,7 @@
   // 4. No full node required — uses public infrastructure.
 
   // ── BTC ──
-  // Full-node mode (the only mode that can start a swap): bitcoind with a
+  // Full-node mode (required for Alice, who funds the lock): bitcoind with a
   // loaded wallet that holds private keys. -txindex is not required; the lock
   // is checked with gettxout and claims are found by scanning blocks.
   //   "btc_rpc_host": "127.0.0.1",
@@ -35,47 +35,62 @@
   //   "btc_network": "main",          // main | test | signet | regtest
   //   "btc_wif": "<compressed-key WIF for the same network>",
   //
-  // SPV mode (cannot start new swaps; recovery of existing swaps only):
+  // SPV mode (Bob only: verifies Alice's lock and claims it; cannot fund one).
+  // New swaps need three servers from different operators, a quorum of at
+  // least 2 and a checkpoint; header rules exist for main and regtest.
+  // Server list: https://raw.githubusercontent.com/spesmilo/electrum/master/electrum/chains/mainnet/servers.json
+  // Checkpoint: Bitcoin Core 28.1's assume-valid block; any later block you
+  // have verified shortens the first header sync.
   "btc_mode": "spv",
   "btc_spv_server_0": "electrum.blockstream.info:50002",
-  "btc_spv_min_servers": 1,
-  "btc_spv_checkpoint_height": 800000,
-  "btc_spv_checkpoint_hash": "00000000000000000002a7c4c1e8d3c5d5e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b",
+  "btc_spv_server_1": "electrum.bitaroo.net:50002",
+  "btc_spv_server_2": "bitcoin.lu.ke:50002",
+  "btc_spv_min_servers": 2,
+  "btc_spv_checkpoint_height": 856760,
+  "btc_spv_checkpoint_hash": "000000000000000000011c5890365bdbe5d25b97ce0057589acaef4f1a57263f",
   "btc_wif": "replace_with_your_btc_wif",  // P2PKH address: 1... (send BTC here)
 
   // ── LTC ──  (full node: ltc_rpc_host, ltc_rpc_port, ltc_rpc_user, ltc_rpc_pass, ltc_network)
   // "ltc_rpc_host": "127.0.0.1",
   // "ltc_rpc_port": 9332,
+  // Server list: https://raw.githubusercontent.com/pooler/electrum-ltc/master/electrum_ltc/servers.json
+  // Checkpoint: Litecoin Core 0.21.4's assume-valid block.
   "ltc_mode": "spv",
-  "ltc_spv_server_0": "ltc.merkle.io:50002",
-  "ltc_spv_min_servers": 1,
+  "ltc_spv_server_0": "electrum-ltc.bysh.me:50002",
+  "ltc_spv_server_1": "electrum.ltc.xurious.com:50002",
+  "ltc_spv_server_2": "backup.electrum-ltc.org:443",
+  "ltc_spv_min_servers": 2,
+  "ltc_spv_checkpoint_height": 2772730,
+  "ltc_spv_checkpoint_hash": "80cdb35c080484df5bf384b311fde3c4694d3405765bc0f596e9eb369ff286e5",
   "ltc_wif": "replace_with_your_ltc_wif",  // P2PKH address: L... (send LTC here)
 
-  // ── KMD ──
+  // ── KMD ──  No SPV header validator (Equihash); KMD swaps are refused in both
+  // modes until the full-node path passes an end-to-end gate.
   // "kmd_host": "127.0.0.1",
   // "kmd_port": 7771,
-  "kmd_mode": "spv",
-  "kmd_spv_server_0": "electrum1.cipig.net:10001",
-  "kmd_spv_min_servers": 1,
-  "kmd_wif": "replace_with_your_kmd_wif",  // P2PKH address: R... (send KMD here)
+  // "kmd_wif": "replace_with_your_kmd_wif",
 
   // ── BCH ──  (full node: bch_rpc_host, bch_rpc_port, bch_rpc_user, bch_rpc_pass, bch_network)
   // "bch_rpc_host": "127.0.0.1",
   // "bch_rpc_port": 8332,
+  // Server list: https://raw.githubusercontent.com/Electron-Cash/Electron-Cash/master/electroncash/servers.json
+  // Checkpoint: a BCHN 28.0.1 checkpoint; it must be at or above the ASERT anchor (661647).
   "bch_mode": "spv",
-  "bch_spv_server_0": "electroncash.org:50002",
-  "bch_spv_min_servers": 1,
+  "bch_spv_server_0": "bch.imaginary.cash:50002",
+  "bch_spv_server_1": "electroncash.dk:50002",
+  "bch_spv_server_2": "bch.loping.net:50002",
+  "bch_spv_min_servers": 2,
+  "bch_spv_checkpoint_height": 845891,
+  "bch_spv_checkpoint_hash": "0000000000000000017012058e7b67032926f1f20f96d1a2cd66abff9aaf8244",
   "bch_wif": "replace_with_your_bch_wif",  // P2PKH address: 1... (send BCH here)
 
-  // ── DCR ── (SPV is read-only; claim/refund needs RPC mode with dcrwallet)
+  // ── DCR ──  No SPV header validator (BLAKE-256) and SPV cannot broadcast; DCR
+  // swaps are refused in both modes until the full-node path is complete.
   // "dcr_host": "127.0.0.1",
   // "dcr_port": 9108,
   // "dcr_rpc_user": "your_rpc_user",
   // "dcr_rpc_pass": "your_rpc_pass",
-  "dcr_mode": "spv",
-  "dcr_spv_server_0": "localhost:19100",
-  "dcr_spv_min_servers": 1,
-  "dcr_wif": "replace_with_your_dcr_wif",  // P2PKH address: D... (send DCR here)
+  // "dcr_wif": "replace_with_your_dcr_wif",
 
   // ── Keys at rest (recommended) ────────────────────────────────────────────
   // Any key below can live in an encrypted keystore instead of this file:

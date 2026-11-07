@@ -145,6 +145,33 @@ UtxoNetwork utxoNetworkFromConfig(const std::string& name) {
   parseUtxoNetwork(name, network);
   return network;
 }
+
+// Header rules exist for mainnet and regtest; any other network (testnet's
+// minimum-difficulty exception, signet's block signatures) gets none, so its
+// SPV client reports itself untrusted instead of skipping header validation.
+bool spvRulesFor(SwapPair pair, UtxoNetwork network, SpvChainRules& rules) {
+  const bool mainnet = network == UtxoNetwork::MAINNET;
+  const bool regtest = network == UtxoNetwork::REGTEST;
+  if (pair == SwapPair::BTC && (mainnet || regtest))
+    rules = mainnet ? SpvChainRules::bitcoinMainnet() : SpvChainRules::bitcoinRegtest();
+  else if (pair == SwapPair::LTC && (mainnet || regtest))
+    rules = mainnet ? SpvChainRules::litecoinMainnet() : SpvChainRules::litecoinRegtest();
+  else if (pair == SwapPair::BCH && mainnet)
+    rules = SpvChainRules::bitcoinCashMainnet();
+  else
+    return false;
+  return true;
+}
+
+std::shared_ptr<ElectrumSpvClient> makeElectrumClient(SwapPair pair, UtxoNetwork network,
+                                                      const std::vector<std::string>& servers,
+                                                      size_t minServers, uint64_t checkpointHeight,
+                                                      const std::string& checkpointHash) {
+  SpvChainRules rules;
+  if (spvRulesFor(pair, network, rules))
+    return std::make_shared<ElectrumSpvClient>(servers, minServers, checkpointHeight, checkpointHash, rules);
+  return std::make_shared<ElectrumSpvClient>(servers, minServers, checkpointHeight, checkpointHash);
+}
 }  // namespace
 
 // ── Base58 encode (Bitcoin alphabet, matches SolRpcClient) ───────────────
@@ -236,13 +263,12 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
   if (!chainCfg.bchHost.empty() || chainCfg.bchMode == "spv") {
     if (chainCfg.bchMode == "spv" && !chainCfg.bchSpvServers.empty()) {
       // SPV mode: create ElectrumSpvClient with BCH checkpoints
-      auto spvClient = std::make_shared<ElectrumSpvClient>(
-          chainCfg.bchSpvServers,
-          chainCfg.bchSpvMinServers,
-          chainCfg.bchSpvCheckpointHeight,
-          chainCfg.bchSpvCheckpointHash);
+      const UtxoNetwork network = utxoNetworkFromConfig(chainCfg.bchNetwork);
+      auto spvClient = makeElectrumClient(SwapPair::BCH, network, chainCfg.bchSpvServers,
+                                          chainCfg.bchSpvMinServers, chainCfg.bchSpvCheckpointHeight,
+                                          chainCfg.bchSpvCheckpointHash);
       m_chainRegistry.registerChain(SwapPair::BCH,
-          std::make_unique<BchChainClient>(spvClient, chainCfg.bchWif));
+          std::make_unique<BchChainClient>(spvClient, chainCfg.bchWif, network));
       m_logger(Logging::INFO) << "BCH chain client registered: SPV mode ("
         << chainCfg.bchSpvServers.size() << " server(s))";
     } else if (!chainCfg.bchHost.empty()) {
@@ -393,13 +419,12 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
   if (!chainCfg.btcHost.empty() || chainCfg.btcMode == "spv") {
     if (chainCfg.btcMode == "spv" && !chainCfg.btcSpvServers.empty()) {
       // SPV mode: create ElectrumSpvClient with BTC checkpoints
-      auto spvClient = std::make_shared<ElectrumSpvClient>(
-          chainCfg.btcSpvServers,
-          chainCfg.btcSpvMinServers,
-          chainCfg.btcSpvCheckpointHeight,
-          chainCfg.btcSpvCheckpointHash);
+      const UtxoNetwork network = utxoNetworkFromConfig(chainCfg.btcNetwork);
+      auto spvClient = makeElectrumClient(SwapPair::BTC, network, chainCfg.btcSpvServers,
+                                          chainCfg.btcSpvMinServers, chainCfg.btcSpvCheckpointHeight,
+                                          chainCfg.btcSpvCheckpointHash);
       m_chainRegistry.registerChain(SwapPair::BTC,
-          std::make_unique<BtcChainClient>(spvClient, chainCfg.btcWif));
+          std::make_unique<BtcChainClient>(spvClient, chainCfg.btcWif, network));
       m_logger(Logging::INFO) << "BTC chain client registered: SPV mode ("
         << chainCfg.btcSpvServers.size() << " server(s))";
     } else if (!chainCfg.btcHost.empty()) {
@@ -419,13 +444,12 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
   if (!chainCfg.ltcHost.empty() || chainCfg.ltcMode == "spv") {
     if (chainCfg.ltcMode == "spv" && !chainCfg.ltcSpvServers.empty()) {
       // SPV mode: create ElectrumSpvClient with LTC checkpoints
-      auto spvClient = std::make_shared<ElectrumSpvClient>(
-          chainCfg.ltcSpvServers,
-          chainCfg.ltcSpvMinServers,
-          chainCfg.ltcSpvCheckpointHeight,
-          chainCfg.ltcSpvCheckpointHash);
+      const UtxoNetwork network = utxoNetworkFromConfig(chainCfg.ltcNetwork);
+      auto spvClient = makeElectrumClient(SwapPair::LTC, network, chainCfg.ltcSpvServers,
+                                          chainCfg.ltcSpvMinServers, chainCfg.ltcSpvCheckpointHeight,
+                                          chainCfg.ltcSpvCheckpointHash);
       m_chainRegistry.registerChain(SwapPair::LTC,
-          std::make_unique<LtcChainClient>(spvClient, chainCfg.ltcWif));
+          std::make_unique<LtcChainClient>(spvClient, chainCfg.ltcWif, network));
       m_logger(Logging::INFO) << "LTC chain client registered: SPV mode ("
         << chainCfg.ltcSpvServers.size() << " server(s))";
     } else if (!chainCfg.ltcHost.empty()) {
@@ -802,7 +826,7 @@ std::string SwapDaemon::resolveAddressOrAlias(const std::string& input) {
   return input; // treat as raw address
 }
 
-SwapDaemon::ChainReadiness SwapDaemon::getChainReadiness(SwapPair pair, bool refresh) {
+SwapDaemon::ChainReadiness SwapDaemon::getChainReadiness(SwapPair pair, SwapRole role, bool refresh) {
   ChainReadiness result;
   const auto* descriptor = swapPairDescriptor(pair);
   if (!descriptor) {
@@ -827,28 +851,25 @@ SwapDaemon::ChainReadiness SwapDaemon::getChainReadiness(SwapPair pair, bool ref
   result.configured = true;
 
   const auto now = std::chrono::steady_clock::now();
+  const auto cacheKey = std::make_pair(pair, role);
   {
     std::lock_guard<std::mutex> lock(m_readinessMutex);
-    auto it = m_readinessCache.find(pair);
+    auto it = m_readinessCache.find(cacheKey);
     if (!refresh && it != m_readinessCache.end() &&
         now - it->second.checkedAt < std::chrono::seconds(60))
       return it->second.value;
   }
 
-  result.error = client->readinessError();
+  result.error = client->readinessErrorFor(role);
   if (result.error.empty() && descriptor->family != SwapChainFamily::EVM) {
-    if (!client->isReadyForNewSwap())
-      result.error = "chain client is not ready for new swaps";
-    else {
-      uint64_t height = 0;
-      if (!client->getCurrentHeight(height) || height == 0)
-        result.error = "chain height query failed";
-    }
+    uint64_t height = 0;
+    if (!client->getCurrentHeight(height) || height == 0)
+      result.error = "chain height query failed";
   }
   result.ready = result.error.empty();
   {
     std::lock_guard<std::mutex> lock(m_readinessMutex);
-    m_readinessCache[pair] = {result, now};
+    m_readinessCache[cacheKey] = {result, now};
   }
   return result;
 }
@@ -911,8 +932,8 @@ SwapDaemon::FundingReadiness SwapDaemon::getFundingReadiness(uint64_t requiredAt
   return result;
 }
 
-bool SwapDaemon::canStartNewSwap(SwapPair pair, std::string* reason, bool refresh) {
-  const ChainReadiness readiness = getChainReadiness(pair, refresh);
+bool SwapDaemon::canStartNewSwap(SwapPair pair, SwapRole role, std::string* reason, bool refresh) {
+  const ChainReadiness readiness = getChainReadiness(pair, role, refresh);
   if (!readiness.ready) {
     if (reason) *reason = readiness.error;
     return false;
@@ -1048,7 +1069,7 @@ bool SwapDaemon::initiate(SwapParams& params) {
     m_logger(Logging::ERROR) << "XFG amount is too small to fund the refund treasury output";
     return false;
   }
-  if (!canStartNewSwap(params.pair, nullptr, true)) {
+  if (!canStartNewSwap(params.pair, params.role, nullptr, true)) {
     m_logger(Logging::ERROR) << "Cannot initiate new swap for "
       << swapPairToString(params.pair) << ": chain client unavailable or not ready";
     return false;
@@ -1335,7 +1356,7 @@ SwapDaemon::AcceptResult SwapDaemon::accept(const std::string& swapId) {
     return {false, msg};
   }
 
-  if (!canStartNewSwap(sm.params().pair, nullptr, true)) {
+  if (!canStartNewSwap(sm.params().pair, sm.params().role, nullptr, true)) {
     const std::string msg = "Counterparty chain is unavailable or not ready for new swaps";
     m_logger(Logging::ERROR) << msg;
     return {false, msg};
@@ -3058,7 +3079,7 @@ bool SwapDaemon::processSwap(SwapStateMachine& sm) {
 
         if (params.role == SwapRole::BOB) {
           if (!escrowTxKnown) {
-            if (!canStartNewSwap(params.pair, nullptr, true)) {
+            if (!canStartNewSwap(params.pair, SwapRole::BOB, nullptr, true)) {
               m_logger(Logging::ERROR) << "Refusing to fund XFG escrow: "
                 << swapPairToString(params.pair) << " is not ready for a new swap";
               return false;
@@ -4811,7 +4832,7 @@ bool SwapDaemon::handleSwapRequest(const std::string& offerId, uint64_t amount,
   }
 
   SwapPair pair = static_cast<SwapPair>(targetOffer.pair);
-  if (!canStartNewSwap(pair, nullptr, true)) {
+  if (!canStartNewSwap(pair, SwapRole::BOB, nullptr, true)) {
     m_logger(Logging::ERROR) << "Chain not ready for new offer fills: " << (int)targetOffer.pair;
     return false;
   }
@@ -5018,7 +5039,9 @@ bool SwapDaemon::loadOfferConfig(const std::string& jsonPath) {
     // readiness cache and the 30s funding cache, putting two RPCs per offer on the tick
     // thread. Every other call site is an explicit action (initiate, accept, AFK lock)
     // and keeps its fresh check.
-    [this](uint8_t pair) { return canStartNewSwap(static_cast<SwapPair>(pair), nullptr, false); },
+    [this](uint8_t pair) {
+      return canStartNewSwap(static_cast<SwapPair>(pair), SwapRole::BOB, nullptr, false);
+    },
     [this](uint8_t pair) {
       const PairQuote quote = currentPairQuote(static_cast<SwapPair>(pair), true);
       return quote.managedOffersAllowed ? quote.rateNum : uint64_t{0};
@@ -5184,7 +5207,8 @@ std::string SwapDaemon::buildChainCatalogJson() {
   Common::JsonValue::Array chains;
   chains.reserve(SWAP_PAIR_COUNT);
   for (const auto& descriptor : SWAP_PAIR_CATALOG) {
-    const ChainReadiness readiness = getChainReadiness(descriptor.pair, false);
+    const ChainReadiness asAlice = getChainReadiness(descriptor.pair, SwapRole::ALICE, false);
+    const ChainReadiness asBob = getChainReadiness(descriptor.pair, SwapRole::BOB, false);
     Common::JsonValue entry(Common::JsonValue::OBJECT);
     entry.insert("id", static_cast<int64_t>(descriptor.id));
     entry.insert("key", std::string(descriptor.key));
@@ -5213,9 +5237,13 @@ std::string SwapDaemon::buildChainCatalogJson() {
     entry.insert("icon", std::string(descriptor.icon));
     entry.insert("color", std::string(descriptor.color));
     entry.insert("protocol", Common::JsonValue(isProtocolSwapPair(descriptor.id)));
-    entry.insert("configured", Common::JsonValue(readiness.configured));
-    entry.insert("ready", Common::JsonValue(readiness.ready));
-    entry.insert("readinessError", readiness.error);
+    entry.insert("configured", Common::JsonValue(asAlice.configured));
+    entry.insert("ready", Common::JsonValue(asAlice.ready && asBob.ready));
+    entry.insert("readinessError", asAlice.ready ? asBob.error : asAlice.error);
+    Common::JsonValue readyRoles(Common::JsonValue::ARRAY);
+    if (asAlice.ready) readyRoles.pushBack(Common::JsonValue(std::string("alice")));
+    if (asBob.ready) readyRoles.pushBack(Common::JsonValue(std::string("bob")));
+    entry.insert("readyRoles", readyRoles);
     chains.push_back(std::move(entry));
   }
   return Common::JsonValue(std::move(chains)).toString();

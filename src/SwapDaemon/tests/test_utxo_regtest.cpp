@@ -142,8 +142,9 @@ struct Swap {
   std::vector<uint8_t> secret;
 };
 
+// Value-initialized like SwapStateMachine's params: no indeterminate secrets.
 static Swap newSwap(const Node& node, IChainClient& bob, uint64_t amount, uint64_t timeoutBlock) {
-  Swap swap;
+  Swap swap{};
   swap.secret = randomBytes(32);
   const std::vector<uint8_t> hashLock = sha256Digest(swap.secret);
   for (SwapParams* side : {&swap.alice, &swap.bob}) {

@@ -302,6 +302,7 @@ add_library(SwapDaemonLib STATIC
     SwapDaemon/Spv/SpvMerkle.cpp
     SwapDaemon/Spv/SpvHeader.cpp
     SwapDaemon/Spv/SpvHeaderStore.cpp
+    SwapDaemon/Spv/SpvChainRules.cpp
     SwapDaemon/Spv/ElectrumConnection.cpp
     SwapDaemon/Spv/ElectrumSpvClient.cpp
     SwapDaemon/Bitcoin/BtcHtlcScript.cpp
@@ -314,6 +315,8 @@ add_library(SwapDaemonLib STATIC
     SwapDaemon/Utxo/UtxoFullNode.cpp
     SwapDaemon/Utxo/UtxoHtlc.cpp
     SwapDaemon/Utxo/UtxoHtlcFullNode.cpp
+    SwapDaemon/Utxo/UtxoHtlcSwap.cpp
+    SwapDaemon/Utxo/UtxoHtlcSpv.cpp
     SwapDaemon/Litecoin/LtcRpcClient.cpp
     SwapDaemon/Komodo/KmdRpcClient.cpp
     SwapDaemon/Decred/DcrRpcClient.cpp
@@ -346,6 +349,12 @@ add_executable(test_utxo_htlc
 target_link_libraries(test_utxo_htlc PRIVATE
     SwapDaemonLib Common Crypto CryptoNoteCore Serialization OpenSSL::SSL OpenSSL::Crypto secp256k1)
 
+# Bob-only SPV swap path for BTC, LTC and BCH (remediation plan 2.5).
+add_executable(test_utxo_htlc_spv
+    SwapDaemon/tests/test_utxo_htlc_spv.cpp)
+target_link_libraries(test_utxo_htlc_spv PRIVATE
+    SwapDaemonLib Common Crypto CryptoNoteCore Serialization OpenSSL::SSL OpenSSL::Crypto secp256k1)
+
 # CTR_LOCKED notice and ADAPTOR_EXCHANGE claim key: signed, bounded, round-trip.
 add_executable(test_ctr_lock_notice
     SwapDaemon/tests/test_ctr_lock_notice.cpp)
@@ -376,6 +385,12 @@ set_target_properties(test_utxo_regtest PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/src/test_daemons")
 target_compile_options(test_utxo_regtest PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG> $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-UNDEBUG>)
+
+# SPV per-chain header rules against reference vectors (remediation 2.2).
+add_executable(test_spv_chain_rules
+    SwapDaemon/tests/test_spv_chain_rules.cpp)
+target_link_libraries(test_spv_chain_rules PRIVATE
+    SwapDaemonLib Common Crypto CryptoNoteCore Serialization OpenSSL::SSL OpenSSL::Crypto)
 
 # Swap security audit regressions (AUDIT 1.2/3.2 adaptor binding, 6.1 timeout floor)
 add_executable(test_swap_audit_regressions
@@ -471,6 +486,12 @@ target_link_libraries(test_spv_headers PRIVATE
 add_executable(test_spv_electrum
     SwapDaemon/tests/test_spv_electrum.cpp)
 target_link_libraries(test_spv_electrum PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# SPV quorum, reorg, fee and trust policy (remediation plan 2.6).
+add_executable(test_spv_quorum
+    SwapDaemon/tests/test_spv_quorum.cpp)
+target_link_libraries(test_spv_quorum PRIVATE
     SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
 
 # SwapDaemon unit test: SPV config parsing and wiring
@@ -793,6 +814,7 @@ add_executable(SwapDaemon
     SwapDaemon/Spv/SpvMerkle.cpp
     SwapDaemon/Spv/SpvHeader.cpp
     SwapDaemon/Spv/SpvHeaderStore.cpp
+    SwapDaemon/Spv/SpvChainRules.cpp
     SwapDaemon/Spv/ElectrumConnection.cpp
     SwapDaemon/Spv/ElectrumSpvClient.cpp
     SwapDaemon/Bitcoin/BtcHtlcScript.cpp
@@ -805,6 +827,8 @@ add_executable(SwapDaemon
     SwapDaemon/Utxo/UtxoFullNode.cpp
     SwapDaemon/Utxo/UtxoHtlc.cpp
     SwapDaemon/Utxo/UtxoHtlcFullNode.cpp
+    SwapDaemon/Utxo/UtxoHtlcSwap.cpp
+    SwapDaemon/Utxo/UtxoHtlcSpv.cpp
     SwapDaemon/Litecoin/LtcRpcClient.cpp
     SwapDaemon/Komodo/KmdRpcClient.cpp
     SwapDaemon/Decred/DcrRpcClient.cpp
@@ -1113,9 +1137,11 @@ set_property(TARGET SwapDaemon PROPERTY OUTPUT_NAME "xfg-swapd")
 set(_TEST_DAEMON_TARGETS
     test_swap_pair_catalog
     test_utxo_htlc
+    test_utxo_htlc_spv
     test_ctr_lock_notice
     test_htlc_registry_pin
     test_swap_keystore
+    test_spv_chain_rules
     test_adaptor_roundtrip
     test_price_oracle_arb
     test_price_policy
@@ -1135,6 +1161,7 @@ set(_TEST_DAEMON_TARGETS
     test_spv_merkle
     test_spv_headers
     test_spv_electrum
+    test_spv_quorum
     test_spv_config_wiring
     test_swap_state_machine_spv
     test_bch_htlc

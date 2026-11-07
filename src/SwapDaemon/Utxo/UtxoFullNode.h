@@ -96,6 +96,9 @@ bool broadcastRawTransaction(const UtxoRpcCall& rpc, const std::vector<uint8_t>&
 // Fee for a transaction of `virtualBytes`: estimatesmartfee, never below the
 // node's relay and mempool minimums (nor 1 base unit per vbyte), and capped at
 // `ceiling` unless the minimum alone exceeds it.
+// Fee for `virtualBytes` at `targetRate`, never below `floorRate` and never
+// above `ceiling` unless the floor itself demands more (rates per kilobyte).
+uint64_t boundedFee(uint64_t floorRate, uint64_t targetRate, uint64_t virtualBytes, uint64_t ceiling);
 uint64_t estimateFeeForSize(const UtxoRpcCall& rpc, uint64_t virtualBytes, uint64_t ceiling);
 
 struct UtxoNodeHealth {

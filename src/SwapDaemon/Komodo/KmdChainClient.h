@@ -28,7 +28,11 @@ public:
 
   std::string chainName() const override { return "KMD"; }
   bool usesSpvVerification() const override { return m_spvClient != nullptr; }
-  bool isReadyForNewSwap() override { return false; } // Neither transport has a complete safe swap path
+  bool isReadyForNewSwap() override { return false; }
+  std::string readinessError() override {
+    return m_spvClient ? "KMD SPV has no Equihash header validator; KMD swaps need a full node"
+                       : "KMD full-node HTLC path has not passed an end-to-end gate";
+  }
 
   std::string getReceiveAddress() const override;
   ChainClientResult lock(const SwapParams& params) override;

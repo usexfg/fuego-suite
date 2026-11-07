@@ -14,6 +14,7 @@ public:
 
   std::string chainName() const override { return m_chainName; }
   std::string readinessError() override;
+  std::string readinessErrorFor(SwapRole) override { return readinessError(); }
   bool isReadyForNewSwap() override { return readinessError().empty(); }
   uint64_t configuredChainId() const override {
     return m_rpc ? m_rpc->expectedChainId() : 0;

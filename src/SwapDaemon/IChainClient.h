@@ -22,6 +22,14 @@ public:
   // Optional explanation surfaced by the daemon catalog. Subclasses with a
   // preflight (notably generic EVM) override this without changing recovery.
   virtual std::string readinessError() { return ""; }
+  // Readiness to start a new swap in `role`. A transport can serve one role
+  // only (SPV verifies and claims for Bob but cannot fund Alice's lock).
+  virtual std::string readinessErrorFor(SwapRole role) {
+    (void)role;
+    std::string error = readinessError();
+    if (error.empty() && !isReadyForNewSwap()) error = chainName() + " client is not ready for new swaps";
+    return error;
+  }
   virtual uint64_t configuredChainId() const { return 0; }
 
   // Derived from the live client mode when creating a swap, then persisted

@@ -242,6 +242,7 @@ add_library(SwapDaemonLib STATIC
     SwapDaemon/SwapTypes.cpp
     SwapDaemon/SwapStateMachine.cpp
     SwapDaemon/SwapSecretEncryption.cpp
+    SwapDaemon/SwapKeystore.cpp
     SwapDaemon/SwapDatabase.cpp
     SwapDaemon/AdaptorSwap.cpp
     SwapDaemon/SwapDaemon.cpp
@@ -358,6 +359,12 @@ target_link_libraries(test_htlc_registry_pin PRIVATE
     SwapDaemonLib Common Crypto CryptoNoteCore Serialization OpenSSL::SSL OpenSSL::Crypto)
 target_compile_definitions(test_htlc_registry_pin PRIVATE
     FUEGO_HTLC_BIN_PATH="${CMAKE_CURRENT_SOURCE_DIR}/SwapDaemon/Ethereum/HashedTimelock_sol_HashedTimelock.bin")
+
+# Encrypted keystore for daemon secrets (remediation R7).
+add_executable(test_swap_keystore
+    SwapDaemon/tests/test_swap_keystore.cpp)
+target_link_libraries(test_swap_keystore PRIVATE
+    SwapDaemonLib Common Crypto CryptoNoteCore Serialization OpenSSL::SSL OpenSSL::Crypto)
 
 # Swap security audit regressions (AUDIT 1.2/3.2 adaptor binding, 6.1 timeout floor)
 add_executable(test_swap_audit_regressions
@@ -732,6 +739,7 @@ add_executable(SwapDaemon
     SwapDaemon/SwapDaemon.cpp
     SwapDaemon/SwapP2P.cpp
     SwapDaemon/SwapSecretEncryption.cpp
+    SwapDaemon/SwapKeystore.cpp
     SwapDaemon/StatusServer.cpp
     SwapDaemon/RpcServer.cpp
     SwapDaemon/ChainRegistry.cpp
@@ -1096,6 +1104,7 @@ set(_TEST_DAEMON_TARGETS
     test_utxo_htlc
     test_ctr_lock_notice
     test_htlc_registry_pin
+    test_swap_keystore
     test_adaptor_roundtrip
     test_price_oracle_arb
     test_price_policy

@@ -21,6 +21,7 @@
 #include "SwapDaemon/Komodo/KmdHtlcScript.h"
 #include "SwapDaemon/Decred/DcrHtlcScript.h"
 #include "SwapDaemon/Ethereum/EthRpcClient.h"
+#include "SwapDaemon/SwapKeystore.h"
 #include "crypto/hash.h"
 #include <optional>
 #include <random>
@@ -54,6 +55,44 @@ namespace {
 const uint16_t DEFAULT_MAINNET_PORT = 18180;
 const uint16_t DEFAULT_TESTNET_PORT = 28280;
 const char* DEFAULT_HOST = "127.0.0.1";
+
+static bool putKeystoreSecret(const std::string& file, const std::string& name) {
+  std::string passphrase, error;
+  if (!XfgSwap::keystorePassphraseFromEnvironment(passphrase, error)) {
+    std::cerr << "Error: " << error << std::endl;
+    return false;
+  }
+  XfgSwap::KeystoreSecrets secrets;
+  std::ifstream existing(file);
+  if (existing.good() && !XfgSwap::loadKeystore(file, passphrase, secrets, error)) {
+    std::cerr << "Error: " << error << std::endl;
+    return false;
+  }
+  std::string secret;
+  if (!std::getline(std::cin, secret) || secret.empty()) {
+    std::cerr << "Error: no secret on stdin" << std::endl;
+    return false;
+  }
+  secrets[name] = secret;
+  if (!XfgSwap::saveKeystore(file, passphrase, secrets, error)) {
+    std::cerr << "Error: " << error << std::endl;
+    return false;
+  }
+  std::cout << "Stored '" << name << "' in " << file << std::endl;
+  return true;
+}
+
+static bool listKeystore(const std::string& file) {
+  std::string passphrase, error;
+  XfgSwap::KeystoreSecrets secrets;
+  if (!XfgSwap::keystorePassphraseFromEnvironment(passphrase, error) ||
+      !XfgSwap::loadKeystore(file, passphrase, secrets, error)) {
+    std::cerr << "Error: " << error << std::endl;
+    return false;
+  }
+  for (const auto& entry : secrets) std::cout << entry.first << std::endl;
+  return true;
+}
 
 // Deterministic HashedTimelock deployment (remediation R4): the transaction an
 // operator sends to the CREATE2 proxy, and the address readiness will expect.
@@ -117,6 +156,11 @@ void printUsage() {
     "  --testnet               Use testnet ports (fuegod: 28280)\n"
     "  --generate-spv-config   Generate SPV config template with fresh keys and addresses\n"
     "  --print-htlc-deployment <bin>  Print the CREATE2 deployment of a HashedTimelock .bin\n"
+    "  --keystore-put <file> <name>   Store the secret read from stdin under <name> in an\n"
+    "                           encrypted keystore (passphrase: XFG_SWAPD_KEYSTORE_PASSPHRASE\n"
+    "                           or XFG_SWAPD_KEYSTORE_PASSPHRASE_FILE); reference it in the\n"
+    "                           config as \"keystore:<name>\" with \"keystore\": \"<file>\"\n"
+    "  --keystore-list <file>   List the names in an encrypted keystore\n"
     "                           (proxy, salt, init-code hash, address, calldata)\n"
     "  --help                  Show this help message\n"
     "\n"
@@ -461,6 +505,20 @@ int main(int argc, char* argv[]) {
     } else if (opt == "--generate-spv-config") {
       generateSpvConfig();
       return 0;
+    } else if (opt == "--keystore-put") {
+      if (argIdx + 2 >= argc) {
+        std::cerr << "Error: --keystore-put requires <file> <name>" << std::endl;
+        return 1;
+      }
+      const std::string file = argv[argIdx + 1];
+      const std::string name = argv[argIdx + 2];
+      return putKeystoreSecret(file, name) ? 0 : 1;
+    } else if (opt == "--keystore-list") {
+      if (++argIdx >= argc) {
+        std::cerr << "Error: --keystore-list requires <file>" << std::endl;
+        return 1;
+      }
+      return listKeystore(argv[argIdx]) ? 0 : 1;
     } else if (opt == "--print-htlc-deployment") {
       if (++argIdx >= argc) {
         std::cerr << "Error: --print-htlc-deployment requires a .bin path" << std::endl;

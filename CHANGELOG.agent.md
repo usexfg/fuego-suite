@@ -1,3 +1,22 @@
+## DeXFG remediation R7 (daemon): encrypted keystore for swap secrets
+
+**Started**: 2026-11-07
+**Agent**: Claude Code
+**Status**: DONE (daemon half; the Valise keychain half is in the Valise changelog)
+**Scope**: `SwapKeystore.{h,cpp}` (new), `ChainClientConfig.cpp`, `main.cpp`, `tests/test_swap_keystore.cpp` (new), `src/CMakeLists.txt`, `swap_config.example.json`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| R7 | Keystore file: scrypt (N=2^15, r=8, p=1) → AES-256-GCM over a JSON map of named secrets, header bound as associated data, written atomically 0600; `"keystore": "<file>"` makes every `"keystore:<name>"` config string the named secret (unknown names and unsafe values refused); passphrase from `XFG_SWAPD_KEYSTORE_PASSPHRASE` or `..._FILE`; `--keystore-put <file> <name>` (secret on stdin) and `--keystore-list <file>` | Claude Code | 2026-11-07 | DONE; `test_swap_keystore` 16/16 |
+
+Not changed: secrets still exist in daemon memory after load (unavoidable for signing); plaintext configs keep working.
+
+### Sign-off
+
+| Gate | Status | Signed | Date |
+|------|--------|--------|------|
+| Clang 18 build, `ctest -LE manual` | 46/47 (F29 only) | Claude Code | 2026-11-07 |
+
 ## DeXFG remediation R6: Pyth as the corroborating price source
 
 **Started**: 2026-11-07

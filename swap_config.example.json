@@ -77,6 +77,14 @@
   "dcr_spv_min_servers": 1,
   "dcr_wif": "replace_with_your_dcr_wif",  // P2PKH address: D... (send DCR here)
 
+  // ── Keys at rest (recommended) ────────────────────────────────────────────
+  // Any key below can live in an encrypted keystore instead of this file:
+  //   XFG_SWAPD_KEYSTORE_PASSPHRASE='<12+ chars>' xfg-swapd --keystore-put keys.json xfg < key.txt
+  // then write "xfg_secret_key": "keystore:xfg" here and add:
+  //   "keystore": "keys.json",
+  // xfg-swapd reads the passphrase from XFG_SWAPD_KEYSTORE_PASSPHRASE or the
+  // file named by XFG_SWAPD_KEYSTORE_PASSPHRASE_FILE (scrypt + AES-256-GCM).
+
   // ── XFG (Fuego) ─────────────────────────────────────────────────────────────
   // The XFG keypair the swap daemon signs offers and XFG swap outputs with.
   //

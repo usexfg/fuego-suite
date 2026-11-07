@@ -16,6 +16,7 @@
 #include "SwapDaemon.h"
 #include "Common/JsonValue.h"
 #include "Utxo/UtxoFullNode.h"
+#include "SwapKeystore.h"
 
 #include <fstream>
 #include <sstream>
@@ -247,6 +248,23 @@ bool rejectRetiredEvmKeys(const Common::JsonValue& json, std::string& errorMsg) 
   return true;
 }
 
+// "keystore": "<path>" makes every "keystore:<name>" string in the config the
+// named secret from that encrypted file (remediation plan R7).
+static bool resolveConfigKeystore(std::string& json, std::string& errorMsg) {
+  const std::string keystorePath = jsonGetStr(json, "keystore", "");
+  if (keystorePath.empty()) {
+    if (!hasKeystoreReferences(json)) return true;
+    errorMsg = "config references keystore entries but sets no \"keystore\" path";
+    return false;
+  }
+  std::string passphrase;
+  KeystoreSecrets secrets;
+  if (!keystorePassphraseFromEnvironment(passphrase, errorMsg) ||
+      !loadKeystore(keystorePath, passphrase, secrets, errorMsg))
+    return false;
+  return resolveKeystoreReferences(json, secrets, errorMsg);
+}
+
 }  // namespace
 
 bool loadChainClientConfig(const std::string& path,
@@ -259,7 +277,8 @@ bool loadChainClientConfig(const std::string& path,
   }
   std::ostringstream ss;
   ss << f.rdbuf();
-  const std::string json = stripJsonComments(ss.str());
+  std::string json = stripJsonComments(ss.str());
+  if (!resolveConfigKeystore(json, errorMsg)) return false;
 
   // Validate the file is actually parseable JSON. Previously the loader used
   // `string::find()` lookups that silently treat malformed JSON as missing

@@ -524,6 +524,17 @@ add_executable(test_swap_state_machine_spv
 target_link_libraries(test_swap_state_machine_spv PRIVATE
     SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
 
+# EVM transport gate against anvil (remediation plan R9); run by CI's
+# evm-anvil-gate job, not by ctest.
+add_executable(test_evm_anvil_gate
+    SwapDaemon/tests/test_evm_anvil_gate.cpp)
+target_link_libraries(test_evm_anvil_gate PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+set_target_properties(test_evm_anvil_gate PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/src/test_daemons")
+target_compile_options(test_evm_anvil_gate PRIVATE
+    $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG> $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-UNDEBUG>)
+
 # EVM claims are refused once the lock leaves less than the claim runway.
 add_executable(test_evm_claim_deadline
     SwapDaemon/tests/test_evm_claim_deadline.cpp)

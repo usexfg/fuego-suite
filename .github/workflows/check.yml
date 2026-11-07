@@ -170,6 +170,48 @@ jobs:
       - name: Run the gate
         run: build/src/test_daemons/test_utxo_regtest ${{ matrix.chain }} 127.0.0.1 18990 gate gate
 
+  evm-anvil-gate:
+    name: EVM transport gate (anvil)
+    runs-on: ubuntu-24.04
+    env:
+      RPC: http://127.0.0.1:8545
+      DEPLOYER: "0x4e59b44847b379578588920ca78fbf26c0b4956c"
+      REGISTRY: "0x13e6f8fb77ce4036438469097828106fd60c73a4"
+      # anvil's published development account 0; it holds only test ether.
+      ANVIL_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libboost-all-dev libssl-dev libicu-dev libjsoncpp-dev libsecp256k1-dev ninja-build
+
+      - uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Build the gate
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DUSE_VENDORED_SECP256K1=OFF -G Ninja
+          cmake --build build -j$(nproc) --target test_evm_anvil_gate
+
+      - name: Start anvil
+        run: |
+          anvil --host 127.0.0.1 --port 8545 > "$RUNNER_TEMP/anvil.log" 2>&1 &
+          for _ in $(seq 1 30); do cast block-number --rpc-url "$RPC" >/dev/null 2>&1 && exit 0; sleep 1; done
+          cat "$RUNNER_TEMP/anvil.log"; exit 1
+
+      - name: Deploy HashedTimelock through the deterministic deployer
+        run: |
+          test "$(cast code --rpc-url "$RPC" "$DEPLOYER")" != "0x"
+          data="0x$(printf '0%.0s' $(seq 1 64))$(tr -d '[:space:]' < src/SwapDaemon/Ethereum/HashedTimelock_sol_HashedTimelock.bin)"
+          cast send --rpc-url "$RPC" --private-key "$ANVIL_KEY" "$DEPLOYER" "$data"
+          test "$(cast code --rpc-url "$RPC" "$REGISTRY")" != "0x"
+
+      - name: Run the gate
+        run: build/src/test_daemons/test_evm_anvil_gate "$RPC" "$REGISTRY"
+
   sanitizers-ubuntu:
     name: Sanitizers (ASan+UBSan)
     runs-on: ubuntu-24.04

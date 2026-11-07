@@ -1,3 +1,14 @@
+## DeXFG remediation R9 (EVM part): transport gate against anvil
+
+**Started**: 2026-11-07
+**Agent**: Claude Code
+**Status**: IN PROGRESS (CI) — Solana (`solana-test-validator`) and two-daemon runs not built
+**Scope**: `src/SwapDaemon/tests/test_evm_anvil_gate.cpp` (new), `src/CMakeLists.txt`, `.github/workflows/check.yml`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| R9 | CI job `evm-anvil-gate`: anvil (foundry-toolchain action, tag-pinned `v1`), the committed `HashedTimelock` artifact deployed through the deterministic deployer and checked at `0x13e6…73a4`, then the real `EthChainClient` for anvil dev accounts 0 and 1: lock one ether, Bob verifies; other hash, other recipient and one wei short refused; claim inside the runway; Alice reads t from the registry at six blocks without the claim txid; a claimed lock is not claimed again; short-timeout lock refused by Bob, refund refused before and accepted after the timeout, no secret revealed | Claude Code | 2026-11-07 | IN PROGRESS (CI) |
+
 ## DeXFG review: Bob never publishes t inside the claim runway
 
 **Started**: 2026-11-07

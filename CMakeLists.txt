@@ -470,6 +470,12 @@ add_subdirectory(external)
 add_subdirectory(src)
 # add_subdirectory(tui)  # Disabled - requires separate build
 
+# Drop-in static node for iOS / mobile embedding (off by default).
+option(BUILD_STATIC_NODE "Build the drop-in static node library" OFF)
+if(BUILD_STATIC_NODE)
+  add_subdirectory(src/StaticNode)
+endif()
+
 # --------------------------
 # ICU linking for executables (macOS)
 # --------------------------
@@ -481,7 +487,4 @@ if(APPLE AND ICU_FOUND)
             target_link_libraries(${exec_target} PRIVATE ${ICU_LIBRARIES})
         endif()
     endforeach()
-
-    # Note: TUI is a Go application and doesn't need ICU linking
-    # The Go TUI component is built separately with its own dependencies
 endif()

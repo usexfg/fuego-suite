@@ -13,6 +13,7 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "UtxoHtlcFullNode.h"
+#include "UtxoPointLockSwap.h"
 
 
 #include <algorithm>
@@ -91,6 +92,7 @@ bool UtxoHtlcFullNode::findPriorLockSend(const std::vector<uint8_t>& lockScriptP
 }
 
 ChainClientResult UtxoHtlcFullNode::lock(const SwapParams& params) {
+  if (isPointLockSwap(params)) return lockPoint(params);
   if (!m_hasKey) return ChainClientResult::fail(failurePrefix() + "no valid WIF key");
   UtxoHtlcTerms terms;
   if (!agreedHashLock(params, terms.hashLock))
@@ -131,6 +133,7 @@ ChainClientResult UtxoHtlcFullNode::lock(const SwapParams& params) {
 }
 
 ChainClientResult UtxoHtlcFullNode::verifyLock(const SwapParams& params) {
+  if (isPointLockSwap(params)) return verifyPointLock(params);
   if (!m_hasKey) return ChainClientResult::fail(failurePrefix() + "no valid WIF key");
   uint64_t tip = 0;
   std::string error;
@@ -200,12 +203,14 @@ ChainClientResult UtxoHtlcFullNode::broadcastSpend(bool claimPath, const SwapPar
 }
 
 ChainClientResult UtxoHtlcFullNode::claim(const SwapParams& params) {
+  if (isPointLockSwap(params)) return claimPoint(params);
   if (!hasAdaptorSecret(params))
     return ChainClientResult::notSent(failurePrefix() + "claim needs the adaptor secret");
   return broadcastSpend(true, params);
 }
 
 std::string UtxoHtlcFullNode::claimDeadlineError(const SwapParams& params) {
+  if (isPointLockSwap(params)) return pointClaimDeadline(params);
   std::vector<uint8_t> script;
   UtxoHtlcTerms terms;
   uint64_t tip = 0;
@@ -217,6 +222,7 @@ std::string UtxoHtlcFullNode::claimDeadlineError(const SwapParams& params) {
 }
 
 ChainClientResult UtxoHtlcFullNode::refund(const SwapParams& params) {
+  if (isPointLockSwap(params)) return refundPoint(params);
   return broadcastSpend(false, params);
 }
 
@@ -272,6 +278,7 @@ bool UtxoHtlcFullNode::findClaimSpend(const SwapParams& params, UtxoSpend& spend
 }
 
 std::string UtxoHtlcFullNode::tryExtractClaimedSecret(const SwapParams& params) {
+  if (isPointLockSwap(params)) return pointSecret(params);
   std::vector<uint8_t> script;
   UtxoHtlcTerms terms;
   UtxoSpend spend;
@@ -283,6 +290,7 @@ std::string UtxoHtlcFullNode::tryExtractClaimedSecret(const SwapParams& params) 
 }
 
 bool UtxoHtlcFullNode::hasConfirmedClaim(const SwapParams& params) {
+  if (isPointLockSwap(params)) return hasConfirmedPointClaim(params);
   std::vector<uint8_t> script;
   UtxoHtlcTerms terms;
   UtxoSpend spend;

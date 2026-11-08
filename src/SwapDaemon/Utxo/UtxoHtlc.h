@@ -76,6 +76,10 @@ uint64_t htlcSpendVirtualSize(UtxoHtlcEncoding encoding, bool claimPath);
 bool readTransactionOutput(const std::vector<uint8_t>& rawTx, uint32_t vout, uint64_t& value,
                            std::vector<uint8_t>& scriptPubKey);
 
+// The witness of the input of `rawTx` that spends `lock`; false when no input spends it.
+bool spendWitness(const std::vector<uint8_t>& rawTx, const UtxoOutpoint& lock,
+                  std::vector<std::vector<uint8_t>>& witness);
+
 // The preimage revealed by the input of `rawTx` that spends `lock` through the
 // claim branch of `htlcScript`, only if its SHA256 equals the script's hash lock.
 bool extractHtlcPreimage(UtxoHtlcEncoding encoding, const std::vector<uint8_t>& rawTx,

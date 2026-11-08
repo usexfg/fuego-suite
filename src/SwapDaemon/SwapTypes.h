@@ -275,6 +275,9 @@ struct SwapParams {
   // was submitted but its response was lost. While true, absence of a txid is
   // never evidence that Bob did not claim the counterparty leg.
   bool ctrClaimAttempted = false;
+  // Counterparty-chain height when the current claim was first seen pending;
+  // a point-lock claim still pending a few blocks later is replaced.
+  uint64_t ctrClaimSubmittedHeight = 0;
   // Written before Alice calls refund(). A lost RPC response leaves the
   // outcome unknown and must not generate a different refund transaction.
   bool ctrRefundAttempted = false;

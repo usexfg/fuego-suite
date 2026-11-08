@@ -16,6 +16,7 @@
 
 #include "UtxoFullNode.h"
 #include "UtxoHtlcSwap.h"
+#include "UtxoPointLock.h"
 
 #include <array>
 #include <string>
@@ -33,6 +34,7 @@ public:
   UtxoHtlcFullNode(UtxoHtlcChain chain, UtxoRpcCall rpc, const std::string& wif);
 
   bool hasSigningKey() const { return m_hasKey; }
+  bool supportsPointLocks() const { return m_chain.encoding == UtxoHtlcEncoding::P2WSH; }
   std::string claimPubKeyHex() const;
   std::string receiveAddress() const;
   std::string readinessError();
@@ -46,6 +48,8 @@ public:
   ChainClientResult transactionDetails(const std::string& txid);
   std::string tryExtractClaimedSecret(const SwapParams& params);
   bool hasConfirmedClaim(const SwapParams& params);
+  // Replaces an unconfirmed point-lock claim with the next pre-signed fee.
+  ChainClientResult bumpClaim(const SwapParams& params);
 
 private:
   bool findPriorLockSend(const std::vector<uint8_t>& lockScriptPubKey, uint64_t amount, std::string& txid);
@@ -53,6 +57,18 @@ private:
   ChainClientResult broadcastSpend(bool claimPath, const SwapParams& params);
   bool findClaimSpend(const SwapParams& params, UtxoSpend& spend);
   bool claimHintSpend(const SwapParams& params, UtxoSpend& spend);
+
+  // Taproot point locks (UtxoPointLockFullNode.cpp).
+  ChainClientResult lockPoint(const SwapParams& params);
+  ChainClientResult verifyPointLock(const SwapParams& params);
+  ChainClientResult claimPoint(const SwapParams& params);
+  ChainClientResult refundPoint(const SwapParams& params);
+  std::string pointClaimDeadline(const SwapParams& params);
+  std::string pointSecret(const SwapParams& params);
+  bool hasConfirmedPointClaim(const SwapParams& params);
+  uint64_t currentClaimFee(uint64_t lockValue);
+  ChainClientResult broadcastPointClaim(const SwapParams& params, const PointLockState& state,
+                                        const PointLockClaimOffer& offer, uint64_t lockValue);
   std::string failurePrefix() const { return m_chain.ticker + " full node: "; }
 
   const UtxoHtlcChain m_chain;

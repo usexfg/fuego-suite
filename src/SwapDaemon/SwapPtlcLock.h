@@ -35,7 +35,6 @@ SwapLockType negotiateLockTypeV2(bool localSupportsPtlc, bool peerSupportsPtlc,
 
 // True for native adaptor-only pairs (no hashlock; ptlcPoint==ZERO means PTLC).
 bool isPtlcNativePair(SwapPair pair);
-bool isPurePtlcP2trLock(const SwapParams& params);
 bool isZeroPubKey(const Crypto::PublicKey& k);
 bool isZeroHash(const Crypto::Hash& h);
 

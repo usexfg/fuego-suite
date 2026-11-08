@@ -28,16 +28,14 @@ public:
   std::string claimDeadlineError(const SwapParams& params) override;
   std::string getClaimPubKey() const override;
   bool hasConfirmedClaim(const SwapParams& params) override;
+  ChainClientResult bumpClaim(const SwapParams& params) override;
   bool supportsPtlc() const override { return true; }
-  // The existing P2TR lock is a key path Alice alone can spend at any time;
-  // point locks return with CROSS_CURVE_PLAN X6 (claim and refund leaves).
-  bool supportsPurePtlc() const override { return false; }
+  // Taproot point locks (UtxoPointLock) over the full node or, for Bob, SPV.
+  bool supportsPurePtlc() const override;
 
   std::string getReceiveAddress() const override;
   ChainClientResult lock(const SwapParams& params) override;
-  ChainClientResult lockPtlc(const SwapParams& params) override;
   ChainClientResult verifyLock(const SwapParams& params) override;
-  ChainClientResult verifyPtlcLock(const SwapParams& params) override;
   ChainClientResult claim(const SwapParams& params) override;
   ChainClientResult refund(const SwapParams& params) override;
   ChainClientResult verifyReserveProof(const std::string& expectedMessage,
@@ -50,12 +48,7 @@ public:
   std::string tryExtractClaimedSecret(const SwapParams& params) override;
 
 private:
-  // Pure-PTLC funding (P2.3): BtcTaprootPtlc output with hrp "ltc", funded
-  // via wallet sendtoaddress. chainState "p2tr:<tweaked>|ptlc:<point>".
-  ChainClientResult lockPtlcPureP2tr(const SwapParams& params);
 
-  // Pure-PTLC P2TR key-path spend shared by claim + refund.
-  ChainClientResult claimOrRefundPtlcP2tr(const SwapParams& params);
 
   std::unique_ptr<LtcRpcClient> m_rpc;    // null in SPV mode
   std::unique_ptr<UtxoHtlcFullNode> m_fullNode;  // HTLC swap path over m_rpc

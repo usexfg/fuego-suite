@@ -380,6 +380,7 @@ std::string SwapStateMachine::serialize() const {
   root.insert("ctrLockVout", static_cast<int64_t>(m_params.ctrLockVout));
   root.insert("ctrClaimTxId", m_params.ctrClaimTxId);
   root.insert("ctrClaimAttempted", static_cast<int64_t>(m_params.ctrClaimAttempted ? 1 : 0));
+  root.insert("ctrClaimSubmittedHeight", static_cast<int64_t>(m_params.ctrClaimSubmittedHeight));
   root.insert("ctrRefundAttempted", static_cast<int64_t>(m_params.ctrRefundAttempted ? 1 : 0));
   root.insert("ctrRefundSubmitted", static_cast<int64_t>(m_params.ctrRefundSubmitted ? 1 : 0));
   root.insert("ctrRefundTxId", m_params.ctrRefundTxId);
@@ -602,6 +603,9 @@ SwapStateMachine SwapStateMachine::deserialize(const std::string& json) {
     params.ctrClaimTxId = root("ctrClaimTxId").getString();
   if (root.contains("ctrClaimAttempted"))
     params.ctrClaimAttempted = root("ctrClaimAttempted").getInteger() != 0;
+  if (root.contains("ctrClaimSubmittedHeight") && root("ctrClaimSubmittedHeight").isInteger() &&
+      root("ctrClaimSubmittedHeight").getInteger() >= 0)
+    params.ctrClaimSubmittedHeight = static_cast<uint64_t>(root("ctrClaimSubmittedHeight").getInteger());
   if (root.contains("ctrRefundAttempted"))
     params.ctrRefundAttempted = root("ctrRefundAttempted").getInteger() != 0;
   if (root.contains("ctrRefundSubmitted"))

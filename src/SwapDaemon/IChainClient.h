@@ -116,6 +116,11 @@ public:
 
   // Chain-state proof that this exact lock was claimed with sufficient
   // finality. Alice cannot depend on Bob sending a claim transaction ID.
+  // Replaces an unconfirmed claim with a higher pre-signed fee (point locks).
+  virtual ChainClientResult bumpClaim(const SwapParams& params) {
+    (void)params;
+    return ChainClientResult::notSent(chainName() + " has no higher pre-signed claim fee");
+  }
   virtual bool hasConfirmedClaim(const SwapParams& params) {
     (void)params;
     return false;

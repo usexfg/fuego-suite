@@ -27,6 +27,10 @@
 #include "SwapDaemon/Litecoin/LtcChainClient.h"
 #include "SwapDaemon/Utxo/UtxoFullNode.h"
 #include "SwapDaemon/Utxo/UtxoHtlc.h"
+#include "SwapDaemon/Utxo/UtxoPointLock.h"
+#include "Common/StringTools.h"
+#include "crypto/cross_dleq.h"
+#include "crypto/secp_adaptor.h"
 
 #include <openssl/rand.h>
 
@@ -271,6 +275,109 @@ static void testRefundAfterTimeout(const Node& node, IChainClient& alice, IChain
   check(!alice.hasConfirmedClaim(swap.alice), prefix + "a refund is not a claim");
 }
 
+struct PointSwap {
+  SwapParams alice{};
+  SwapParams bob{};
+  Crypto::SecretKey secret{};
+};
+
+static PointSwap newPointSwap(const Node& node, IChainClient& bob, uint64_t amount, uint64_t timeoutBlock) {
+  PointSwap swap;
+  Crypto::cross_dleq_generate_scalar(swap.secret);
+  Crypto::SecpPubKey adaptorPoint;
+  Crypto::secp_point_from_ed_secret(swap.secret, adaptorPoint);
+  for (SwapParams* side : {&swap.alice, &swap.bob}) {
+    side->pair = node.pair();
+    side->ctrAmount = amount;
+    side->ctrTimeoutBlock = timeoutBlock;
+    side->requiredConfirmations = 6;
+    side->lockType = SwapLockType::PTLC;
+    side->secpPubHex = Crypto::secpPubKeyToHex(adaptorPoint);
+  }
+  swap.alice.role = SwapRole::ALICE;
+  swap.alice.ctrPubKey = bob.getClaimPubKey();
+  swap.bob.role = SwapRole::BOB;
+  swap.bob.adaptorSecret = swap.secret;
+  return swap;
+}
+
+static void deliverPointLockNotice(PointSwap& swap, const ChainClientResult& locked) {
+  for (SwapParams* side : {&swap.alice, &swap.bob}) {
+    side->ctrLockTxId = locked.txId;
+    side->ctrLockVout = locked.outputIndex;
+    side->chainState = locked.chainState;
+  }
+}
+
+static void testPointLockHappyPath(const Node& node, IChainClient& alice, IChainClient& bob) {
+  const std::string prefix = node.chain + " point lock: ";
+  check(alice.supportsPurePtlc() && bob.supportsPurePtlc(), prefix + "both full nodes offer point locks");
+  PointSwap swap = newPointSwap(node, bob, 40000000, node.tip() + 400);
+  const ChainClientResult locked = alice.lock(swap.alice);
+  check(locked.success && isPointLockState(locked.chainState), prefix + "Alice locks to T_secp (" + locked.error + ")");
+  if (!locked.success) return;
+  const ChainClientResult relocked = alice.lock(swap.alice);
+  check(relocked.success && relocked.txId == locked.txId, prefix + "a repeated lock reuses the funding");
+  deliverPointLockNotice(swap, locked);
+
+  check(!bob.verifyLock(swap.bob).success, prefix + "unconfirmed lock refused");
+  node.mine(6);
+  const ChainClientResult verified = bob.verifyLock(swap.bob);
+  check(verified.success, prefix + "Bob verifies the lock and Alice's pre-signature (" + verified.error + ")");
+  check(!alice.verifyLock(swap.bob).success, prefix + "a lock not paying the verifier's key is refused");
+
+  PointSwap other = newPointSwap(node, bob, 40000000, swap.bob.ctrTimeoutBlock);
+  SwapParams otherPoint = swap.bob;
+  otherPoint.secpPubHex = other.bob.secpPubHex;
+  check(!bob.verifyLock(otherPoint).success, prefix + "a pre-signature to another point is refused");
+  SwapParams tampered = swap.bob;
+  PointLockState state;
+  decodePointLockState(tampered.chainState, state);
+  state.claimOffers.front().presig.sPrime[31] ^= 1;
+  tampered.chainState = encodePointLockState(state);
+  check(!bob.verifyLock(tampered).success, prefix + "a changed pre-signature is refused");
+  SwapParams wrongSecret = swap.bob;
+  wrongSecret.adaptorSecret = other.secret;
+  const ChainClientResult wrongClaim = bob.claim(wrongSecret);
+  check(!wrongClaim.success && wrongClaim.nothingSent, prefix + "a claim with another scalar is never broadcast");
+
+  const ChainClientResult claimed = bob.claim(swap.bob);
+  check(claimed.success, prefix + "Bob's claim is accepted by the node (" + claimed.error + ")");
+  if (!claimed.success) return;
+  SwapParams pending = swap.bob;
+  pending.ctrClaimTxId = claimed.txId;
+  const ChainClientResult replaced = bob.bumpClaim(pending);
+  check(replaced.success && replaced.txId != claimed.txId,
+        prefix + "a pending claim is replaced at the next pre-signed fee (" + replaced.error + ")");
+  node.mine(1);
+  check(alice.tryExtractClaimedSecret(swap.alice) == Common::podToHex(swap.secret),
+        prefix + "Alice recovers t from Bob's signature without a claim txid");
+  check(!alice.hasConfirmedClaim(swap.alice), prefix + "1 confirmation is not final");
+  node.mine(5);
+  check(alice.hasConfirmedClaim(swap.alice), prefix + "claim final at 6 confirmations");
+}
+
+static void testPointLockRefund(const Node& node, IChainClient& alice, IChainClient& bob) {
+  const std::string prefix = node.chain + " point refund: ";
+  PointSwap swap = newPointSwap(node, bob, 30000000, node.tip() + 20);
+  const ChainClientResult locked = alice.lock(swap.alice);
+  check(locked.success, prefix + "Alice locks (" + locked.error + ")");
+  if (!locked.success) return;
+  deliverPointLockNotice(swap, locked);
+  node.mine(1);
+  check(!bob.verifyLock(swap.bob).success, prefix + "Bob refuses a lock without claim runway");
+  const ChainClientResult lateClaim = bob.claim(swap.bob);
+  check(!lateClaim.success && lateClaim.nothingSent, prefix + "Bob never publishes t inside the claim runway");
+  check(!alice.refund(swap.alice).success, prefix + "refund before the timeout refused");
+  node.mine(static_cast<int>(swap.alice.ctrTimeoutBlock - node.tip()));
+  const ChainClientResult refunded = alice.refund(swap.alice);
+  check(refunded.success, prefix + "refund through the timeout leaf (" + refunded.error + ")");
+  if (!refunded.success) return;
+  node.mine(1);
+  check(alice.tryExtractClaimedSecret(swap.alice).empty(), prefix + "a refund reveals no secret");
+  check(!alice.hasConfirmedClaim(swap.alice), prefix + "a refund is not a claim");
+}
+
 int main(int argc, char** argv) {
   if (argc != 6) {
     std::fprintf(stderr, "usage: %s <btc|ltc|bch> <host> <port> <user> <pass>\n", argv[0]);
@@ -286,6 +393,10 @@ int main(int argc, char** argv) {
 
   testHappyPathWithWithheldClaimTxid(node, *alice, *bob);
   testRefundAfterTimeout(node, *alice, *bob);
+  if (node.chain != "bch") {
+    testPointLockHappyPath(node, *alice, *bob);
+    testPointLockRefund(node, *alice, *bob);
+  }
 
   std::printf("%d checks, %d failures\n", g_checks, g_failures);
   return g_failures == 0 ? 0 : 1;

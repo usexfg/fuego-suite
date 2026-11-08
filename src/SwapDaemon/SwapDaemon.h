@@ -406,6 +406,7 @@ public:
   bool handleCtrLocked(SwapStateMachine& sm);
   bool handleEscrowFunded(SwapStateMachine& sm, uint32_t currentHeight);
   bool handleWaitingSpv(SwapStateMachine& sm);
+  void replaceStalledClaim(SwapStateMachine& sm, IChainClient* client);
   bool withdrawUnsentClaimIntent(SwapStateMachine& sm, const std::string& chainName,
                                  const std::string& reason);
   IChainClient::PointLockSupport pointLockSupport(SwapPair pair) const;

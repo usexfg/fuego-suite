@@ -43,10 +43,6 @@ bool isPtlcNativePair(SwapPair pair) {
   return pair == SwapPair::XMR || pair == SwapPair::ZANO;
 }
 
-bool isPurePtlcP2trLock(const SwapParams& params) {
-  return params.lockType == SwapLockType::PTLC && params.chainState.rfind("p2tr:", 0) == 0;
-}
-
 bool isZeroPubKey(const Crypto::PublicKey& k) {
   const uint8_t* p = reinterpret_cast<const uint8_t*>(&k);
   for (size_t i = 0; i < sizeof(Crypto::PublicKey); ++i)

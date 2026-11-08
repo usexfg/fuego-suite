@@ -43,6 +43,7 @@
 #include "Komodo/KmdChainClient.h"
 #include "Ethereum/EthChainClient.h"
 #include "Solana/SolChainClient.h"
+#include "Utxo/UtxoPointLock.h"
 #include "Monero/XmrChainClient.h"
 #include "Decred/DcrChainClient.h"
 #include "Doge/DogeChainClient.h"
@@ -2327,6 +2328,7 @@ bool SwapDaemon::handleCtrLocked(SwapStateMachine& sm) {
         return false;
       }
       if (!hasConfirmedCounterpartyClaim(params, client)) {
+        replaceStalledClaim(sm, client);
         m_logger(Logging::INFO) << "  CTR claim awaiting chain confirmations";
         return false;
       }
@@ -2747,6 +2749,32 @@ bool SwapDaemon::finalizeEscrowSpend(SwapStateMachine& sm, const std::string& lo
   return true;
 }
 
+void SwapDaemon::replaceStalledClaim(SwapStateMachine& sm, IChainClient* client) {
+  static constexpr uint64_t CLAIM_REPLACEMENT_INTERVAL_BLOCKS = 3;
+  const SwapParams& params = sm.params();
+  uint64_t tip = 0;
+  if (params.lockType != SwapLockType::PTLC || params.ctrClaimTxId.empty() || !client->getCurrentHeight(tip)) return;
+  if (params.ctrClaimSubmittedHeight == 0) {
+    saveSwapMerged(sm, [tip](SwapStateMachine& latest) { latest.params().ctrClaimSubmittedHeight = tip; });
+    return;
+  }
+  if (tip < params.ctrClaimSubmittedHeight + CLAIM_REPLACEMENT_INTERVAL_BLOCKS) return;
+  const ChainClientResult replaced = client->bumpClaim(params);
+  if (!replaced.success || replaced.txId.empty()) {
+    if (!replaced.nothingSent)
+      m_logger(Logging::WARNING) << "  Raising the claim fee may have reached the network: " << replaced.error;
+    return;
+  }
+  const std::string claimTxId = replaced.txId;
+  if (!saveSwapMerged(sm, [claimTxId, tip](SwapStateMachine& latest) {
+        latest.params().ctrClaimTxId = claimTxId;
+        latest.params().ctrClaimSubmittedHeight = tip;
+      }))
+    m_logger(Logging::ERROR) << "  Claim replaced by " << claimTxId << " but persistence failed";
+  else
+    m_logger(Logging::INFO) << "  Stalled claim replaced at a higher pre-signed fee: " << claimTxId;
+}
+
 bool SwapDaemon::withdrawUnsentClaimIntent(SwapStateMachine& sm, const std::string& chainName,
                                            const std::string& reason) {
   m_logger(Logging::ERROR) << "  " << chainName << " claim not sent: " << reason;
@@ -2871,6 +2899,7 @@ bool SwapDaemon::handleWaitingSpv(SwapStateMachine& sm) {
       client->getTransactionDetails(params.ctrClaimTxId, claimStatus);
       if (!claimStatus.success || !claimStatus.confirmed || !claimStatus.spvVerified ||
           claimStatus.confirmations < required) {
+        replaceStalledClaim(sm, client);
         m_logger(Logging::INFO) << "  SPV CTR claim not confirmed ("
           << claimStatus.confirmations << "/" << required << "); holding XFG";
         return false;
@@ -4200,10 +4229,10 @@ bool isLockState(const std::string& state) {
   });
 }
 
-// The lock part of chainState, without a ":<claimTxid>" suffix appended later.
+// The lock part of chainState: a point-lock state whole, an HTLC lock script
+// without the ":<claimTxid>" suffix appended later.
 std::string announcedLockState(const SwapParams& params) {
-  return params.chainState.rfind("p2tr:", 0) == 0 ? params.chainState
-                                                  : lockScriptHex(params.chainState);
+  return isPointLockState(params.chainState) ? params.chainState : lockScriptHex(params.chainState);
 }
 
 }  // namespace

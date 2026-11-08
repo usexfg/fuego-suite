@@ -13,6 +13,7 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "UtxoHtlcSpv.h"
+#include "UtxoPointLockSwap.h"
 
 #include <algorithm>
 
@@ -72,8 +73,8 @@ ChainClientResult UtxoHtlcSpv::lock(const SwapParams&) {
   return ChainClientResult::fail(failurePrefix() + "cannot fund a lock; Alice needs a full node");
 }
 
-bool UtxoHtlcSpv::lockOutput(const SwapParams& params, const std::vector<uint8_t>& script, uint64_t& value,
-                             std::string& error) {
+bool UtxoHtlcSpv::lockOutput(const SwapParams& params, const std::vector<uint8_t>& expectedScriptPubKey,
+                             uint64_t& value, std::string& error) {
   const UtxoOutpoint lock = lockOutpoint(params);
   std::vector<uint8_t> rawTx;
   std::vector<uint8_t> scriptPubKey;
@@ -85,7 +86,7 @@ bool UtxoHtlcSpv::lockOutput(const SwapParams& params, const std::vector<uint8_t
     error = "lock transaction has no output " + std::to_string(lock.vout);
     return false;
   }
-  if (scriptPubKey != htlcScriptPubKey(m_chain.encoding, script)) {
+  if (scriptPubKey != expectedScriptPubKey) {
     error = "lock output " + lock.key() + " does not commit to the lock script";
     return false;
   }
@@ -93,6 +94,7 @@ bool UtxoHtlcSpv::lockOutput(const SwapParams& params, const std::vector<uint8_t
 }
 
 ChainClientResult UtxoHtlcSpv::verifyLock(const SwapParams& params) {
+  if (isPointLockSwap(params)) return verifyPointLock(params);
   if (!m_hasKey) return ChainClientResult::fail(failurePrefix() + "no valid WIF key");
   uint64_t tip = 0;
   std::string error;
@@ -104,7 +106,8 @@ ChainClientResult UtxoHtlcSpv::verifyLock(const SwapParams& params) {
   UtxoHtlcTerms terms;
   uint64_t value = 0;
   lockScriptFromState(params, script, terms);
-  if (!lockOutput(params, script, value, error)) return ChainClientResult::fail(failurePrefix() + error);
+  if (!lockOutput(params, htlcScriptPubKey(m_chain.encoding, script), value, error))
+    return ChainClientResult::fail(failurePrefix() + error);
   if (value < params.ctrAmount64())
     return ChainClientResult::fail(failurePrefix() + "lock output holds " + std::to_string(value) +
                                    ", expected at least " + std::to_string(params.ctrAmount64()));
@@ -147,7 +150,8 @@ ChainClientResult UtxoHtlcSpv::broadcastSpend(bool claimPath, const SwapParams& 
   spend.signingKey = m_key;
   uint64_t tip = 0;
   std::string error;
-  if (!syncedTip(tip, error) || !lockOutput(params, spend.htlcScript, spend.lockValue, error))
+  if (!syncedTip(tip, error) ||
+      !lockOutput(params, htlcScriptPubKey(m_chain.encoding, spend.htlcScript), spend.lockValue, error))
     return ChainClientResult::notSent(failurePrefix() + error);
   // A claim publishes t; it goes out only against a lock a quorum has buried,
   // so a server cannot harvest t from a claim of an output that does not exist.
@@ -179,12 +183,14 @@ ChainClientResult UtxoHtlcSpv::broadcastSpend(bool claimPath, const SwapParams& 
 }
 
 ChainClientResult UtxoHtlcSpv::claim(const SwapParams& params) {
+  if (isPointLockSwap(params)) return claimPoint(params);
   if (!hasAdaptorSecret(params))
     return ChainClientResult::notSent(failurePrefix() + "claim needs the adaptor secret");
   return broadcastSpend(true, params);
 }
 
 std::string UtxoHtlcSpv::claimDeadlineError(const SwapParams& params) {
+  if (isPointLockSwap(params)) return pointClaimDeadline(params);
   std::vector<uint8_t> script;
   UtxoHtlcTerms terms;
   uint64_t tip = 0;
@@ -196,6 +202,8 @@ std::string UtxoHtlcSpv::claimDeadlineError(const SwapParams& params) {
 }
 
 ChainClientResult UtxoHtlcSpv::refund(const SwapParams& params) {
+  if (isPointLockSwap(params))
+    return ChainClientResult::notSent(failurePrefix() + "point locks are refunded by Alice's full node");
   return broadcastSpend(false, params);
 }
 
@@ -224,6 +232,7 @@ bool UtxoHtlcSpv::claimPreimage(const SwapParams& params, const SpvSpend& spend,
 }
 
 std::string UtxoHtlcSpv::tryExtractClaimedSecret(const SwapParams& params) {
+  if (isPointLockSwap(params)) return {};
   // The preimage authenticates itself (its SHA256 must equal the hash lock),
   // so extraction proceeds even when the header quorum is unavailable.
   m_spv->syncHeaders();
@@ -241,6 +250,7 @@ std::string UtxoHtlcSpv::tryExtractClaimedSecret(const SwapParams& params) {
 }
 
 bool UtxoHtlcSpv::hasConfirmedClaim(const SwapParams& params) {
+  if (isPointLockSwap(params)) return hasConfirmedPointClaim(params);
   uint64_t tip = 0;
   std::string error;
   const UtxoOutpoint lock = lockOutpoint(params);
@@ -248,6 +258,115 @@ bool UtxoHtlcSpv::hasConfirmedClaim(const SwapParams& params) {
   std::vector<uint8_t> preimage;
   return syncedTip(tip, error) && isTxidHex(lock.txid) && m_spv->findSpend(lock.txid, lock.vout, spend) &&
          isVerifiedSpvSpend(spend, requiredConfirmations(params)) && claimPreimage(params, spend, preimage);
+}
+
+// ── Taproot point locks: Bob verifies and claims (CROSS_CURVE_PLAN X6) ──
+
+ChainClientResult UtxoHtlcSpv::verifyPointLock(const SwapParams& params) {
+  if (!m_hasKey) return ChainClientResult::fail(failurePrefix() + "no valid WIF key");
+  PointLockState state;
+  std::vector<uint8_t> lockScriptPubKey;
+  uint64_t tip = 0;
+  uint64_t lockValue = 0;
+  std::string error;
+  if (m_chain.network.bech32Hrp.empty() || !decodePointLockState(params.chainState, state) ||
+      !pointLockScriptPubKey(state.terms, lockScriptPubKey))
+    return ChainClientResult::fail(failurePrefix() + "no point-lock description received from Alice");
+  if (!syncedTip(tip, error) || !lockOutput(params, lockScriptPubKey, lockValue, error))
+    return ChainClientResult::fail(failurePrefix() + error);
+  if (lockValue < params.ctrAmount64())
+    return ChainClientResult::fail(failurePrefix() + "lock output holds " + std::to_string(lockValue) +
+                                   ", expected at least " + std::to_string(params.ctrAmount64()));
+  uint64_t currentFee = 0;
+  if (!spendFee(true, lockValue, currentFee, error)) return ChainClientResult::fail(failurePrefix() + error);
+  const std::string stateError = pointLockStateError(m_chain, params, m_pubKey, tip, lockValue, currentFee, state);
+  if (!stateError.empty()) return ChainClientResult::fail(failurePrefix() + stateError);
+  const UtxoOutpoint lock = lockOutpoint(params);
+  SpvTxInclusion inclusion;
+  if (!m_spv->verifyTxInclusion(lock.txid, inclusion) || !quorumIncluded(inclusion))
+    return ChainClientResult::fail(failurePrefix() + "lock transaction is not in a quorum-verified block");
+  if (inclusion.depth < requiredConfirmations(params))
+    return ChainClientResult::fail(failurePrefix() + "lock has " + std::to_string(inclusion.depth) + " of " +
+                                   std::to_string(requiredConfirmations(params)) + " required confirmations");
+  ChainClientResult verified = ChainClientResult::ok(lock.txid);
+  verified.confirmed = true;
+  verified.spvVerified = true;
+  verified.blockHeight = inclusion.blockHeight;
+  verified.confirmations = inclusion.depth;
+  verified.outputIndex = lock.vout;
+  return verified;
+}
+
+ChainClientResult UtxoHtlcSpv::claimPoint(const SwapParams& params) {
+  const ChainClientResult verified = verifyPointLock(params);
+  if (!verified.success) return ChainClientResult::notSent(verified.error);
+  PointLockState state;
+  std::vector<uint8_t> lockScriptPubKey;
+  uint64_t tip = 0;
+  uint64_t lockValue = 0;
+  uint64_t currentFee = 0;
+  std::string error;
+  decodePointLockState(params.chainState, state);
+  pointLockScriptPubKey(state.terms, lockScriptPubKey);
+  if (!syncedTip(tip, error) || !lockOutput(params, lockScriptPubKey, lockValue, error) ||
+      !spendFee(true, lockValue, currentFee, error))
+    return ChainClientResult::notSent(failurePrefix() + error);
+  const std::string late = pointClaimDeadlineError(m_chain, state, tip);
+  if (!late.empty()) return ChainClientResult::notSent(failurePrefix() + late);
+  return broadcastPointClaim(params, state, claimOfferFor(state, currentFee), lockValue);
+}
+
+std::string UtxoHtlcSpv::pointClaimDeadline(const SwapParams& params) {
+  PointLockState state;
+  uint64_t tip = 0;
+  std::string error;
+  if (!decodePointLockState(params.chainState, state)) return failurePrefix() + "no point-lock state";
+  if (!syncedTip(tip, error)) return failurePrefix() + error;
+  const std::string late = pointClaimDeadlineError(m_chain, state, tip);
+  return late.empty() ? late : failurePrefix() + late;
+}
+
+bool UtxoHtlcSpv::hasConfirmedPointClaim(const SwapParams& params) {
+  PointLockState state;
+  uint64_t tip = 0;
+  std::string error;
+  const UtxoOutpoint lock = lockOutpoint(params);
+  SpvSpend spend;
+  return decodePointLockState(params.chainState, state) && syncedTip(tip, error) && isTxidHex(lock.txid) &&
+         m_spv->findSpend(lock.txid, lock.vout, spend) && isVerifiedSpvSpend(spend, requiredConfirmations(params)) &&
+         !secretFromPointClaim(params, state, spend.rawSpendingTx).empty();
+}
+
+ChainClientResult UtxoHtlcSpv::broadcastPointClaim(const SwapParams& params, const PointLockState& state,
+                                                   const PointLockClaimOffer& offer, uint64_t lockValue) {
+  std::vector<uint8_t> rawTx;
+  if (!buildPointClaim(m_chain, params, state, offer, lockValue, m_pubKey, m_key, rawTx))
+    return ChainClientResult::notSent(failurePrefix() + "cannot build the claim");
+  std::string txid;
+  if (!m_spv->broadcastTx(rawTx, txid))
+    return ChainClientResult::fail(failurePrefix() + "no server accepted the transaction");
+  return ChainClientResult::ok(txid);
+}
+
+ChainClientResult UtxoHtlcSpv::bumpClaim(const SwapParams& params) {
+  if (!isPointLockSwap(params)) return ChainClientResult::notSent(failurePrefix() + "only point-lock claims carry a fee ladder");
+  PointLockState state;
+  std::vector<uint8_t> lockScriptPubKey, rawClaim, paidTo;
+  uint64_t lockValue = 0;
+  uint64_t claimOutput = 0;
+  std::string error;
+  if (!m_hasKey || !decodePointLockState(params.chainState, state) || !isTxidHex(params.ctrClaimTxId) ||
+      !pointLockScriptPubKey(state.terms, lockScriptPubKey))
+    return ChainClientResult::notSent(failurePrefix() + "no claim to replace");
+  SpvTxInclusion inclusion;
+  if (m_spv->verifyTxInclusion(params.ctrClaimTxId, inclusion) && inclusion.included)
+    return ChainClientResult::notSent(failurePrefix() + "the claim is already confirmed");
+  if (!m_spv->getRawTx(params.ctrClaimTxId, rawClaim) || !readTransactionOutput(rawClaim, 0, claimOutput, paidTo) ||
+      !lockOutput(params, lockScriptPubKey, lockValue, error) || claimOutput >= lockValue)
+    return ChainClientResult::notSent(failurePrefix() + "our claim or the lock is not available from the servers");
+  const PointLockClaimOffer* next = nextClaimOffer(state, lockValue - claimOutput);
+  if (next == nullptr) return ChainClientResult::notSent(failurePrefix() + "the highest pre-signed fee is already in use");
+  return broadcastPointClaim(params, state, *next, lockValue);
 }
 
 }  // namespace XfgSwap

@@ -15,6 +15,7 @@
 #pragma once
 
 #include "UtxoHtlcSwap.h"
+#include "UtxoPointLock.h"
 #include "SwapDaemon/Spv/ISpvClient.h"
 
 #include <array>
@@ -34,6 +35,8 @@ public:
   UtxoHtlcSpv(UtxoHtlcChain chain, std::shared_ptr<ISpvClient> spv, const std::string& wif);
 
   std::string claimPubKeyHex() const;
+  bool supportsPointLocks() const { return m_hasKey && !m_chain.network.bech32Hrp.empty() &&
+                                           m_chain.encoding == UtxoHtlcEncoding::P2WSH; }
   std::string receiveAddress() const;
   std::string readinessErrorFor(SwapRole role);
   bool currentHeight(uint64_t& height);
@@ -46,11 +49,19 @@ public:
   ChainClientResult transactionDetails(const std::string& txid);
   std::string tryExtractClaimedSecret(const SwapParams& params);
   bool hasConfirmedClaim(const SwapParams& params);
+  // Replaces an unconfirmed point-lock claim with the next pre-signed fee.
+  ChainClientResult bumpClaim(const SwapParams& params);
 
 private:
   bool syncedTip(uint64_t& tip, std::string& error);
-  bool lockOutput(const SwapParams& params, const std::vector<uint8_t>& script, uint64_t& value,
+  bool lockOutput(const SwapParams& params, const std::vector<uint8_t>& expectedScriptPubKey, uint64_t& value,
                   std::string& error);
+  ChainClientResult verifyPointLock(const SwapParams& params);
+  ChainClientResult claimPoint(const SwapParams& params);
+  std::string pointClaimDeadline(const SwapParams& params);
+  bool hasConfirmedPointClaim(const SwapParams& params);
+  ChainClientResult broadcastPointClaim(const SwapParams& params, const PointLockState& state,
+                                        const PointLockClaimOffer& offer, uint64_t lockValue);
   bool spendFee(bool claimPath, uint64_t lockValue, uint64_t& fee, std::string& error);
   ChainClientResult broadcastSpend(bool claimPath, const SwapParams& params);
   bool claimPreimage(const SwapParams& params, const SpvSpend& spend, std::vector<uint8_t>& preimage) const;

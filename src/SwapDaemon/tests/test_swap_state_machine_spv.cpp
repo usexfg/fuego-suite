@@ -1094,9 +1094,134 @@ static bool test_point_lock_gate_needs_verified_proof() {
   return ok;
 }
 
+static bool test_point_lock_notice_keeps_the_whole_state() {
+  std::cout << "  test_point_lock_notice_keeps_the_whole_state... ";
+  namespace fs = std::filesystem;
+  const fs::path dir = fs::temp_directory_path() /
+      ("xfg-point-notice-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+  AdaptorPair pair = adaptorPairFor("point-notice", SwapPair::BTC);
+  pair.bob.peerSwapPubKey = pair.alice.ourSwapPubKey;
+  pair.bob.lockType = SwapLockType::PTLC;
+  const std::string lockState = "tr1:" + std::string(64, 'a') + ":" + std::string(64, 'b') + ":850123:" +
+                                "02" + std::string(64, 'c') + ":" + std::string(64, 'd') + ":2000";
+  PeerMessage notice{};
+  notice.type = PeerMessageType::CTR_LOCKED;
+  notice.swapId = pair.bob.swapId;
+  notice.ctrLocked.lockRef = std::string(64, 'e');
+  notice.ctrLocked.lockOutputIndex = 1;
+  notice.ctrLocked.lockState = lockState;
+  signPeerMessage(notice, pair.alice.ourSwapPubKey, pair.alice.ourSwapSecKey);
+
+  Logging::ConsoleLogger logger(Logging::FATAL);
+  bool ok = true;
+  {
+    SwapDaemon daemon("127.0.0.1", 1, dir.string(), logger);
+    daemon.database().setEncryptionKey("point-notice-test-key");
+    SwapStateMachine sm(pair.bob);
+    sm.transition(SwapState::ADAPTOR_KEYS_EXCHANGED);
+    sm.transition(SwapState::ADAPTOR_ESCROW_FUNDED);
+    sm.transition(SwapState::ADAPTOR_PRESIGS_READY);
+    daemon.database().saveSwap(sm);
+    const bool first = SwapDaemonTestAccess::handlePeerMessage(daemon, notice);
+    const bool repeated = SwapDaemonTestAccess::handlePeerMessage(daemon, notice);
+    SwapStateMachine persisted;
+    daemon.database().loadSwap(pair.bob.swapId, persisted);
+    if (!first || persisted.params().chainState != lockState) {
+      std::cout << " [the point-lock state was not bound whole]";
+      ok = false;
+    }
+    if (!repeated) {
+      std::cout << " [a repeated identical notice was taken for a conflicting one]";
+      ok = false;
+    }
+  }
+  std::error_code ignored;
+  fs::remove_all(dir, ignored);
+  std::cout << (ok ? "PASS\n" : "FAIL\n");
+  return ok;
+}
+
+namespace {
+class StalledClaimClient : public IChainClient {
+public:
+  uint64_t tip = 1000;
+  int replacements = 0;
+  std::string chainName() const override { return "BTC"; }
+  ChainClientResult lock(const SwapParams&) override { return ChainClientResult::fail("not scripted"); }
+  ChainClientResult verifyLock(const SwapParams&) override { return ChainClientResult::fail("not scripted"); }
+  ChainClientResult claim(const SwapParams&) override { return ChainClientResult::fail("not scripted"); }
+  ChainClientResult refund(const SwapParams&) override { return ChainClientResult::fail("not scripted"); }
+  ChainClientResult verifyReserveProof(const std::string&, uint64_t, const std::string&) override {
+    return ChainClientResult::fail("not scripted");
+  }
+  bool getCurrentHeight(uint64_t& height) override {
+    height = tip;
+    return true;
+  }
+  ChainClientResult getTransactionDetails(const std::string& txId, ChainClientResult& result) override {
+    result = ChainClientResult::ok(txId);
+    return result;
+  }
+  ChainClientResult bumpClaim(const SwapParams&) override {
+    ++replacements;
+    return ChainClientResult::ok(std::string(63, 'f') + std::to_string(replacements));
+  }
+};
+} // namespace
+
+static bool test_stalled_point_claim_is_replaced() {
+  std::cout << "  test_stalled_point_claim_is_replaced... ";
+  namespace fs = std::filesystem;
+  const fs::path dir = fs::temp_directory_path() /
+      ("xfg-stalled-claim-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+  SwapStateMachine sm = bobAwaitingClaim("stalled-claim", false);
+  sm.params().lockType = SwapLockType::PTLC;
+  sm.params().ctrClaimAttempted = true;
+  sm.params().ctrClaimTxId = std::string(64, 'a');
+  Logging::ConsoleLogger logger(Logging::FATAL);
+  bool ok = true;
+  {
+    SwapDaemon daemon("127.0.0.1", 1, dir.string(), logger);
+    auto owned = std::make_unique<StalledClaimClient>();
+    StalledClaimClient* client = owned.get();
+    SwapDaemonTestAccess::registerChain(daemon, SwapPair::BTC, std::move(owned));
+    daemon.database().setEncryptionKey("stalled-claim-test-key");
+    daemon.database().saveSwap(sm);
+    auto tick = [&]() {
+      SwapStateMachine loaded;
+      daemon.database().loadSwap("stalled-claim", loaded);
+      SwapDaemonTestAccess::handleCtrLocked(daemon, loaded);
+      SwapStateMachine persisted;
+      daemon.database().loadSwap("stalled-claim", persisted);
+      return persisted.params();
+    };
+    const SwapParams first = tick();
+    client->tip += 2;
+    const SwapParams early = tick();
+    client->tip += 1;
+    const SwapParams replaced = tick();
+    if (first.ctrClaimSubmittedHeight != 1000 || client->replacements != 1) {
+      std::cout << " [the claim was not replaced exactly once after three blocks pending]";
+      ok = false;
+    }
+    if (early.ctrClaimTxId != std::string(64, 'a')) {
+      std::cout << " [the claim was replaced before three blocks passed]";
+      ok = false;
+    }
+    if (replaced.ctrClaimTxId == std::string(64, 'a') || replaced.ctrClaimSubmittedHeight != 1003) {
+      std::cout << " [the replacement was not recorded]";
+      ok = false;
+    }
+  }
+  std::error_code ignored;
+  fs::remove_all(dir, ignored);
+  std::cout << (ok ? "PASS\n" : "FAIL\n");
+  return ok;
+}
+
 int main() {
   std::cout << "=== SwapStateMachine SPV state tests ===\n\n";
-  int pass = 0, total = 22;
+  int pass = 0, total = 24;
   if (test_spv_waiting_to_confirmed())    ++pass;
   if (test_spv_waiting_stays_on_retry())  ++pass;
   if (test_spv_waiting_to_refunded())     ++pass;
@@ -1119,6 +1244,8 @@ int main() {
   if (test_peer_cannot_select_disabled_pure_ptlc()) ++pass;
   if (test_point_lock_requires_cross_curve_proof()) ++pass;
   if (test_point_lock_gate_needs_verified_proof()) ++pass;
+  if (test_point_lock_notice_keeps_the_whole_state()) ++pass;
+  if (test_stalled_point_claim_is_replaced()) ++pass;
 
   std::cout << "\n=== " << pass << "/" << total << " tests passed ===\n";
   return (pass == total) ? 0 : 1;

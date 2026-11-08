@@ -315,6 +315,9 @@ add_library(SwapDaemonLib STATIC
     SwapDaemon/Bitcoin/BtcRpcClient.cpp
     SwapDaemon/Utxo/UtxoFullNode.cpp
     SwapDaemon/Utxo/UtxoHtlc.cpp
+    SwapDaemon/Utxo/UtxoPointLock.cpp
+    SwapDaemon/Utxo/UtxoPointLockSwap.cpp
+    SwapDaemon/Utxo/UtxoPointLockFullNode.cpp
     SwapDaemon/Utxo/UtxoHtlcFullNode.cpp
     SwapDaemon/Utxo/UtxoHtlcSwap.cpp
     SwapDaemon/Utxo/UtxoHtlcSpv.cpp
@@ -541,6 +544,12 @@ add_executable(test_evm_claim_deadline
     SwapDaemon/tests/test_evm_claim_deadline.cpp)
 target_link_libraries(test_evm_claim_deadline PRIVATE
     SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# R12a X6: Taproot point lock scripts, sighash and transactions.
+add_executable(test_utxo_point_lock
+    SwapDaemon/tests/test_utxo_point_lock.cpp)
+target_link_libraries(test_utxo_point_lock PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto secp256k1)
 
 # R12a X5: BIP340 adaptor signatures for Taproot point locks.
 add_executable(test_bip340_adaptor
@@ -1205,6 +1214,7 @@ set(_TEST_DAEMON_TARGETS
     test_evm_claim_deadline
     test_cross_dleq
     test_bip340_adaptor
+    test_utxo_point_lock
     test_bch_htlc
     test_bch_chain_client
     test_btc_htlc

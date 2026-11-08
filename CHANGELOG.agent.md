@@ -2,12 +2,13 @@
 
 **Started**: 2026-11-08
 **Agent**: Claude Code
-**Status**: R11 DONE; cross-curve plan written, implementation in progress
-**Scope**: `src/SwapDaemon/CLV/` (deleted), `src/SwapDaemon/chains-staging/polkadot-compat/README.md`, `docs/dexfg/CROSS_CURVE_PLAN.md` (new), `docs/dexfg/SWAP_REMEDIATION_PLAN.md`
+**Status**: R11 DONE; X1 DONE; X2-X10 in progress
+**Scope**: `src/SwapDaemon/CLV/` (deleted), `src/SwapDaemon/chains-staging/polkadot-compat/README.md`, `docs/dexfg/CROSS_CURVE_PLAN.md` (new), `docs/dexfg/SWAP_REMEDIATION_PLAN.md`, `src/crypto/cross_dleq.{h,cpp}`, `src/SwapDaemon/tests/test_cross_dleq.cpp` (new), `src/CMakeLists.txt`
 
 | # | Task | Owner | Date | Status |
 |---|------|-------|------|--------|
 | R11 | Deleted `src/SwapDaemon/CLV/` (owner approval 2026-11-08): a header-only `EthChainClient` subclass and README that nothing built, registered or cataloged; the staging README no longer calls CLV "Robinhood Chain" | Claude Code | 2026-11-08 | DONE |
+| X1 | Cross-curve DLEQ (`src/crypto/cross_dleq.cpp`) to the `cross_dleq.h` specification: 252 per-bit Pedersen commitments on ed25519 and secp256k1, each with a two-branch ring whose 128-bit challenges are shared by both curves, plus a Schnorr proof per curve tying the weighted commitment sums to A and B. Generators by hash-to-curve (`H_ed`: Keccak then `ge_fromfe_frombytes_vartime`, times 8; `H_secp`: SHA-256 try-and-increment). The prover is constant-time in the secret bits (ladder multiplication, byte-masked selection, both ring candidates computed); the verifier requires prime-order-subgroup ed25519 points and canonical scalars. 52,797-byte proof; about 0.5 s to prove and 0.35 s to verify | Claude Code | 2026-11-08 | DONE; `test_cross_dleq` 30/30 (completeness, statement and context binding, tampering, malformed encodings, scalar bounds, wire form). No independent review |
 | R12 | `CROSS_CURVE_PLAN.md`: owner decisions, target protocol per chain family, work items X1-X10 with completion criteria, and the facts the owner should weigh (no independent review of the proof, no `PointTimelock` deployed, SOL redeploy, older peers fail closed) | Claude Code | 2026-11-08 | DONE |
 
 ## DeXFG remediation 1.9 (BCH) and plan 1.2: duplicate-lock guard on BCHN; F33 recorded

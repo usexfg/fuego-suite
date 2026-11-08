@@ -13,24 +13,10 @@
 //
 // ── Cross-curve DLEQ: Ed25519 <-> secp256k1 (AUDIT 3.9) ──
 //
-// ┌─────────────────────────────────────────────────────────────────────────┐
-// │  DESIGN ONLY — NOT IMPLEMENTED.  Scheduled for v14.                     │
-// │                                                                          │
-// │  There is no cross_dleq.cpp. Nothing includes this header and nothing    │
-// │  links against it; the declarations below are a specification, kept in    │
-// │  the tree so the construction does not have to be re-derived.            │
-// │                                                                          │
-// │  AUDIT 3.9 remains OPEN. The pure-secp PTLC path stays disabled behind    │
-// │  `kCrossCurveDleqAvailable = false` (SwapDaemon.cpp) until this exists    │
-// │  AND has had independent cryptographic review. Do not flip that gate on   │
-// │  the strength of an in-house implementation — the gate is what makes the  │
-// │  missing proof a capability you do not have rather than a hole you are    │
-// │  exposed through.                                                         │
-// │                                                                          │
-// │  Cost estimate: ~52 KB per proof (252 bits x 2 curves), several hundred   │
-// │  lines of security-critical code. Weigh against enabling the BTC Taproot  │
-// │  PTLC leg, which is the only thing that needs it.                         │
-// └─────────────────────────────────────────────────────────────────────────┘
+// Implemented in cross_dleq.cpp (remediation R12a, docs/dexfg/CROSS_CURVE_PLAN.md).
+// It has had no independent cryptographic review; the owner enabled it on
+// 2026-11-08 to replace hash locks that F33 shows are unsafe. Proof size:
+// cross_dleq_serialized_size() bytes (about 52 KB).
 //
 // Proves that one secret scalar x satisfies BOTH
 //     A = x*G_ed25519      and      B = x*G_secp256k1
@@ -65,11 +51,11 @@
 // x is restricted to 252 bits so it is a valid scalar in both fields
 // (l_ed25519 > 2^252 and n_secp256k1 > 2^252).
 //
-// SECURITY STATUS: this implementation has NOT had external cryptographic
-// review. It is written to the published construction and covered by
-// completeness / soundness / cross-binding tests, but a bespoke zero-knowledge
-// proof guarding real value warrants an independent audit before
-// `kCrossCurveDleqAvailable` is flipped on. See CHANGELOG.agent.md.
+// Pedersen generators: H_ed = 8 * hash_to_ec(keccak("Fuego/cross-dleq/v1/H_ed"));
+// H_secp = the first x = SHA256("Fuego/cross-dleq/v1/H_secp" || counter_be32)
+// that is a curve point with even y. Neither has a known discrete log.
+// Points are checked on decode: ed25519 points must lie in the prime-order
+// subgroup; responses must be canonical scalars.
 
 #pragma once
 

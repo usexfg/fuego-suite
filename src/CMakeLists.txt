@@ -541,6 +541,12 @@ add_executable(test_evm_claim_deadline
 target_link_libraries(test_evm_claim_deadline PRIVATE
     SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
 
+# R12a: cross-curve DLEQ (ed25519 <-> secp256k1) for point locks.
+add_executable(test_cross_dleq
+    SwapDaemon/tests/test_cross_dleq.cpp)
+target_link_libraries(test_cross_dleq PRIVATE
+    Crypto Common OpenSSL::SSL OpenSSL::Crypto)
+
 # F32: AFK fill results are signed by the offer's maker and carry the claim key.
 add_executable(test_afk_fill_result
     SwapDaemon/tests/test_afk_fill_result.cpp)
@@ -1190,6 +1196,7 @@ set(_TEST_DAEMON_TARGETS
     test_swap_state_machine_spv
     test_afk_fill_result
     test_evm_claim_deadline
+    test_cross_dleq
     test_bch_htlc
     test_bch_chain_client
     test_btc_htlc

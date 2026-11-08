@@ -288,6 +288,7 @@ add_library(SwapDaemonLib STATIC
     SwapDaemon/Solana/SolRpcClient.cpp
     SwapDaemon/Solana/SolChainClient.cpp
     SwapDaemon/Crypto/Secp256k1Signer.cpp
+    SwapDaemon/Crypto/Bip340Adaptor.cpp
     SwapDaemon/Crypto/ripemd160.cpp
     SwapDaemon/Crypto/RlpEncoder.cpp
     SwapDaemon/Crypto/Bip143Sighash.cpp
@@ -540,6 +541,12 @@ add_executable(test_evm_claim_deadline
     SwapDaemon/tests/test_evm_claim_deadline.cpp)
 target_link_libraries(test_evm_claim_deadline PRIVATE
     SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# R12a X5: BIP340 adaptor signatures for Taproot point locks.
+add_executable(test_bip340_adaptor
+    SwapDaemon/tests/test_bip340_adaptor.cpp)
+target_link_libraries(test_bip340_adaptor PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto secp256k1)
 
 # R12a: cross-curve DLEQ (ed25519 <-> secp256k1) for point locks.
 add_executable(test_cross_dleq
@@ -1197,6 +1204,7 @@ set(_TEST_DAEMON_TARGETS
     test_afk_fill_result
     test_evm_claim_deadline
     test_cross_dleq
+    test_bip340_adaptor
     test_bch_htlc
     test_bch_chain_client
     test_btc_htlc

@@ -100,20 +100,28 @@ Robinhood Chain, which ship no public endpoint; `test_example_evm_chains_cover_e
 fails if that block drifts from the catalog. An entry needs `rpc_url`, a funded
 `private_key` with its `address`, and on mainnet a `chain_id` equal to the catalog value.
 
-The HTLC registry is pinned:
+Both timelock registries are pinned. `contracts/artifacts-build` compiles them with solc
+0.8.34 (optimizer, 200 runs, EVM `paris`); CI fails if the committed artifacts differ from
+a fresh build.
 
-- Readiness requires the registry's runtime code to hash (keccak-256) to the committed
-  `HashedTimelock` artifact: `6ac1a8f2…7f99`. Any other contract at the address, including
-  another build of the same source, reports not ready.
-- Without `htlc_registry`, the canonical address `0x13e6f8fb77ce4036438469097828106fd60c73a4`
-  applies: the committed artifact deployed with a zero salt through the deterministic
-  deployment proxy `0x4e59b44847b379578588920ca78fbf26c0b4956c`. `xfg-swapd
-  --print-htlc-deployment <HashedTimelock .bin>` prints the transaction (`to`, `data`) that
-  deploys it. The proxy must exist on the chain; check with `eth_getCode` first.
+| Contract | Runtime code keccak-256 | Canonical address |
+|---|---|---|
+| `HashedTimelock` (hash locks) | `8dfdda4b…ecb68` | `0xcef71d1a85d98f0d9ce242b41bbd9fd5d99aefeb` |
+| `PointTimelock` (point locks, F33) | `f6efcc40…f661b` | `0x10e9f7e464f3e538b9324fb830c2d8daaf7126da` |
+
+- Readiness requires the HTLC registry's runtime code to hash to the pinned value. Any other
+  contract at the address, including another build of the same source, reports not ready.
+- Point locks are offered on a chain only when the PointTimelock registry holds the pinned
+  code. With no code there, the chain keeps hash locks. Other code there, or an unreachable
+  RPC, blocks new swaps on the chain instead of falling back to a hash lock.
+- Without `htlc_registry` / `ptlc_registry`, the canonical addresses apply: the committed
+  artifacts deployed with a zero salt through the deterministic deployment proxy
+  `0x4e59b44847b379578588920ca78fbf26c0b4956c`. `xfg-swapd --print-htlc-deployment <.bin>`
+  prints the transaction (`to`, `data`) that deploys either contract. The proxy must exist
+  on the chain; check with `eth_getCode` first.
 - zkSync Era and Abstract (EraVM) derive CREATE2 addresses and compile bytecode
   differently: they get no default and need `htlc_registry` plus `htlc_registry_code_hash`.
-- The PointTimelock registry (`ptlc_registry`) is not pinned: no compiled artifact is
-  committed for it.
+  They have no point locks.
 
 ## Price feeds
 

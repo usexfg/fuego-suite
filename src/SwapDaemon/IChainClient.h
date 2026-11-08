@@ -46,6 +46,13 @@ public:
   // with no H(t) hashlock component (PTLC_PURE_PLAN P2.2/P2.3).
   // Clients that only do the PTLC_HTLC_BRIDGE hybrid keep the default false.
   virtual bool supportsPurePtlc() const { return false; }
+  // UNKNOWN: the client cannot tell right now whether its point lock exists
+  // (e.g. the registry's chain is unreachable); swaps on the pair must wait
+  // rather than fall back to a hash lock.
+  enum class PointLockSupport { NONE, AVAILABLE, UNKNOWN };
+  virtual PointLockSupport pointLockSupport() const {
+    return supportsPurePtlc() ? PointLockSupport::AVAILABLE : PointLockSupport::NONE;
+  }
   virtual ChainClientResult lockPtlc(const SwapParams& params) {
     (void)params;
     return ChainClientResult::fail("PTLC not supported on " + chainName());

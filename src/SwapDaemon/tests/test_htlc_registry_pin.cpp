@@ -14,6 +14,8 @@
 
 #include "SwapDaemon/Ethereum/EthRpcClient.h"
 #include "SwapDaemon/SwapDaemon.h"
+#include "Common/StringTools.h"
+#include "crypto/hash.h"
 
 #include <cstdio>
 #include <fstream>
@@ -34,39 +36,30 @@ static void check(bool condition, const char* label) {
   }
 }
 
-// HashedTimelock's creation code: a 28-byte prologue CODECOPYs the runtime
-// that follows it and returns it.
-static const size_t CONSTRUCTOR_PROLOGUE_BYTES = 28;
+struct PinnedContract {
+  const char* name;
+  const char* creationPath;
+  const char* runtimePath;
+  const char* codeHash;
+  const char* address;
+};
 
-static std::string committedRuntimeCode() {
-  std::ifstream in(FUEGO_HTLC_BIN_PATH);
+static const PinnedContract PINNED_CONTRACTS[] = {
+    {"HashedTimelock", FUEGO_EVM_ARTIFACT_DIR "/HashedTimelock_sol_HashedTimelock.bin",
+     FUEGO_EVM_ARTIFACT_DIR "/HashedTimelock_sol_HashedTimelock.bin-runtime", CANONICAL_HTLC_REGISTRY_CODE_HASH,
+     CANONICAL_HTLC_REGISTRY_ADDRESS},
+    {"PointTimelock", FUEGO_EVM_ARTIFACT_DIR "/PointTimelock_sol_PointTimelock.bin",
+     FUEGO_EVM_ARTIFACT_DIR "/PointTimelock_sol_PointTimelock.bin-runtime", CANONICAL_PTLC_REGISTRY_CODE_HASH,
+     CANONICAL_PTLC_REGISTRY_ADDRESS},
+};
+
+static std::string readArtifact(const char* path) {
+  std::ifstream in(path);
   std::stringstream buffer;
   buffer << in.rdbuf();
-  std::string creation = buffer.str();
-  while (!creation.empty() && (creation.back() == '\n' || creation.back() == '\r')) creation.pop_back();
-  if (creation.size() <= CONSTRUCTOR_PROLOGUE_BYTES * 2) return "";
-  return "0x" + creation.substr(CONSTRUCTOR_PROLOGUE_BYTES * 2);
-}
-
-static void testCanonicalHash() {
-  const std::string runtime = committedRuntimeCode();
-  check(!runtime.empty(), "committed HashedTimelock artifact readable");
-  check(runtimeCodeMatchesHash(runtime, CANONICAL_HTLC_REGISTRY_CODE_HASH),
-        "committed runtime code hashes to the pinned value");
-
-  std::string upper = CANONICAL_HTLC_REGISTRY_CODE_HASH;
-  for (char& c : upper) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-  check(runtimeCodeMatchesHash(runtime, upper), "hash comparison ignores hex case");
-
-  std::string tampered = runtime;
-  tampered[tampered.size() - 1] = tampered.back() == '0' ? '1' : '0';
-  check(!runtimeCodeMatchesHash(tampered, CANONICAL_HTLC_REGISTRY_CODE_HASH),
-        "one changed byte fails the pin");
-  check(!runtimeCodeMatchesHash(runtime.substr(0, runtime.size() - 2), CANONICAL_HTLC_REGISTRY_CODE_HASH),
-        "truncated code fails the pin");
-  check(!runtimeCodeMatchesHash("0x", CANONICAL_HTLC_REGISTRY_CODE_HASH), "empty code fails the pin");
-  check(!runtimeCodeMatchesHash(runtime, "6ac1"), "short pin never matches");
-  check(!runtimeCodeMatchesHash("0xzz", CANONICAL_HTLC_REGISTRY_CODE_HASH), "non-hex code fails");
+  std::string hex = buffer.str();
+  while (!hex.empty() && (hex.back() == '\n' || hex.back() == '\r')) hex.pop_back();
+  return hex;
 }
 
 static std::vector<uint8_t> bytesFromHex(const std::string& hex) {
@@ -74,6 +67,44 @@ static std::vector<uint8_t> bytesFromHex(const std::string& hex) {
   for (size_t i = 0; i + 1 < hex.size(); i += 2)
     bytes.push_back(static_cast<uint8_t>(std::stoul(hex.substr(i, 2), nullptr, 16)));
   return bytes;
+}
+
+static std::string keccakHex(const std::vector<uint8_t>& bytes) {
+  Crypto::Hash digest;
+  Crypto::cn_fast_hash(bytes.data(), bytes.size(), digest);
+  return Common::podToHex(digest);
+}
+
+static void testPinnedContract(const PinnedContract& contract) {
+  const std::string label = contract.name;
+  const std::string creation = readArtifact(contract.creationPath);
+  const std::string runtime = readArtifact(contract.runtimePath);
+  check(!creation.empty() && !runtime.empty(), (label + ": committed artifacts readable").c_str());
+  check(creation.find(runtime) != std::string::npos,
+        (label + ": the creation code deploys the committed runtime code").c_str());
+  const bool hashPinned = runtimeCodeMatchesHash("0x" + runtime, contract.codeHash);
+  if (!hashPinned) std::printf("      %s runtime keccak256 = %s\n", contract.name, keccakHex(bytesFromHex(runtime)).c_str());
+  check(hashPinned, (label + ": runtime code hashes to the pinned value").c_str());
+  const std::vector<uint8_t> zeroSalt(32, 0);
+  const std::string address = create2Address(DETERMINISTIC_DEPLOYMENT_PROXY, zeroSalt, bytesFromHex(creation));
+  if (address != contract.address) std::printf("      %s CREATE2 address = %s\n", contract.name, address.c_str());
+  check(address == contract.address, (label + ": canonical address is the artifact's CREATE2 address").c_str());
+
+  std::string tampered = "0x" + runtime;
+  tampered[tampered.size() - 1] = tampered.back() == '0' ? '1' : '0';
+  check(!runtimeCodeMatchesHash(tampered, contract.codeHash), (label + ": one changed byte fails the pin").c_str());
+  check(!runtimeCodeMatchesHash("0x" + runtime.substr(0, runtime.size() - 2), contract.codeHash),
+        (label + ": truncated code fails the pin").c_str());
+}
+
+static void testPinComparison() {
+  const std::string runtime = "0x" + readArtifact(PINNED_CONTRACTS[0].runtimePath);
+  std::string upper = CANONICAL_HTLC_REGISTRY_CODE_HASH;
+  for (char& c : upper) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+  check(runtimeCodeMatchesHash(runtime, upper), "hash comparison ignores hex case");
+  check(!runtimeCodeMatchesHash("0x", CANONICAL_HTLC_REGISTRY_CODE_HASH), "empty code fails the pin");
+  check(!runtimeCodeMatchesHash(runtime, "6ac1"), "short pin never matches");
+  check(!runtimeCodeMatchesHash("0xzz", CANONICAL_HTLC_REGISTRY_CODE_HASH), "non-hex code fails");
 }
 
 static void testCreate2Address() {
@@ -85,15 +116,6 @@ static void testCreate2Address() {
   check(create2Address("0xdeadbeef00000000000000000000000000000000", zeroSalt, {0x00}) ==
             "0xb928f69bb1d91cd65274e3c79d8986362984fda3",
         "EIP-1014 example 1");
-  const std::string runtime = committedRuntimeCode();
-  std::ifstream in(FUEGO_HTLC_BIN_PATH);
-  std::stringstream buffer;
-  buffer << in.rdbuf();
-  std::string creation = buffer.str();
-  while (!creation.empty() && (creation.back() == '\n' || creation.back() == '\r')) creation.pop_back();
-  check(create2Address(DETERMINISTIC_DEPLOYMENT_PROXY, zeroSalt, bytesFromHex(creation)) ==
-            CANONICAL_HTLC_REGISTRY_ADDRESS,
-        "canonical registry address is the committed artifact's CREATE2 address");
   check(create2Address("0x1234", zeroSalt, {0x00}).empty(), "malformed deployer refused");
 }
 
@@ -127,7 +149,8 @@ static void testConfigOverride() {
 }
 
 int main() {
-  testCanonicalHash();
+  for (const PinnedContract& contract : PINNED_CONTRACTS) testPinnedContract(contract);
+  testPinComparison();
   testConfigOverride();
   testCreate2Address();
   std::printf("%d checks, %d failures\n", g_checks, g_failures);

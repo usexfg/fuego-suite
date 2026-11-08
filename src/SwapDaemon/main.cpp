@@ -96,6 +96,12 @@ static bool listKeystore(const std::string& file) {
 
 // Deterministic HashedTimelock deployment (remediation R4): the transaction an
 // operator sends to the CREATE2 proxy, and the address readiness will expect.
+static std::string canonicalContractAt(const std::string& address) {
+  if (address == XfgSwap::CANONICAL_HTLC_REGISTRY_ADDRESS) return "HashedTimelock";
+  if (address == XfgSwap::CANONICAL_PTLC_REGISTRY_ADDRESS) return "PointTimelock";
+  return "none";
+}
+
 static bool printHtlcDeployment(const std::string& binPath) {
   std::ifstream in(binPath);
   std::stringstream buffer;
@@ -118,7 +124,7 @@ static bool printHtlcDeployment(const std::string& binPath) {
             << "  \"salt\": \"0x" << std::string(64, '0') << "\",\n"
             << "  \"init_code_keccak\": \"0x" << Common::podToHex(initCodeHash) << "\",\n"
             << "  \"address\": \"" << address << "\",\n"
-            << "  \"canonical\": " << (address == XfgSwap::CANONICAL_HTLC_REGISTRY_ADDRESS ? "true" : "false") << ",\n"
+            << "  \"canonical\": \"" << canonicalContractAt(address) << "\",\n"
             << "  \"data\": \"0x" << std::string(64, '0') << initHex << "\"\n"
             << "}" << std::endl;
   return true;
@@ -155,7 +161,7 @@ void printUsage() {
     "  --public-endpoint <h:p> Publicly reachable swap endpoint advertised to takers\n"
     "  --testnet               Use testnet ports (fuegod: 28280)\n"
     "  --generate-spv-config   Generate SPV config template with fresh keys and addresses\n"
-    "  --print-htlc-deployment <bin>  Print the CREATE2 deployment of a HashedTimelock .bin\n"
+    "  --print-htlc-deployment <bin>  Print the CREATE2 deployment of a HashedTimelock or PointTimelock .bin\n"
     "  --keystore-put <file> <name>   Store the secret read from stdin under <name> in an\n"
     "                           encrypted keystore (passphrase: XFG_SWAPD_KEYSTORE_PASSPHRASE\n"
     "                           or XFG_SWAPD_KEYSTORE_PASSPHRASE_FILE); reference it in the\n"

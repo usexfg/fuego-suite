@@ -176,7 +176,8 @@ jobs:
     env:
       RPC: http://127.0.0.1:8545
       DEPLOYER: "0x4e59b44847b379578588920ca78fbf26c0b4956c"
-      REGISTRY: "0x13e6f8fb77ce4036438469097828106fd60c73a4"
+      REGISTRY: "0xcef71d1a85d98f0d9ce242b41bbd9fd5d99aefeb"
+      POINT_REGISTRY: "0x10e9f7e464f3e538b9324fb830c2d8daaf7126da"
       # anvil's published development account 0; it holds only test ether.
       ANVIL_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
     steps:
@@ -191,6 +192,19 @@ jobs:
 
       - uses: foundry-rs/foundry-toolchain@v1
 
+      - name: Committed contract artifacts match a fresh pinned build
+        run: |
+          cd contracts/artifacts-build
+          npm ci --no-audit --no-fund
+          node build.js --check
+
+      - name: PointTimelock contract tests
+        run: |
+          diff contracts/point-timelock/src/PointTimelock.sol src/SwapDaemon/Ethereum/PointTimelock.sol
+          cd contracts/point-timelock
+          forge install foundry-rs/forge-std@v1.9.4 --no-git
+          forge test -vv
+
       - name: Build the gate
         run: |
           cmake -B build -DCMAKE_BUILD_TYPE=Release -DUSE_VENDORED_SECP256K1=OFF -G Ninja
@@ -202,12 +216,16 @@ jobs:
           for _ in $(seq 1 30); do cast block-number --rpc-url "$RPC" >/dev/null 2>&1 && exit 0; sleep 1; done
           cat "$RUNNER_TEMP/anvil.log"; exit 1
 
-      - name: Deploy HashedTimelock through the deterministic deployer
+      - name: Deploy HashedTimelock and PointTimelock through the deterministic deployer
         run: |
           test "$(cast code --rpc-url "$RPC" "$DEPLOYER")" != "0x"
-          data="0x$(printf '0%.0s' $(seq 1 64))$(tr -d '[:space:]' < src/SwapDaemon/Ethereum/HashedTimelock_sol_HashedTimelock.bin)"
-          cast send --rpc-url "$RPC" --private-key "$ANVIL_KEY" "$DEPLOYER" "$data"
+          salt="$(printf '0%.0s' $(seq 1 64))"
+          for contract in HashedTimelock PointTimelock; do
+            data="0x${salt}$(tr -d '[:space:]' < src/SwapDaemon/Ethereum/${contract}_sol_${contract}.bin)"
+            cast send --rpc-url "$RPC" --private-key "$ANVIL_KEY" "$DEPLOYER" "$data"
+          done
           test "$(cast code --rpc-url "$RPC" "$REGISTRY")" != "0x"
+          test "$(cast code --rpc-url "$RPC" "$POINT_REGISTRY")" != "0x"
 
       - name: Run the gate
         run: build/src/test_daemons/test_evm_anvil_gate "$RPC" "$REGISTRY"

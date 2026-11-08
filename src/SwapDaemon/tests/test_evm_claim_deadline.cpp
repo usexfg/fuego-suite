@@ -55,7 +55,7 @@ static std::string addressWord(const std::string& address) {
   return std::string(24, '0') + address.substr(2);
 }
 
-static const char* const REGISTRY = "0x13e6f8fb77ce4036438469097828106fd60c73a4";
+static const char* const REGISTRY = CANONICAL_HTLC_REGISTRY_ADDRESS;
 static const char* const RECIPIENT = "0x00000000000000000000000000000000000000aa";
 static const uint64_t AMOUNT = 1000000;
 

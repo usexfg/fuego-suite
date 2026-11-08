@@ -497,23 +497,23 @@ std::string create2Address(const std::string& deployerHex, const std::vector<uin
   return "0x" + Common::podToHex(addressHash).substr(24);
 }
 
-bool EthRpcClient::hasDeployedHtlcRegistry() {
-  if (!isValidEvmAddress(m_htlcRegistry)) return false;
-
-  const std::string params = "[\"" + m_htlcRegistry + "\",\"latest\"]";
-  const std::string response = jsonRpc("eth_getCode", params);
-  if (response.empty() || jsonHasError(response)) return false;
-
+EthRpcClient::RegistryCode EthRpcClient::registryCode(const std::string& address, const std::string& codeHashHex) {
+  if (!isValidEvmAddress(address)) return RegistryCode::NO_CODE;
+  const std::string response = jsonRpc("eth_getCode", "[\"" + address + "\",\"latest\"]");
+  if (response.empty() || jsonHasError(response)) return RegistryCode::UNREACHABLE;
   const std::string code = jsonGetResult(response);
-  if (code.size() <= 2 || code.compare(0, 2, "0x") != 0 ||
-      (code.size() - 2) % 2 != 0) return false;
+  if (code.size() < 2 || code.compare(0, 2, "0x") != 0 || (code.size() - 2) % 2 != 0) return RegistryCode::UNREACHABLE;
   bool hasNonzeroByte = false;
   for (size_t i = 2; i < code.size(); ++i) {
-    if (!std::isxdigit(static_cast<unsigned char>(code[i]))) return false;
+    if (!std::isxdigit(static_cast<unsigned char>(code[i]))) return RegistryCode::UNREACHABLE;
     hasNonzeroByte |= code[i] != '0';
   }
-  if (!hasNonzeroByte) return false;
-  if (!runtimeCodeMatchesHash(code, m_htlcRegistryCodeHash)) return false;
+  if (!hasNonzeroByte) return RegistryCode::NO_CODE;
+  return runtimeCodeMatchesHash(code, codeHashHex) ? RegistryCode::PINNED : RegistryCode::OTHER_CODE;
+}
+
+bool EthRpcClient::hasDeployedHtlcRegistry() {
+  if (registryCode(m_htlcRegistry, m_htlcRegistryCodeHash) != RegistryCode::PINNED) return false;
 
   // A deployed address is not necessarily our HTLC registry. Query the
   // read-only getContract ABI with an unused id before enabling new swaps.

@@ -121,18 +121,13 @@ void applyHtlcConfig(XfgSwap::EthRpcClient& rpc, const std::string& binPath,
     }
   }
 }
-// Wire PointTimelock (pure PTLC) registry on the EVM client. Empty address
-// leaves the client BRIDGE-only (HTLC) — unchanged default behavior.
+// Point locks use the PointTimelock at `ptlcRegistry`; the client offers them
+// once that address holds the pinned runtime code.
 void applyPtlcConfig(XfgSwap::EthRpcClient& rpc, const std::string& ptlcRegistry,
                      Logging::LoggerRef& logger, const char* chainLabel) {
-  if (!ptlcRegistry.empty()) {
-    rpc.setPtlcRegistry(ptlcRegistry);
-    logger(Logging::INFO) << chainLabel
-      << " PointTimelock (pure PTLC) registry set: " << ptlcRegistry;
-  } else {
-    logger(Logging::INFO) << chainLabel
-      << " eth_ptlc_registry not set — pure PTLC disabled (BRIDGE)";
-  }
+  rpc.setPtlcRegistry(ptlcRegistry);
+  logger(Logging::INFO) << chainLabel << " PointTimelock registry: "
+                        << (ptlcRegistry.empty() ? std::string("none (hash locks only)") : ptlcRegistry);
 }
 } // namespace
 
@@ -175,9 +170,14 @@ std::shared_ptr<ElectrumSpvClient> makeElectrumClient(SwapPair pair, UtxoNetwork
 
 }  // namespace
 
-bool SwapDaemon::pointLockAvailable(SwapPair pair) const {
+IChainClient::PointLockSupport SwapDaemon::pointLockSupport(SwapPair pair) const {
   IChainClient* client = m_chainRegistry.getClient(pair);
-  return !isPtlcNativePair(pair) && client != nullptr && client->supportsPurePtlc();
+  if (isPtlcNativePair(pair) || client == nullptr) return IChainClient::PointLockSupport::NONE;
+  return client->pointLockSupport();
+}
+
+bool SwapDaemon::pointLockAvailable(SwapPair pair) const {
+  return pointLockSupport(pair) == IChainClient::PointLockSupport::AVAILABLE;
 }
 
 // ── Base58 encode (Bitcoin alphabet, matches SolRpcClient) ───────────────
@@ -348,7 +348,9 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
     const std::string registry = !evmCfg.htlcRegistry.empty() || eraVm
         ? evmCfg.htlcRegistry : std::string(CANONICAL_HTLC_REGISTRY_ADDRESS);
     applyHtlcConfig(*rpc, evmCfg.htlcBinPath, registry, m_logger, descriptor->symbol);
-    applyPtlcConfig(*rpc, evmCfg.ptlcRegistry, m_logger, descriptor->symbol);
+    const std::string pointRegistry = !evmCfg.ptlcRegistry.empty() || eraVm
+        ? evmCfg.ptlcRegistry : std::string(CANONICAL_PTLC_REGISTRY_ADDRESS);
+    applyPtlcConfig(*rpc, pointRegistry, m_logger, descriptor->symbol);
     m_chainRegistry.registerChain(evmCfg.pair,
         std::make_unique<EthChainClient>(std::move(rpc), evmCfg.address,
                                          descriptor->symbol));
@@ -1220,7 +1222,13 @@ bool SwapDaemon::initiate(SwapParams& params) {
 
     // A pair this node can lock by point never uses a hash lock (F33); the
     // peer's ADAPTOR_EXCHANGE is held to the same rule.
-    bool localPure = pointLockAvailable(params.pair);
+    const IChainClient::PointLockSupport pointSupport = pointLockSupport(params.pair);
+    if (pointSupport == IChainClient::PointLockSupport::UNKNOWN) {
+      m_logger(Logging::ERROR) << "Cannot tell whether " << swapPairToString(params.pair)
+                               << " has its point lock; not starting a swap that might fall back to a hash lock";
+      return false;
+    }
+    bool localPure = pointSupport == IChainClient::PointLockSupport::AVAILABLE;
     if (isPtlcNativePair(params.pair)) localPtlc = true;
     if (localPure) {
       params.lockType = SwapLockType::PTLC;
@@ -4332,7 +4340,13 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
           m_logger(Logging::WARNING) << "ADAPTOR_EXCHANGE ignored (not Alice)";
           return true;
         }
-        const bool pointLock = pointLockAvailable(params.pair);
+        const IChainClient::PointLockSupport pointSupport = pointLockSupport(params.pair);
+        if (pointSupport == IChainClient::PointLockSupport::UNKNOWN) {
+          m_logger(Logging::ERROR) << "ADAPTOR_EXCHANGE deferred: cannot tell whether "
+                                   << swapPairToString(params.pair) << " has its point lock";
+          return false;
+        }
+        const bool pointLock = pointSupport == IChainClient::PointLockSupport::AVAILABLE;
         if (msg.adaptorExchange.lockType == SwapLockType::PTLC && !isPtlcNativePair(params.pair) && !pointLock) {
           m_logger(Logging::ERROR) << "ADAPTOR_EXCHANGE rejected: this node has no point lock for "
                                    << swapPairToString(params.pair);

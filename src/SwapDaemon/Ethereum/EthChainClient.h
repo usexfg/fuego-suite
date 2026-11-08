@@ -4,6 +4,7 @@
 #include "EthRpcClient.h"
 #include <string>
 #include <memory>
+#include <mutex>
 
 namespace XfgSwap {
 
@@ -21,15 +22,10 @@ public:
     return m_rpc ? m_rpc->expectedChainId() : 0;
   }
   bool supportsPtlc() const override { return false; } // Phase 1: BRIDGE (HTLC on EVM, PTLC on XFG). Native Schnorr via EIP in Phase 4.
-  // Pure PTLC (PointTimelock registry model) is available only when a
-  // PointTimelock registry address has been wired via setPtlcRegistry().
-  // Empty registry => BRIDGE (HTLC on EVM) — unchanged default behavior.
-  bool supportsPurePtlc() const override;
+  // Point locks need the pinned PointTimelock at the configured registry.
+  bool supportsPurePtlc() const override { return pointLockSupport() == PointLockSupport::AVAILABLE; }
+  PointLockSupport pointLockSupport() const override;
 
-  // Wire the pre-deployed PointTimelock registry ("0x..."). Forwards to the
-  // underlying EthRpcClient so lock/verify/claim/refund point operations
-  // target it. Empty address keeps pure PTLC disabled.
-  void setPtlcRegistry(const std::string& registryAddress);
 
 protected:
   bool hasDeployedHtlcRegistry();
@@ -71,8 +67,8 @@ private:
   std::unique_ptr<EthRpcClient> m_rpc;
   std::string m_address;
   std::string m_chainName;
-  // PointTimelock registry address ("0x..."). Empty => pure PTLC disabled.
-  std::string m_ptlcRegistry;
+  mutable std::mutex m_pointLockMutex;
+  mutable bool m_pointLockConfirmed = false;
 };
 
 } // namespace XfgSwap

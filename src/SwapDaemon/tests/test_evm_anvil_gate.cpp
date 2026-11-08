@@ -27,7 +27,9 @@
 #include "SwapDaemon/SwapHashLock.h"
 #include "SwapDaemon/SwapTimelock.h"
 #include "crypto/crypto.h"
+#include "crypto/cross_dleq.h"
 #include "crypto/hash.h"
+#include "crypto/secp_adaptor.h"
 #include <HTTP/httplib.h>
 
 #include <openssl/rand.h>
@@ -97,10 +99,12 @@ private:
 };
 
 static std::unique_ptr<EthChainClient> clientFor(const std::string& url, const std::string& registry,
-                                                 const std::string& keyHex) {
+                                                 const std::string& keyHex,
+                                                 const std::string& pointRegistry = CANONICAL_PTLC_REGISTRY_ADDRESS) {
   const std::string address = addressOf(keyHex);
   auto rpc = std::make_unique<EthRpcClient>(url, 0, keyHex, address, ANVIL_CHAIN_ID);
   rpc->setHtlcRegistry(registry);
+  rpc->setPtlcRegistry(pointRegistry);
   return std::make_unique<EthChainClient>(std::move(rpc), address, "ETH");
 }
 
@@ -179,6 +183,94 @@ static void testRefund(AnvilNode& node, EthChainClient& alice, EthChainClient& b
   check(alice.tryExtractClaimedSecret(swap.alice).empty(), "refund: a refund reveals no secret");
 }
 
+struct PointSwap {
+  SwapParams alice{};
+  SwapParams bob{};
+  Crypto::SecretKey secret{};
+};
+
+static PointSwap newPointSwap(const std::string& bobAddress, uint64_t timeoutBlock) {
+  PointSwap swap;
+  Crypto::cross_dleq_generate_scalar(swap.secret);
+  Crypto::SecpPubKey secpPoint;
+  Crypto::secp_point_from_ed_secret(swap.secret, secpPoint);
+  for (SwapParams* side : {&swap.alice, &swap.bob}) {
+    side->pair = SwapPair::ETH;
+    side->ctrAmount = AtomicAmount(ONE_ETHER);
+    side->ctrAddress = bobAddress;
+    side->ctrTimeoutBlock = timeoutBlock;
+    side->requiredConfirmations = 6;
+    side->lockType = SwapLockType::PTLC;
+    side->secpPubHex = Crypto::secpPubKeyToHex(secpPoint);
+  }
+  swap.alice.role = SwapRole::ALICE;
+  swap.bob.role = SwapRole::BOB;
+  swap.bob.adaptorSecret = swap.secret;
+  return swap;
+}
+
+static void testPointLockHappyPath(AnvilNode& node, EthChainClient& alice, EthChainClient& bob,
+                                   const std::string& bobAddress) {
+  uint64_t window = 0;
+  minimumCounterpartyWindowBlocks(SwapPair::ETH, 6, window);
+  PointSwap swap = newPointSwap(bobAddress, node.tip() + window + 100);
+  const ChainClientResult locked = alice.lock(swap.alice);
+  check(locked.success, "point lock: Alice locks one ether to T_secp (" + locked.error + ")");
+  if (!locked.success) return;
+  swap.alice.ctrLockTxId = swap.bob.ctrLockTxId = locked.txId;
+  const ChainClientResult verified = bob.verifyLock(swap.bob);
+  check(verified.success, "point lock: Bob verifies the lock (" + verified.error + ")");
+  PointSwap other = newPointSwap(bobAddress, swap.bob.ctrTimeoutBlock);
+  SwapParams otherPoint = swap.bob;
+  otherPoint.secpPubHex = other.bob.secpPubHex;
+  check(!bob.verifyLock(otherPoint).success, "point lock: a lock to another point is refused");
+  SwapParams wrongSecret = swap.bob;
+  wrongSecret.adaptorSecret = other.secret;
+  check(!bob.claim(wrongSecret).success, "point lock: a claim with another scalar is refused on chain");
+  check(bob.claimDeadlineError(swap.bob).empty(), "point lock: the claim has its runway");
+  const ChainClientResult claimed = bob.claim(swap.bob);
+  check(claimed.success, "point lock: Bob claims with t (" + claimed.error + ")");
+  if (!claimed.success) return;
+  check(alice.tryExtractClaimedSecret(swap.alice).empty(), "point lock: a claim under six blocks deep is not final");
+  node.mine(6);
+  const std::string extracted = alice.tryExtractClaimedSecret(swap.alice);
+  Crypto::SecretKey recovered;
+  Crypto::PublicKey recoveredPoint, expectedPoint;
+  check(extracted == Common::podToHex(swap.secret) && Common::podFromHex(extracted, recovered) &&
+            Crypto::secret_key_to_public_key(recovered, recoveredPoint) &&
+            Crypto::secret_key_to_public_key(swap.secret, expectedPoint) && recoveredPoint == expectedPoint,
+        "point lock: Alice reads the t that opens the XFG adaptor point, without the claim txid");
+  check(!bob.claimDeadlineError(swap.bob).empty(), "point lock: a claimed lock is not claimed again");
+}
+
+static void testPointLockRefund(AnvilNode& node, EthChainClient& alice, EthChainClient& bob,
+                                const std::string& bobAddress) {
+  PointSwap swap = newPointSwap(bobAddress, node.tip() + 10);
+  const ChainClientResult locked = alice.lock(swap.alice);
+  check(locked.success, "point refund: Alice locks with a short timeout (" + locked.error + ")");
+  if (!locked.success) return;
+  swap.alice.ctrLockTxId = swap.bob.ctrLockTxId = locked.txId;
+  check(!bob.verifyLock(swap.bob).success, "point refund: Bob refuses a lock without claim runway");
+  check(!alice.refund(swap.alice).success, "point refund: refund before the timeout refused");
+  node.mine(12);
+  const ChainClientResult refunded = alice.refund(swap.alice);
+  check(refunded.success, "point refund: refund after the timeout (" + refunded.error + ")");
+  node.mine(6);
+  check(alice.tryExtractClaimedSecret(swap.alice).empty(), "point refund: a refund reveals no secret");
+}
+
+static void testPointLockSupport(const std::string& url, const std::string& registry, EthChainClient& alice) {
+  check(alice.pointLockSupport() == IChainClient::PointLockSupport::AVAILABLE,
+        "point locks are available with the pinned PointTimelock deployed");
+  auto wrongCode = clientFor(url, registry, ALICE_KEY, registry);
+  check(wrongCode->pointLockSupport() == IChainClient::PointLockSupport::UNKNOWN &&
+            !wrongCode->readinessError().empty(),
+        "a point registry holding other code blocks swaps instead of falling back to a hash lock");
+  auto noCode = clientFor(url, registry, ALICE_KEY, "0x00000000000000000000000000000000000000aa");
+  check(noCode->pointLockSupport() == IChainClient::PointLockSupport::NONE,
+        "a chain without the PointTimelock offers no point lock");
+}
+
 int main(int argc, char** argv) {
   if (argc != 3) {
     std::fprintf(stderr, "usage: %s <rpc url> <registry address>\n", argv[0]);
@@ -195,8 +287,14 @@ int main(int argc, char** argv) {
   const Common::JsonValue accounts = node.call("eth_accounts", "[]");
   check(accounts.isArray() && accounts.size() > 1 && lowercase(accounts[1].getString()) == bobAddress,
         "the derived Bob address is anvil account 1");
+  const Common::JsonValue pointCode = node.call("eth_getCode", "[\"" + std::string(CANONICAL_PTLC_REGISTRY_ADDRESS) + "\",\"latest\"]");
+  check(pointCode.isString() && pointCode.getString().size() > 2,
+        std::string("PointTimelock is deployed at ") + CANONICAL_PTLC_REGISTRY_ADDRESS);
   testHappyPath(node, *alice, *bob, bobAddress);
   testRefund(node, *alice, *bob, bobAddress);
+  testPointLockSupport(url, registry, *alice);
+  testPointLockHappyPath(node, *alice, *bob, bobAddress);
+  testPointLockRefund(node, *alice, *bob, bobAddress);
   std::printf("%d checks, %d failures\n", g_checks, g_failures);
   return g_failures == 0 ? 0 : 1;
 }

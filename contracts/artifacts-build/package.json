@@ -1,0 +1,12 @@
+{
+  "name": "fuego-evm-artifacts",
+  "private": true,
+  "description": "Reproducible build of the swap timelock contracts committed under src/SwapDaemon/Ethereum",
+  "scripts": {
+    "build": "node build.js",
+    "check": "node build.js --check"
+  },
+  "dependencies": {
+    "solc": "0.8.34"
+  }
+}

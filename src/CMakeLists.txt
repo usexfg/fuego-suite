@@ -367,7 +367,7 @@ add_executable(test_htlc_registry_pin
 target_link_libraries(test_htlc_registry_pin PRIVATE
     SwapDaemonLib Common Crypto CryptoNoteCore Serialization OpenSSL::SSL OpenSSL::Crypto)
 target_compile_definitions(test_htlc_registry_pin PRIVATE
-    FUEGO_HTLC_BIN_PATH="${CMAKE_CURRENT_SOURCE_DIR}/SwapDaemon/Ethereum/HashedTimelock_sol_HashedTimelock.bin")
+    FUEGO_EVM_ARTIFACT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/SwapDaemon/Ethereum")
 
 # Encrypted keystore for daemon secrets (remediation R7).
 add_executable(test_swap_keystore

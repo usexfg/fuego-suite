@@ -1,3 +1,37 @@
+## HEAT launch ratio 10:1 → 8:1, 8:1 Hearth seed, Hearth operations audit fixes
+
+**Started**: 2026-11-08
+**Agent**: Devin
+**Status**: DONE (code, tests, docs). Not built locally: the session VM has no CMake/Boost; `make -j$(nproc)` + `heat_mint_engine_tests` / `TreasuryCoreTests` must be confirmed by CI or a maintainer build.
+**Scope**: `src/CryptoNoteConfig.h`, `src/CryptoNoteCore/{Blockchain,Core}.cpp`, `src/SimpleWallet/SimpleWallet.cpp`, `src/SwapDaemon/PriceOracle.cpp`, `tui/{main,rpc_builders,rpc_builders_test}.go`, `tests/CoreTests/{HeatMintTest,TreasuryCoreTests}.cpp`, `AGENTS.md`, `README.md`, `docs/features/hearth/README.mdx`, `docs/releasenotes/RELEASE_NOTES_V11.md`, `docs/developer/defillama-asset-matrix.md`, `docs/plans/2026-09-29-v11-pq-shielded-note-pool.md`.
+
+Consensus-affecting (genesis Hearth seed and epoch work change; pre-launch v11 only):
+
+1. **Launch ratio 8 XFG = 1 HEAT.** `HEAT_LAUNCH_RATIO_NUM = 8`. The genesis Hearth seed keeps its 10,000 XFG leg and the HEAT leg becomes 1,250 so the seed pool spot (`ammGetSpotPrice` = `COIN / 8`) equals the launch ratio; `HEARTH_INITIAL_HEAT` mirrors it. The seed is still owed back in both legs (`m_bootstrapXfgOwed/HeatOwed`). HEAT reference stays $1.58, so the implied XFG launch reference is $0.1975 (`PriceOracle::SEED_XFG_USD`).
+2. **AuntPoL (Treasury LP Manager) was dead code from v11 on.** `processBlockEpochWork` had the v11+ ratio-pairing block nested inside `if (majorVersion < V11 && pending > 0)` (introduced in `96293c48`, 2026-08-20). The premium legs (`m_treasuryLpPendingXfg`, `m_treasuryHeatReserve`) accumulated forever, `m_protocolLpShares` never grew, and bootstrap repayment could never trigger. The pre-v11 convert branch now closes before the Treasury LP Manager; the v11 and legacy paths are otherwise unchanged.
+3. **`HEARTH_MIN_XFG_DEPTH` backstop gate compared atomic units to a whole-XFG constant** (5,000 atomics = 0.0005 XFG), so the backstop was never gated. The gate now uses `HEARTH_MIN_XFG_DEPTH * COIN`.
+4. **`/heat_metrics` redemption price** `reserveXfg * 10^6` overflowed `uint64_t` above ~1.84M XFG of reserve; computed in `uint128_t` now.
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `HEAT_LAUNCH_RATIO_NUM` 10 → 8; `HEARTH_POOL_SEED_HEAT` / `HEARTH_INITIAL_HEAT` 1,000 → 1,250 (10,000 XFG leg unchanged) | Devin | 2026-11-08 | DONE |
+| 2 | Un-nest the v11+ Treasury LP Manager from the pre-v11 convert branch in `processBlockEpochWork`; add `testAuntPolPairsAtV11EpochBoundary` (pairs 80 XFG / 10 HEAT at the 8:1 seed ratio, carries the 2 HEAT excess) | Devin | 2026-11-08 | DONE |
+| 3 | Scale `HEARTH_MIN_XFG_DEPTH` to atomics in the backstop gate; `uint128_t` redemption price in `Core::getHeatMetrics` | Devin | 2026-11-08 | DONE |
+| 4 | Tests for 8:1: `HeatMintEngine.LaunchRatio` / `OverMintRejected` (`COIN / 8`), `testCanonicalSpotPriceScale` (10,000 : 1,250) | Devin | 2026-11-08 | DONE |
+| 5 | TUI `EstimateHeatMinted` empty-pool fallback `/ 10` → `/ 8` + test; `PriceOracle` seed $0.158 → $0.1975 | Devin | 2026-11-08 | DONE |
+| 6 | `fire_wallet` `heat_info` / `pool_info` text (was 0.2 XFG/HEAT, PI controller, 0.3% fee, first-user-LP bootstrap) | Devin | 2026-11-08 | DONE |
+| 7 | Docs sweep: AGENTS.md, README, Hearth README, v11 release notes, DefiLlama matrix, PQ note-pool plan | Devin | 2026-11-08 | DONE |
+
+Audit findings reported but **not** changed here (need an economic/design decision): pool (0xF0) auction fills ignore `cdFeeHeat`/`rebateHeat` and the pool can be classified as taker; `BOOTSTRAP_REPAY_PCT` / `m_bootstrapRepaymentVault` are never credited; `m_bootstrapRepaid` has no downstream effect and no RPC exposes bootstrap owed/repaid; `HEARTH_MIN_HEAT_DEPTH`, `HEARTH_INITIAL_*`, `HEAT_LAUNCH_RATIO_*` are unused constants.
+
+| Gate | Status | Signed |
+|------|--------|--------|
+| Build compiles | PENDING (CI) — no CMake/Boost on the authoring VM | Devin 2026-11-08 |
+| Tests pass | `go test ./...` (tui) PASS; C++ `heat_mint_engine_tests` / `TreasuryCoreTests` PENDING (CI) | Devin 2026-11-08 |
+| All tasks done | DONE | Devin 2026-11-08 |
+
+---
+
 ## v11 fee-routing rework: mint premium funds both AuntPoL legs, swap 80/20, versioned Hearth split, CD fee redirect
 
 **Started**: 2026-11-03

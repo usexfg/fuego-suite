@@ -19,7 +19,7 @@
 namespace XfgSwap {
 
 // =============================================================================
-// Seed prices: 1 XFG = $0.158 (10:1 Hearth pool bootstrap; HEAT peg = $1.58)
+// Seed prices: 1 XFG = $0.1975 (8:1 Hearth pool bootstrap; HEAT peg = $1.58)
 // =============================================================================
 //
 // Counterparty prices (Sept 2026):
@@ -32,7 +32,7 @@ namespace XfgSwap {
 // Once >= 5 real swaps exist for a pair, TWAP takes over entirely.
 // =============================================================================
 
-static const double SEED_XFG_USD = 0.158;
+static const double SEED_XFG_USD = 0.1975;
 static const double SEED_SOL_USD = 170.0;
 static const double SEED_ETH_USD = 2140.0;
 static const double SEED_BCH_USD = 469.0;

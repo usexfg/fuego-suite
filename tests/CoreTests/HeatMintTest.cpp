@@ -57,21 +57,21 @@ TEST(HeatMintEngine, InvalidRatio) {
 }
 
 TEST(HeatMintEngine, LaunchRatio) {
-  // Seed pool: 10 XFG per 1 HEAT → HEAT/XFG = 0.1 → price = COIN / 10.
+  // Seed pool: 8 XFG per 1 HEAT → HEAT/XFG = 0.125 → price = COIN / 8.
   HeatMintEngine engine;
-  const uint64_t price = parameters::COIN / 10;
-  Transaction tx = makeHeatMintTx(parameters::COIN, parameters::COIN / 10, 0); // 1 XFG → 0.1 HEAT
+  const uint64_t price = parameters::COIN / 8;
+  Transaction tx = makeHeatMintTx(parameters::COIN, parameters::COIN / 8, 0); // 1 XFG → 0.125 HEAT
   uint64_t burned = 0, minted = 0;
   EXPECT_TRUE(validate(engine, tx, 0, price, burned, minted));
   EXPECT_EQ(burned, parameters::COIN);
-  EXPECT_EQ(minted, parameters::COIN / 10);
+  EXPECT_EQ(minted, parameters::COIN / 8);
 }
 
 TEST(HeatMintEngine, OverMintRejected) {
-  // 1 XFG at launch ratio: minting 0.2 HEAT (2× over) must be rejected.
+  // 1 XFG at launch ratio: minting 0.25 HEAT (2× over) must be rejected.
   HeatMintEngine engine;
-  const uint64_t price = parameters::COIN / 10;
-  Transaction tx = makeHeatMintTx(parameters::COIN, parameters::COIN / 5, 0);
+  const uint64_t price = parameters::COIN / 8;
+  Transaction tx = makeHeatMintTx(parameters::COIN, parameters::COIN / 4, 0);
   uint64_t burned = 0, minted = 0;
   EXPECT_FALSE(validate(engine, tx, 0, price, burned, minted));
 }

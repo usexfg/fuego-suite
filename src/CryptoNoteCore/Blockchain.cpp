@@ -4570,7 +4570,7 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
   // no historical blocks contain in-band fills, so nothing to preserve.
   if (block.majorVersion >= BLOCK_MAJOR_VERSION_11 && !m_ammPool.isEmpty() &&
       !g_orderbookIsInBootstrap && m_ammPool.reserveXfg > 0 &&
-      m_ammPool.reserveXfg >= parameters::HEARTH_MIN_XFG_DEPTH) {
+      m_ammPool.reserveXfg >= parameters::HEARTH_MIN_XFG_DEPTH * parameters::COIN) {
     // Fills are priced on the constant-product curve like any swap of their
     // size, against the reserves as earlier fills this block left them. They
     // used to execute at the pre-block spot price: up to the backstop cap that
@@ -5514,95 +5514,95 @@ bool CryptoNote::Blockchain::processBlockEpochWork(const Block& block, uint32_t 
                        << m_currency.formatAmount(swfShare) << " XFG → SWF";
         }
       }
+    }
 
-      // Treasury LP Manager: the protocol's own Hearth LP position, funded from
-      // BOTH assets WITHOUT cross-conversion and WITHOUT imbalanced deposits:
-      //   XFG: the treasury counter (treasury fee share + XFG donations).
-      //   HEAT: the treasury HEAT reserve (mint premiums + HEAT donations/fees).
-      // A deposit only happens when both legs can be paired AT the pool ratio
-      // (x/h = reserveXfg/reserveHeat) — balanced mints earn fair pro-rata
-      // shares (no single-sided over-credit, no LP dilution). The excess leg
-      // carries to the next epoch until the other side catches up. Yield
-      // compounds inside the reserves and counts toward bootstrap repayment
-      // via getTreasuryLpValue() (both legs, actual amounts).
-      if (block.majorVersion >= BLOCK_MAJOR_VERSION_11) {
-        // Both legs are funded by the mint premium: the withheld premium XFG
-        // is credited to m_treasuryLpPendingXfg at connect, and the HEAT it
-        // buys is credited to m_treasuryHeatReserve. No SWF transfer is
-        // involved — the SWF is the protocol collateral reserve and is never
-        // spent to pair AuntPoL.
-        const uint64_t availXfg = m_treasuryLpPendingXfg;
-        const uint64_t availHeat = m_treasuryHeatReserve;
-        uint64_t depositXfg = 0;
-        uint64_t depositHeat = 0;
-        if (!m_ammPool.isEmpty() && m_ammPool.totalLpShares > 0 &&
-            availXfg > 0 && availHeat > 0 &&
-            m_ammPool.reserveXfg > 0 && m_ammPool.reserveHeat > 0) {
-          // x/h = reserveXfg/reserveHeat → x = h × reserveXfg / reserveHeat.
-          uint64_t hFromX = static_cast<uint64_t>(
-              ((uint128_t)availXfg * m_ammPool.reserveHeat) / m_ammPool.reserveXfg);
-          if (hFromX <= availHeat) {
-            depositXfg = availXfg;                 // XFG-limited
-            depositHeat = hFromX;
-          } else {
-            depositHeat = availHeat;               // HEAT-limited
-            depositXfg = static_cast<uint64_t>(
-                ((uint128_t)availHeat * m_ammPool.reserveXfg) / m_ammPool.reserveHeat);
-          }
-          if (depositXfg > 0 && depositHeat > 0) {
-            uint64_t shares = ammMintLpShares(depositXfg, depositHeat,
-                m_ammPool.totalLpShares, m_ammPool.reserveXfg, m_ammPool.reserveHeat);
-            if (shares > 0) {
-              m_ammPool.reserveXfg += depositXfg;
-              m_ammPool.reserveHeat += depositHeat;
-              m_ammPool.totalLpShares += shares;
-              m_protocolLpShares += shares;
-              m_treasuryLpPendingXfg -= depositXfg;
-              m_treasuryHeatReserve -= depositHeat;
-              m_treasuryLpReserve += depositXfg;
-              uint64_t lpVIdx = (uint64_t(newHeight) << 32) | (++m_vaultUtxoCounter);
-              m_vault.addUtxo(lpVIdx, depositXfg, AssetType::XFG,
-                              VaultPartition::LP_RESERVE, blockHash,
-                              m_vaultKeys.viewPub);
-              logger(INFO) << "Treasury LP Manager: +" << m_currency.formatAmount(depositXfg)
-                           << " XFG + " << m_currency.formatAmount(depositHeat)
-                           << " HEAT (ratio-paired) → " << shares << " protocol LP shares";
-            }
-          }
+    // Treasury LP Manager: the protocol's own Hearth LP position, funded from
+    // BOTH assets WITHOUT cross-conversion and WITHOUT imbalanced deposits:
+    //   XFG: the treasury counter (treasury fee share + XFG donations).
+    //   HEAT: the treasury HEAT reserve (mint premiums + HEAT donations/fees).
+    // A deposit only happens when both legs can be paired AT the pool ratio
+    // (x/h = reserveXfg/reserveHeat) — balanced mints earn fair pro-rata
+    // shares (no single-sided over-credit, no LP dilution). The excess leg
+    // carries to the next epoch until the other side catches up. Yield
+    // compounds inside the reserves and counts toward bootstrap repayment
+    // via getTreasuryLpValue() (both legs, actual amounts).
+    if (block.majorVersion >= BLOCK_MAJOR_VERSION_11) {
+      // Both legs are funded by the mint premium: the withheld premium XFG
+      // is credited to m_treasuryLpPendingXfg at connect, and the HEAT it
+      // buys is credited to m_treasuryHeatReserve. No SWF transfer is
+      // involved — the SWF is the protocol collateral reserve and is never
+      // spent to pair AuntPoL.
+      const uint64_t availXfg = m_treasuryLpPendingXfg;
+      const uint64_t availHeat = m_treasuryHeatReserve;
+      uint64_t depositXfg = 0;
+      uint64_t depositHeat = 0;
+      if (!m_ammPool.isEmpty() && m_ammPool.totalLpShares > 0 &&
+          availXfg > 0 && availHeat > 0 &&
+          m_ammPool.reserveXfg > 0 && m_ammPool.reserveHeat > 0) {
+        // x/h = reserveXfg/reserveHeat → x = h × reserveXfg / reserveHeat.
+        uint64_t hFromX = static_cast<uint64_t>(
+            ((uint128_t)availXfg * m_ammPool.reserveHeat) / m_ammPool.reserveXfg);
+        if (hFromX <= availHeat) {
+          depositXfg = availXfg;                 // XFG-limited
+          depositHeat = hFromX;
+        } else {
+          depositHeat = availHeat;               // HEAT-limited
+          depositXfg = static_cast<uint64_t>(
+              ((uint128_t)availHeat * m_ammPool.reserveXfg) / m_ammPool.reserveHeat);
         }
-        // shares == 0 or unpaired excess: counters carry to the next epoch
-        // (never silently dropped).
-      } else {
-        // Legacy pre-v11: half-convert XFG to HEAT at pool rate for a balanced
-        // deposit (bit-identical to baseline).
-        if (m_treasuryLpPendingXfg > 0 && !m_ammPool.isEmpty()
-            && m_ammPool.reserveHeat > 0 && m_ammPool.reserveXfg > 0) {
-          uint64_t lpXfg = m_treasuryLpPendingXfg;
-          uint64_t lpHeat = lpXfg;
-          FixedPoint64 poolRate = FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
-          if (!poolRate.isZero()) {
-            FixedPoint64 halfFp = FixedPoint64::fromUint64(lpXfg / 2);
-            lpHeat = halfFp.div(poolRate).toUint64();
-          }
-          uint64_t lpShares = ammMintLpShares(lpXfg / 2, lpHeat,
+        if (depositXfg > 0 && depositHeat > 0) {
+          uint64_t shares = ammMintLpShares(depositXfg, depositHeat,
               m_ammPool.totalLpShares, m_ammPool.reserveXfg, m_ammPool.reserveHeat);
-          if (lpShares > 0) {
-            m_ammPool.reserveXfg += lpXfg / 2;
-            m_ammPool.reserveHeat += lpHeat;
-            m_ammPool.totalLpShares += lpShares;
-            m_protocolLpShares += lpShares;
-            m_treasuryLpReserve += lpXfg / 2;
+          if (shares > 0) {
+            m_ammPool.reserveXfg += depositXfg;
+            m_ammPool.reserveHeat += depositHeat;
+            m_ammPool.totalLpShares += shares;
+            m_protocolLpShares += shares;
+            m_treasuryLpPendingXfg -= depositXfg;
+            m_treasuryHeatReserve -= depositHeat;
+            m_treasuryLpReserve += depositXfg;
             uint64_t lpVIdx = (uint64_t(newHeight) << 32) | (++m_vaultUtxoCounter);
-            m_vault.addUtxo(lpVIdx, lpXfg / 2, AssetType::XFG,
+            m_vault.addUtxo(lpVIdx, depositXfg, AssetType::XFG,
                             VaultPartition::LP_RESERVE, blockHash,
                             m_vaultKeys.viewPub);
-            logger(INFO) << "GENERAL_RESERVE → Hearth LP (epoch " << epochNumber << "): "
-                         << m_currency.formatAmount(lpXfg / 2) << " XFG + "
-                         << m_currency.formatAmount(lpHeat) << " HEAT → "
-                         << lpShares << " LP shares"
-                         << " [vault LP_RESERVE UTXO " << lpVIdx << "]";
-            m_treasuryLpPendingXfg = 0;
+            logger(INFO) << "Treasury LP Manager: +" << m_currency.formatAmount(depositXfg)
+                         << " XFG + " << m_currency.formatAmount(depositHeat)
+                         << " HEAT (ratio-paired) → " << shares << " protocol LP shares";
           }
+        }
+      }
+      // shares == 0 or unpaired excess: counters carry to the next epoch
+      // (never silently dropped).
+    } else {
+      // Legacy pre-v11: half-convert XFG to HEAT at pool rate for a balanced
+      // deposit (bit-identical to baseline).
+      if (m_treasuryLpPendingXfg > 0 && !m_ammPool.isEmpty()
+          && m_ammPool.reserveHeat > 0 && m_ammPool.reserveXfg > 0) {
+        uint64_t lpXfg = m_treasuryLpPendingXfg;
+        uint64_t lpHeat = lpXfg;
+        FixedPoint64 poolRate = FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+        if (!poolRate.isZero()) {
+          FixedPoint64 halfFp = FixedPoint64::fromUint64(lpXfg / 2);
+          lpHeat = halfFp.div(poolRate).toUint64();
+        }
+        uint64_t lpShares = ammMintLpShares(lpXfg / 2, lpHeat,
+            m_ammPool.totalLpShares, m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+        if (lpShares > 0) {
+          m_ammPool.reserveXfg += lpXfg / 2;
+          m_ammPool.reserveHeat += lpHeat;
+          m_ammPool.totalLpShares += lpShares;
+          m_protocolLpShares += lpShares;
+          m_treasuryLpReserve += lpXfg / 2;
+          uint64_t lpVIdx = (uint64_t(newHeight) << 32) | (++m_vaultUtxoCounter);
+          m_vault.addUtxo(lpVIdx, lpXfg / 2, AssetType::XFG,
+                          VaultPartition::LP_RESERVE, blockHash,
+                          m_vaultKeys.viewPub);
+          logger(INFO) << "GENERAL_RESERVE → Hearth LP (epoch " << epochNumber << "): "
+                       << m_currency.formatAmount(lpXfg / 2) << " XFG + "
+                       << m_currency.formatAmount(lpHeat) << " HEAT → "
+                       << lpShares << " LP shares"
+                       << " [vault LP_RESERVE UTXO " << lpVIdx << "]";
+          m_treasuryLpPendingXfg = 0;
         }
       }
     }

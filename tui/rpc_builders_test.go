@@ -46,8 +46,8 @@ func TestEstimateHeatMinted_PoolAndLaunch(t *testing.T) {
 	if got != 1_000_000 {
 		t.Fatalf("pool estimate=%d want 1000000", got)
 	}
-	// empty pool → 10:1 launch
-	got2 := EstimateHeatMinted(10_000_000, 0, 0)
+	// empty pool → 8:1 launch
+	got2 := EstimateHeatMinted(8_000_000, 0, 0)
 	if got2 != 1_000_000 {
 		t.Fatalf("launch estimate=%d want 1000000", got2)
 	}

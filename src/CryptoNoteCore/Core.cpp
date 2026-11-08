@@ -1644,7 +1644,8 @@ core::HeatMetrics core::getHeatMetrics() const {
   const auto& pool = m_blockchain.getAmmPool();
   if (!pool.isEmpty() && pool.reserveHeat > 0) {
     // Pool ratio × 10^6 for precision
-    m.redemptionPriceNum = (pool.reserveXfg * 1000000ULL) / pool.reserveHeat;
+    m.redemptionPriceNum = static_cast<uint64_t>(
+        ((uint128_t)pool.reserveXfg * 1000000ULL) / pool.reserveHeat);
     m.redemptionPriceDenom = 1000000;
   } else {
     m.redemptionPriceNum = 0;

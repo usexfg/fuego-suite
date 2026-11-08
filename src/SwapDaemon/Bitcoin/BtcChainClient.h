@@ -27,10 +27,9 @@ public:
   std::string readinessErrorFor(SwapRole role) override;
   std::string claimDeadlineError(const SwapParams& params) override;
   bool supportsPtlc() const override { return true; }
-  // Pure PTLC (P2TR key-path, no H(t)) per PTLC_PURE_PLAN P2.2. A full node
-  // cannot recover t from a key-path spend without the adaptor presig, so the
-  // full-node transport negotiates the on-chain HTLC only.
-  bool supportsPurePtlc() const override { return !m_fullNode; }
+  // The existing P2TR lock is a key path Alice alone can spend at any time;
+  // point locks return with CROSS_CURVE_PLAN X6 (claim and refund leaves).
+  bool supportsPurePtlc() const override { return false; }
   std::string getClaimPubKey() const override;
   bool hasConfirmedClaim(const SwapParams& params) override;
   std::string getReceiveAddress() const override;

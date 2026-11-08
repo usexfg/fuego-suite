@@ -109,6 +109,7 @@ struct MsgAdaptorExchange {
   bool requirePtlc = false;         // sender policy flag
   std::string secpPubHex;           // T_secp = t·G_secp, compressed 33-byte hex (66 chars); empty = legacy peer
   std::string ctrClaimPubKeyHex;    // UTXO HTLC chains: Bob's compressed claim key (66 hex); empty elsewhere
+  std::vector<uint8_t> crossCurveProof; // point locks: cross_dleq proof that adaptorPoint and secpPubHex share t
 };
 
 // Phase 3: Both parties send their Musig2 public nonces.

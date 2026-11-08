@@ -173,33 +173,11 @@ std::shared_ptr<ElectrumSpvClient> makeElectrumClient(SwapPair pair, UtxoNetwork
   return std::make_shared<ElectrumSpvClient>(servers, minServers, checkpointHeight, checkpointHash);
 }
 
-// FEATURE_PURE_PTLC (PTLC_PURE_PLAN P4.2): read once per process, cached.
-// Unset/0/false/off => pure PTLC disabled.
-bool purePtlcFeatureFlag() {
-  static const bool enabled = [] {
-    const char* v = std::getenv("FEATURE_PURE_PTLC");
-    if (v == nullptr) return false;
-    std::string s(v);
-    std::transform(s.begin(), s.end(), s.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return !(s.empty() || s == "0" || s == "false" || s == "off");
-  }();
-  return enabled;
-}
-
-// AUDIT 3.9 — fail-closed: the pure-secp PTLC path binds an Ed25519 adaptor
-// secret to a secp256k1 point (params.secpPubHex) but there is no genuine
-// cross-curve DLEQ proving the two points share the same discrete log —
-// crypto/dleq.cpp is same-curve only. Until a reviewed Ed25519<->secp256k1
-// DLEQ lands, pure PTLC must stay disabled regardless of FEATURE_PURE_PTLC,
-// so no swap can be locked to an unprovable cross-curve point. The
-// PTLC_HTLC_BRIDGE path (on-chain hashlock) is unaffected.
-constexpr bool CROSS_CURVE_DLEQ_AVAILABLE = false;
 }  // namespace
 
-bool SwapDaemon::purePtlcAllowed(SwapPair pair) const {
+bool SwapDaemon::pointLockAvailable(SwapPair pair) const {
   IChainClient* client = m_chainRegistry.getClient(pair);
-  return purePtlcFeatureFlag() && CROSS_CURVE_DLEQ_AVAILABLE && client != nullptr && client->supportsPurePtlc();
+  return !isPtlcNativePair(pair) && client != nullptr && client->supportsPurePtlc();
 }
 
 // ── Base58 encode (Bitcoin alphabet, matches SolRpcClient) ───────────────
@@ -1240,17 +1218,15 @@ bool SwapDaemon::initiate(SwapParams& params) {
     IChainClient* ctrClient = m_chainRegistry.getClient(params.pair);
     bool localPtlc = ctrClient && ctrClient->supportsPtlc();
 
-    // Pure PTLC gate: env flag + local PURE capability. The peer half arrives
-    // later via MsgAdaptorExchange caps; initiate gates on local only — an
-    // HTLC-only peer still downgrades/aborts on wire negotiation
-    // (requirePtlc abort path unchanged).
-    bool localPure = purePtlcAllowed(params.pair);
+    // A pair this node can lock by point never uses a hash lock (F33); the
+    // peer's ADAPTOR_EXCHANGE is held to the same rule.
+    bool localPure = pointLockAvailable(params.pair);
     if (isPtlcNativePair(params.pair)) localPtlc = true;
-    if (params.lockType == SwapLockType::HTLC) {
-      if (localPure) {
-        params.lockType = SwapLockType::PTLC;
-        m_logger(Logging::INFO) << "PTLC negotiation: pure enabled → PTLC";
-      } else if (localPtlc) {
+    if (localPure) {
+      params.lockType = SwapLockType::PTLC;
+      m_logger(Logging::INFO) << "PTLC negotiation: point lock available → PTLC";
+    } else if (params.lockType == SwapLockType::HTLC) {
+      if (localPtlc) {
         // Phase 1: bridge mode (point off-chain + hash on-chain) preserves privacy via DLEQ decorrelation.
         // Pure PTLC (scriptless Taproot with adaptor verify) lands in Phase 2/4 behind flag.
         params.lockType = SwapLockType::PTLC_HTLC_BRIDGE;
@@ -1491,7 +1467,8 @@ SwapDaemon::AcceptResult SwapDaemon::accept(const std::string& swapId) {
     ax.adaptorExchange.adaptorPoint = params.adaptorPoint;
     ax.adaptorExchange.adaptorDleqQ = params.adaptorDleqQ;
     ax.adaptorExchange.dleqProof = params.adaptorDleqProof;
-    ax.adaptorExchange.htlcHashLock = params.hashLock;
+    const bool pointLocked = params.lockType == SwapLockType::PTLC && !isPtlcNativePair(params.pair);
+    ax.adaptorExchange.htlcHashLock = pointLocked ? Crypto::Hash{} : params.hashLock;
     ax.adaptorExchange.lockType = params.lockType;
     // ptlcPoint duplicates T for pure PTLC; keep zero for HTLC.
     if (params.lockType == SwapLockType::PTLC || params.lockType == SwapLockType::PTLC_HTLC_BRIDGE) {
@@ -1507,6 +1484,10 @@ SwapDaemon::AcceptResult SwapDaemon::accept(const std::string& swapId) {
     ax.adaptorExchange.secpPubHex = params.secpPubHex;
     if (IChainClient* ctrClient = m_chainRegistry.getClient(params.pair))
       ax.adaptorExchange.ctrClaimPubKeyHex = ctrClient->getClaimPubKey();
+    if (pointLocked && !adaptor_prove_cross_curve(params, ax.adaptorExchange.crossCurveProof)) {
+      m_logger(Logging::ERROR) << "Cannot prove the cross-curve binding of T; ADAPTOR_EXCHANGE not sent";
+      return {false, "cross-curve proof failed"};
+    }
     signPeerMessage(ax, params.ourSwapPubKey, params.ourSwapSecKey);
     if (deliverPeerMessage(ax)) {
       m_logger(Logging::INFO) << "Delivered ADAPTOR_EXCHANGE (T + H(t)) to peer";
@@ -2127,7 +2108,13 @@ bool SwapDaemon::handlePreSigsReady(SwapStateMachine& sm) {
           << "  Refusing CTR lock: adaptor point not set (DLEQ exchange incomplete)";
         return false;
       }
-      if (params.pair != SwapPair::XMR &&
+      const bool pointLocked = params.lockType == SwapLockType::PTLC && !isPtlcNativePair(params.pair);
+      if (pointLocked && !params.crossCurveProofVerified) {
+        m_logger(Logging::ERROR)
+          << "  Refusing CTR lock: the cross-curve proof for T_secp has not been verified";
+        return false;
+      }
+      if (!pointLocked && params.pair != SwapPair::XMR &&
           std::memcmp(&params.hashLock, &ZERO_H, sizeof(ZERO_H)) == 0) {
         m_logger(Logging::ERROR)
           << "  Refusing CTR lock: hashLock not set (DLEQ exchange incomplete)";
@@ -4345,12 +4332,20 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
           m_logger(Logging::WARNING) << "ADAPTOR_EXCHANGE ignored (not Alice)";
           return true;
         }
-        if (msg.adaptorExchange.lockType == SwapLockType::PTLC && !isPtlcNativePair(params.pair) &&
-            !purePtlcAllowed(params.pair)) {
-          m_logger(Logging::ERROR) << "ADAPTOR_EXCHANGE rejected: pure PTLC is disabled for "
+        const bool pointLock = pointLockAvailable(params.pair);
+        if (msg.adaptorExchange.lockType == SwapLockType::PTLC && !isPtlcNativePair(params.pair) && !pointLock) {
+          m_logger(Logging::ERROR) << "ADAPTOR_EXCHANGE rejected: this node has no point lock for "
                                    << swapPairToString(params.pair);
           return false;
         }
+        if (pointLock && msg.adaptorExchange.lockType != SwapLockType::PTLC) {
+          m_logger(Logging::ERROR) << "ADAPTOR_EXCHANGE rejected: " << swapPairToString(params.pair)
+                                   << " is locked by point on this node; a hash lock is not bound to T (F33)";
+          return false;
+        }
+        // A point lock opens with t itself: Bob's hash, which nothing ties to
+        // t, must not be able to veto the true t after his claim.
+        const Crypto::Hash boundHashLock = pointLock ? Crypto::Hash{} : msg.adaptorExchange.htlcHashLock;
         // Cross-curve point format gate: fail closed on malformed secpPubHex
         // (66 hex chars, compressed prefix 02 or 03).
         if (!msg.adaptorExchange.secpPubHex.empty()) {
@@ -4385,8 +4380,7 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
                           sizeof(ZERO_PK)) != 0 ||
               std::memcmp(&params.adaptorDleqQ, &msg.adaptorExchange.adaptorDleqQ,
                           sizeof(ZERO_PK)) != 0 ||
-              std::memcmp(&params.hashLock, &msg.adaptorExchange.htlcHashLock,
-                          sizeof(Crypto::Hash)) != 0 ||
+              std::memcmp(&params.hashLock, &boundHashLock, sizeof(Crypto::Hash)) != 0 ||
               secpConflict ||
               params.ctrPubKey != msg.adaptorExchange.ctrClaimPubKeyHex) {
             m_logger(Logging::ERROR) << "Conflicting duplicate ADAPTOR_EXCHANGE rejected";
@@ -4398,7 +4392,7 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
         params.adaptorPoint = msg.adaptorExchange.adaptorPoint;
         params.adaptorDleqQ = msg.adaptorExchange.adaptorDleqQ;
         params.adaptorDleqProof = msg.adaptorExchange.dleqProof;
-        params.hashLock = msg.adaptorExchange.htlcHashLock;
+        params.hashLock = boundHashLock;
         params.lockType = msg.adaptorExchange.lockType;
         params.ptlcPoint = msg.adaptorExchange.ptlcPoint;
         params.secpPubHex = msg.adaptorExchange.secpPubHex;
@@ -4429,6 +4423,13 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
           params.secpPubHex.clear();
           params.ctrPubKey.clear();
           return false;
+        }
+        if (pointLock) {
+          if (!adaptor_verify_cross_curve(params, msg.adaptorExchange.crossCurveProof)) {
+            m_logger(Logging::ERROR) << "ADAPTOR_EXCHANGE rejected: no valid cross-curve proof that T_secp opens with t";
+            return false;
+          }
+          params.crossCurveProofVerified = true;
         }
         return true;
       }

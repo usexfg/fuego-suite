@@ -16,7 +16,9 @@
 #include "AdaptorSwap.h"
 #include "BitcoinCash/HtlcScript.h"
 #include "Sia/SiaHtlcScript.h"
+#include "crypto/cross_dleq.h"
 #include "crypto/secp_adaptor.h"
+#include <memory>
 #include <cstring>
 #include <vector>
 
@@ -91,8 +93,10 @@ bool dleqContextForSwap(const SwapParams& params, Crypto::Hash& out) {
 
 bool adaptor_generate_adaptor(SwapParams& params,
                               const Crypto::PublicKey& dleq_base_point) {
-  // Generate adaptor secret t, point T = t*G
-  Crypto::generate_keys(params.adaptorPoint, params.adaptorSecret);
+  // t below 2^252 is a scalar on ed25519 and secp256k1 alike, which the
+  // cross-curve proof needs.
+  Crypto::cross_dleq_generate_scalar(params.adaptorSecret);
+  if (!Crypto::secret_key_to_public_key(params.adaptorSecret, params.adaptorPoint)) return false;
 
   // Cross-curve binding: publish T_secp = t·G_secp (byte-reversed scalar).
   // Fail closed — a swap without a verifiable cross-curve point must not
@@ -147,6 +151,29 @@ bool adaptor_generate_adaptor(SwapParams& params,
       params.adaptorSecret,
       dleqCtx,
       params.adaptorDleqProof);
+}
+
+bool adaptor_prove_cross_curve(const SwapParams& params, std::vector<uint8_t>& proofBytes) {
+  Crypto::Hash context{};
+  if (!dleqContextForSwap(params, context)) return false;
+  auto proof = std::make_unique<Crypto::CrossDleqProof>();
+  Crypto::PublicKey edPoint;
+  Crypto::SecpPubKey secpPoint;
+  if (!Crypto::cross_dleq_prove(params.adaptorSecret, context, edPoint, secpPoint, *proof) ||
+      std::memcmp(&edPoint, &params.adaptorPoint, sizeof(edPoint)) != 0 ||
+      Crypto::secpPubKeyToHex(secpPoint) != params.secpPubHex)
+    return false;
+  Crypto::cross_dleq_serialize(*proof, proofBytes);
+  return true;
+}
+
+bool adaptor_verify_cross_curve(const SwapParams& params, const std::vector<uint8_t>& proofBytes) {
+  Crypto::Hash context{};
+  Crypto::SecpPubKey secpPoint;
+  auto proof = std::make_unique<Crypto::CrossDleqProof>();
+  return dleqContextForSwap(params, context) && Crypto::hexToSecpPubKey(params.secpPubHex, secpPoint) &&
+         Crypto::cross_dleq_deserialize(proofBytes, *proof) &&
+         Crypto::cross_dleq_verify(params.adaptorPoint, secpPoint, context, *proof);
 }
 
 bool adaptor_verify_adaptor(const SwapParams& params,

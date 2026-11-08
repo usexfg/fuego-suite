@@ -36,6 +36,7 @@ struct SwapDaemonTestAccess {
   }
   static bool handleCtrLocked(SwapDaemon& daemon, SwapStateMachine& sm) { return daemon.handleCtrLocked(sm); }
   static bool handleWaitingSpv(SwapDaemon& daemon, SwapStateMachine& sm) { return daemon.handleWaitingSpv(sm); }
+  static bool handlePreSigsReady(SwapDaemon& daemon, SwapStateMachine& sm) { return daemon.handlePreSigsReady(sm); }
 };
 struct RpcServerTestAccess {
   static std::string dispatch(RpcServer& server, const std::string& request) {
@@ -883,7 +884,7 @@ struct AdaptorPair {
   SwapParams bob{};
 };
 
-AdaptorPair btcAdaptorPair(const std::string& swapId) {
+AdaptorPair adaptorPairFor(const std::string& swapId, SwapPair swapPair) {
   AdaptorPair pair;
   pair.alice.role = SwapRole::ALICE;
   pair.bob.role = SwapRole::BOB;
@@ -893,7 +894,7 @@ AdaptorPair btcAdaptorPair(const std::string& swapId) {
   pair.bob.peerSwapPubKey = pair.alice.ourSwapPubKey;
   for (SwapParams* side : {&pair.alice, &pair.bob}) {
     side->swapId = swapId;
-    side->pair = SwapPair::BTC;
+    side->pair = swapPair;
     side->xfgAmount = 1000000000;
     side->ctrAmount = AtomicAmount("100000");
     adaptor_key_aggregate(*side);
@@ -901,6 +902,8 @@ AdaptorPair btcAdaptorPair(const std::string& swapId) {
   adaptor_generate_adaptor(pair.bob, pair.bob.escrowPubKey);
   return pair;
 }
+
+AdaptorPair btcAdaptorPair(const std::string& swapId) { return adaptorPairFor(swapId, SwapPair::BTC); }
 
 PeerMessage signedAdaptorExchange(const AdaptorPair& pair, SwapLockType lockType) {
   PeerMessage message{};
@@ -912,6 +915,7 @@ PeerMessage signedAdaptorExchange(const AdaptorPair& pair, SwapLockType lockType
   message.adaptorExchange.htlcHashLock = pair.bob.hashLock;
   message.adaptorExchange.lockType = lockType;
   message.adaptorExchange.ptlcPoint = pair.bob.adaptorPoint;
+  message.adaptorExchange.secpPubHex = pair.bob.secpPubHex;
   signPeerMessage(message, pair.bob.ourSwapPubKey, pair.bob.ourSwapSecKey);
   return message;
 }
@@ -953,9 +957,146 @@ static bool test_peer_cannot_select_disabled_pure_ptlc() {
   return ok;
 }
 
+namespace {
+class PointLockClient : public IChainClient {
+public:
+  explicit PointLockClient(int& lockCalls) : m_lockCalls(lockCalls) {}
+  std::string chainName() const override { return "ETH"; }
+  bool supportsPurePtlc() const override { return true; }
+  ChainClientResult lock(const SwapParams&) override {
+    ++m_lockCalls;
+    return ChainClientResult::fail("not scripted");
+  }
+  ChainClientResult verifyLock(const SwapParams&) override { return ChainClientResult::fail("not scripted"); }
+  ChainClientResult claim(const SwapParams&) override { return ChainClientResult::fail("not scripted"); }
+  ChainClientResult refund(const SwapParams&) override { return ChainClientResult::fail("not scripted"); }
+  ChainClientResult verifyReserveProof(const std::string&, uint64_t, const std::string&) override {
+    return ChainClientResult::fail("not scripted");
+  }
+
+private:
+  int& m_lockCalls;
+};
+
+struct PointLockOutcome {
+  bool accepted = false;
+  bool proofVerified = false;
+  bool hashLockBound = true;
+  SwapLockType storedLockType = SwapLockType::HTLC;
+};
+
+PointLockOutcome deliverToPointLockAlice(const std::filesystem::path& dir, const AdaptorPair& pair,
+                                         const PeerMessage& message) {
+  Logging::ConsoleLogger logger(Logging::FATAL);
+  int lockCalls = 0;
+  SwapDaemon daemon("127.0.0.1", 1, dir.string(), logger);
+  SwapDaemonTestAccess::registerChain(daemon, SwapPair::ETH, std::make_unique<PointLockClient>(lockCalls));
+  daemon.database().setEncryptionKey("point-lock-test-key");
+  PointLockOutcome outcome;
+  if (!daemon.database().saveSwap(SwapStateMachine(pair.alice))) return outcome;
+  outcome.accepted = SwapDaemonTestAccess::handlePeerMessage(daemon, message);
+  SwapStateMachine persisted;
+  daemon.database().loadSwap(pair.alice.swapId, persisted);
+  outcome.proofVerified = persisted.params().crossCurveProofVerified;
+  outcome.storedLockType = persisted.params().lockType;
+  static const Crypto::Hash ZERO_HASH{};
+  outcome.hashLockBound = std::memcmp(&persisted.params().hashLock, &ZERO_HASH, sizeof(ZERO_HASH)) != 0;
+  return outcome;
+}
+
+PeerMessage provenExchange(const AdaptorPair& pair, SwapLockType lockType, const AdaptorPair* proofSource = nullptr) {
+  PeerMessage message = signedAdaptorExchange(pair, lockType);
+  adaptor_prove_cross_curve((proofSource ? *proofSource : pair).bob, message.adaptorExchange.crossCurveProof);
+  signPeerMessage(message, pair.bob.ourSwapPubKey, pair.bob.ourSwapSecKey);
+  return message;
+}
+} // namespace
+
+static bool test_point_lock_requires_cross_curve_proof() {
+  std::cout << "  test_point_lock_requires_cross_curve_proof... ";
+  namespace fs = std::filesystem;
+  const fs::path base = fs::temp_directory_path() /
+      ("xfg-point-lock-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+  fs::create_directories(base);
+  bool ok = true;
+  auto expect = [&](bool condition, const std::string& label) {
+    if (!condition) { std::cout << " [" << label << "]"; ok = false; }
+  };
+  const AdaptorPair pair = adaptorPairFor("point-lock", SwapPair::ETH);
+  const AdaptorPair otherSecret = adaptorPairFor("point-lock", SwapPair::ETH);
+
+  const PointLockOutcome valid = deliverToPointLockAlice(base / "valid", pair, provenExchange(pair, SwapLockType::PTLC));
+  expect(valid.accepted && valid.proofVerified && valid.storedLockType == SwapLockType::PTLC,
+         "a proven point-lock exchange is accepted and recorded as verified");
+  expect(!valid.hashLockBound, "a point lock binds no hash lock that could veto the true t");
+
+  const PointLockOutcome downgrade =
+      deliverToPointLockAlice(base / "downgrade", pair, provenExchange(pair, SwapLockType::PTLC_HTLC_BRIDGE));
+  expect(!downgrade.accepted && !downgrade.proofVerified,
+         "a hash lock is refused for a pair this node locks by point");
+
+  const PointLockOutcome unproven =
+      deliverToPointLockAlice(base / "unproven", pair, signedAdaptorExchange(pair, SwapLockType::PTLC));
+  expect(!unproven.accepted && !unproven.proofVerified, "a point lock without the cross-curve proof is refused");
+
+  const PointLockOutcome forged =
+      deliverToPointLockAlice(base / "forged", pair, provenExchange(pair, SwapLockType::PTLC, &otherSecret));
+  expect(!forged.accepted && !forged.proofVerified, "a proof made for another secret is refused");
+
+  PeerMessage tampered = provenExchange(pair, SwapLockType::PTLC);
+  tampered.adaptorExchange.crossCurveProof[100] ^= 1;
+  const PointLockOutcome altered = deliverToPointLockAlice(base / "altered", pair, tampered);
+  expect(!altered.accepted, "a proof changed after signing is refused");
+
+  PeerMessage roundTrip;
+  const PeerMessage original = provenExchange(pair, SwapLockType::PTLC);
+  expect(deserializePeerMessage(serializePeerMessage(original), roundTrip) &&
+             roundTrip.adaptorExchange.crossCurveProof == original.adaptorExchange.crossCurveProof,
+         "the proof survives the wire encoding");
+
+  std::error_code ignored;
+  fs::remove_all(base, ignored);
+  std::cout << (ok ? "PASS\n" : "FAIL\n");
+  return ok;
+}
+
+static bool test_point_lock_gate_needs_verified_proof() {
+  std::cout << "  test_point_lock_gate_needs_verified_proof... ";
+  namespace fs = std::filesystem;
+  const fs::path base = fs::temp_directory_path() /
+      ("xfg-point-gate-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+  fs::create_directories(base);
+  bool ok = true;
+  for (const bool verified : {false, true}) {
+    AdaptorPair pair = adaptorPairFor(verified ? "gate-verified" : "gate-unverified", SwapPair::ETH);
+    SwapParams alice = pair.alice;
+    alice.adaptorPoint = pair.bob.adaptorPoint;
+    alice.secpPubHex = pair.bob.secpPubHex;
+    alice.lockType = SwapLockType::PTLC;
+    alice.crossCurveProofVerified = verified;
+    SwapStateMachine sm(alice);
+    sm.transition(SwapState::ADAPTOR_KEYS_EXCHANGED);
+    sm.transition(SwapState::ADAPTOR_ESCROW_FUNDED);
+    sm.transition(SwapState::ADAPTOR_PRESIGS_READY);
+    Logging::ConsoleLogger logger(Logging::FATAL);
+    int lockCalls = 0;
+    SwapDaemon daemon("127.0.0.1", 1, (base / alice.swapId).string(), logger);
+    SwapDaemonTestAccess::registerChain(daemon, SwapPair::ETH, std::make_unique<PointLockClient>(lockCalls));
+    SwapDaemonTestAccess::handlePreSigsReady(daemon, sm);
+    if ((lockCalls == 1) != verified) {
+      std::cout << (verified ? " [a verified point lock was not funded]" : " [an unverified point lock was funded]");
+      ok = false;
+    }
+  }
+  std::error_code ignored;
+  fs::remove_all(base, ignored);
+  std::cout << (ok ? "PASS\n" : "FAIL\n");
+  return ok;
+}
+
 int main() {
   std::cout << "=== SwapStateMachine SPV state tests ===\n\n";
-  int pass = 0, total = 20;
+  int pass = 0, total = 22;
   if (test_spv_waiting_to_confirmed())    ++pass;
   if (test_spv_waiting_stays_on_retry())  ++pass;
   if (test_spv_waiting_to_refunded())     ++pass;
@@ -976,6 +1117,8 @@ int main() {
   if (test_expected_peer_key_is_not_a_completed_exchange()) ++pass;
   if (test_unsent_claim_keeps_xfg_refund_open()) ++pass;
   if (test_peer_cannot_select_disabled_pure_ptlc()) ++pass;
+  if (test_point_lock_requires_cross_curve_proof()) ++pass;
+  if (test_point_lock_gate_needs_verified_proof()) ++pass;
 
   std::cout << "\n=== " << pass << "/" << total << " tests passed ===\n";
   return (pass == total) ? 0 : 1;

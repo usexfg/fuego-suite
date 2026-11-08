@@ -247,6 +247,9 @@ struct SwapParams {
   // verifies). Compressed 33-byte hex (66 chars); empty = not published.
   // Derived from adaptorSecret with the canonical byte-reversal rule.
   std::string secpPubHex;
+  // Alice: Bob's cross-curve proof that adaptorPoint and secpPubHex share t
+  // verified; a point lock is funded only when this is set.
+  bool crossCurveProofVerified = false;
 
   // Musig2 session state
   Musig2State musig2;

@@ -15,6 +15,7 @@
 #include "SwapPeerProtocol.h"
 #include "Common/JsonValue.h"
 #include "Common/StringTools.h"
+#include "crypto/cross_dleq.h"
 #include "crypto/hash.h"
 
 #include <cstring>
@@ -171,12 +172,13 @@ Crypto::Hash peerMessageDigest(const PeerMessage& msg) {
         // carries data or the other extension fields are covered. When every
         // field is default/empty the digest matches pre-extension peers.
         const bool hasClaimKey = !msg.adaptorExchange.ctrClaimPubKeyHex.empty();
-        if (hasClaimKey && !usePtlcFields) {
+        const bool hasCrossCurveProof = !msg.adaptorExchange.crossCurveProof.empty();
+        if ((hasClaimKey || hasCrossCurveProof) && !usePtlcFields) {
           buf.push_back(static_cast<uint8_t>(msg.adaptorExchange.lockType));
           appendPod(buf, msg.adaptorExchange.ptlcPoint);
           buf.push_back(msg.adaptorExchange.requirePtlc ? 1 : 0);
         }
-        if (!msg.adaptorExchange.secpPubHex.empty() || usePtlcFields || hasClaimKey) {
+        if (!msg.adaptorExchange.secpPubHex.empty() || usePtlcFields || hasClaimKey || hasCrossCurveProof) {
           appendU32LE(buf, static_cast<uint32_t>(msg.adaptorExchange.secpPubHex.size()));
           buf.insert(buf.end(), msg.adaptorExchange.secpPubHex.begin(),
                      msg.adaptorExchange.secpPubHex.end());
@@ -189,6 +191,12 @@ Crypto::Hash peerMessageDigest(const PeerMessage& msg) {
           appendU32LE(buf, static_cast<uint32_t>(msg.adaptorExchange.ctrClaimPubKeyHex.size()));
           buf.insert(buf.end(), msg.adaptorExchange.ctrClaimPubKeyHex.begin(),
                      msg.adaptorExchange.ctrClaimPubKeyHex.end());
+        }
+        if (hasCrossCurveProof) {
+          buf.push_back(0xC2);
+          appendU32LE(buf, static_cast<uint32_t>(msg.adaptorExchange.crossCurveProof.size()));
+          buf.insert(buf.end(), msg.adaptorExchange.crossCurveProof.begin(),
+                     msg.adaptorExchange.crossCurveProof.end());
         }
       }
       break;
@@ -298,6 +306,8 @@ std::string serializePeerMessage(const PeerMessage& msg) {
       payload.insert("secpPubHex", msg.adaptorExchange.secpPubHex);
       if (!msg.adaptorExchange.ctrClaimPubKeyHex.empty())
         payload.insert("ctrClaimPubKey", msg.adaptorExchange.ctrClaimPubKeyHex);
+      if (!msg.adaptorExchange.crossCurveProof.empty())
+        payload.insert("crossCurveProof", Common::toHex(msg.adaptorExchange.crossCurveProof));
       break;
 
     case PeerMessageType::NONCE_EXCHANGE:
@@ -430,6 +440,12 @@ bool deserializePeerMessage(const std::string& json, PeerMessage& msg) {
         if (p.contains("ctrClaimPubKey") && p("ctrClaimPubKey").isString()) {
           msg.adaptorExchange.ctrClaimPubKeyHex = p("ctrClaimPubKey").getString();
           if (msg.adaptorExchange.ctrClaimPubKeyHex.size() != 66) return false;
+        }
+        if (p.contains("crossCurveProof") && p("crossCurveProof").isString()) {
+          const std::string& proofHex = p("crossCurveProof").getString();
+          if (proofHex.size() != 2 * Crypto::cross_dleq_serialized_size() ||
+              !Common::fromHex(proofHex, msg.adaptorExchange.crossCurveProof))
+            return false;
         }
         // For pure PTLC, ptlcPoint duplicates adaptorPoint if not explicitly set
         {

@@ -363,6 +363,7 @@ std::string SwapStateMachine::serialize() const {
   root.insert("xfgTimeoutHeight", static_cast<int64_t>(m_params.xfgTimeoutHeight));
   root.insert("escrowClaimSigHex", m_params.escrowClaimSigHex);
   root.insert("secpPubHex", m_params.secpPubHex);
+  root.insert("crossCurveProofVerified", static_cast<int64_t>(m_params.crossCurveProofVerified ? 1 : 0));
   root.insert("xmrSpendPub", Common::podToHex(m_params.xmrSpendPub));
   root.insert("xmrViewPub", Common::podToHex(m_params.xmrViewPub));
   root.insert("peerXmrSpendPub", Common::podToHex(m_params.peerXmrSpendPub));
@@ -570,6 +571,8 @@ SwapStateMachine SwapStateMachine::deserialize(const std::string& json) {
     params.escrowClaimSigHex = root("escrowClaimSigHex").getString();
   if (root.contains("secpPubHex") && root("secpPubHex").isString())
     params.secpPubHex = root("secpPubHex").getString();
+  if (root.contains("crossCurveProofVerified") && root("crossCurveProofVerified").isInteger())
+    params.crossCurveProofVerified = root("crossCurveProofVerified").getInteger() != 0;
   if (root.contains("xmrSpendPub"))
     Common::podFromHex(root("xmrSpendPub").getString(), params.xmrSpendPub);
   if (root.contains("xmrViewPub"))

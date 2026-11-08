@@ -23,6 +23,7 @@
 #pragma once
 
 #include "SwapTypes.h"
+#include <vector>
 #include "crypto/crypto.h"
 #include "crypto/adaptor.h"
 #include "crypto/dleq.h"
@@ -59,6 +60,13 @@ bool adaptor_key_aggregate(SwapParams& params);
 // base_point is used as the second DLEQ generator (can be any known point).
 bool adaptor_generate_adaptor(SwapParams& params,
                               const Crypto::PublicKey& dleq_base_point);
+
+// ─── Step 3a: Cross-curve proof (point locks, CROSS_CURVE_PLAN X2) ───
+//
+// Bob proves that adaptorPoint (ed25519) and secpPubHex (secp256k1) share t,
+// bound to the swap's DLEQ context; Alice verifies before she locks.
+bool adaptor_prove_cross_curve(const SwapParams& params, std::vector<uint8_t>& proofBytes);
+bool adaptor_verify_cross_curve(const SwapParams& params, const std::vector<uint8_t>& proofBytes);
 
 // ─── Step 3b: Verify adaptor point (Alice only) ─────────────────────
 //

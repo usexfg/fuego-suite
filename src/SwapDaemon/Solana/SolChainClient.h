@@ -13,9 +13,7 @@ public:
 
   std::string chainName() const override { return "SOL"; }
   std::string readinessError() override;
-  // On-chain ClaimPtlc + lockPtlc client paths landed (plan P3). Negotiation
-  // flip (HTLC/BRIDGE -> PTLC) stays behind FEATURE_PURE_PTLC at P4.2 — do
-  // not return true here until that flag lands.
+  // Point locks for SOL arrive with CROSS_CURVE_PLAN X4.
   bool supportsPtlc() const override { return false; }
   std::string getReceiveAddress() const override;
   ChainClientResult lock(const SwapParams& params) override;

@@ -133,7 +133,7 @@ Rollout: BTC, then LTC and BCH (same client family), then KMD, DOGE, DASH, ZEC f
 | 0.1-0.5 | Done. CI: GCC, Clang, MSVC (Windows) and macOS builds pass, sanitizers pass; `ctest` fails only on F29 (`test_orderbook_auction`) |
 | 0.6 | Done in Valise (pin `a2df2f3`) |
 | 1.0-1.7, 1.10 | Done (`src/SwapDaemon/Utxo/`); signatures verified against python-bitcoinlib digests |
-| 1.8, 1.9 | 1.9 (transport): BTC and LTC pass in CI against bitcoind 28.1 and litecoind 0.21.4. BCH passes 28/28 against BCHN 29.2.0 (CI run 42408891349; 28.x expired at the May 2026 upgrade); its first run found that BCHN reports CashAddr, so the duplicate-lock guard never matched (fixed: outputs compared by script). Claims are refused inside the claim runway (review fix). 1.8 open: BTC, LTC, BCH stay GATED until the owner accepts a transport-only gate; no two-daemon XFG run exists; F33 applies to them as well |
+| 1.8, 1.9 | 1.9 (transport): BTC and LTC pass in CI against bitcoind 28.1 and litecoind 0.21.4. BCH passes 28/28 against BCHN 29.2.0 (CI run 42408891349; 28.x expired at the May 2026 upgrade); its first run found that BCHN reports CashAddr, so the duplicate-lock guard never matched (fixed: outputs compared by script). Claims are refused inside the claim runway (review fix). 1.8: owner approved ACTIVE for BTC, LTC, BCH on 2026-11-08; they move with their point locks (`CROSS_CURVE_PLAN.md` X6-X8) so they do not go live under F33; no two-daemon XFG run exists |
 | 2.1 | Done (verified TLS, pinning, loopback-only plaintext; F31) |
 | 2.2-2.6 | Done for Bob (BTC, LTC, BCH mainnet and regtest): header rules, quorum policy, Bob-only SPV path, role-aware readiness. KMD/DCR SPV refused (2.3); Valise stops writing it. Not run against public Electrum servers. Alice over SPV not implemented |
 | 3.1, 3.2 | 3.1 done: PEAQ priced from `coingecko:peaq-2` (identity checked live in CI). 3.2: no feed exists for GLEEC (`gleec-coin` resolves nowhere); GLEEC stays UNPRICED |
@@ -143,9 +143,9 @@ Rollout: BTC, then LTC and BCH (same client family), then KMD, DOGE, DASH, ZEC f
 | R2, R8 | Done in Valise (catalog table generated; live readiness shown) |
 | R7 | Daemon: done (encrypted keystore). Valise: open until the suite pin carries the keystore |
 | R9 | UTXO transport gate (1.9) in CI; EVM gate against anvil passes 19/19 (CI run 42406472393). Open: Solana (`solana-test-validator`), and two-daemon runs with an XFG testnet |
-| R11 | Open: deleting `src/SwapDaemon/CLV/` needs the owner's explicit approval |
+| R11 | Done: `src/SwapDaemon/CLV/` deleted (owner approved 2026-11-08). It was a 32-line header-only `EthChainClient` subclass that no build target, registry or catalog id used, and it mislabelled CLV as Robinhood Chain (catalog id 13, chain id 4663) |
 | F29 | Open: consensus fee split; owner decision |
-| F33, R12 | Open: protocol change; the owner chooses (a), (b) or (c), and whether hash-locked pairs stay ACTIVE meanwhile |
+| F33, R12 | In implementation: owner chose (a) on 2026-11-08; hash-locked pairs stay ACTIVE until their point lock ships. Work items X1-X10 in `CROSS_CURVE_PLAN.md` |
 | F30-F32 | F30, F31 fixed. F32 fixed: fill results carry the claim key and are signed by the offer's maker (they were unsigned gossip); AFK itself stays disabled by `AFK_SOFT_ORDER_EXECUTION_ENABLED` |
 
 ## 6. Order

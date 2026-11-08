@@ -1,3 +1,15 @@
+## DeXFG remediation R11 and cross-curve plan
+
+**Started**: 2026-11-08
+**Agent**: Claude Code
+**Status**: R11 DONE; cross-curve plan written, implementation in progress
+**Scope**: `src/SwapDaemon/CLV/` (deleted), `src/SwapDaemon/chains-staging/polkadot-compat/README.md`, `docs/dexfg/CROSS_CURVE_PLAN.md` (new), `docs/dexfg/SWAP_REMEDIATION_PLAN.md`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| R11 | Deleted `src/SwapDaemon/CLV/` (owner approval 2026-11-08): a header-only `EthChainClient` subclass and README that nothing built, registered or cataloged; the staging README no longer calls CLV "Robinhood Chain" | Claude Code | 2026-11-08 | DONE |
+| R12 | `CROSS_CURVE_PLAN.md`: owner decisions, target protocol per chain family, work items X1-X10 with completion criteria, and the facts the owner should weigh (no independent review of the proof, no `PointTimelock` deployed, SOL redeploy, older peers fail closed) | Claude Code | 2026-11-08 | DONE |
+
 ## DeXFG remediation 1.9 (BCH) and plan 1.2: duplicate-lock guard on BCHN; F33 recorded
 
 **Started**: 2026-11-07

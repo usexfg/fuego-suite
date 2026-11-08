@@ -6298,19 +6298,48 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
     return false;
   }
 
-  // H-1(b)/M-1: a single pass over every key-image-carrying input, with an exact
-  // rollback of this call's inserts on any failure. The previous shape erased
-  // earlier inputs with a type-blind boost::get — which throws boost::bad_get on
-  // the first non-KeyInput element (the remote crash) — and the SwapEscrow
-  // failure path returned without undoing anything already inserted.
-  std::vector<Crypto::KeyImage> insertedKeyImages;
-  auto rollbackSpentKeyInserts = [&]() {
-    for (const auto& keyImage : insertedKeyImages) {
-      m_indexManager.spentKeys().erase(keyImage);
-    }
-    insertedKeyImages.clear();
-  };
+  // H-1(b)/M-1: RAII guard. Owns every key-image insert and the vault/counter
+  // mutations made by this call. On any exit (return, exception) that has not
+  // called commit(), it reverses them. Unified remains gated for v12.
+  //
+  // NOTE: AMM reserve updates, output-index insertions, heat-supply, digm/pool
+  // counters and other late mutations are intentionally left outside this guard
+  // for now. They sit after the pre-check loop and validateSettlement, so late
+  // failure is rare under current code. The long-term goal is to bring every
+  // mutation this function performs under the same rollback model so the
+  // transactional boundary is uniform and future edits cannot re-open a partial
+  // mutation window. Extend the guard (or the pop path) when that work is done.
+  struct PushRollbackGuard {
+    Blockchain& bc;
+    std::vector<Crypto::KeyImage> insertedKeyImages;
+    std::vector<uint64_t> vaultIndices;
+    int64_t cdLockedDelta = 0;
+    bool committed = false;
 
+    explicit PushRollbackGuard(Blockchain& b) : bc(b) {}
+    ~PushRollbackGuard() {
+      if (committed) return;
+      for (const auto& ki : insertedKeyImages) {
+        bc.m_indexManager.spentKeys().erase(ki);
+      }
+      if (!vaultIndices.empty()) {
+        bc.m_vault.unSpendUtxos(vaultIndices);
+      }
+      if (cdLockedDelta != 0) {
+        if (cdLockedDelta < 0) {
+          bc.m_totalCdLocked += static_cast<uint64_t>(-cdLockedDelta);
+        } else {
+          bc.m_totalCdLocked = (bc.m_totalCdLocked >= static_cast<uint64_t>(cdLockedDelta))
+              ? bc.m_totalCdLocked - static_cast<uint64_t>(cdLockedDelta) : 0;
+        }
+      }
+    }
+    void commit() { committed = true; }
+  };
+  PushRollbackGuard guard(*this);
+
+  // Pre-mutation collection of every key-image-carrying input (pre-v12 types).
+  // Unified is intentionally left for the v12 cutover.
   for (size_t i = 0; i < transaction.tx.inputs.size(); ++i)
   {
     const Crypto::KeyImage* keyImage = nullptr;
@@ -6322,17 +6351,25 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
     {
       keyImage = &::boost::get<TransactionInputSwapEscrow>(transaction.tx.inputs[i]).keyImage;
     }
+    else if (transaction.tx.inputs[i].type() == typeid(TransactionInputCommitmentSpend))
+    {
+      keyImage = &::boost::get<TransactionInputCommitmentSpend>(transaction.tx.inputs[i]).keyImage;
+    }
+    else if (transaction.tx.inputs[i].type() == typeid(TransactionInputCommitmentTransfer))
+    {
+      keyImage = &::boost::get<TransactionInputCommitmentTransfer>(transaction.tx.inputs[i]).keyImage;
+    }
     if (!keyImage) continue;
 
     auto result = m_indexManager.spentKeys().insert(std::make_pair(*keyImage, block.height));
     if (!result.second)
     {
       logger(ERROR, BRIGHT_RED) << "Double spending transaction was pushed to blockchain.";
-      rollbackSpentKeyInserts();
+      // guard destructor rolls back the inserts already made
       m_indexManager.transactionMap().erase(transactionHash);
       return false;
     }
-    insertedKeyImages.push_back(*keyImage);
+    guard.insertedKeyImages.push_back(*keyImage);
   }
 
   // Vault consensus gate: reject unauthorized vault spends
@@ -6359,7 +6396,6 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
       // construction (nodes must agree on the key image), so any content-based
       // gate (isPermitted) is bypassable. Reject unconditionally.
       logger(ERROR, BRIGHT_RED) << "Rejected transaction naming a synthetic vault key image";
-      rollbackSpentKeyInserts();
       m_indexManager.transactionMap().erase(transactionHash);
       return false;
     }
@@ -6373,7 +6409,6 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
     uint64_t txClaimedBonus = 0;
     if (!getCdBonusClaims(transaction.tx, bonusByInput, txClaimedBonus)) {
       logger(ERROR, BRIGHT_RED) << "Malformed CD bonus claims at connect";
-      rollbackSpentKeyInserts();
       m_indexManager.transactionMap().erase(transactionHash);
       return false;
     }
@@ -6392,15 +6427,13 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
       auto txIt = m_indexManager.transactionMap().find(in.escrowTxId);
       if (txIt == m_indexManager.transactionMap().end()) {
         logger(ERROR, BRIGHT_RED) << "Swap escrow spend references unknown funding tx on connect";
-        rollbackSpentKeyInserts();
-        m_indexManager.transactionMap().erase(transactionHash);
+          m_indexManager.transactionMap().erase(transactionHash);
         return false;
       }
       auto amountIt = m_indexManager.swapEscrowOutputs().find(in.amount);
       if (amountIt == m_indexManager.swapEscrowOutputs().end()) {
         logger(ERROR, BRIGHT_RED) << "Swap escrow spend amount not indexed on connect";
-        rollbackSpentKeyInserts();
-        m_indexManager.transactionMap().erase(transactionHash);
+          m_indexManager.transactionMap().erase(transactionHash);
         return false;
       }
       bool foundUnused = false;
@@ -6410,8 +6443,7 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
             usage.outputIndex == in.escrowOutputIndex) {
           if (usage.isUsed) {
             logger(ERROR, BRIGHT_RED) << "Swap escrow output double-spent on connect";
-            rollbackSpentKeyInserts();
-            m_indexManager.transactionMap().erase(transactionHash);
+                  m_indexManager.transactionMap().erase(transactionHash);
             return false;
           }
           foundUnused = true;
@@ -6420,22 +6452,19 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
       }
       if (!foundUnused) {
         logger(ERROR, BRIGHT_RED) << "Swap escrow output usage entry missing on connect";
-        rollbackSpentKeyInserts();
-        m_indexManager.transactionMap().erase(transactionHash);
+          m_indexManager.transactionMap().erase(transactionHash);
         return false;
       }
     } else if (inv.type() == typeid(TransactionInputCommitmentSpend)) {
       if (have_tx_keyimg_as_spent(::boost::get<TransactionInputCommitmentSpend>(inv).keyImage)) {
         logger(ERROR, BRIGHT_RED) << "Double spending commitment transaction was pushed to blockchain.";
-        rollbackSpentKeyInserts();
-        m_indexManager.transactionMap().erase(transactionHash);
+          m_indexManager.transactionMap().erase(transactionHash);
         return false;
       }
     } else if (inv.type() == typeid(TransactionInputCommitmentTransfer)) {
       if (have_tx_keyimg_as_spent(::boost::get<TransactionInputCommitmentTransfer>(inv).keyImage)) {
         logger(ERROR, BRIGHT_RED) << "Double spending commitment transfer was pushed to blockchain.";
-        rollbackSpentKeyInserts();
-        m_indexManager.transactionMap().erase(transactionHash);
+          m_indexManager.transactionMap().erase(transactionHash);
         return false;
       }
     }
@@ -6487,15 +6516,11 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
       }
     } else if (inv.type() == typeid(TransactionInputCommitmentSpend)) {
       const auto& cin = ::boost::get<TransactionInputCommitmentSpend>(inv);
-      auto result = m_indexManager.spentKeys().insert(std::make_pair(cin.keyImage, block.height));
-      if (!result.second) {
-        logger(ERROR, BRIGHT_RED) << "Double spending commitment transaction was pushed to blockchain.";
-        m_indexManager.transactionMap().erase(transactionHash);
-        return false;
-      }
+      // Key image already inserted in the pre-mutation pass above.
       // CD redemption: reduce locked supply, spend vault UTXOs for claimed interest
       if (m_totalCdLocked >= cin.amount) {
         m_totalCdLocked -= cin.amount;
+        guard.cdLockedDelta -= static_cast<int64_t>(cin.amount);
       }
       // m_heatOnDeposit is not touched here: CDs leave it at maturity (see
       // the commitment-output branch below and processBlockEpochWork).
@@ -6522,6 +6547,8 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
             // deposits reaches this once per input.
             if (spendResult.amountSpent >= baseClaim) {
               vaultSpendRecord.cdPoolIndices.insert(vaultSpendRecord.cdPoolIndices.end(),
+                  spendResult.spentIndices.begin(), spendResult.spentIndices.end());
+              guard.vaultIndices.insert(guard.vaultIndices.end(),
                   spendResult.spentIndices.begin(), spendResult.spentIndices.end());
             } else {
               logger(ERROR, BRIGHT_RED) << "Vault CD_APY_POOL spend shortfall: needed "
@@ -6550,6 +6577,8 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
             if (bonusSpend.amountSpent >= bonusForInput) {
               vaultSpendRecord.bonusVaultIndices.insert(vaultSpendRecord.bonusVaultIndices.end(),
                   bonusSpend.spentIndices.begin(), bonusSpend.spentIndices.end());
+              guard.vaultIndices.insert(guard.vaultIndices.end(),
+                  bonusSpend.spentIndices.begin(), bonusSpend.spentIndices.end());
             } else {
               logger(ERROR, BRIGHT_RED) << "Vault BONUS_VAULT spend shortfall: needed "
                   << bonusForInput << " but could only spend " << bonusSpend.amountSpent;
@@ -6569,12 +6598,7 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
       }
     } else if (inv.type() == typeid(TransactionInputCommitmentTransfer)) {
       const auto& xfer = ::boost::get<TransactionInputCommitmentTransfer>(inv);
-      auto result = m_indexManager.spentKeys().insert(std::make_pair(xfer.keyImage, block.height));
-      if (!result.second) {
-        logger(ERROR, BRIGHT_RED) << "Double spending commitment transfer was pushed to blockchain.";
-        m_indexManager.transactionMap().erase(transactionHash);
-        return false;
-      }
+      // Key image already inserted in the pre-mutation pass above.
       // Transfer doesn't change locked supply (old CD consumed, new CD produced — net zero)
     }
   }
@@ -6932,6 +6956,7 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
     }
   }
 
+  guard.commit();
   return true;
 }
 

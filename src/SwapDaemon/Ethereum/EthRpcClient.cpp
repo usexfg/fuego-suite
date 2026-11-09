@@ -1061,47 +1061,27 @@ std::string EthRpcClient::getClaimedPreimage(const std::string& contractIdHex,
   return bytesToHex(reinterpret_cast<const uint8_t*>(&info.preimage), 32, /*prefix=*/false);
 }
 
-bool EthRpcClient::claimHtlc(const std::string& /*fromAddress*/,
-                               const std::string& contractIdHex,
-                               const std::string& preimageHex,
-                               std::string& claimTxHash) {
-  if (m_htlcRegistry.empty()) return false;
-  Crypto::Hash preimage;
-  auto preimageBytes = hexToBytes(preimageHex);
-  if (preimageBytes.size() != 32) return false;
-  std::copy(preimageBytes.begin(), preimageBytes.end(),
-            reinterpret_cast<uint8_t*>(&preimage));
-
-  std::string calldata = EthAbi::encodeClaim(contractIdHex, preimage);
-  auto toBytes   = hexToBytes(m_htlcRegistry);
-  auto dataBytes = hexToBytes(calldata.substr(2));
-  return signAndSend(toBytes, dataBytes, /*valueWei=*/0, CLAIM_GAS_CEILING, claimTxHash);
+bool EthRpcClient::sendClaim(const std::string& registry, const std::string& contractIdHex,
+                             const std::string& secretHex32, std::string& claimTxHash) {
+  if (registry.empty()) return false;
+  const std::vector<uint8_t> secretBytes = hexToBytes(secretHex32);
+  if (secretBytes.size() != 32) return false;
+  Crypto::Hash secret;
+  std::copy(secretBytes.begin(), secretBytes.end(), reinterpret_cast<uint8_t*>(&secret));
+  const std::string calldata = EthAbi::encodeClaim(contractIdHex, secret);
+  return signAndSend(hexToBytes(registry), hexToBytes(calldata.substr(2)), /*valueWei=*/0, CLAIM_GAS_CEILING,
+                     claimTxHash);
 }
 
-bool EthRpcClient::claimPoint(const std::string& /*fromAddress*/,
-                              const std::string& contractIdHex,
-                              const std::string& secretHex32,
-                              std::string& claimTxHash) {
-  if (m_ptlcRegistry.empty()) return false;
-  auto secretBytes = hexToBytes(secretHex32);
-  if (secretBytes.size() != 32) return false;
+bool EthRpcClient::claimHtlc(const std::string& /*fromAddress*/, const std::string& contractIdHex,
+                             const std::string& preimageHex, std::string& claimTxHash) {
+  return sendClaim(m_htlcRegistry, contractIdHex, preimageHex, claimTxHash);
+}
 
-  // PointTimelock.claim(bytes32 contractId, bytes32 secret) — same selector
-  // shape as the HTLC path; secret is the canonical BIG-endian scalar t.
-  uint8_t cidBuf[32] = {};
-  auto cidBytes = hexToBytes(contractIdHex);
-  if (cidBytes.size() >= 32)
-    std::memcpy(cidBuf, cidBytes.data(), 32);
-  else
-    std::memcpy(cidBuf + (32 - cidBytes.size()), cidBytes.data(), cidBytes.size());
-
-  std::string calldata = "0x" + EthAbi::functionSelector("claim(bytes32,bytes32)").substr(2)
-    + bytesToHex(cidBuf, 32)
-    + bytesToHex(secretBytes.data(), 32);
-
-  auto toBytes   = hexToBytes(m_ptlcRegistry);
-  auto dataBytes = hexToBytes(calldata.substr(2));
-  return signAndSend(toBytes, dataBytes, /*valueWei=*/0, CLAIM_GAS_CEILING, claimTxHash);
+// PointTimelock.claim(bytes32,bytes32) takes the canonical big-endian scalar t.
+bool EthRpcClient::claimPoint(const std::string& /*fromAddress*/, const std::string& contractIdHex,
+                              const std::string& secretHex32, std::string& claimTxHash) {
+  return sendClaim(m_ptlcRegistry, contractIdHex, secretHex32, claimTxHash);
 }
 
 bool EthRpcClient::refundHtlc(const std::string& /*fromAddress*/,

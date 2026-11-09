@@ -13,109 +13,20 @@
 
 #include "Bip340Adaptor.h"
 
-#include <openssl/rand.h>
-#include <openssl/sha.h>
-#include <secp256k1.h>
 #include <secp256k1_extrakeys.h>
 #include <secp256k1_schnorrsig.h>
 
 #include <algorithm>
-#include <cstring>
 #include <string>
 #include <vector>
+
+#include "Secp256k1Ops.h"
 
 namespace XfgSwap {
 namespace Bip340 {
 namespace {
 
-constexpr Scalar GROUP_ORDER = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-                                0xFF, 0xFF, 0xFF, 0xFF, 0xFE, 0xBA, 0xAE, 0xDC, 0xE6, 0xAF, 0x48,
-                                0xA0, 0x3B, 0xBF, 0xD2, 0x5E, 0x8C, 0xD0, 0x36, 0x41, 0x41};
-
-const secp256k1_context* context() {
-  static secp256k1_context* ctx = [] {
-    secp256k1_context* created = secp256k1_context_create(SECP256K1_CONTEXT_SIGN | SECP256K1_CONTEXT_VERIFY);
-    unsigned char seed[32];
-    if (created && RAND_bytes(seed, sizeof(seed)) == 1) secp256k1_context_randomize(created, seed);
-    return created;
-  }();
-  return ctx;
-}
-
-void wipe(void* data, size_t size) {
-  volatile uint8_t* bytes = static_cast<volatile uint8_t*>(data);
-  while (size--) *bytes++ = 0;
-}
-
-Scalar taggedHash(const std::string& tag, const std::vector<uint8_t>& data) {
-  unsigned char tagHash[SHA256_DIGEST_LENGTH];
-  SHA256(reinterpret_cast<const unsigned char*>(tag.data()), tag.size(), tagHash);
-  std::vector<uint8_t> preimage(tagHash, tagHash + sizeof(tagHash));
-  preimage.insert(preimage.end(), tagHash, tagHash + sizeof(tagHash));
-  preimage.insert(preimage.end(), data.begin(), data.end());
-  Scalar digest;
-  SHA256(preimage.data(), preimage.size(), digest.data());
-  wipe(preimage.data(), preimage.size());
-  return digest;
-}
-
-Scalar reducedModOrder(Scalar value) {
-  if (!std::lexicographical_compare(value.begin(), value.end(), GROUP_ORDER.begin(), GROUP_ORDER.end())) {
-    int borrow = 0;
-    for (int i = 31; i >= 0; --i) {
-      const int difference = value[i] - GROUP_ORDER[i] - borrow;
-      borrow = difference < 0;
-      value[i] = static_cast<uint8_t>(difference + (borrow ? 256 : 0));
-    }
-  }
-  return value;
-}
-
-bool validScalar(const Scalar& scalar) { return secp256k1_ec_seckey_verify(context(), scalar.data()) == 1; }
-
-bool scalarAdd(const Scalar& a, const Scalar& b, Scalar& out) {
-  out = a;
-  return secp256k1_ec_seckey_tweak_add(context(), out.data(), b.data()) == 1;
-}
-
-bool scalarMul(const Scalar& a, const Scalar& b, Scalar& out) {
-  out = a;
-  return secp256k1_ec_seckey_tweak_mul(context(), out.data(), b.data()) == 1;
-}
-
-bool scalarNegate(const Scalar& a, Scalar& out) {
-  out = a;
-  return secp256k1_ec_seckey_negate(context(), out.data()) == 1;
-}
-
-bool scalarSub(const Scalar& a, const Scalar& b, Scalar& out) {
-  Scalar negated;
-  return scalarNegate(b, negated) && scalarAdd(a, negated, out);
-}
-
-bool parsePoint(const Point& bytes, secp256k1_pubkey& point) {
-  return secp256k1_ec_pubkey_parse(context(), &point, bytes.data(), bytes.size()) == 1;
-}
-
-bool serializePoint(const secp256k1_pubkey& point, Point& bytes) {
-  size_t size = bytes.size();
-  return secp256k1_ec_pubkey_serialize(context(), bytes.data(), &size, &point, SECP256K1_EC_COMPRESSED) == 1 &&
-         size == bytes.size();
-}
-
-bool pointOf(const Scalar& scalar, secp256k1_pubkey& point) {
-  return secp256k1_ec_pubkey_create(context(), &point, scalar.data()) == 1;
-}
-
-bool addPoints(const secp256k1_pubkey& a, const secp256k1_pubkey& b, secp256k1_pubkey& out) {
-  const secp256k1_pubkey* points[2] = {&a, &b};
-  return secp256k1_ec_pubkey_combine(context(), &out, points, 2) == 1;
-}
-
-bool subtractPoints(const secp256k1_pubkey& a, const secp256k1_pubkey& b, secp256k1_pubkey& out) {
-  secp256k1_pubkey negated = b;
-  return secp256k1_ec_pubkey_negate(context(), &negated) == 1 && addPoints(a, negated, out);
-}
+using namespace Secp256k1Ops;
 
 bool liftX(const XOnlyKey& x, secp256k1_pubkey& point) {
   Point compressed;
@@ -158,7 +69,7 @@ bool deterministicNonce(const Scalar& secretKey, const XOnlyKey& publicKey, cons
                         const Message& message, Scalar& nonce) {
   for (int attempt = 0; attempt < 8; ++attempt) {
     Scalar auxiliary;
-    if (RAND_bytes(auxiliary.data(), static_cast<int>(auxiliary.size())) != 1) return false;
+    if (!randomBytes(auxiliary.data(), auxiliary.size())) return false;
     std::vector<uint8_t> data(secretKey.begin(), secretKey.end());
     data.insert(data.end(), publicKey.begin(), publicKey.end());
     data.insert(data.end(), adaptorPoint.begin(), adaptorPoint.end());
@@ -183,7 +94,7 @@ bool xOnlyPublicKey(const Scalar& secretKey, XOnlyKey& publicKey) {
 bool sign(const Scalar& secretKey, const Message& message, Signature& signature) {
   secp256k1_keypair keypair;
   Scalar auxiliary;
-  const bool ok = RAND_bytes(auxiliary.data(), static_cast<int>(auxiliary.size())) == 1 &&
+  const bool ok = randomBytes(auxiliary.data(), auxiliary.size()) &&
                   secp256k1_keypair_create(context(), &keypair, secretKey.data()) == 1 &&
                   secp256k1_schnorrsig_sign32(context(), signature.data(), message.data(), &keypair,
                                               auxiliary.data()) == 1;
@@ -227,13 +138,10 @@ bool verifyPresig(const XOnlyKey& publicKey, const Message& message, const Point
       !liftX(publicKey, P) || !pointOf(presig.sPrime, sPrimeTimesG))
     return false;
   const Scalar e = challenge(xOf(presig.R0), publicKey, message);
-  eTimesP = P;
-  if (secp256k1_ec_pubkey_tweak_mul(context(), &eTimesP, e.data()) != 1) return false;
+  if (!multiplyPoint(P, e, eTimesP)) return false;
   const bool signedNonceOk =
       hasEvenY(presig.R0) ? subtractPoints(R0, T, nonceTimesG) : subtractPoints(T, R0, nonceTimesG);
-  Point lhs, rhs;
-  return signedNonceOk && addPoints(nonceTimesG, eTimesP, expected) && serializePoint(sPrimeTimesG, lhs) &&
-         serializePoint(expected, rhs) && lhs == rhs;
+  return signedNonceOk && addPoints(nonceTimesG, eTimesP, expected) && samePoint(sPrimeTimesG, expected);
 }
 
 bool complete(const AdaptorPresig& presig, const Scalar& adaptorSecret, Signature& signature) {

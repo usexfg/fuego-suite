@@ -247,6 +247,8 @@ public:
                    const AtomicAmount& valueWei, uint64_t& gasEstimate);
 
 private:
+  bool sendClaim(const std::string& registry, const std::string& contractIdHex, const std::string& secretHex32,
+                 std::string& claimTxHash);
   // Test access for offline transaction-envelope vectors. Production callers
   // use sendTransaction(), which estimates fees and broadcasts the result.
   friend struct EthRpcClientTestAccess;

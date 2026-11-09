@@ -288,7 +288,9 @@ add_library(SwapDaemonLib STATIC
     SwapDaemon/Solana/SolRpcClient.cpp
     SwapDaemon/Solana/SolChainClient.cpp
     SwapDaemon/Crypto/Secp256k1Signer.cpp
+    SwapDaemon/Crypto/Secp256k1Ops.cpp
     SwapDaemon/Crypto/Bip340Adaptor.cpp
+    SwapDaemon/Crypto/BchSchnorrAdaptor.cpp
     SwapDaemon/Crypto/ripemd160.cpp
     SwapDaemon/Crypto/RlpEncoder.cpp
     SwapDaemon/Crypto/Bip143Sighash.cpp
@@ -555,6 +557,12 @@ target_link_libraries(test_utxo_point_lock PRIVATE
 add_executable(test_bip340_adaptor
     SwapDaemon/tests/test_bip340_adaptor.cpp)
 target_link_libraries(test_bip340_adaptor PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto secp256k1)
+
+# R12a X7: BCH Schnorr adaptor signatures for BCH point locks.
+add_executable(test_bch_schnorr_adaptor
+    SwapDaemon/tests/test_bch_schnorr_adaptor.cpp)
+target_link_libraries(test_bch_schnorr_adaptor PRIVATE
     SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto secp256k1)
 
 # R12a: cross-curve DLEQ (ed25519 <-> secp256k1) for point locks.
@@ -1214,6 +1222,7 @@ set(_TEST_DAEMON_TARGETS
     test_evm_claim_deadline
     test_cross_dleq
     test_bip340_adaptor
+    test_bch_schnorr_adaptor
     test_utxo_point_lock
     test_bch_htlc
     test_bch_chain_client

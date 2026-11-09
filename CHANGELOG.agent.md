@@ -6219,3 +6219,22 @@ Sign-off table:
 | Build compiles | IN PROGRESS — rebuild running |
 | Tests pass | PENDING |
 | All tasks done | IN PROGRESS |
+
+## Remove legacy commitment derivation
+
+**Feature name**: Owner-bound only commitment outputs
+**Agent**: Grok
+**Start date**: 2026-11-08
+**Status**: DONE (code). No commitment outputs exist on-network.
+
+Task list:
+1. Remove legacy commitment fallback in `TransfersConsumer.cpp` (owner-bound match only).
+2. Remove legacy paths in `deriveRecordedCommitmentKeyImage` and `resolveCommitmentSpendKeys` in `TransactionExtra.cpp`.
+3. Wallet (valise) now creates and scans owner-bound only; gate removed.
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | PENDING — rebuild required |
+| Tests pass | PENDING — rebuild required |
+| All tasks done | DONE (code changes) |

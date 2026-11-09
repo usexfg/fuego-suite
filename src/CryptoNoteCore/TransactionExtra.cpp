@@ -1921,15 +1921,7 @@ namespace CryptoNote
       }
     }
 
-    // Not owner-bound under this spend secret (or there is no spend secret).
-    // The legacy form needs only the view-derived ECDH secret, so it is derivable
-    // either way and stays trackable by a view-only wallet.
-    const DepositCommitmentKeys legacy =
-      deriveLegacyCommitmentKeys(deriveDepositSecret(derivation, outputIndex));
-    if (legacy.commitKey == commitKey) {
-      outKeyImage = legacy.keyImage;
-      return true;
-    }
+    // Legacy form removed. Only owner-bound key images are derived.
     return false;
   }
 
@@ -1939,20 +1931,6 @@ namespace CryptoNote
     const Crypto::PublicKey& publishedCommitKey,
     const Crypto::SecretKey& recipientSpendSecret,
     CommitmentSpendKeys& out) {
-
-    const DepositCommitmentKeys legacy =
-      deriveLegacyCommitmentKeys(deriveDepositSecret(derivation, outputIndex));
-
-    // P was never recorded, so this output predates the scanner that records it
-    // and was recognised through the legacy form. There is nothing to verify the
-    // legacy keys against; consensus rejects a signature over the wrong ring key.
-    if (publishedCommitKey == Crypto::PublicKey{}) {
-      out.form = CommitmentDerivation::LegacyExposed;
-      out.commitKey = legacy.commitKey;
-      out.spendScalar = legacy.keyScalar;
-      out.keyImage = legacy.keyImage;
-      return true;
-    }
 
     Crypto::SecretKey spendScalar;
     Crypto::KeyImage keyImage;
@@ -1965,17 +1943,7 @@ namespace CryptoNote
       return true;
     }
 
-    // Not reproducible from the spend secret, so this is a pre-v11 output. Its
-    // scalar depends only on the ECDH secret, which is exactly why the owner-bound
-    // form exists; it stays spendable so old funds are not stranded.
-    if (legacy.commitKey == publishedCommitKey) {
-      out.form = CommitmentDerivation::LegacyExposed;
-      out.commitKey = legacy.commitKey;
-      out.spendScalar = legacy.keyScalar;
-      out.keyImage = legacy.keyImage;
-      return true;
-    }
-
+    // Legacy form removed. No commitment outputs exist on-network.
     return false;
   }
 

@@ -2749,6 +2749,11 @@ bool SwapDaemon::finalizeEscrowSpend(SwapStateMachine& sm, const std::string& lo
   return true;
 }
 
+static std::string describeClaimFeeBump(const ChainClientResult& bump) {
+  return bump.feeChildTxId.empty() ? "replacement " + bump.txId
+                                   : "child " + bump.feeChildTxId + " paying for claim " + bump.txId;
+}
+
 void SwapDaemon::replaceStalledClaim(SwapStateMachine& sm, IChainClient* client) {
   static constexpr uint64_t CLAIM_REPLACEMENT_INTERVAL_BLOCKS = 3;
   const SwapParams& params = sm.params();
@@ -2770,9 +2775,10 @@ void SwapDaemon::replaceStalledClaim(SwapStateMachine& sm, IChainClient* client)
         latest.params().ctrClaimTxId = claimTxId;
         latest.params().ctrClaimSubmittedHeight = tip;
       }))
-    m_logger(Logging::ERROR) << "  Claim replaced by " << claimTxId << " but persistence failed";
+    m_logger(Logging::ERROR) << "  Claim fee raised by " << describeClaimFeeBump(replaced)
+                             << " but persistence failed";
   else
-    m_logger(Logging::INFO) << "  Stalled claim replaced at a higher pre-signed fee: " << claimTxId;
+    m_logger(Logging::INFO) << "  Stalled claim fee raised by " << describeClaimFeeBump(replaced);
 }
 
 bool SwapDaemon::withdrawUnsentClaimIntent(SwapStateMachine& sm, const std::string& chainName,

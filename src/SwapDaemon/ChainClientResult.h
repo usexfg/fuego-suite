@@ -18,6 +18,7 @@ struct ChainClientResult {
   uint32_t confirmations = 0;    // number of confirmations (tip - blockHeight + 1)
   uint32_t outputIndex = 0;      // UTXO chains: index of the lock output in txId
   bool nothingSent = false;
+  std::string feeChildTxId;  // a child raising txId's fee; txId stays the tracked transaction
 
   static ChainClientResult ok(const std::string& txId) {
     return {true, false, txId, "", "", false, false, 0, 0};

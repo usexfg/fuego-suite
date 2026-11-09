@@ -309,6 +309,30 @@ static void deliverPointLockNotice(PointSwap& swap, const ChainClientResult& loc
   }
 }
 
+static void checkClaimReplacement(IChainClient& bob, const SwapParams& pending, const std::string& prefix) {
+  const ChainClientResult replaced = bob.bumpClaim(pending);
+  check(replaced.success && replaced.txId != pending.ctrClaimTxId && replaced.feeChildTxId.empty(),
+        prefix + "a pending claim is replaced at the next pre-signed fee (" + replaced.error + ")");
+}
+
+// Litecoin Core refuses replacements, so Bob chains children onto his claim.
+static void checkClaimFeeChildren(const Node& node, IChainClient& bob, const SwapParams& pending,
+                                  const std::string& prefix) {
+  const ChainClientResult first = bob.bumpClaim(pending);
+  check(first.success && first.txId == pending.ctrClaimTxId && isTxidHex(first.feeChildTxId),
+        prefix + "a child raises the pending claim's fee (" + first.error + ")");
+  const ChainClientResult second = bob.bumpClaim(pending);
+  check(second.success && second.txId == pending.ctrClaimTxId && isTxidHex(second.feeChildTxId) &&
+            second.feeChildTxId != first.feeChildTxId,
+        prefix + "a second child extends the chain (" + second.error + ")");
+  if (!second.success) return;
+  Common::JsonValue entry;
+  std::string error;
+  check(node.rpc()("getmempoolentry", "[\"" + second.feeChildTxId + "\"]", entry, error) && entry.isObject() &&
+            entry.contains("ancestorcount") && entry("ancestorcount").getInteger() == 3,
+        prefix + "the node holds the claim and both children as one package (" + error + ")");
+}
+
 static void testPointLockHappyPath(const Node& node, IChainClient& alice, IChainClient& bob) {
   const std::string prefix = node.chain + " point lock: ";
   check(alice.supportsPurePtlc() && bob.supportsPurePtlc(), prefix + "both full nodes offer point locks");
@@ -346,9 +370,8 @@ static void testPointLockHappyPath(const Node& node, IChainClient& alice, IChain
   if (!claimed.success) return;
   SwapParams pending = swap.bob;
   pending.ctrClaimTxId = claimed.txId;
-  const ChainClientResult replaced = bob.bumpClaim(pending);
-  check(replaced.success && replaced.txId != claimed.txId,
-        prefix + "a pending claim is replaced at the next pre-signed fee (" + replaced.error + ")");
+  if (node.chain == "ltc") checkClaimFeeChildren(node, bob, pending, prefix);
+  else checkClaimReplacement(bob, pending, prefix);
   node.mine(1);
   check(alice.tryExtractClaimedSecret(swap.alice) == Common::podToHex(swap.secret),
         prefix + "Alice recovers t from Bob's signature without a claim txid");

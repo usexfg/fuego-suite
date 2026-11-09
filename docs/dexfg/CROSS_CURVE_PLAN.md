@@ -61,5 +61,12 @@ pre-change code) before it is marked done, and a signed row in `CHANGELOG.agent.
   F33 (owner decision: stay ACTIVE meanwhile).
 - The SOL point claim changes the program; it needs a new deployment under a program id the owner holds.
 - BTC, LTC and BCH point locks add a step: Alice must be online after locking to send the claim
-  pre-signature. The claim fee is fixed when Alice signs; Bob can raise it with CPFP on his own output.
+  pre-signature. Alice pre-signs up to four claim fees (x1, x3, x9, x27 of her estimate, capped at a
+  tenth of the value). How Bob raises a stalled claim depends on each chain's default node policy:
+  BTC replaces it with the next pre-signed fee; LTC cannot (Litecoin Core 0.21.4 refuses replacements
+  by default), so Bob chains up to 8 children paying for it, which works only while the claim pays his
+  own key; BCH cannot raise a broadcast claim at all (no replacement, and BCHN dropped
+  child-pays-for-parent mining in v23.0.0), so Bob claims at the top pre-signed fee. A BCH claim still
+  unconfirmed at the refund timeout races Alice's refund, which nodes reject only while they hold the
+  claim (first seen), and Alice can already read t.
 - DOGE, DASH, ZEC, KMD, DCR and the other hash-only chains keep F33 and stay GATED.

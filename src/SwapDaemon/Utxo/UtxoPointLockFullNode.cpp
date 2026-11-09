@@ -115,7 +115,7 @@ ChainClientResult UtxoHtlcFullNode::claimPoint(const SwapParams& params) {
   if (!stateError.empty()) return ChainClientResult::notSent(failurePrefix() + stateError);
   const std::string late = pointClaimDeadlineError(m_chain, state, tip);
   if (!late.empty()) return ChainClientResult::notSent(failurePrefix() + late);
-  return broadcastPointClaim(params, state, claimOfferFor(state, currentFee), lockValue);
+  return broadcastPointClaim(params, state, claimOfferFor(m_chain, state, currentFee), lockValue);
 }
 
 ChainClientResult UtxoHtlcFullNode::refundPoint(const SwapParams& params) {
@@ -213,9 +213,54 @@ ChainClientResult UtxoHtlcFullNode::bumpClaim(const SwapParams& params) {
     return ChainClientResult::notSent(failurePrefix() + "the claim is already confirmed");
   if (!lockedValue(lockOutpoint(params), lockValue, error) || claimOutput >= lockValue)
     return ChainClientResult::notSent(failurePrefix() + error);
-  const PointLockClaimOffer* next = nextClaimOffer(state, lockValue - claimOutput);
-  if (next == nullptr) return ChainClientResult::notSent(failurePrefix() + "the highest pre-signed fee is already in use");
-  return broadcastPointClaim(params, state, *next, lockValue);
+  switch (m_chain.network.feeBump) {
+    case UtxoFeeBump::REPLACE_BY_FEE: {
+      const PointLockClaimOffer* next = nextClaimOffer(state, lockValue - claimOutput);
+      if (next == nullptr)
+        return ChainClientResult::notSent(failurePrefix() + "the highest pre-signed fee is already in use");
+      return broadcastPointClaim(params, state, *next, lockValue);
+    }
+    case UtxoFeeBump::CHILD_PAYS_FOR_PARENT:
+      return payForClaimByChild(params.ctrClaimTxId, rawClaim, lockValue);
+    case UtxoFeeBump::NONE:
+      break;
+  }
+  return ChainClientResult::notSent(failurePrefix() +
+                                    "nodes neither relay replacements nor mine by ancestor fee rate; "
+                                    "the claim waits at its fee");
+}
+
+ChainClientResult UtxoHtlcFullNode::payForClaimByChild(const std::string& claimTxid,
+                                                       const std::vector<uint8_t>& rawClaim, uint64_t lockValue) {
+  std::vector<UtxoMempoolTransaction> descendants;
+  ClaimFeePackage package;
+  std::string error;
+  const SpendingTransactionLookup spenderOf = [&descendants](const UtxoOutpoint& outpoint, std::string& txid,
+                                                             std::vector<uint8_t>& rawTx) {
+    for (const UtxoMempoolTransaction& descendant : descendants) {
+      if (!spendsOutpoint(descendant.rawTx, outpoint)) continue;
+      txid = descendant.txid;
+      rawTx = descendant.rawTx;
+      return true;
+    }
+    return false;
+  };
+  if (!mempoolDescendants(m_rpc, claimTxid, descendants, error) ||
+      !traceClaimFeePackage(claimTxid, rawClaim, spenderOf, package, error))
+    return ChainClientResult::notSent(failurePrefix() + error);
+  const uint64_t estimate =
+      estimateFeeForSize(m_rpc, package.virtualSize + P2PKH_SELF_SPEND_SIZE, spendFeeCeiling(lockValue));
+  std::vector<uint8_t> rawChild;
+  const std::string refusal = buildClaimFeeChild(m_chain, package, lockValue,
+                                                 raisedClaimPackageFee(package, lockValue, estimate), m_key,
+                                                 m_pubKey, rawChild);
+  if (!refusal.empty()) return ChainClientResult::notSent(failurePrefix() + refusal);
+  std::string childTxid;
+  if (!broadcastRawTransaction(m_rpc, rawChild, childTxid, error))
+    return ChainClientResult::fail(failurePrefix() + "fee child broadcast failed: " + error);
+  ChainClientResult raised = ChainClientResult::ok(claimTxid);
+  raised.feeChildTxId = childTxid;
+  return raised;
 }
 
 }  // namespace XfgSwap

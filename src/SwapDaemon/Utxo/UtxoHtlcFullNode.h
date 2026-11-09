@@ -48,7 +48,8 @@ public:
   ChainClientResult transactionDetails(const std::string& txid);
   std::string tryExtractClaimedSecret(const SwapParams& params);
   bool hasConfirmedClaim(const SwapParams& params);
-  // Replaces an unconfirmed point-lock claim with the next pre-signed fee.
+  // Raises an unconfirmed point-lock claim's fee the way the chain's nodes
+  // allow (UtxoFeeBump): the next pre-signed rung, or a child paying for it.
   ChainClientResult bumpClaim(const SwapParams& params);
 
 private:
@@ -69,6 +70,8 @@ private:
   uint64_t currentClaimFee(uint64_t lockValue);
   ChainClientResult broadcastPointClaim(const SwapParams& params, const PointLockState& state,
                                         const PointLockClaimOffer& offer, uint64_t lockValue);
+  ChainClientResult payForClaimByChild(const std::string& claimTxid, const std::vector<uint8_t>& rawClaim,
+                                       uint64_t lockValue);
   std::string failurePrefix() const { return m_chain.ticker + " full node: "; }
 
   const UtxoHtlcChain m_chain;

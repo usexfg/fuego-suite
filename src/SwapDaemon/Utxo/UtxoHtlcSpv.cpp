@@ -128,15 +128,15 @@ ChainClientResult UtxoHtlcSpv::verifyLock(const SwapParams& params) {
   return verified;
 }
 
-bool UtxoHtlcSpv::spendFee(bool claimPath, uint64_t lockValue, uint64_t& fee, std::string& error) {
+bool UtxoHtlcSpv::spendFee(uint64_t virtualSize, uint64_t lockValue, uint64_t& fee, std::string& error) {
   uint64_t relayFloor = 0;
   uint64_t nextBlocks = 0;
   if (!m_spv->feeRatesPerKilobyte(relayFloor, nextBlocks)) {
     error = "servers report no fee rate";
     return false;
   }
-  fee = boundedFee(std::max(MIN_RELAY_FEE_PER_KILOBYTE, relayFloor), nextBlocks,
-                   htlcSpendVirtualSize(m_chain.encoding, claimPath), spendFeeCeiling(lockValue));
+  fee = boundedFee(std::max(MIN_RELAY_FEE_PER_KILOBYTE, relayFloor), nextBlocks, virtualSize,
+                   spendFeeCeiling(lockValue));
   return true;
 }
 
@@ -160,7 +160,7 @@ ChainClientResult UtxoHtlcSpv::broadcastSpend(bool claimPath, const SwapParams& 
                     inclusion.depth < requiredConfirmations(params)))
     return ChainClientResult::notSent(failurePrefix() + "lock is not buried in a quorum-verified block");
   spend.destinationScript = spendDestination(m_chain, claimPath, params, m_pubKey);
-  if (!spendFee(claimPath, spend.lockValue, spend.fee, error))
+  if (!spendFee(htlcSpendVirtualSize(m_chain.encoding, claimPath), spend.lockValue, spend.fee, error))
     return ChainClientResult::notSent(failurePrefix() + error);
 
   std::vector<uint8_t> rawTx;
@@ -278,7 +278,8 @@ ChainClientResult UtxoHtlcSpv::verifyPointLock(const SwapParams& params) {
     return ChainClientResult::fail(failurePrefix() + "lock output holds " + std::to_string(lockValue) +
                                    ", expected at least " + std::to_string(params.ctrAmount64()));
   uint64_t currentFee = 0;
-  if (!spendFee(true, lockValue, currentFee, error)) return ChainClientResult::fail(failurePrefix() + error);
+  if (!spendFee(pointLockSpendVirtualSize(true), lockValue, currentFee, error))
+    return ChainClientResult::fail(failurePrefix() + error);
   const std::string stateError = pointLockStateError(m_chain, params, m_pubKey, tip, lockValue, currentFee, state);
   if (!stateError.empty()) return ChainClientResult::fail(failurePrefix() + stateError);
   const UtxoOutpoint lock = lockOutpoint(params);
@@ -309,11 +310,11 @@ ChainClientResult UtxoHtlcSpv::claimPoint(const SwapParams& params) {
   decodePointLockState(params.chainState, state);
   pointLockScriptPubKey(state.terms, lockScriptPubKey);
   if (!syncedTip(tip, error) || !lockOutput(params, lockScriptPubKey, lockValue, error) ||
-      !spendFee(true, lockValue, currentFee, error))
+      !spendFee(pointLockSpendVirtualSize(true), lockValue, currentFee, error))
     return ChainClientResult::notSent(failurePrefix() + error);
   const std::string late = pointClaimDeadlineError(m_chain, state, tip);
   if (!late.empty()) return ChainClientResult::notSent(failurePrefix() + late);
-  return broadcastPointClaim(params, state, claimOfferFor(state, currentFee), lockValue);
+  return broadcastPointClaim(params, state, claimOfferFor(m_chain, state, currentFee), lockValue);
 }
 
 std::string UtxoHtlcSpv::pointClaimDeadline(const SwapParams& params) {
@@ -364,9 +365,50 @@ ChainClientResult UtxoHtlcSpv::bumpClaim(const SwapParams& params) {
   if (!m_spv->getRawTx(params.ctrClaimTxId, rawClaim) || !readTransactionOutput(rawClaim, 0, claimOutput, paidTo) ||
       !lockOutput(params, lockScriptPubKey, lockValue, error) || claimOutput >= lockValue)
     return ChainClientResult::notSent(failurePrefix() + "our claim or the lock is not available from the servers");
-  const PointLockClaimOffer* next = nextClaimOffer(state, lockValue - claimOutput);
-  if (next == nullptr) return ChainClientResult::notSent(failurePrefix() + "the highest pre-signed fee is already in use");
-  return broadcastPointClaim(params, state, *next, lockValue);
+  switch (m_chain.network.feeBump) {
+    case UtxoFeeBump::REPLACE_BY_FEE: {
+      const PointLockClaimOffer* next = nextClaimOffer(state, lockValue - claimOutput);
+      if (next == nullptr)
+        return ChainClientResult::notSent(failurePrefix() + "the highest pre-signed fee is already in use");
+      return broadcastPointClaim(params, state, *next, lockValue);
+    }
+    case UtxoFeeBump::CHILD_PAYS_FOR_PARENT:
+      return payForClaimByChild(params.ctrClaimTxId, rawClaim, lockValue);
+    case UtxoFeeBump::NONE:
+      break;
+  }
+  return ChainClientResult::notSent(failurePrefix() +
+                                    "nodes neither relay replacements nor mine by ancestor fee rate; "
+                                    "the claim waits at its fee");
+}
+
+ChainClientResult UtxoHtlcSpv::payForClaimByChild(const std::string& claimTxid, const std::vector<uint8_t>& rawClaim,
+                                                  uint64_t lockValue) {
+  const SpendingTransactionLookup spenderOf = [this](const UtxoOutpoint& outpoint, std::string& txid,
+                                                     std::vector<uint8_t>& rawTx) {
+    SpvSpend spend;
+    if (!m_spv->findSpend(outpoint.txid, outpoint.vout, spend) || !spend.spent) return false;
+    txid = spend.spendingTxid;
+    rawTx = spend.rawSpendingTx;
+    return true;
+  };
+  ClaimFeePackage package;
+  uint64_t estimate = 0;
+  std::string error;
+  if (!traceClaimFeePackage(claimTxid, rawClaim, spenderOf, package, error) ||
+      !spendFee(package.virtualSize + P2PKH_SELF_SPEND_SIZE, lockValue, estimate, error))
+    return ChainClientResult::notSent(failurePrefix() + error);
+  std::vector<uint8_t> rawChild;
+  const std::string refusal = buildClaimFeeChild(m_chain, package, lockValue,
+                                                 raisedClaimPackageFee(package, lockValue, estimate), m_key,
+                                                 m_pubKey, rawChild);
+  if (!refusal.empty()) return ChainClientResult::notSent(failurePrefix() + refusal);
+  std::string childTxid;
+  if (!m_spv->broadcastTx(rawChild, childTxid))
+    return ChainClientResult::fail(failurePrefix() + "no server accepted the fee child");
+  ChainClientResult raised = ChainClientResult::ok(claimTxid);
+  raised.feeChildTxId = childTxid;
+  return raised;
 }
 
 }  // namespace XfgSwap

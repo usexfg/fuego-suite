@@ -35,12 +35,20 @@ using UtxoRpcCall = std::function<bool(const std::string& method,
 
 enum class UtxoNetwork { MAINNET, TESTNET, SIGNET, REGTEST };
 
+// How an unconfirmed spend gets a higher fee under the chain's default node policy.
+enum class UtxoFeeBump {
+  REPLACE_BY_FEE,         // Bitcoin Core relays replacements
+  CHILD_PAYS_FOR_PARENT,  // Litecoin Core 0.21 refuses replacements and mines by ancestor fee rate
+  NONE,                   // BCHN: no replacement, and no ancestor-fee-rate mining since v23.0.0
+};
+
 struct UtxoNetworkParams {
   std::string nodeChainName;  // getblockchaininfo "chain"
   std::string bech32Hrp;      // empty where the chain has no segwit
   uint8_t p2pkhVersion = 0;
   uint8_t p2shVersion = 0;
   uint8_t wifVersion = 0;
+  UtxoFeeBump feeBump = UtxoFeeBump::NONE;
 };
 
 bool parseUtxoNetwork(const std::string& name, UtxoNetwork& network);
@@ -95,13 +103,22 @@ bool lookupWalletTxBlockHeight(const UtxoRpcCall& rpc, const std::string& txid,
                                uint64_t& blockHeight, std::string& error);
 bool broadcastRawTransaction(const UtxoRpcCall& rpc, const std::vector<uint8_t>& rawTx,
                              std::string& txid, std::string& error);
-// Fee for a transaction of `virtualBytes`: estimatesmartfee, never below the
-// node's relay and mempool minimums (nor 1 base unit per vbyte), and capped at
-// `ceiling` unless the minimum alone exceeds it.
 // Fee for `virtualBytes` at `targetRate`, never below `floorRate` and never
 // above `ceiling` unless the floor itself demands more (rates per kilobyte).
 uint64_t boundedFee(uint64_t floorRate, uint64_t targetRate, uint64_t virtualBytes, uint64_t ceiling);
+// Fee for a transaction of `virtualBytes`: estimatesmartfee, never below the
+// node's relay and mempool minimums (nor 1 base unit per vbyte), and capped at
+// `ceiling` unless the minimum alone exceeds it.
 uint64_t estimateFeeForSize(const UtxoRpcCall& rpc, uint64_t virtualBytes, uint64_t ceiling);
+
+struct UtxoMempoolTransaction {
+  std::string txid;
+  std::vector<uint8_t> rawTx;
+};
+
+// Every mempool transaction descending from `txid` (getmempooldescendants).
+bool mempoolDescendants(const UtxoRpcCall& rpc, const std::string& txid,
+                        std::vector<UtxoMempoolTransaction>& descendants, std::string& error);
 
 struct UtxoNodeHealth {
   bool ready = false;

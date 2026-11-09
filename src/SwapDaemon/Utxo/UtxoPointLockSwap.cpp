@@ -108,7 +108,9 @@ std::string pointLockStateError(const UtxoHtlcChain& chain, const SwapParams& pa
   return "";
 }
 
-const PointLockClaimOffer& claimOfferFor(const PointLockState& state, uint64_t currentFee) {
+const PointLockClaimOffer& claimOfferFor(const UtxoHtlcChain& chain, const PointLockState& state,
+                                         uint64_t currentFee) {
+  if (chain.network.feeBump == UtxoFeeBump::NONE) return state.claimOffers.back();
   for (const PointLockClaimOffer& offer : state.claimOffers)
     if (offer.fee >= currentFee) return offer;
   return state.claimOffers.back();
@@ -152,6 +154,61 @@ std::string secretFromPointClaim(const SwapParams& params, const PointLockState&
       return littleEndianSecretHex(adaptorSecret);
   }
   return {};
+}
+
+bool traceClaimFeePackage(const std::string& claimTxid, const std::vector<uint8_t>& rawClaim,
+                          const SpendingTransactionLookup& spenderOf, ClaimFeePackage& package, std::string& error) {
+  package = ClaimFeePackage();
+  package.tip = {claimTxid, 0};
+  package.virtualSize = pointLockSpendVirtualSize(true);
+  if (!readTransactionOutput(rawClaim, 0, package.tipValue, package.tipScript)) {
+    error = "the claim has no output";
+    return false;
+  }
+  std::string childTxid;
+  std::vector<uint8_t> child;
+  while (spenderOf(package.tip, childTxid, child)) {
+    uint64_t childValue = 0;
+    std::vector<uint8_t> childScript;
+    if (++package.children > MAX_CLAIM_FEE_CHILDREN || !isTxidHex(childTxid) ||
+        !readTransactionOutput(child, 0, childValue, childScript) || childValue >= package.tipValue) {
+      error = "the claim output is spent by something other than a short chain of fee children";
+      return false;
+    }
+    package.tip = {childTxid, 0};
+    package.tipValue = childValue;
+    package.tipScript = childScript;
+    package.virtualSize += child.size();
+  }
+  return true;
+}
+
+uint64_t raisedClaimPackageFee(const ClaimFeePackage& package, uint64_t lockValue, uint64_t estimatedFee) {
+  const uint64_t ceiling = spendFeeCeiling(lockValue);
+  if (package.tipValue >= lockValue || package.virtualSize == 0) return ceiling;
+  const uint64_t raisedSize = package.virtualSize + P2PKH_SELF_SPEND_SIZE;
+  const uint64_t paidRate = (lockValue - package.tipValue) / package.virtualSize + 1;
+  const uint64_t raisedRate = paidRate > ceiling / CLAIM_FEE_STEP ? ceiling : paidRate * CLAIM_FEE_STEP;
+  const uint64_t raisedFee = raisedRate > ceiling / raisedSize ? ceiling : raisedRate * raisedSize;
+  return std::min(std::max(raisedFee, estimatedFee), ceiling);
+}
+
+std::string buildClaimFeeChild(const UtxoHtlcChain& chain, const ClaimFeePackage& package, uint64_t lockValue,
+                               uint64_t packageFee, const Bip340::Scalar& bobSecret,
+                               const std::vector<uint8_t>& bobKey, std::vector<uint8_t>& rawChild) {
+  if (package.tipScript != p2pkhScriptForPubKey(bobKey))
+    return "the claim pays an address this key cannot spend, so no child can raise its fee";
+  if (package.tipValue >= lockValue) return "the claim pays more than the lock holds";
+  const uint64_t paidFee = lockValue - package.tipValue;
+  if (packageFee <= paidFee)
+    return "the claim and its children already pay " + std::to_string(paidFee) + ", the most this swap spends on fees";
+  P2pkhSelfSpend child;
+  child.input = package.tip;
+  child.inputValue = package.tipValue;
+  child.fee = packageFee - paidFee;
+  child.signingKey = bobSecret;
+  child.publicKey = bobKey;
+  return buildP2pkhSelfSpend(chain.encoding, child, rawChild) ? std::string() : "cannot build the fee child";
 }
 
 }  // namespace XfgSwap

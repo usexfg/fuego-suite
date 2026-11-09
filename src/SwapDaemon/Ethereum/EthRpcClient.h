@@ -258,13 +258,13 @@ private:
   // to: 20-byte address (empty for contract deploy).
   // data: calldata bytes.
   // valueWei: ETH value to send.
-  // gasLimit: gas limit.
+  // gasCeiling: the most gas the buffered estimate may set as the limit.
   // Returns the tx hash on success.
   // Throws std::runtime_error if the signer private key is not configured.
   bool signAndSend(const std::vector<uint8_t>& to,
                    const std::vector<uint8_t>& data,
                    const AtomicAmount& valueWei,
-                   uint64_t gasLimit,
+                   uint64_t gasCeiling,
                    std::string& txHash);
 
   // The gas estimate is already buffered by estimateGas(). Fees remain

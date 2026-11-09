@@ -36,6 +36,13 @@ namespace XfgSwap {
 // Hex helpers
 // ---------------------------------------------------------------------------
 
+// Gas ceilings for the registry calls, about twice the use measured before
+// refunds on the pinned HashedTimelock and PointTimelock bytecode (lock 142k,
+// claim 108k, refund 85k) so a hardfork repricing state access still fits.
+static constexpr uint64_t LOCK_GAS_CEILING = 300000;
+static constexpr uint64_t CLAIM_GAS_CEILING = 250000;
+static constexpr uint64_t REFUND_GAS_CEILING = 200000;
+
 static uint64_t hexToUint64(const std::string& hex) {
   std::string s = hex;
   if (s.size() >= 2 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) {
@@ -820,7 +827,7 @@ bool EthRpcClient::transactionFundingSufficient(const AtomicAmount& balanceWei,
 bool EthRpcClient::signAndSend(const std::vector<uint8_t>& to,
                                 const std::vector<uint8_t>& data,
                                 const AtomicAmount& valueWei,
-                                uint64_t gasLimit,
+                                uint64_t gasCeiling,
                                 std::string& txHash) {
   if (!m_hasSigner) {
     throw std::runtime_error("EthRpcClient::signAndSend: no signer configured — "
@@ -839,12 +846,12 @@ bool EthRpcClient::signAndSend(const std::vector<uint8_t>& to,
     queryGasPrice(gasPriceWei); // use dynamic if available, fallback otherwise
   }
 
-  // The RPC estimate includes a 20% safety buffer. Reject before signing if
-  // the caller's transaction gas cap cannot cover it.
-  uint64_t estimatedGas = 0;
+  // The buffered estimate is the transaction's gas limit; `gasCeiling` bounds
+  // what a misreporting RPC can make the signer commit to.
+  uint64_t gasLimit = 0;
   const std::string toHexValue = to.empty() ? std::string() : bytesToHex(to);
-  if (!estimateGas(toHexValue, bytesToHex(data), valueWei, estimatedGas) ||
-      estimatedGas > gasLimit) return false;
+  if (!estimateGas(toHexValue, bytesToHex(data), valueWei, gasLimit) ||
+      gasLimit > gasCeiling) return false;
 
   // Balance includes both the native lock value and the maximum transaction
   // fee. No transaction signature or broadcast is produced on an RPC failure,
@@ -852,7 +859,7 @@ bool EthRpcClient::signAndSend(const std::vector<uint8_t>& to,
   AtomicAmount balanceWei = 0;
   if (!getBalance(m_signerAddress, balanceWei) ||
       !transactionFundingSufficient(balanceWei, valueWei, gasLimit,
-                                    gasPriceWei, estimatedGas)) return false;
+                                    gasPriceWei, gasLimit)) return false;
 
   // Fetch nonce only after funding preflight, then sign and broadcast.
   uint64_t nonce = 0;
@@ -969,7 +976,7 @@ bool EthRpcClient::lockHtlc(const std::string& fromAddress,
   auto dataBytes = hexToBytes(calldata.substr(2));
 
   std::string txHash;
-  if (!signAndSend(toBytes, dataBytes, valueWei, /*gasLimit=*/200000, txHash))
+  if (!signAndSend(toBytes, dataBytes, valueWei, LOCK_GAS_CEILING, txHash))
     return false;
 
   // Wait for success receipt (lock does not create a new contract address)
@@ -1068,7 +1075,7 @@ bool EthRpcClient::claimHtlc(const std::string& /*fromAddress*/,
   std::string calldata = EthAbi::encodeClaim(contractIdHex, preimage);
   auto toBytes   = hexToBytes(m_htlcRegistry);
   auto dataBytes = hexToBytes(calldata.substr(2));
-  return signAndSend(toBytes, dataBytes, /*valueWei=*/0, /*gasLimit=*/150000, claimTxHash);
+  return signAndSend(toBytes, dataBytes, /*valueWei=*/0, CLAIM_GAS_CEILING, claimTxHash);
 }
 
 bool EthRpcClient::claimPoint(const std::string& /*fromAddress*/,
@@ -1094,7 +1101,7 @@ bool EthRpcClient::claimPoint(const std::string& /*fromAddress*/,
 
   auto toBytes   = hexToBytes(m_ptlcRegistry);
   auto dataBytes = hexToBytes(calldata.substr(2));
-  return signAndSend(toBytes, dataBytes, /*valueWei=*/0, /*gasLimit=*/150000, claimTxHash);
+  return signAndSend(toBytes, dataBytes, /*valueWei=*/0, CLAIM_GAS_CEILING, claimTxHash);
 }
 
 bool EthRpcClient::refundHtlc(const std::string& /*fromAddress*/,
@@ -1104,7 +1111,7 @@ bool EthRpcClient::refundHtlc(const std::string& /*fromAddress*/,
   std::string calldata = EthAbi::encodeRefund(contractIdHex);
   auto toBytes   = hexToBytes(m_htlcRegistry);
   auto dataBytes = hexToBytes(calldata.substr(2));
-  return signAndSend(toBytes, dataBytes, /*valueWei=*/0, /*gasLimit=*/80000, refundTxHash);
+  return signAndSend(toBytes, dataBytes, /*valueWei=*/0, REFUND_GAS_CEILING, refundTxHash);
 }
 
 bool EthRpcClient::refundPoint(const std::string& fromAddress,
@@ -1116,7 +1123,7 @@ bool EthRpcClient::refundPoint(const std::string& fromAddress,
   std::string calldata = EthAbi::encodeRefund(contractIdHex);
   auto toBytes   = hexToBytes(m_ptlcRegistry);
   auto dataBytes = hexToBytes(calldata.substr(2));
-  return signAndSend(toBytes, dataBytes, /*valueWei=*/0, /*gasLimit=*/80000, refundTxHash);
+  return signAndSend(toBytes, dataBytes, /*valueWei=*/0, REFUND_GAS_CEILING, refundTxHash);
 }
 
 bool EthRpcClient::sendRawTransaction(const std::string& signedTxHex, std::string& txHash) {
@@ -1180,7 +1187,7 @@ bool EthRpcClient::lockPoint(const std::string& fromAddress,
   auto dataBytes = hexToBytes(calldata.substr(2));
 
   std::string txHash;
-  if (!signAndSend(toBytes, dataBytes, valueWei, /*gasLimit=*/200000, txHash))
+  if (!signAndSend(toBytes, dataBytes, valueWei, LOCK_GAS_CEILING, txHash))
     return false;
 
   EthTxReceipt receipt;

@@ -17,6 +17,7 @@
 #include "SwapDaemon/Bitcoin/BtcHtlcScript.h"
 #include "SwapDaemon/Crypto/Base58Std.h"
 #include "SwapDaemon/Crypto/Bip143Sighash.h"
+#include "SwapDaemon/Crypto/LegacySighash.h"
 #include "SwapDaemon/Crypto/Secp256k1Signer.h"
 #include "SwapDaemon/Crypto/ripemd160.h"
 
@@ -533,6 +534,47 @@ bool readTransactionOutput(const std::vector<uint8_t>& rawTx, uint32_t vout, uin
   value = outputs[vout].value;
   scriptPubKey = outputs[vout].scriptPubKey;
   return true;
+}
+
+bool buildP2pkhSelfSpend(UtxoHtlcEncoding encoding, const P2pkhSelfSpend& spend, std::vector<uint8_t>& rawTx) {
+  if (!isTxidHex(spend.input.txid) || !isCompressedPublicKey(spend.publicKey) || spend.fee >= spend.inputValue)
+    return false;
+  const std::vector<uint8_t> script = p2pkhScriptForPubKey(spend.publicKey);
+  const uint64_t outputValue = spend.inputValue - spend.fee;
+  const std::array<uint8_t, 32> prevTxid = littleEndianTxid(spend.input.txid);
+  const bool forkId = encoding == UtxoHtlcEncoding::P2SH_FORKID;
+  const uint32_t sighashType = forkId ? SIGHASH_ALL_FORKID : SIGHASH_ALL;
+  const std::array<uint8_t, 32> digest =
+      forkId ? CryptoNote::SwapDaemon::Crypto::Bip143Sighash().computeForP2sh(
+                   TX_VERSION, 0, CLAIM_SEQUENCE, prevTxid, spend.input.vout, script, spend.inputValue, script,
+                   outputValue, sighashType)
+             : CryptoNote::SwapDaemon::Crypto::LegacySighash().computeForP2sh(
+                   TX_VERSION, 0, CLAIM_SEQUENCE, prevTxid, spend.input.vout, script, script, outputValue,
+                   sighashType);
+  CryptoNote::SwapDaemon::Crypto::Secp256k1Signer signer;
+  std::vector<uint8_t> scriptSig;
+  appendPush(scriptSig, derSignature(signer.signRecoverable(digest, spend.signingKey), sighashType));
+  appendPush(scriptSig, spend.publicKey);
+
+  rawTx.clear();
+  appendLE32(rawTx, TX_VERSION);
+  appendVarInt(rawTx, 1);
+  rawTx.insert(rawTx.end(), prevTxid.begin(), prevTxid.end());
+  appendLE32(rawTx, spend.input.vout);
+  appendVarInt(rawTx, scriptSig.size());
+  appendBytes(rawTx, scriptSig);
+  appendLE32(rawTx, CLAIM_SEQUENCE);
+  appendVarInt(rawTx, 1);
+  appendLE64(rawTx, outputValue);
+  appendVarInt(rawTx, script.size());
+  appendBytes(rawTx, script);
+  appendLE32(rawTx, 0);
+  return true;
+}
+
+bool spendsOutpoint(const std::vector<uint8_t>& rawTx, const UtxoOutpoint& outpoint) {
+  std::vector<std::vector<uint8_t>> witness;
+  return spendWitness(rawTx, outpoint, witness);
 }
 
 bool spendWitness(const std::vector<uint8_t>& rawTx, const UtxoOutpoint& lock,

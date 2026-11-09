@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -43,8 +44,10 @@ std::string pointLockStateError(const UtxoHtlcChain& chain, const SwapParams& pa
                                 const std::vector<uint8_t>& bobKey, uint64_t tip, uint64_t lockValue,
                                 uint64_t currentFee, PointLockState& state);
 
-// The lowest rung paying at least `currentFee`, else the top rung.
-const PointLockClaimOffer& claimOfferFor(const PointLockState& state, uint64_t currentFee);
+// The lowest rung paying at least `currentFee`, else the top rung. A chain
+// with no way to raise a claim's fee later (UtxoFeeBump::NONE) takes the top rung.
+const PointLockClaimOffer& claimOfferFor(const UtxoHtlcChain& chain, const PointLockState& state,
+                                         uint64_t currentFee);
 // The first rung paying more than `paidFee`; nullptr when none does.
 const PointLockClaimOffer* nextClaimOffer(const PointLockState& state, uint64_t paidFee);
 
@@ -54,6 +57,35 @@ bool buildPointClaim(const UtxoHtlcChain& chain, const SwapParams& params, const
                      const Bip340::Scalar& bobSecret, std::vector<uint8_t>& rawTx);
 
 std::string pointClaimDeadlineError(const UtxoHtlcChain& chain, const PointLockState& state, uint64_t tip);
+
+// Bob's unconfirmed claim and the fee children chained onto it: each child
+// spends output 0 of the transaction before it and pays Bob's key.
+struct ClaimFeePackage {
+  UtxoOutpoint tip;  // the unspent end of the chain
+  uint64_t tipValue = 0;
+  std::vector<uint8_t> tipScript;
+  uint64_t virtualSize = 0;
+  size_t children = 0;
+};
+
+constexpr size_t MAX_CLAIM_FEE_CHILDREN = 8;
+
+// The transaction spending `outpoint`; false while it is unspent.
+using SpendingTransactionLookup = std::function<bool(const UtxoOutpoint& outpoint, std::string& spendingTxid,
+                                                     std::vector<uint8_t>& spendingTx)>;
+
+bool traceClaimFeePackage(const std::string& claimTxid, const std::vector<uint8_t>& rawClaim,
+                          const SpendingTransactionLookup& spenderOf, ClaimFeePackage& package, std::string& error);
+
+// The package's total fee once one more child joins it: the fee estimated for
+// its size or CLAIM_FEE_STEP times its current fee rate, whichever is higher,
+// capped at the swap's fee ceiling.
+uint64_t raisedClaimPackageFee(const ClaimFeePackage& package, uint64_t lockValue, uint64_t estimatedFee);
+
+// Bob: the child bringing the package to `packageFee`. Empty on success, else why not.
+std::string buildClaimFeeChild(const UtxoHtlcChain& chain, const ClaimFeePackage& package, uint64_t lockValue,
+                               uint64_t packageFee, const Bip340::Scalar& bobSecret,
+                               const std::vector<uint8_t>& bobKey, std::vector<uint8_t>& rawChild);
 
 // Alice: t recovered from a transaction that claims the lock, as the
 // little-endian hex scalar the XFG adaptor consumes.

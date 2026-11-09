@@ -345,11 +345,11 @@ bool isPointLockState(const std::string& chainState) { return chainState.rfind(S
 
 std::vector<uint64_t> claimFeeLadder(uint64_t baseFee, uint64_t ceiling) {
   std::vector<uint64_t> fees;
-  for (uint64_t fee = std::max<uint64_t>(baseFee, 1); fees.size() < MAX_CLAIM_OFFERS; fee *= 3) {
+  for (uint64_t fee = std::max<uint64_t>(baseFee, 1); fees.size() < MAX_CLAIM_OFFERS; fee *= CLAIM_FEE_STEP) {
     const uint64_t capped = std::min(fee, ceiling);
     if (!fees.empty() && capped <= fees.back()) break;
     fees.push_back(capped);
-    if (capped == ceiling || fee > UINT64_MAX / 3) break;
+    if (capped == ceiling || fee > UINT64_MAX / CLAIM_FEE_STEP) break;
   }
   return fees;
 }

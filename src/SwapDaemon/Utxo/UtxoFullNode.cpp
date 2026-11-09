@@ -133,32 +133,32 @@ bool parseUtxoNetwork(const std::string& name, UtxoNetwork& network) {
 
 UtxoNetworkParams bitcoinNetworkParams(UtxoNetwork network) {
   switch (network) {
-    case UtxoNetwork::MAINNET: return {"main", "bc", 0x00, 0x05, 0x80};
-    case UtxoNetwork::TESTNET: return {"test", "tb", 0x6f, 0xc4, 0xef};
-    case UtxoNetwork::SIGNET:  return {"signet", "tb", 0x6f, 0xc4, 0xef};
-    case UtxoNetwork::REGTEST: return {"regtest", "bcrt", 0x6f, 0xc4, 0xef};
+    case UtxoNetwork::MAINNET: return {"main", "bc", 0x00, 0x05, 0x80, UtxoFeeBump::REPLACE_BY_FEE};
+    case UtxoNetwork::TESTNET: return {"test", "tb", 0x6f, 0xc4, 0xef, UtxoFeeBump::REPLACE_BY_FEE};
+    case UtxoNetwork::SIGNET:  return {"signet", "tb", 0x6f, 0xc4, 0xef, UtxoFeeBump::REPLACE_BY_FEE};
+    case UtxoNetwork::REGTEST: return {"regtest", "bcrt", 0x6f, 0xc4, 0xef, UtxoFeeBump::REPLACE_BY_FEE};
   }
-  return {"main", "bc", 0x00, 0x05, 0x80};
+  return {"main", "bc", 0x00, 0x05, 0x80, UtxoFeeBump::REPLACE_BY_FEE};
 }
 
 UtxoNetworkParams litecoinNetworkParams(UtxoNetwork network) {
   switch (network) {
-    case UtxoNetwork::MAINNET: return {"main", "ltc", 0x30, 0x32, 0xb0};
-    case UtxoNetwork::TESTNET: return {"test", "tltc", 0x6f, 0x3a, 0xef};
-    case UtxoNetwork::SIGNET:  return {"signet", "tltc", 0x6f, 0x3a, 0xef};
-    case UtxoNetwork::REGTEST: return {"regtest", "rltc", 0x6f, 0x3a, 0xef};
+    case UtxoNetwork::MAINNET: return {"main", "ltc", 0x30, 0x32, 0xb0, UtxoFeeBump::CHILD_PAYS_FOR_PARENT};
+    case UtxoNetwork::TESTNET: return {"test", "tltc", 0x6f, 0x3a, 0xef, UtxoFeeBump::CHILD_PAYS_FOR_PARENT};
+    case UtxoNetwork::SIGNET:  return {"signet", "tltc", 0x6f, 0x3a, 0xef, UtxoFeeBump::CHILD_PAYS_FOR_PARENT};
+    case UtxoNetwork::REGTEST: return {"regtest", "rltc", 0x6f, 0x3a, 0xef, UtxoFeeBump::CHILD_PAYS_FOR_PARENT};
   }
-  return {"main", "ltc", 0x30, 0x32, 0xb0};
+  return {"main", "ltc", 0x30, 0x32, 0xb0, UtxoFeeBump::CHILD_PAYS_FOR_PARENT};
 }
 
 UtxoNetworkParams bitcoinCashNetworkParams(UtxoNetwork network) {
   switch (network) {
-    case UtxoNetwork::MAINNET: return {"main", "", 0x00, 0x05, 0x80};
-    case UtxoNetwork::TESTNET: return {"test", "", 0x6f, 0xc4, 0xef};
-    case UtxoNetwork::SIGNET:  return {"signet", "", 0x6f, 0xc4, 0xef};
-    case UtxoNetwork::REGTEST: return {"regtest", "", 0x6f, 0xc4, 0xef};
+    case UtxoNetwork::MAINNET: return {"main", "", 0x00, 0x05, 0x80, UtxoFeeBump::NONE};
+    case UtxoNetwork::TESTNET: return {"test", "", 0x6f, 0xc4, 0xef, UtxoFeeBump::NONE};
+    case UtxoNetwork::SIGNET:  return {"signet", "", 0x6f, 0xc4, 0xef, UtxoFeeBump::NONE};
+    case UtxoNetwork::REGTEST: return {"regtest", "", 0x6f, 0xc4, 0xef, UtxoFeeBump::NONE};
   }
-  return {"main", "", 0x00, 0x05, 0x80};
+  return {"main", "", 0x00, 0x05, 0x80, UtxoFeeBump::NONE};
 }
 
 std::string formatCoinAmount(uint64_t baseUnits) {
@@ -416,6 +416,33 @@ uint64_t boundedFee(uint64_t floorRate, uint64_t targetRate, uint64_t virtualByt
   const uint64_t floorFee = (floorRate * virtualBytes + 999) / 1000;
   const uint64_t targetFee = (std::max(floorRate, targetRate) * virtualBytes + 999) / 1000;
   return std::min(targetFee, std::max(ceiling, floorFee));
+}
+
+bool mempoolDescendants(const UtxoRpcCall& rpc, const std::string& txid,
+                        std::vector<UtxoMempoolTransaction>& descendants, std::string& error) {
+  Common::JsonValue txids;
+  if (!isTxidHex(txid) || !rpc("getmempooldescendants", "[" + quoted(txid) + "]", txids, error) ||
+      !txids.isArray()) {
+    if (error.empty()) error = "getmempooldescendants returned no list";
+    return false;
+  }
+  descendants.clear();
+  for (size_t i = 0; i < txids.size(); ++i) {
+    UtxoMempoolTransaction descendant;
+    Common::JsonValue raw;
+    if (!txids[i].isString() || !isTxidHex(txids[i].getString())) {
+      error = "getmempooldescendants returned a malformed txid";
+      return false;
+    }
+    descendant.txid = lowercase(txids[i].getString());
+    if (!rpc("getrawtransaction", "[" + quoted(descendant.txid) + ",false]", raw, error) || !raw.isString() ||
+        !decodeHex(raw.getString(), descendant.rawTx)) {
+      if (error.empty()) error = "descendant " + descendant.txid + " is not readable";
+      return false;
+    }
+    descendants.push_back(std::move(descendant));
+  }
+  return true;
 }
 
 uint64_t estimateFeeForSize(const UtxoRpcCall& rpc, uint64_t virtualBytes, uint64_t ceiling) {

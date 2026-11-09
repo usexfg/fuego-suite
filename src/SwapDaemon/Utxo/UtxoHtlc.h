@@ -72,6 +72,22 @@ bool buildHtlcRefund(UtxoHtlcEncoding encoding, const UtxoHtlcSpend& spend,
                      std::vector<uint8_t>& rawTx, std::string& error);
 uint64_t htlcSpendVirtualSize(UtxoHtlcEncoding encoding, bool claimPath);
 
+// One P2PKH output spent back to the same key: the child that raises an
+// unconfirmed parent's fee where nodes refuse replacements (UtxoFeeBump).
+struct P2pkhSelfSpend {
+  UtxoOutpoint input;
+  uint64_t inputValue = 0;
+  uint64_t fee = 0;
+  std::array<uint8_t, 32> signingKey{};
+  std::vector<uint8_t> publicKey;  // compressed; the input and the output pay its P2PKH
+};
+
+constexpr uint64_t P2PKH_SELF_SPEND_SIZE = 192;  // with the longest low-S signature
+
+bool buildP2pkhSelfSpend(UtxoHtlcEncoding encoding, const P2pkhSelfSpend& spend, std::vector<uint8_t>& rawTx);
+
+bool spendsOutpoint(const std::vector<uint8_t>& rawTx, const UtxoOutpoint& outpoint);
+
 // Output `vout` of a serialized transaction (legacy or segwit encoding).
 bool readTransactionOutput(const std::vector<uint8_t>& rawTx, uint32_t vout, uint64_t& value,
                            std::vector<uint8_t>& scriptPubKey);

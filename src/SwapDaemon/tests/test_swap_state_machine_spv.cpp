@@ -1146,6 +1146,7 @@ class StalledClaimClient : public IChainClient {
 public:
   uint64_t tip = 1000;
   int replacements = 0;
+  bool paysByChild = false;
   std::string chainName() const override { return "BTC"; }
   ChainClientResult lock(const SwapParams&) override { return ChainClientResult::fail("not scripted"); }
   ChainClientResult verifyLock(const SwapParams&) override { return ChainClientResult::fail("not scripted"); }
@@ -1162,15 +1163,19 @@ public:
     result = ChainClientResult::ok(txId);
     return result;
   }
-  ChainClientResult bumpClaim(const SwapParams&) override {
+  ChainClientResult bumpClaim(const SwapParams& params) override {
     ++replacements;
-    return ChainClientResult::ok(std::string(63, 'f') + std::to_string(replacements));
+    if (!paysByChild) return ChainClientResult::ok(std::string(63, 'f') + std::to_string(replacements));
+    ChainClientResult raised = ChainClientResult::ok(params.ctrClaimTxId);
+    raised.feeChildTxId = std::string(63, 'c') + std::to_string(replacements);
+    return raised;
   }
 };
 } // namespace
 
-static bool test_stalled_point_claim_is_replaced() {
-  std::cout << "  test_stalled_point_claim_is_replaced... ";
+static bool test_stalled_point_claim_fee_raised(bool paysByChild) {
+  std::cout << (paysByChild ? "  test_stalled_point_claim_is_paid_for_by_a_child... "
+                             : "  test_stalled_point_claim_is_replaced... ");
   namespace fs = std::filesystem;
   const fs::path dir = fs::temp_directory_path() /
       ("xfg-stalled-claim-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
@@ -1184,6 +1189,7 @@ static bool test_stalled_point_claim_is_replaced() {
     SwapDaemon daemon("127.0.0.1", 1, dir.string(), logger);
     auto owned = std::make_unique<StalledClaimClient>();
     StalledClaimClient* client = owned.get();
+    client->paysByChild = paysByChild;
     SwapDaemonTestAccess::registerChain(daemon, SwapPair::BTC, std::move(owned));
     daemon.database().setEncryptionKey("stalled-claim-test-key");
     daemon.database().saveSwap(sm);
@@ -1208,8 +1214,9 @@ static bool test_stalled_point_claim_is_replaced() {
       std::cout << " [the claim was replaced before three blocks passed]";
       ok = false;
     }
-    if (replaced.ctrClaimTxId == std::string(64, 'a') || replaced.ctrClaimSubmittedHeight != 1003) {
-      std::cout << " [the replacement was not recorded]";
+    if ((replaced.ctrClaimTxId == std::string(64, 'a')) != paysByChild || replaced.ctrClaimSubmittedHeight != 1003) {
+      std::cout << (paysByChild ? " [a fee child changed the tracked claim or did not restart the wait]"
+                                : " [the replacement was not recorded]");
       ok = false;
     }
   }
@@ -1221,7 +1228,7 @@ static bool test_stalled_point_claim_is_replaced() {
 
 int main() {
   std::cout << "=== SwapStateMachine SPV state tests ===\n\n";
-  int pass = 0, total = 24;
+  int pass = 0, total = 25;
   if (test_spv_waiting_to_confirmed())    ++pass;
   if (test_spv_waiting_stays_on_retry())  ++pass;
   if (test_spv_waiting_to_refunded())     ++pass;
@@ -1245,7 +1252,8 @@ int main() {
   if (test_point_lock_requires_cross_curve_proof()) ++pass;
   if (test_point_lock_gate_needs_verified_proof()) ++pass;
   if (test_point_lock_notice_keeps_the_whole_state()) ++pass;
-  if (test_stalled_point_claim_is_replaced()) ++pass;
+  if (test_stalled_point_claim_fee_raised(false)) ++pass;
+  if (test_stalled_point_claim_fee_raised(true)) ++pass;
 
   std::cout << "\n=== " << pass << "/" << total << " tests passed ===\n";
   return (pass == total) ? 0 : 1;

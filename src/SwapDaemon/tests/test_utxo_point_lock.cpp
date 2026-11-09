@@ -12,13 +12,16 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include <openssl/rand.h>
+#include <secp256k1.h>
 
 #include <cstdio>
 #include <string>
 
 #include "Common/StringTools.h"
+#include "SwapDaemon/Crypto/LegacySighash.h"
 #include "SwapDaemon/Utxo/UtxoHtlc.h"
 #include "SwapDaemon/Utxo/UtxoPointLock.h"
+#include "SwapDaemon/Utxo/UtxoPointLockSwap.h"
 
 using namespace XfgSwap;
 
@@ -207,6 +210,129 @@ static void testState(const Fixture& f) {
   check(!isPointLockState("p2tr:" + encoded.substr(4)), "other lock states are not point-lock states");
 }
 
+static UtxoHtlcChain chainWith(UtxoFeeBump feeBump) {
+  UtxoHtlcChain chain{"LTC", SwapPair::LTC, UtxoHtlcEncoding::P2WSH, litecoinNetworkParams(UtxoNetwork::REGTEST)};
+  chain.network.feeBump = feeBump;
+  return chain;
+}
+
+static void testClaimOfferChoice(const Fixture& f) {
+  PointLockState state;
+  state.terms = f.terms;
+  for (const uint64_t fee : claimFeeLadder(1000, 100000)) state.claimOffers.push_back({fee, {}});
+  check(claimOfferFor(chainWith(UtxoFeeBump::CHILD_PAYS_FOR_PARENT), state, 2000).fee == 3000,
+        "a chain that can raise the fee later claims at the lowest adequate rung");
+  check(claimOfferFor(chainWith(UtxoFeeBump::NONE), state, 2000).fee == 27000,
+        "a chain with no later fee raise claims at the top rung");
+}
+
+// The scriptSig signature of a one-input P2PKH spend, checked against the legacy sighash.
+static bool selfSpendSignatureValid(const std::vector<uint8_t>& rawChild, const UtxoOutpoint& input,
+                                    const std::vector<uint8_t>& publicKey, uint64_t outputValue) {
+  const size_t scriptSigOffset = 4 + 1 + 32 + 4 + 1;
+  if (rawChild.size() < scriptSigOffset + 1) return false;
+  const size_t signatureSize = rawChild[scriptSigOffset];
+  const std::vector<uint8_t> der(rawChild.begin() + scriptSigOffset + 1,
+                                 rawChild.begin() + scriptSigOffset + signatureSize);  // without the hashtype
+  std::vector<uint8_t> txid;
+  Common::fromHex(input.txid, txid);
+  std::array<uint8_t, 32> littleEndianTxid{};
+  std::copy(txid.rbegin(), txid.rend(), littleEndianTxid.begin());
+  const std::vector<uint8_t> script = p2pkhScriptForPubKey(publicKey);
+  const std::array<uint8_t, 32> digest = CryptoNote::SwapDaemon::Crypto::LegacySighash().computeForP2sh(
+      2, 0, 0xfffffffd, littleEndianTxid, input.vout, script, script, outputValue, 0x01);
+  secp256k1_context* ctx = secp256k1_context_create(SECP256K1_CONTEXT_VERIFY);
+  secp256k1_ecdsa_signature signature;
+  secp256k1_pubkey key;
+  const bool valid = rawChild[scriptSigOffset + signatureSize] == 0x01 &&
+                     secp256k1_ecdsa_signature_parse_der(ctx, &signature, der.data(), der.size()) == 1 &&
+                     secp256k1_ec_pubkey_parse(ctx, &key, publicKey.data(), publicKey.size()) == 1 &&
+                     secp256k1_ecdsa_verify(ctx, &signature, digest.data(), &key) == 1;
+  secp256k1_context_destroy(ctx);
+  return valid;
+}
+
+static void testClaimFeeChild(const Fixture& f) {
+  const UtxoHtlcChain chain = chainWith(UtxoFeeBump::CHILD_PAYS_FOR_PARENT);
+  std::vector<uint8_t> bobKey;
+  compressedPublicKey(f.bob.secret, bobKey);
+  PointLockSpend claim = f.claim;
+  claim.destinationScript = p2pkhScriptForPubKey(bobKey);
+  Bip340::Signature someSignature{};
+  std::vector<uint8_t> rawClaim;
+  pointLockClaimTransaction(f.terms, claim, someSignature, someSignature, rawClaim);
+  const std::string claimTxid(64, 'c');
+  const SpendingTransactionLookup unspent = [](const UtxoOutpoint&, std::string&, std::vector<uint8_t>&) {
+    return false;
+  };
+  ClaimFeePackage package;
+  std::string error;
+  check(traceClaimFeePackage(claimTxid, rawClaim, unspent, package, error) && package.children == 0 &&
+            package.tip.txid == claimTxid && package.tip.vout == 0 &&
+            package.tipValue == claim.lockValue - claim.fee && package.virtualSize == pointLockSpendVirtualSize(true),
+        "an unspent claim is a package of one");
+
+  const uint64_t raisedFee = raisedClaimPackageFee(package, claim.lockValue, 0);
+  const uint64_t paidRate = claim.fee / package.virtualSize + 1;
+  check(raisedFee == paidRate * CLAIM_FEE_STEP * (package.virtualSize + P2PKH_SELF_SPEND_SIZE),
+        "a child triples the package fee rate");
+  check(raisedClaimPackageFee(package, claim.lockValue, raisedFee + 5) == raisedFee + 5,
+        "a higher estimate wins");
+  check(raisedClaimPackageFee(package, claim.lockValue, claim.lockValue) == spendFeeCeiling(claim.lockValue),
+        "the package never pays above the swap's fee ceiling");
+
+  std::vector<uint8_t> rawChild;
+  check(buildClaimFeeChild(chain, package, claim.lockValue, raisedFee, f.bob.secret, bobKey, rawChild).empty(),
+        "Bob builds the child");
+  uint64_t childValue = 0;
+  std::vector<uint8_t> childScript;
+  const uint64_t childFee = raisedFee - claim.fee;
+  check(spendsOutpoint(rawChild, package.tip) && readTransactionOutput(rawChild, 0, childValue, childScript) &&
+            childValue == package.tipValue - childFee && childScript == claim.destinationScript,
+        "the child spends the claim output back to Bob's key, paying the package's shortfall");
+  check(rawChild.size() <= P2PKH_SELF_SPEND_SIZE && rawChild.size() >= P2PKH_SELF_SPEND_SIZE - 2,
+        "the child's size is the one the fee was computed for (" + std::to_string(rawChild.size()) + ")");
+  check(selfSpendSignatureValid(rawChild, package.tip, bobKey, childValue), "the child carries Bob's valid signature");
+
+  const std::string childTxid(64, 'd');
+  const SpendingTransactionLookup oneChild = [&](const UtxoOutpoint& outpoint, std::string& txid,
+                                                 std::vector<uint8_t>& rawTx) {
+    if (outpoint.txid != claimTxid) return false;
+    txid = childTxid;
+    rawTx = rawChild;
+    return true;
+  };
+  ClaimFeePackage extended;
+  check(traceClaimFeePackage(claimTxid, rawClaim, oneChild, extended, error) && extended.children == 1 &&
+            extended.tip.txid == childTxid && extended.tipValue == childValue &&
+            extended.virtualSize == package.virtualSize + rawChild.size(),
+        "the walk follows the claim output to the end of the chain");
+  check(raisedClaimPackageFee(extended, claim.lockValue, 0) > raisedFee, "each child raises the fee again");
+
+  const SpendingTransactionLookup foreignSpend = [&](const UtxoOutpoint& outpoint, std::string& txid,
+                                                     std::vector<uint8_t>& rawTx) {
+    if (outpoint.txid != claimTxid) return false;
+    txid = childTxid;
+    rawTx = rawClaim;  // pays as much as the claim output holds
+    return true;
+  };
+  check(!traceClaimFeePackage(claimTxid, rawClaim, foreignSpend, extended, error),
+        "a spend that is not a fee child stops the walk");
+  const SpendingTransactionLookup endless = [&](const UtxoOutpoint&, std::string& txid, std::vector<uint8_t>& rawTx) {
+    txid = childTxid;
+    rawTx = rawChild;
+    return true;
+  };
+  check(!traceClaimFeePackage(claimTxid, rawClaim, endless, extended, error), "a chain without end is refused");
+
+  check(!buildClaimFeeChild(chain, package, claim.lockValue, claim.fee, f.bob.secret, bobKey, rawChild).empty(),
+        "no child when the package already pays the target");
+  ClaimFeePackage paysElsewhere = package;
+  paysElsewhere.tipScript = f.claim.destinationScript;
+  check(!buildClaimFeeChild(chain, paysElsewhere, claim.lockValue, raisedFee, f.bob.secret, bobKey, rawChild).empty(),
+        "no child when the claim pays an address Bob's key cannot spend");
+}
+
 int main() {
   const Fixture fixture;
   testScripts(fixture);
@@ -214,6 +340,8 @@ int main() {
   testRefund(fixture);
   testFeeLadder();
   testState(fixture);
+  testClaimOfferChoice(fixture);
+  testClaimFeeChild(fixture);
   std::printf("%d checks, %d failures\n", g_checks, g_failures);
   return g_failures == 0 ? 0 : 1;
 }

@@ -48,6 +48,7 @@ struct PointLockClaimOffer {
 };
 
 constexpr size_t MAX_CLAIM_OFFERS = 4;
+constexpr uint64_t CLAIM_FEE_STEP = 3;  // each rung, and each fee child, triples the fee rate
 
 struct PointLockState {
   PointLockTerms terms;

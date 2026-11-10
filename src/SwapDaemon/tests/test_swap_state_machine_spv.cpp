@@ -1228,7 +1228,7 @@ static bool test_stalled_point_claim_fee_raised(bool paysByChild) {
 
 int main() {
   std::cout << "=== SwapStateMachine SPV state tests ===\n\n";
-  int pass = 0, total = 26;
+  int pass = 0, total = 27;
   if (test_spv_waiting_to_confirmed())    ++pass;
   if (test_spv_waiting_stays_on_retry())  ++pass;
   if (test_spv_waiting_to_refunded())     ++pass;
@@ -1253,6 +1253,7 @@ int main() {
   if (test_point_lock_gate_needs_verified_proof()) ++pass;
   if (test_point_lock_notice_keeps_the_whole_state("tr1:", SwapPair::BTC)) ++pass;
   if (test_point_lock_notice_keeps_the_whole_state("bs1:", SwapPair::BCH)) ++pass;
+  if (test_point_lock_notice_keeps_the_whole_state("ptlc:", SwapPair::SOL)) ++pass;
   if (test_stalled_point_claim_fee_raised(false)) ++pass;
   if (test_stalled_point_claim_fee_raised(true)) ++pass;
 

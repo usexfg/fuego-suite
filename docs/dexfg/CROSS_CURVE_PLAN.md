@@ -59,7 +59,10 @@ pre-change code) before it is marked done, and a signed row in `CHANGELOG.agent.
 - No `PointTimelock` is deployed on any chain today. Until the owner deploys it on a chain (a funded
   key, one transaction per chain through the deterministic deployer), that chain keeps the hash lock and
   F33 (owner decision: stay ACTIVE meanwhile).
-- The SOL point claim changes the program; it needs a new deployment under a program id the owner holds.
+- The SOL program source already holds the point claim (`lock_ptlc`, `claim_ptlc`). No mainnet deployment
+  of it is known. The daemon reads the configured program's code: until a program carrying both point
+  instructions is deployed under a program id the owner holds, SOL stays on the hash lock and F33.
+- SOL point locks bind the escrow to the XFG adaptor point directly; the cross-curve proof is not used.
 - BTC, LTC and BCH point locks add a step: Alice must be online after locking to send the claim
   pre-signature. Alice pre-signs up to four claim fees (x1, x3, x9, x27 of her estimate, capped at a
   tenth of the value). How Bob raises a stalled claim depends on each chain's default node policy:

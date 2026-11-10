@@ -287,6 +287,7 @@ add_library(SwapDaemonLib STATIC
     SwapDaemon/Zano/ZanoChainClient.cpp
     SwapDaemon/Solana/SolRpcClient.cpp
     SwapDaemon/Solana/SolChainClient.cpp
+    SwapDaemon/Solana/SolPointClaim.cpp
     SwapDaemon/Crypto/Secp256k1Signer.cpp
     SwapDaemon/Crypto/Secp256k1Ops.cpp
     SwapDaemon/Crypto/Bip340Adaptor.cpp
@@ -561,6 +562,20 @@ add_executable(test_bip340_adaptor
     SwapDaemon/tests/test_bip340_adaptor.cpp)
 target_link_libraries(test_bip340_adaptor PRIVATE
     SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto secp256k1)
+
+# R12a X4: SOL point-lock gate against solana-test-validator (run by CI).
+add_executable(test_sol_validator_gate
+    SwapDaemon/tests/test_sol_validator_gate.cpp)
+target_link_libraries(test_sol_validator_gate PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto ${Boost_LIBRARIES})
+set_target_properties(test_sol_validator_gate PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/src/test_daemons")
+
+# R12a X4: SOL point claim proof for the xfg_htlc program's claim_ptlc.
+add_executable(test_sol_point_claim
+    SwapDaemon/tests/test_sol_point_claim.cpp)
+target_link_libraries(test_sol_point_claim PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
 
 # R12a X7: BCH P2SH point lock script, spends and state.
 add_executable(test_bch_point_lock
@@ -1233,6 +1248,7 @@ set(_TEST_DAEMON_TARGETS
     test_bip340_adaptor
     test_bch_schnorr_adaptor
     test_bch_point_lock
+    test_sol_point_claim
     test_utxo_point_lock
     test_bch_htlc
     test_bch_chain_client

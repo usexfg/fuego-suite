@@ -16,6 +16,7 @@
 #include "SolRpcClient.h"
 #include "Common/WinCompat.h"
 #include "Common/JsonValue.h"
+#include "SwapDaemon/Crypto/Base58Std.h"
 
 #include <atomic>
 #include <cstring>
@@ -1775,6 +1776,77 @@ bool SolRpcClient::verifyLock(const std::string& htlcAccount,
     return false;
   }
   return info.amount >= expectedLamports;
+}
+
+
+// ---------------------------------------------------------------------------
+// Program capability: point-lock instructions (CROSS_CURVE_PLAN X4)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+const char UPGRADEABLE_LOADER[] = "BPFLoaderUpgradeab1e11111111111111111111111";
+constexpr size_t UPGRADEABLE_PROGRAM_ACCOUNT_SIZE = 36;  // enum tag + programdata address
+constexpr uint32_t UPGRADEABLE_PROGRAM_TAG = 2;
+constexpr size_t PROGRAM_DATA_HEADER_SIZE = 45;          // tag, slot, authority option and key
+
+enum class AccountRead { FOUND, MISSING, FAILED };
+
+struct ReadAccount {
+  std::string owner;
+  std::vector<uint8_t> data;
+};
+
+bool containsText(const std::vector<uint8_t>& code, const std::string& text) {
+  return std::search(code.begin(), code.end(), text.begin(), text.end()) != code.end();
+}
+
+}  // namespace
+
+SolRpcClient::ProgramPointLocks SolRpcClient::programPointLocks() {
+  const auto readAccount = [this](const std::string& address, ReadAccount& account) {
+    const std::string resp = jsonRpc("getAccountInfo",
+                                     "[\"" + address + "\",{\"encoding\":\"base64\",\"commitment\":\"finalized\"}]");
+    try {
+      const Common::JsonValue root = Common::JsonValue::fromString(resp);
+      if (root.contains("error") || !root.contains("result") || !root("result").contains("value"))
+        return AccountRead::FAILED;
+      const Common::JsonValue& value = root("result")("value");
+      if (value.isNil()) return AccountRead::MISSING;
+      if (!value.contains("owner") || !value("owner").isString() || !value.contains("data") ||
+          !value("data").isArray() || value("data").size() == 0 || !value("data")[0].isString())
+        return AccountRead::FAILED;
+      account.owner = value("owner").getString();
+      account.data = base64Decode(value("data")[0].getString());
+      return AccountRead::FOUND;
+    } catch (const std::exception&) {
+      return AccountRead::FAILED;
+    }
+  };
+
+  ReadAccount program;
+  switch (readAccount(m_programId, program)) {
+    case AccountRead::FAILED: return ProgramPointLocks::UNREADABLE;
+    case AccountRead::MISSING: return ProgramPointLocks::ABSENT;
+    case AccountRead::FOUND: break;
+  }
+  std::vector<uint8_t> code = program.data;
+  if (program.owner == UPGRADEABLE_LOADER) {
+    if (program.data.size() != UPGRADEABLE_PROGRAM_ACCOUNT_SIZE || program.data[0] != UPGRADEABLE_PROGRAM_TAG)
+      return ProgramPointLocks::ABSENT;
+    const std::vector<uint8_t> programDataKey(program.data.begin() + 4, program.data.end());
+    ReadAccount programData;
+    switch (readAccount(Base58Std::encode(programDataKey), programData)) {
+      case AccountRead::FAILED: return ProgramPointLocks::UNREADABLE;
+      case AccountRead::MISSING: return ProgramPointLocks::ABSENT;
+      case AccountRead::FOUND: break;
+    }
+    if (programData.data.size() <= PROGRAM_DATA_HEADER_SIZE) return ProgramPointLocks::ABSENT;
+    code.assign(programData.data.begin() + PROGRAM_DATA_HEADER_SIZE, programData.data.end());
+  }
+  return containsText(code, "Instruction: LockPtlc") && containsText(code, "Instruction: ClaimPtlc")
+             ? ProgramPointLocks::PRESENT
+             : ProgramPointLocks::ABSENT;
 }
 
 } // namespace XfgSwap

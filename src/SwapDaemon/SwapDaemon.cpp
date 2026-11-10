@@ -4238,8 +4238,11 @@ bool isLockState(const std::string& state) {
 
 // The lock part of chainState: a point-lock state whole, an HTLC lock script
 // without the ":<claimTxid>" suffix appended later.
+bool isSolPointLockState(const std::string& state) { return state.rfind("ptlc:", 0) == 0; }
+
 std::string announcedLockState(const SwapParams& params) {
-  const bool pointLock = isPointLockState(params.chainState) || isBchPointLockState(params.chainState);
+  const bool pointLock = isPointLockState(params.chainState) || isBchPointLockState(params.chainState) ||
+                         isSolPointLockState(params.chainState);
   return pointLock ? params.chainState : lockScriptHex(params.chainState);
 }
 

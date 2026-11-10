@@ -198,6 +198,13 @@ public:
   bool verifyLock(const std::string& htlcAccount,
                   uint64_t expectedLamports);
 
+  // Whether the configured program carries the point-lock instructions
+  // lock_ptlc and claim_ptlc, read from its deployed code: Anchor builds log
+  // "Instruction: <Name>" from each handler, so the names are in the ELF.
+  // ABSENT also covers a program id with nothing deployed.
+  enum class ProgramPointLocks { PRESENT, ABSENT, UNREADABLE };
+  ProgramPointLocks programPointLocks();
+
 private:
   // JSON-RPC call to Solana node.
   std::string jsonRpc(const std::string& method, const std::string& params);

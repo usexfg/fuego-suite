@@ -1,3 +1,27 @@
+## AppImage bundles non-system shared libraries and smoke-tests in clean Ubuntu
+
+**Started**: 2026-11-10
+**Agent**: Devin
+**Status**: DONE (packaging/script). Full C++ release build is left to CI; the VM has no CMake/Boost toolchain.
+**Scope**: `.github/workflows/release.yml`, `scripts/package-appimage.sh`, `CHANGELOG.agent.md`.
+
+The release AppImage now assembles its AppDir through `scripts/package-appimage.sh`: executables are copied into `usr/bin`, their `ldd` dependency closure is collected, every non-glibc shared library is copied into `usr/lib`, and `AppRun` exports that directory through `LD_LIBRARY_PATH`. The release job then runs the produced AppImage in a clean `ubuntu:24.04` container with `APPIMAGE_EXTRACT_AND_RUN=1` so missing bundled libraries fail the workflow instead of reaching users.
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Add AppDir packaging script with recursive shared-library collection | Devin | 2026-11-10 | DONE |
+| 2 | Wire release AppImage job to the packaging script | Devin | 2026-11-10 | DONE |
+| 3 | Add clean-container AppImage smoke test | Devin | 2026-11-10 | DONE |
+| 4 | Validate script syntax and packaging behavior with synthetic executables | Devin | 2026-11-10 | DONE |
+
+| Gate | Status | Signed |
+|------|--------|--------|
+| Build compiles | PENDING (CI) — no full C++ build on VM | Devin 2026-11-10 |
+| Tests pass | PENDING (CI) — local packaging smoke test PASS | Devin 2026-11-10 |
+| All tasks done | DONE | Devin 2026-11-10 |
+
+---
+
 ## Windows MSVC build fixes for core_tests and test_spv_config_wiring
 
 **Started**: 2026-11-09

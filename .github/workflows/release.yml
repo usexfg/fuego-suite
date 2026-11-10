@@ -286,40 +286,25 @@ jobs:
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DUSE_VENDORED_SECP256K1=OFF
           cmake --build build -j$(nproc)
 
-          mkdir -p "$appdir/usr/bin"
-          mkdir -p "$appdir/usr/share/applications"
-          mkdir -p "$appdir/usr/share/icons/hicolor/256x256/apps"
-
-          for f in build/src/*; do
-            [[ -x $f && -f $f ]] && strip "$f" && cp "$f" "$appdir/usr/bin/"
-          done
-
-          cat > "$appdir/fuego.desktop" << 'DESKTOP_EOF'
-          [Desktop Entry]
-          Type=Application
-          Name=Fuego
-          Exec=fuegod
-          Icon=fuego
-          Categories=Network;
-          DESKTOP_EOF
-
-          cat > "$appdir/AppRun" << 'APPRUN_EOF'
-          #!/bin/bash
-          HERE="$(dirname "$(readlink -f "${0}")")"
-          export PATH="${HERE}/usr/bin:${PATH}"
-          exec "${HERE}/usr/bin/fuegod" "$@"
-          APPRUN_EOF
-          chmod +x "$appdir/AppRun"
-          cp docs/images/PolishedFuegoGonCharcoal.png "$appdir/fuego.png"
-
           wget -q -O appimagetool "https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage"
           echo "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0  appimagetool" | sha256sum -c -
           chmod +x appimagetool
-          ARCH=x86_64 ./appimagetool "$appdir" "$name.AppImage"
+
+          scripts/package-appimage.sh build "$appdir" "$name.AppImage" ./appimagetool
 
           sha=$(sha256sum "$name.AppImage" | awk '{print toupper($1)}')
           echo "asset=$name.AppImage" >> $GITHUB_OUTPUT
           echo "sha=$sha" >> $GITHUB_OUTPUT
+
+      - name: Smoke-test AppImage in clean Ubuntu container
+        run: |
+          asset="${{ steps.build.outputs.asset }}"
+          docker run --rm \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            -e APPIMAGE_EXTRACT_AND_RUN=1 \
+            ubuntu:24.04 \
+            "/workspace/$asset" --version
 
       - uses: actions/upload-artifact@v4
         with:

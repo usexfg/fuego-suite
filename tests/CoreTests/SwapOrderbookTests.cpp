@@ -163,8 +163,7 @@ int main() {
                     static_cast<uint8_t>(XfgSwap::SwapPair::TON) == 27,
                 "Update executable-pair admission when staged indices change");
   for (uint8_t pair = 0; pair <= SwapOfferRelay::MAX_PAIR_INDEX; ++pair) {
-    const bool staged = pair == 2 || pair == 3 || pair == 6 ||
-                        pair == 8 || pair == 9 || pair == 10 || pair == 17 ||
+    const bool staged = pair == 2 || pair == 6 || pair == 8 || pair == 17 ||
                         pair == 20 || pair == 21 || pair == 22 ||
                         pair == 24 || pair == 27 || pair == 28;
     TEST(SwapOfferRelay::isExecutablePair(pair) == !staged);

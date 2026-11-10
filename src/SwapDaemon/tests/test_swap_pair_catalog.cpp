@@ -61,7 +61,12 @@ static void testCatalogIsContiguousAndUnique() {
   assert(evmCount == 32);
   assert(adapterCount == 17);
   assert(stagedCount == 4);
-  assert(gatedCount == 9);
+  assert(gatedCount == 6);
+  // CROSS_CURVE_PLAN X8: the UTXO chains whose point locks pass their node gates.
+  for (const SwapPair pair : {SwapPair::BTC, SwapPair::LTC, SwapPair::BCH}) {
+    assert(swapPairDescriptor(pair)->support == SwapPairSupport::ACTIVE);
+    assert(isExecutableSwapPair(static_cast<uint8_t>(pair)));
+  }
 }
 
 static void testActivationAndNames() {

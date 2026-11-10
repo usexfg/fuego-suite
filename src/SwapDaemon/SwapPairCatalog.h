@@ -46,14 +46,14 @@ enum class EvmTxEnvelope : uint8_t { NONE, LEGACY, EIP1559, SPECIAL };
   X(SOL,          0,  "sol",        "SOL",   "Solana",          SOLANA,     0,      400,      400,  9,  ACTIVE,  NONE,    "sol.png",       "#9945ff") \
   X(ETH,          1,  "eth",        "ETH",   "Ethereum",        EVM,        1,    12000,    12000, 18,  ACTIVE,  EIP1559, "eth.png",       "#627eea") \
   X(XMR,          2,  "xmr",        "XMR",   "Monero",          CRYPTONOTE, 0,   120000,   120000, 12,  GATED,   NONE,    "monero.png",    "#ff6600") \
-  X(BCH,          3,  "bch",        "BCH",   "Bitcoin Cash",    UTXO,       0,   600000,   600000,  8,  GATED,   NONE,    "bch.png",       "#8dc351") \
+  X(BCH,          3,  "bch",        "BCH",   "Bitcoin Cash",    UTXO,       0,   600000,   600000,  8,  ACTIVE,  NONE,    "bch.png",       "#8dc351") \
   X(ARB,          4,  "arb",        "ETH",   "Arbitrum",        EVM,    42161,      250,      250, 18,  ACTIVE,  EIP1559, "arb.png",       "#28a0f0") \
   X(BASE,         5,  "base",       "ETH",   "Base",            EVM,     8453,     2000,     2000, 18,  ACTIVE,  EIP1559, "base.png",      "#0052ff") \
   X(KMD_SPV,      6,  "kmd",        "KMD",   "Komodo",          UTXO,       0,    60000,    60000,  8,  GATED,   NONE,    "kmd.png",       "#2b6def") \
   X(BNB,          7,  "bsc",        "BNB",   "BSC Chain",       EVM,       56,     3000,     3000, 18,  ACTIVE,  EIP1559, "bnb.png",       "#f3ba2f") \
   X(DCR,          8,  "dcr",        "DCR",   "Decred",          UTXO,       0,   300000,   300000,  8,  GATED,   NONE,    "dcr.png",       "#2970ff") \
-  X(BTC,          9,  "btc",        "BTC",   "Bitcoin",         UTXO,       0,   600000,   600000,  8,  GATED,   NONE,    "btc.png",       "#f7931a") \
-  X(LTC,         10,  "ltc",        "LTC",   "Litecoin",        UTXO,       0,   150000,   150000,  8,  GATED,   NONE,    "ltc.png",       "#bfbbbb") \
+  X(BTC,          9,  "btc",        "BTC",   "Bitcoin",         UTXO,       0,   600000,   600000,  8,  ACTIVE,  NONE,    "btc.png",       "#f7931a") \
+  X(LTC,         10,  "ltc",        "LTC",   "Litecoin",        UTXO,       0,   150000,   150000,  8,  ACTIVE,  NONE,    "ltc.png",       "#bfbbbb") \
   X(POLYGON,     11,  "poly",       "POL",   "Polygon",         EVM,      137,     2000,     2000, 18,  ACTIVE,  EIP1559, "matic.png",     "#8247e5") \
   X(GLEEC,       12,  "gleec",      "GLEEC", "Gleec",           EVM,    11169,     5000,     5000, 18,  ACTIVE,  LEGACY,  "gleec.png",     "#4caf50") \
   X(ROBINHOOD,   13,  "rh",         "ETH",   "Robinhood Chain", EVM,     4663,     3000,     3000, 18,  ACTIVE,  EIP1559, "rhc.png",       "#3a2e8c") \

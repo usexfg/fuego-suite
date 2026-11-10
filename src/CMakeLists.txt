@@ -290,6 +290,7 @@ add_library(SwapDaemonLib STATIC
     SwapDaemon/Solana/SolPointClaim.cpp
     SwapDaemon/Crypto/Secp256k1Signer.cpp
     SwapDaemon/Crypto/Secp256k1Ops.cpp
+    SwapDaemon/Crypto/CrossCurveDleq.cpp
     SwapDaemon/Crypto/Bip340Adaptor.cpp
     SwapDaemon/Crypto/BchSchnorrAdaptor.cpp
     SwapDaemon/Crypto/ripemd160.cpp
@@ -350,6 +351,38 @@ target_include_directories(SwapDaemonLib PUBLIC
     ${CMAKE_SOURCE_DIR}/src/Storage
 )
 target_link_libraries(SwapDaemonLib PUBLIC Common Crypto Serialization CryptoNoteCore OpenSSL::SSL OpenSSL::Crypto secp256k1)
+
+# CROSS_CURVE_PLAN X1: sigma_fun's secp256k1/ed25519 discrete-log equality
+# proof, a Rust static library built by cargo from its committed Cargo.lock.
+find_program(CARGO_EXECUTABLE cargo REQUIRED)
+set(CROSS_CURVE_DLEQ_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/SwapDaemon/Crypto/cross_curve_dleq)
+set(CROSS_CURVE_DLEQ_BUILD_DIR ${CMAKE_BINARY_DIR}/cross_curve_dleq)
+if(MSVC)
+  set(CROSS_CURVE_DLEQ_LIBRARY ${CROSS_CURVE_DLEQ_BUILD_DIR}/release/fuego_cross_curve_dleq.lib)
+else()
+  set(CROSS_CURVE_DLEQ_LIBRARY ${CROSS_CURVE_DLEQ_BUILD_DIR}/release/libfuego_cross_curve_dleq.a)
+endif()
+add_custom_command(
+    OUTPUT ${CROSS_CURVE_DLEQ_LIBRARY}
+    COMMAND ${CARGO_EXECUTABLE} build --release --locked --lib
+            --manifest-path ${CROSS_CURVE_DLEQ_SOURCE_DIR}/Cargo.toml
+            --target-dir ${CROSS_CURVE_DLEQ_BUILD_DIR}
+    DEPENDS ${CROSS_CURVE_DLEQ_SOURCE_DIR}/Cargo.toml
+            ${CROSS_CURVE_DLEQ_SOURCE_DIR}/Cargo.lock
+            ${CROSS_CURVE_DLEQ_SOURCE_DIR}/src/lib.rs
+    COMMENT "Building the cross-curve proof library with cargo"
+    VERBATIM)
+add_custom_target(cross_curve_dleq_build DEPENDS ${CROSS_CURVE_DLEQ_LIBRARY})
+add_library(cross_curve_dleq STATIC IMPORTED GLOBAL)
+set_target_properties(cross_curve_dleq PROPERTIES IMPORTED_LOCATION ${CROSS_CURVE_DLEQ_LIBRARY})
+add_dependencies(cross_curve_dleq cross_curve_dleq_build)
+add_dependencies(SwapDaemonLib cross_curve_dleq_build)
+target_link_libraries(SwapDaemonLib PUBLIC cross_curve_dleq)
+if(WIN32)
+  target_link_libraries(SwapDaemonLib PUBLIC ws2_32 userenv bcrypt ntdll advapi32)
+elseif(NOT APPLE)
+  target_link_libraries(SwapDaemonLib PUBLIC pthread dl m)
+endif()
 target_include_directories(SwapDaemonLib SYSTEM PUBLIC ${JSONCPP_INCLUDE_DIRS})
 
 # Full-node UTXO HTLC engine: script layout, signed claim/refund bytes checked
@@ -593,7 +626,7 @@ target_link_libraries(test_bch_schnorr_adaptor PRIVATE
 add_executable(test_cross_dleq
     SwapDaemon/tests/test_cross_dleq.cpp)
 target_link_libraries(test_cross_dleq PRIVATE
-    Crypto Common OpenSSL::SSL OpenSSL::Crypto)
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
 
 # F32: AFK fill results are signed by the offer's maker and carry the claim key.
 add_executable(test_afk_fill_result

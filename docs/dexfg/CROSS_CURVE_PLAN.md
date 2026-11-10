@@ -36,7 +36,7 @@ lock uses and the XFG adaptor point share t.
 
 | # | Item | Done when |
 |---|---|---|
-| X1 | Cross-curve DLEQ (`src/crypto/cross_dleq.cpp`) to the specification in `cross_dleq.h` (Gugger 2020, §4): per-bit Pedersen commitments on both curves, a two-branch ring over the compound statement with 128-bit shared challenges, two Schnorr sum proofs; generators H_ed and H_secp derived by documented hash-to-curve with no known discrete log | Tests: completeness; rejection of a flipped bit, a bit that differs between curves, a different x per curve, another context, malformed points, out-of-range scalars, x ≥ 2^252; serialization round trip and exact size; proving and verifying time recorded |
+| X1 | Cross-curve DLEQ. Revised 2026-11-10 (owner): use a library with production exposure instead of an in-house proof. `sigma_fun` 0.9.0 (`ext::dl_secp256k1_ed25519_eq`, the proof xmr-btc-swap and eigenwallet use; 0BSD) behind a C interface in `src/SwapDaemon/Crypto/cross_curve_dleq` (Rust static library, `Cargo.lock` committed, built by cargo from CMake). Its two Pedersen generators are hashed to the curves here, because the proof is unsound when their discrete logs are known. The in-house `cross_dleq.cpp` proof is removed from use; `cross_dleq_generate_scalar` stays | Rust tests: completeness, statement binding, points equal t times each base point, range, one-size encoding with no slack, tampering, torsion point refused, forgery succeeds with base points as generators and fails with the hashed ones. C++ `test_cross_dleq` through the C interface; `xfg-swapd` links it on Linux, macOS and Windows |
 | X2 | Protocol: π in `ADAPTOR_EXCHANGE`; Bob's t from `cross_dleq_generate_scalar`; Alice verifies π and T_secp before binding; lock-type policy as in §2.2; the verification result is persisted | Engine tests: valid bundle accepted, missing or forged π refused, a hash-lock type refused for a point-capable pair, downgrade refused |
 | X3 | EVM point lock in `EthChainClient`: lock, verify (amount, recipient, point address = address(T_secp), timeout runway), claim with t, t read back without the claim txid, refund; registry address per chain, runtime code-hash pin (R3) and CREATE2 deployment (R4) for `PointTimelock` | Anvil gate: point-lock happy path, wrong point refused, claim inside the runway refused, Alice reads t, refund; `PointTimelock` deployed through the deterministic deployer |
 | X4 | SOL: point claim that checks t·B = T_ed on chain; client lock, verify, claim, extraction, refund; CI job with `solana-test-validator` loading the built program at its `declare_id` | Solana gate passes the same scenarios |
@@ -52,8 +52,18 @@ pre-change code) before it is marked done, and a signed row in `CHANGELOG.agent.
 
 ## 4. Facts the owner should weigh
 
-- π is a bespoke zero-knowledge proof written in-house. It follows a published construction and is
-  tested, but it has had no independent cryptographic review. Swaps of material value warrant one.
+- No audited ed25519/secp256k1 discrete-log equality implementation was found (searched 2026-11-10):
+  Serai's cross-group proof is marked experimental and was excluded from its audit; COMIT's original is
+  an archived proof of concept. π is `sigma_fun`'s proof, written by the secp256kfun author and used in
+  production by xmr-btc-swap and eigenwallet; it has no formal audit either. Swaps of material value
+  still warrant a review of the proof and of the wrapper here.
+- `sigma_fun` leaves the choice of the two commitment generators to the caller. Passing the curves'
+  base points (as the archived COMIT repository did) lets a proof for unequal logarithms verify; the
+  wrapper's tests show the forgery and that it fails against the hashed generators used here.
+- π carries no swap context. Replaying another swap's (T, T_secp, π) gains nothing for a party who does
+  not know t, and the signed `ADAPTOR_EXCHANGE` still covers the proof bytes.
+- Building `xfg-swapd` now needs a Rust toolchain (1.85 or newer) and crates.io access or a vendored
+  registry on every platform.
 - π is about 52 KB per swap (hex in JSON: about 105 KB); the peer transport accepts 1 MB.
 - Peers on older daemons cannot complete point-locked swaps; such swaps fail closed.
 - No `PointTimelock` is deployed on any chain today. Until the owner deploys it on a chain (a funded

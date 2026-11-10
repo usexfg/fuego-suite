@@ -15,7 +15,7 @@
 #include "SwapPeerProtocol.h"
 #include "Common/JsonValue.h"
 #include "Common/StringTools.h"
-#include "crypto/cross_dleq.h"
+#include "Crypto/CrossCurveDleq.h"
 #include "crypto/hash.h"
 
 #include <cstring>
@@ -443,7 +443,7 @@ bool deserializePeerMessage(const std::string& json, PeerMessage& msg) {
         }
         if (p.contains("crossCurveProof") && p("crossCurveProof").isString()) {
           const std::string& proofHex = p("crossCurveProof").getString();
-          if (proofHex.size() != 2 * Crypto::cross_dleq_serialized_size() ||
+          if (proofHex.empty() || proofHex.size() > 2 * CrossCurveDleq::MAX_PROOF_BYTES ||
               !Common::fromHex(proofHex, msg.adaptorExchange.crossCurveProof))
             return false;
         }

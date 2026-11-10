@@ -17,6 +17,7 @@
 #include "BitcoinCash/HtlcScript.h"
 #include "Sia/SiaHtlcScript.h"
 #include "crypto/cross_dleq.h"
+#include "Crypto/CrossCurveDleq.h"
 #include "crypto/secp_adaptor.h"
 #include <memory>
 #include <cstring>
@@ -154,26 +155,21 @@ bool adaptor_generate_adaptor(SwapParams& params,
 }
 
 bool adaptor_prove_cross_curve(const SwapParams& params, std::vector<uint8_t>& proofBytes) {
-  Crypto::Hash context{};
-  if (!dleqContextForSwap(params, context)) return false;
-  auto proof = std::make_unique<Crypto::CrossDleqProof>();
   Crypto::PublicKey edPoint;
   Crypto::SecpPubKey secpPoint;
-  if (!Crypto::cross_dleq_prove(params.adaptorSecret, context, edPoint, secpPoint, *proof) ||
+  std::vector<uint8_t> proof;
+  if (!CrossCurveDleq::prove(params.adaptorSecret, edPoint, secpPoint, proof) ||
       std::memcmp(&edPoint, &params.adaptorPoint, sizeof(edPoint)) != 0 ||
       Crypto::secpPubKeyToHex(secpPoint) != params.secpPubHex)
     return false;
-  Crypto::cross_dleq_serialize(*proof, proofBytes);
+  proofBytes.swap(proof);
   return true;
 }
 
 bool adaptor_verify_cross_curve(const SwapParams& params, const std::vector<uint8_t>& proofBytes) {
-  Crypto::Hash context{};
   Crypto::SecpPubKey secpPoint;
-  auto proof = std::make_unique<Crypto::CrossDleqProof>();
-  return dleqContextForSwap(params, context) && Crypto::hexToSecpPubKey(params.secpPubHex, secpPoint) &&
-         Crypto::cross_dleq_deserialize(proofBytes, *proof) &&
-         Crypto::cross_dleq_verify(params.adaptorPoint, secpPoint, context, *proof);
+  return Crypto::hexToSecpPubKey(params.secpPubHex, secpPoint) &&
+         CrossCurveDleq::verify(params.adaptorPoint, secpPoint, proofBytes);
 }
 
 bool adaptor_verify_adaptor(const SwapParams& params,

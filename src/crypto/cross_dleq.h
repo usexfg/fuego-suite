@@ -11,111 +11,18 @@
 // You should have received a copy of the GNU General Public License
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 //
-// ── Cross-curve DLEQ: Ed25519 <-> secp256k1 (AUDIT 3.9) ──
-//
-// Implemented in cross_dleq.cpp (remediation R12a, docs/dexfg/CROSS_CURVE_PLAN.md).
-// It has had no independent cryptographic review; the owner enabled it on
-// 2026-11-08 to replace hash locks that F33 shows are unsafe. Proof size:
-// cross_dleq_serialized_size() bytes (about 52 KB).
-//
-// Proves that one secret scalar x satisfies BOTH
-//     A = x*G_ed25519      and      B = x*G_secp256k1
-// without revealing x.
-//
-// crypto/dleq.cpp cannot do this: it is Chaum-Pedersen with both points on
-// Ed25519, so it says nothing about a secp256k1 point. Atomic swaps need the
-// cross-curve statement — the XFG side locks to an Ed25519 adaptor point while
-// the counter-chain (BTC Taproot, EVM PTLC) locks to a secp256k1 point, and
-// without this proof nothing rules out the two points having different
-// discrete logs, i.e. a lock the counterparty can never open.
-//
-// Construction (Gugger 2020, "Bitcoin-Monero Cross-chain Atomic Swap", §4):
-// commit to x bit by bit on both curves, prove every commitment opens to 0 or
-// 1, and prove the two curves' commitments encode the SAME bit. Concretely,
-// for each bit i:
-//
-//     C_i = b_i*G_ed   + r_i*H_ed        (Ed25519 Pedersen commitment)
-//     D_i = b_i*G_secp + s_i*H_secp      (secp256k1 Pedersen commitment)
-//
-// A chained 2-ring OR-proof over the COMPOUND statement
-//     (C_i opens to 0 AND D_i opens to 0) OR (C_i opens to 1 AND D_i opens to 1)
-// forces the same bit on both curves: the ring's challenges are shared across
-// the two groups, so a prover cannot answer with b on one curve and 1-b on the
-// other. Challenges are 128-bit so they embed unambiguously in both scalar
-// fields (both group orders exceed 2^128).
-//
-// Finally two Schnorr proofs tie the weighted sums back to A and B:
-//     sum(2^i * C_i) - A = R*H_ed        with R = sum(2^i * r_i)
-//     sum(2^i * D_i) - B = S*H_secp      with S = sum(2^i * s_i)
-//
-// x is restricted to 252 bits so it is a valid scalar in both fields
-// (l_ed25519 > 2^252 and n_secp256k1 > 2^252).
-//
-// Pedersen generators: H_ed = 8 * hash_to_ec(keccak("Fuego/cross-dleq/v1/H_ed"));
-// H_secp = the first x = SHA256("Fuego/cross-dleq/v1/H_secp" || counter_be32)
-// that is a curve point with even y. Neither has a known discrete log.
-// Points are checked on decode: ed25519 points must lie in the prime-order
-// subgroup; responses must be canonical scalars.
+// The scalar behind a cross-curve point lock (CROSS_CURVE_PLAN X1). The proof
+// that its ed25519 and secp256k1 points share it is sigma_fun's, reached
+// through SwapDaemon/Crypto/CrossCurveDleq.h; none of it lives here.
 
 #pragma once
 
-#include <cstdint>
-#include <cstddef>
-#include <vector>
-
 #include "../../include/CryptoTypes.h"
-#include "secp_adaptor.h"
 
 namespace Crypto {
 
-// x < 2^252, so bit index runs 0..251.
-static constexpr size_t CROSS_DLEQ_BITS = 252;
-// 128-bit ring challenges: below both group orders, 2^-128 soundness per ring.
-static constexpr size_t CROSS_DLEQ_CHALLENGE_BYTES = 16;
-
-// Per-bit ring proof plus the two commitments it binds together.
-struct CrossDleqBit {
-  uint8_t C_ed[32];                              // b_i*G_ed   + r_i*H_ed
-  uint8_t D_secp[33];                            // b_i*G_secp + s_i*H_secp
-  uint8_t e0[CROSS_DLEQ_CHALLENGE_BYTES];        // ring seed challenge
-  uint8_t z_ed[2][32];                           // responses, branch 0 / 1
-  uint8_t z_secp[2][32];
-};
-
-// ~52 KB. Heap-allocate; do not place on the stack.
-struct CrossDleqProof {
-  CrossDleqBit bits[CROSS_DLEQ_BITS];
-  uint8_t R_ed[32];      // Schnorr commitment for R, base H_ed
-  uint8_t z_R_ed[32];
-  uint8_t R_secp[33];    // Schnorr commitment for S, base H_secp
-  uint8_t z_S_secp[32];
-};
-
-// Draw a uniform scalar < 2^252, valid on both curves. Use this rather than
-// generate_keys(), whose output can exceed 2^252 and would then decompose
-// incorrectly.
+// Draws a uniform nonzero scalar below 2^252, valid on ed25519 and secp256k1
+// alike. generate_keys() can exceed 2^252, which the proof cannot decompose.
 void cross_dleq_generate_scalar(SecretKey& x);
-
-// Prove A = x*G_ed and B = x*G_secp share x. A and B are outputs, derived from
-// x, so a caller cannot accidentally prove a statement about points it did not
-// generate. `context` binds the proof to one swap (see AUDIT 1.8).
-// Returns false if x is zero or >= 2^252.
-bool cross_dleq_prove(const SecretKey& x,
-                      const Hash& context,
-                      PublicKey& A_ed,
-                      SecpPubKey& B_secp,
-                      CrossDleqProof& proof);
-
-// Verify. Returns false on any malformed point, out-of-range scalar, failed
-// ring, or failed sum check.
-bool cross_dleq_verify(const PublicKey& A_ed,
-                       const SecpPubKey& B_secp,
-                       const Hash& context,
-                       const CrossDleqProof& proof);
-
-// Wire helpers — fixed-size, endian-free (byte arrays only).
-void cross_dleq_serialize(const CrossDleqProof& proof, std::vector<uint8_t>& out);
-bool cross_dleq_deserialize(const std::vector<uint8_t>& in, CrossDleqProof& proof);
-size_t cross_dleq_serialized_size();
 
 } // namespace Crypto

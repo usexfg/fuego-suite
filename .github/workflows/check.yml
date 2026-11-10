@@ -117,6 +117,9 @@ jobs:
           cmake -B build -DCMAKE_BUILD_TYPE=Release -DUSE_VENDORED_SECP256K1=OFF -G Ninja
           cmake --build build -j$(nproc)
 
+      - name: Cross-curve proof library tests
+        run: cargo test --release --locked --manifest-path src/SwapDaemon/Crypto/cross_curve_dleq/Cargo.toml
+
       - name: Test
         run: ctest --test-dir build --output-on-failure -LE manual -j$(nproc)
 

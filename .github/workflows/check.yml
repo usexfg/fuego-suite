@@ -262,7 +262,10 @@ jobs:
 
       - name: Build the xfg_htlc program
         working-directory: src/SwapDaemon/Solana/program
-        run: cargo build-sbf --tools-version v1.43 -- --locked
+        run: |
+          # cargo-build-sbf 1.18 lists ~/.cache/solana before creating it and panics if it is missing.
+          mkdir -p "$HOME/.cache/solana"
+          cargo build-sbf --tools-version v1.43 -- --locked
 
       - name: Build the gate
         run: |

@@ -76,7 +76,7 @@ bool operator<(const Crypto::KeyImage& keyImage1, const Crypto::KeyImage& keyIma
 }
 }
 
-#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 16  // v16: retired legacy AMM LP settlement removed from pushTransaction/popTransaction (forces replay so no cache can carry reserves computed by the deleted branch)
+#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 17  // v17: genesis Hearth seed is 8,000 XFG / 1,000 HEAT (forces replay so no cache can carry the old 10,000 / 1,250 reserves)
 #define CURRENT_BLOCKCHAININDICES_STORAGE_ARCHIVE_VER 1
 
 namespace CryptoNote {

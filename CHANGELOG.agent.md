@@ -1,3 +1,29 @@
+## Genesis Hearth seed correction: 8,000 XFG / 1,000 HEAT and COIN-scaled redemption price
+
+**Started**: 2026-11-09
+**Agent**: Devin
+**Status**: IN PROGRESS
+**Scope**: `src/CryptoNoteConfig.h`, `src/CryptoNoteCore/{Blockchain,Core}.{h,cpp}`, `src/SimpleWallet/SimpleWallet.cpp`, `tests/CoreTests/TreasuryCoreTests.cpp`, `AGENTS.md`, `docs/features/hearth/README.mdx`, `docs/developer/defillama-asset-matrix.md`.
+
+Consensus-affecting follow-up to the HEAT launch-ratio change: the genesis Hearth seed is now 8,000 XFG / 1,000 HEAT (still 8 XFG per HEAT), and `/heat_metrics` reports the pool ratio as `reserveXfg * COIN / reserveHeat` over `COIN` instead of the previous 10^6 scale. `CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER` is bumped to 17 so cached 10,000 / 1,250 pool state cannot survive the seed change.
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Change `HEARTH_POOL_SEED_XFG/HEAT` and `HEARTH_INITIAL_XFG/HEAT` to 8,000 / 1,000 | Devin | 2026-11-09 | DONE |
+| 2 | Bump block-cache archive version to 17 | Devin | 2026-11-09 | DONE |
+| 3 | Report `/heat_metrics` redemption price at COIN scale (`80,000,000 / 10,000,000` at seed) | Devin | 2026-11-09 | DONE |
+| 4 | Update canonical spot-price test and add genesis `/heat_metrics` seed-price test | Devin | 2026-11-09 | DONE |
+| 5 | Update wallet text, AGENTS, Hearth README, and DeFiLlama matrix seed depth | Devin | 2026-11-09 | DONE |
+| 6 | Audit `redemptionPrice*` consumers for hardcoded 10^6 divisors | Devin | 2026-11-09 | DONE |
+
+| Gate | Status | Signed |
+|------|--------|--------|
+| Build compiles | PENDING | Devin 2026-11-09 |
+| Tests pass | PENDING | Devin 2026-11-09 |
+| All tasks done | PENDING verification | Devin 2026-11-09 |
+
+---
+
 ## HEAT launch ratio 10:1 → 8:1, 8:1 Hearth seed, Hearth operations audit fixes
 
 **Started**: 2026-11-08

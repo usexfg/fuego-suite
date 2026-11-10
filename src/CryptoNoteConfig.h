@@ -449,18 +449,18 @@ const uint64_t ORDER_PRICE_TICK = COIN / 100; // min price granularity (1%)
 const uint64_t HEARTH_BACKSTOP_MAX_BPS =
     500; // backstop fills ≤ 5× auction volume per block
 constexpr uint64_t HEARTH_POOL_SEED_XFG =
-    10000; // 10,000 XFG at genesis (COIN units)
+    8000; // 8,000 XFG at genesis (COIN units)
 constexpr uint64_t HEARTH_POOL_SEED_HEAT =
-    1250; // 1,250 HEAT at genesis (8:1 ratio, 8 XFG = 1 HEAT @ $1.58 CPI-adj)
+    1000; // 1,000 HEAT at genesis (8:1 ratio, 8 XFG = 1 HEAT @ $1.58 CPI-adj)
 const uint64_t HEARTH_MIN_XFG_DEPTH =
     5000; // 5,000 XFG minimum (aspirational depth target)
 const uint64_t HEARTH_MIN_HEAT_DEPTH =
     5000; // 5,000 HEAT minimum (at 8:1 ratio)
 
 // Hearth pool governance bootstrap (one-time initialization at v11 activation)
-const uint64_t HEARTH_INITIAL_XFG = 10000U * 10000000U; // 10,000 XFG pool side
+const uint64_t HEARTH_INITIAL_XFG = 8000U * 10000000U; // 8,000 XFG pool side
 const uint64_t HEARTH_INITIAL_HEAT =
-    1250U * 10000000U; // 1,250 HEAT pool side (8:1 ratio)
+    1000U * 10000000U; // 1,000 HEAT pool side (8:1 ratio)
 
 // DIGM stablecoin — pegged to 0.10 HEAT (CPI-adjusted, not USD)
 const uint64_t DIGM_V1_CAP = 10000; // 10,000 DIGM total v1 supply

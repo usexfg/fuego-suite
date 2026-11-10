@@ -81,15 +81,15 @@ uint64_t ammLimitSellCapacity(uint64_t reserveXfg, uint64_t reserveHeat, uint64_
 uint64_t ammLimitBuyCapacity(uint64_t reserveXfg, uint64_t reserveHeat, uint64_t limitPrice) {
   if (limitPrice == 0 || reserveXfg == 0) return 0;
   // reserveXfg − g ≥ ceil(reserveHeat·COIN / limitPrice)
-  const uint128_t keep = ((uint128_t)reserveHeat * parameters::COIN + limitPrice - 1) / limitPrice;
-  return keep < reserveXfg ? static_cast<uint64_t>(reserveXfg - keep) : 0;
+  const uint128_t keep = ((uint128_t)reserveHeat * parameters::COIN + limitPrice - uint64_t{1}) / limitPrice;
+  return keep < reserveXfg ? static_cast<uint64_t>(uint128_t{reserveXfg} - keep) : 0;
 }
 
 uint64_t ammCostToTake(uint64_t output, uint64_t reserveIn, uint64_t reserveOut) {
   if (output == 0 || output >= reserveOut || reserveIn == 0) return 0;
   const uint128_t num = (uint128_t)reserveIn * output;
   const uint128_t den = reserveOut - output;
-  const uint128_t cost = (num + den - 1) / den;
+  const uint128_t cost = (num + den - uint128_t{1}) / den;
   return cost > UINT64_MAX ? 0 : static_cast<uint64_t>(cost);
 }
 

@@ -172,7 +172,9 @@ static void testPointLockHappyPath(const Validator& validator, SolChainClient& a
 
 static void testPointLockRefund(const Validator& validator, SolChainClient& alice, SolChainClient& bob,
                                 const std::string& bobAddress) {
-  PointSwap swap = newPointSwap(bobAddress, validator.slot() + 60);
+  // slot() is the finalized slot, about 32 behind the processed slot the
+  // program's clock reads; 150 leaves the early-refund check before the timeout.
+  PointSwap swap = newPointSwap(bobAddress, validator.slot() + 150);
   const ChainClientResult locked = alice.lock(swap.alice);
   check(locked.success, "point refund: Alice locks with a short timeout (" + locked.error + ")");
   if (!locked.success) return;

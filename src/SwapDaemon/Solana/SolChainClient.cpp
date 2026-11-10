@@ -386,6 +386,9 @@ ChainClientResult SolChainClient::claimPoint(const SwapParams& params) {
     return ChainClientResult::notSent("SOL claim: the escrow is not locked to this swap's adaptor point");
   if (!escrowOpenThroughRunway(info, params, error))
     return ChainClientResult::notSent("SOL claim: " + error + "; publishing t now could let the locker refund");
+  if (info.recipient != getReceiveAddress())
+    return ChainClientResult::notSent("SOL claim: the escrow pays " + info.recipient +
+                                      ", which this keypair cannot claim to");
   escrow.amount = info.amount;
   if (!decodeAccountKey(params.ctrLockTxId, escrow.htlc) || !decodeAccountKey(info.recipient, escrow.recipient))
     return ChainClientResult::notSent("SOL claim: malformed escrow or recipient key");

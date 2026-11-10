@@ -347,14 +347,14 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Login to Docker Hub
-        if: github.ref_type == 'tag'
+        if: github.event_name == 'push' && github.ref_type == 'tag'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Login to GitHub Container Registry
-        if: github.ref_type == 'tag'
+        if: github.event_name == 'push' && github.ref_type == 'tag'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -421,7 +421,7 @@ jobs:
           context: .
           file: Dockerfile.release
           platforms: linux/${{ matrix.arch }}
-          push: ${{ github.ref_type == 'tag' }}
+          push: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=docker-${{ matrix.arch }}
@@ -429,7 +429,7 @@ jobs:
 
   docker-manifest:
     name: Docker Multi-Arch Manifest
-    if: github.ref_type == 'tag'
+    if: github.event_name == 'push' && github.ref_type == 'tag'
     needs: build-docker
     runs-on: ubuntu-latest
     steps:
@@ -461,7 +461,7 @@ jobs:
   # ── Release ──
   release:
     name: Create Release
-    if: github.ref_type == 'tag'
+    if: github.event_name == 'push' && github.ref_type == 'tag'
     needs: [build-macos, build-ubuntu, build-windows, build-raspberry-pi, build-appimage, docker-manifest]
     runs-on: ubuntu-latest
     permissions:

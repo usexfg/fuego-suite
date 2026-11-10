@@ -494,7 +494,7 @@ int main() {
     check(validateObservation(observation, pol, std::numeric_limits<int64_t>::max(), reason) == QuoteStatus::STALE,
           "maximum representable timestamp age is safely rejected");
     observation.providerTimestamp = observation.fetchTimestamp = now;
-    for (int64_t limit : {-1LL, std::numeric_limits<int64_t>::min()}) {
+    for (int64_t limit : {int64_t{-1}, std::numeric_limits<int64_t>::min()}) {
       PricePolicy invalidAge = pol;
       invalidAge.maxProviderAgeSec = limit;
       check(validateObservation(observation, invalidAge, now, reason) == QuoteStatus::MISSING_DATA,

@@ -147,7 +147,7 @@ SwapCdShare swapCdShare(uint8_t direction, uint64_t output, uint64_t twap,
 // share ONE settlement-tag list. See the comment there: the previous hand-written
 // coinbase blacklist had drifted from this function and let the retired legacy LP
 // tags through, which a miner could use to set AMM reserves network-wide.
-bool CryptoNote::isHeatwaveTag(const CryptoNote::TransactionExtraField& f) {
+bool isHeatwaveTag(const TransactionExtraField& f) {
   using namespace CryptoNote;
   return f.type() == typeid(TransactionExtraHeatCommitment) ||
          f.type() == typeid(TransactionExtraHeatMintAuth) ||
@@ -170,9 +170,9 @@ bool CryptoNote::isHeatwaveTag(const CryptoNote::TransactionExtraField& f) {
          f.type() == typeid(TransactionExtraCdBonusClaim);
 }
 
-bool CryptoNote::carriesHeatwaveTag(const CryptoNote::Transaction& tx) {
-  std::vector<CryptoNote::TransactionExtraField> fields;
-  if (!CryptoNote::parseTransactionExtra(tx.extra, fields)) return false;
+bool carriesHeatwaveTag(const Transaction& tx) {
+  std::vector<TransactionExtraField> fields;
+  if (!parseTransactionExtra(tx.extra, fields)) return false;
   for (const auto& f : fields) {
     if (isHeatwaveTag(f)) return true;
   }

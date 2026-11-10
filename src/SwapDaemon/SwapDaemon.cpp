@@ -43,6 +43,7 @@
 #include "Komodo/KmdChainClient.h"
 #include "Ethereum/EthChainClient.h"
 #include "Solana/SolChainClient.h"
+#include "Utxo/BchPointLock.h"
 #include "Utxo/UtxoPointLock.h"
 #include "Monero/XmrChainClient.h"
 #include "Decred/DcrChainClient.h"
@@ -4238,7 +4239,8 @@ bool isLockState(const std::string& state) {
 // The lock part of chainState: a point-lock state whole, an HTLC lock script
 // without the ":<claimTxid>" suffix appended later.
 std::string announcedLockState(const SwapParams& params) {
-  return isPointLockState(params.chainState) ? params.chainState : lockScriptHex(params.chainState);
+  const bool pointLock = isPointLockState(params.chainState) || isBchPointLockState(params.chainState);
+  return pointLock ? params.chainState : lockScriptHex(params.chainState);
 }
 
 }  // namespace

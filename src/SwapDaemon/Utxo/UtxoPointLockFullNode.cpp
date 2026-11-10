@@ -32,6 +32,7 @@ SwapParams withLock(const SwapParams& params, const std::string& txid, uint32_t 
 }  // namespace
 
 ChainClientResult UtxoHtlcFullNode::lockPoint(const SwapParams& params) {
+  if (usesBchPointLock()) return lockBchPoint(params);
   if (!m_hasKey) return ChainClientResult::fail(failurePrefix() + "no valid WIF key");
   if (!supportsPointLocks()) return ChainClientResult::fail(failurePrefix() + "no point lock on this chain");
   PointLockState state;
@@ -79,6 +80,7 @@ ChainClientResult UtxoHtlcFullNode::lockPoint(const SwapParams& params) {
 }
 
 ChainClientResult UtxoHtlcFullNode::verifyPointLock(const SwapParams& params) {
+  if (usesBchPointLock()) return verifyBchPointLock(params);
   if (!m_hasKey) return ChainClientResult::fail(failurePrefix() + "no valid WIF key");
   PointLockState state;
   UtxoLockExpectation expectation;
@@ -103,6 +105,7 @@ ChainClientResult UtxoHtlcFullNode::verifyPointLock(const SwapParams& params) {
 }
 
 ChainClientResult UtxoHtlcFullNode::claimPoint(const SwapParams& params) {
+  if (usesBchPointLock()) return claimBchPoint(params);
   if (!m_hasKey) return ChainClientResult::notSent(failurePrefix() + "no valid WIF key");
   PointLockState state;
   uint64_t tip = 0;
@@ -119,6 +122,7 @@ ChainClientResult UtxoHtlcFullNode::claimPoint(const SwapParams& params) {
 }
 
 ChainClientResult UtxoHtlcFullNode::refundPoint(const SwapParams& params) {
+  if (usesBchPointLock()) return refundBchPoint(params);
   if (!m_hasKey) return ChainClientResult::notSent(failurePrefix() + "no valid WIF key");
   PointLockState state;
   uint64_t tip = 0;
@@ -149,6 +153,7 @@ ChainClientResult UtxoHtlcFullNode::refundPoint(const SwapParams& params) {
 }
 
 std::string UtxoHtlcFullNode::pointClaimDeadline(const SwapParams& params) {
+  if (usesBchPointLock()) return bchPointClaimDeadline(params);
   PointLockState state;
   uint64_t tip = 0;
   std::string error;
@@ -159,6 +164,7 @@ std::string UtxoHtlcFullNode::pointClaimDeadline(const SwapParams& params) {
 }
 
 std::string UtxoHtlcFullNode::pointSecret(const SwapParams& params) {
+  if (usesBchPointLock()) return bchPointSecret(params);
   PointLockState state;
   UtxoSpend spend;
   if (!decodePointLockState(params.chainState, state) || !findClaimSpend(params, spend)) return {};
@@ -166,6 +172,7 @@ std::string UtxoHtlcFullNode::pointSecret(const SwapParams& params) {
 }
 
 bool UtxoHtlcFullNode::hasConfirmedPointClaim(const SwapParams& params) {
+  if (usesBchPointLock()) return hasConfirmedBchPointClaim(params);
   PointLockState state;
   UtxoSpend spend;
   const UtxoOutpoint lock = lockOutpoint(params);
@@ -196,6 +203,10 @@ ChainClientResult UtxoHtlcFullNode::broadcastPointClaim(const SwapParams& params
 
 ChainClientResult UtxoHtlcFullNode::bumpClaim(const SwapParams& params) {
   if (!isPointLockSwap(params)) return ChainClientResult::notSent(failurePrefix() + "only point-lock claims carry a fee ladder");
+  if (m_chain.network.feeBump == UtxoFeeBump::NONE)
+    return ChainClientResult::notSent(failurePrefix() +
+                                      "nodes neither relay replacements nor mine by ancestor fee rate; "
+                                      "the claim waits at its fee");
   PointLockState state;
   Common::JsonValue claimTx;
   std::vector<uint8_t> rawClaim, paidTo;

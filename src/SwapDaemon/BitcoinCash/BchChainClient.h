@@ -39,6 +39,8 @@ public:
                                           ChainClientResult& result) override;
   bool getCurrentHeight(uint64_t& height) override;
   std::string tryExtractClaimedSecret(const SwapParams& params) override;
+  bool supportsPurePtlc() const override;
+  ChainClientResult bumpClaim(const SwapParams& params) override;
 
 private:
   std::unique_ptr<BchRpcClient> m_rpc;            // null in SPV mode

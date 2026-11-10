@@ -591,6 +591,19 @@ bool spendWitness(const std::vector<uint8_t>& rawTx, const UtxoOutpoint& lock,
   return false;
 }
 
+bool spendScriptSig(const std::vector<uint8_t>& rawTx, const UtxoOutpoint& lock,
+                    std::vector<std::vector<uint8_t>>& items) {
+  std::vector<ParsedInput> inputs;
+  std::vector<ParsedOutput> outputs;
+  if (!isTxidHex(lock.txid) || !parseTransaction(rawTx, inputs, outputs)) return false;
+  const std::array<uint8_t, 32> lockTxid = littleEndianTxid(lock.txid);
+  for (const auto& input : inputs) {
+    if (input.prevTxid != lockTxid || input.prevVout != lock.vout) continue;
+    return parsePushes(input.scriptSig, items);
+  }
+  return false;
+}
+
 bool extractHtlcPreimage(UtxoHtlcEncoding encoding, const std::vector<uint8_t>& rawTx,
                          const UtxoOutpoint& lock, const std::vector<uint8_t>& htlcScript,
                          std::vector<uint8_t>& preimage) {

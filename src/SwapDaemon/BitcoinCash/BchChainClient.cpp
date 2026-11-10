@@ -133,4 +133,15 @@ bool BchChainClient::hasConfirmedClaim(const SwapParams& params) {
   return m_spvHtlc && m_spvHtlc->hasConfirmedClaim(params);
 }
 
+bool BchChainClient::supportsPurePtlc() const {
+  if (m_fullNode) return m_fullNode->hasSigningKey() && m_fullNode->supportsPointLocks();
+  return m_spvHtlc && m_spvHtlc->supportsPointLocks();
+}
+
+ChainClientResult BchChainClient::bumpClaim(const SwapParams& params) {
+  if (m_fullNode) return m_fullNode->bumpClaim(params);
+  if (m_spvHtlc) return m_spvHtlc->bumpClaim(params);
+  return ChainClientResult::notSent(chainName() + ": no RPC or SPV client available");
+}
+
 }  // namespace XfgSwap

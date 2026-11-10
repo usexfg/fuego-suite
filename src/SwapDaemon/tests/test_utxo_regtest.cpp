@@ -27,6 +27,7 @@
 #include "SwapDaemon/Litecoin/LtcChainClient.h"
 #include "SwapDaemon/Utxo/UtxoFullNode.h"
 #include "SwapDaemon/Utxo/UtxoHtlc.h"
+#include "SwapDaemon/Utxo/BchPointLock.h"
 #include "SwapDaemon/Utxo/UtxoPointLock.h"
 #include "Common/StringTools.h"
 #include "crypto/cross_dleq.h"
@@ -309,6 +310,25 @@ static void deliverPointLockNotice(PointSwap& swap, const ChainClientResult& loc
   }
 }
 
+// The first rung's s' changed by one bit, in either point-lock state format.
+static std::string withChangedFirstPresig(const std::string& chainState) {
+  BchPointLockState bchState;
+  if (decodeBchPointLockState(chainState, bchState)) {
+    bchState.claimOffers.front().presig.sPrime[31] ^= 1;
+    return encodeBchPointLockState(bchState);
+  }
+  PointLockState state;
+  decodePointLockState(chainState, state);
+  state.claimOffers.front().presig.sPrime[31] ^= 1;
+  return encodePointLockState(state);
+}
+
+// BCHN neither replaces nor mines by ancestor fee rate: nothing can raise the claim.
+static void checkClaimFeeFixed(IChainClient& bob, const SwapParams& pending, const std::string& prefix) {
+  const ChainClientResult raised = bob.bumpClaim(pending);
+  check(!raised.success && raised.nothingSent, prefix + "a pending claim's fee is never raised (" + raised.error + ")");
+}
+
 static void checkClaimReplacement(IChainClient& bob, const SwapParams& pending, const std::string& prefix) {
   const ChainClientResult replaced = bob.bumpClaim(pending);
   check(replaced.success && replaced.txId != pending.ctrClaimTxId && replaced.feeChildTxId.empty(),
@@ -338,7 +358,9 @@ static void testPointLockHappyPath(const Node& node, IChainClient& alice, IChain
   check(alice.supportsPurePtlc() && bob.supportsPurePtlc(), prefix + "both full nodes offer point locks");
   PointSwap swap = newPointSwap(node, bob, 40000000, node.tip() + 400);
   const ChainClientResult locked = alice.lock(swap.alice);
-  check(locked.success && isPointLockState(locked.chainState), prefix + "Alice locks to T_secp (" + locked.error + ")");
+  const bool expectedState = node.chain == "bch" ? isBchPointLockState(locked.chainState)
+                                                  : isPointLockState(locked.chainState);
+  check(locked.success && expectedState, prefix + "Alice locks to T_secp (" + locked.error + ")");
   if (!locked.success) return;
   const ChainClientResult relocked = alice.lock(swap.alice);
   check(relocked.success && relocked.txId == locked.txId, prefix + "a repeated lock reuses the funding");
@@ -355,10 +377,7 @@ static void testPointLockHappyPath(const Node& node, IChainClient& alice, IChain
   otherPoint.secpPubHex = other.bob.secpPubHex;
   check(!bob.verifyLock(otherPoint).success, prefix + "a pre-signature to another point is refused");
   SwapParams tampered = swap.bob;
-  PointLockState state;
-  decodePointLockState(tampered.chainState, state);
-  state.claimOffers.front().presig.sPrime[31] ^= 1;
-  tampered.chainState = encodePointLockState(state);
+  tampered.chainState = withChangedFirstPresig(tampered.chainState);
   check(!bob.verifyLock(tampered).success, prefix + "a changed pre-signature is refused");
   SwapParams wrongSecret = swap.bob;
   wrongSecret.adaptorSecret = other.secret;
@@ -371,6 +390,7 @@ static void testPointLockHappyPath(const Node& node, IChainClient& alice, IChain
   SwapParams pending = swap.bob;
   pending.ctrClaimTxId = claimed.txId;
   if (node.chain == "ltc") checkClaimFeeChildren(node, bob, pending, prefix);
+  else if (node.chain == "bch") checkClaimFeeFixed(bob, pending, prefix);
   else checkClaimReplacement(bob, pending, prefix);
   node.mine(1);
   check(alice.tryExtractClaimedSecret(swap.alice) == Common::podToHex(swap.secret),
@@ -416,10 +436,8 @@ int main(int argc, char** argv) {
 
   testHappyPathWithWithheldClaimTxid(node, *alice, *bob);
   testRefundAfterTimeout(node, *alice, *bob);
-  if (node.chain != "bch") {
-    testPointLockHappyPath(node, *alice, *bob);
-    testPointLockRefund(node, *alice, *bob);
-  }
+  testPointLockHappyPath(node, *alice, *bob);
+  testPointLockRefund(node, *alice, *bob);
 
   std::printf("%d checks, %d failures\n", g_checks, g_failures);
   return g_failures == 0 ? 0 : 1;

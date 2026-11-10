@@ -96,6 +96,12 @@ bool readTransactionOutput(const std::vector<uint8_t>& rawTx, uint32_t vout, uin
 bool spendWitness(const std::vector<uint8_t>& rawTx, const UtxoOutpoint& lock,
                   std::vector<std::vector<uint8_t>>& witness);
 
+// The scriptSig pushes of the input of `rawTx` that spends `lock` (non-witness
+// transactions); false when no input spends it or its scriptSig is not a
+// sequence of plain data pushes.
+bool spendScriptSig(const std::vector<uint8_t>& rawTx, const UtxoOutpoint& lock,
+                    std::vector<std::vector<uint8_t>>& items);
+
 // The preimage revealed by the input of `rawTx` that spends `lock` through the
 // claim branch of `htlcScript`, only if its SHA256 equals the script's hash lock.
 bool extractHtlcPreimage(UtxoHtlcEncoding encoding, const std::vector<uint8_t>& rawTx,

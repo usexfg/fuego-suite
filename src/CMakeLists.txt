@@ -320,6 +320,9 @@ add_library(SwapDaemonLib STATIC
     SwapDaemon/Utxo/UtxoPointLock.cpp
     SwapDaemon/Utxo/UtxoPointLockSwap.cpp
     SwapDaemon/Utxo/UtxoPointLockFullNode.cpp
+    SwapDaemon/Utxo/BchPointLock.cpp
+    SwapDaemon/Utxo/BchPointLockSwap.cpp
+    SwapDaemon/Utxo/UtxoBchPointLockFullNode.cpp
     SwapDaemon/Utxo/UtxoHtlcFullNode.cpp
     SwapDaemon/Utxo/UtxoHtlcSwap.cpp
     SwapDaemon/Utxo/UtxoHtlcSpv.cpp
@@ -557,6 +560,12 @@ target_link_libraries(test_utxo_point_lock PRIVATE
 add_executable(test_bip340_adaptor
     SwapDaemon/tests/test_bip340_adaptor.cpp)
 target_link_libraries(test_bip340_adaptor PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto secp256k1)
+
+# R12a X7: BCH P2SH point lock script, spends and state.
+add_executable(test_bch_point_lock
+    SwapDaemon/tests/test_bch_point_lock.cpp)
+target_link_libraries(test_bch_point_lock PRIVATE
     SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto secp256k1)
 
 # R12a X7: BCH Schnorr adaptor signatures for BCH point locks.
@@ -1223,6 +1232,7 @@ set(_TEST_DAEMON_TARGETS
     test_cross_dleq
     test_bip340_adaptor
     test_bch_schnorr_adaptor
+    test_bch_point_lock
     test_utxo_point_lock
     test_bch_htlc
     test_bch_chain_client

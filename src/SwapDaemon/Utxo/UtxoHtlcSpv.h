@@ -35,8 +35,9 @@ public:
   UtxoHtlcSpv(UtxoHtlcChain chain, std::shared_ptr<ISpvClient> spv, const std::string& wif);
 
   std::string claimPubKeyHex() const;
-  bool supportsPointLocks() const { return m_hasKey && !m_chain.network.bech32Hrp.empty() &&
-                                           m_chain.encoding == UtxoHtlcEncoding::P2WSH; }
+  bool supportsPointLocks() const {
+    return m_hasKey && (usesBchPointLock() || !m_chain.network.bech32Hrp.empty());
+  }
   std::string receiveAddress() const;
   std::string readinessErrorFor(SwapRole role);
   bool currentHeight(uint64_t& height);
@@ -66,6 +67,13 @@ private:
   ChainClientResult payForClaimByChild(const std::string& claimTxid, const std::vector<uint8_t>& rawClaim,
                                        uint64_t lockValue);
   bool spendFee(uint64_t virtualSize, uint64_t lockValue, uint64_t& fee, std::string& error);
+  // BCH P2SH point locks: Bob verifies and claims.
+  bool usesBchPointLock() const { return m_chain.encoding == UtxoHtlcEncoding::P2SH_FORKID; }
+  ChainClientResult verifyBchPointLock(const SwapParams& params);
+  ChainClientResult claimBchPoint(const SwapParams& params);
+  std::string bchPointClaimDeadline(const SwapParams& params);
+  bool hasConfirmedBchPointClaim(const SwapParams& params);
+  ChainClientResult verifiedLockInclusion(const SwapParams& params);
   ChainClientResult broadcastSpend(bool claimPath, const SwapParams& params);
   bool claimPreimage(const SwapParams& params, const SpvSpend& spend, std::vector<uint8_t>& preimage) const;
   std::string failurePrefix() const { return m_chain.ticker + " SPV: "; }

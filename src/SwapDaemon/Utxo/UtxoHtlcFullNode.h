@@ -34,7 +34,7 @@ public:
   UtxoHtlcFullNode(UtxoHtlcChain chain, UtxoRpcCall rpc, const std::string& wif);
 
   bool hasSigningKey() const { return m_hasKey; }
-  bool supportsPointLocks() const { return m_chain.encoding == UtxoHtlcEncoding::P2WSH; }
+  bool supportsPointLocks() const { return true; }
   std::string claimPubKeyHex() const;
   std::string receiveAddress() const;
   std::string readinessError();
@@ -72,6 +72,16 @@ private:
                                         const PointLockClaimOffer& offer, uint64_t lockValue);
   ChainClientResult payForClaimByChild(const std::string& claimTxid, const std::vector<uint8_t>& rawClaim,
                                        uint64_t lockValue);
+  // BCH P2SH point locks (UtxoBchPointLockFullNode.cpp).
+  bool usesBchPointLock() const { return m_chain.encoding == UtxoHtlcEncoding::P2SH_FORKID; }
+  ChainClientResult lockBchPoint(const SwapParams& params);
+  ChainClientResult verifyBchPointLock(const SwapParams& params);
+  ChainClientResult claimBchPoint(const SwapParams& params);
+  ChainClientResult refundBchPoint(const SwapParams& params);
+  std::string bchPointClaimDeadline(const SwapParams& params);
+  std::string bchPointSecret(const SwapParams& params);
+  bool hasConfirmedBchPointClaim(const SwapParams& params);
+  uint64_t currentBchClaimFee(uint64_t lockValue);
   std::string failurePrefix() const { return m_chain.ticker + " full node: "; }
 
   const UtxoHtlcChain m_chain;

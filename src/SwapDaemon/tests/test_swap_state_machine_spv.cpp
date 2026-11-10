@@ -1094,15 +1094,15 @@ static bool test_point_lock_gate_needs_verified_proof() {
   return ok;
 }
 
-static bool test_point_lock_notice_keeps_the_whole_state() {
-  std::cout << "  test_point_lock_notice_keeps_the_whole_state... ";
+static bool test_point_lock_notice_keeps_the_whole_state(const std::string& statePrefix, SwapPair counterChain) {
+  std::cout << "  test_point_lock_notice_keeps_the_whole_state (" << statePrefix << ")... ";
   namespace fs = std::filesystem;
   const fs::path dir = fs::temp_directory_path() /
       ("xfg-point-notice-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
-  AdaptorPair pair = adaptorPairFor("point-notice", SwapPair::BTC);
+  AdaptorPair pair = adaptorPairFor("point-notice", counterChain);
   pair.bob.peerSwapPubKey = pair.alice.ourSwapPubKey;
   pair.bob.lockType = SwapLockType::PTLC;
-  const std::string lockState = "tr1:" + std::string(64, 'a') + ":" + std::string(64, 'b') + ":850123:" +
+  const std::string lockState = statePrefix + std::string(64, 'a') + ":" + std::string(64, 'b') + ":850123:" +
                                 "02" + std::string(64, 'c') + ":" + std::string(64, 'd') + ":2000";
   PeerMessage notice{};
   notice.type = PeerMessageType::CTR_LOCKED;
@@ -1228,7 +1228,7 @@ static bool test_stalled_point_claim_fee_raised(bool paysByChild) {
 
 int main() {
   std::cout << "=== SwapStateMachine SPV state tests ===\n\n";
-  int pass = 0, total = 25;
+  int pass = 0, total = 26;
   if (test_spv_waiting_to_confirmed())    ++pass;
   if (test_spv_waiting_stays_on_retry())  ++pass;
   if (test_spv_waiting_to_refunded())     ++pass;
@@ -1251,7 +1251,8 @@ int main() {
   if (test_peer_cannot_select_disabled_pure_ptlc()) ++pass;
   if (test_point_lock_requires_cross_curve_proof()) ++pass;
   if (test_point_lock_gate_needs_verified_proof()) ++pass;
-  if (test_point_lock_notice_keeps_the_whole_state()) ++pass;
+  if (test_point_lock_notice_keeps_the_whole_state("tr1:", SwapPair::BTC)) ++pass;
+  if (test_point_lock_notice_keeps_the_whole_state("bs1:", SwapPair::BCH)) ++pass;
   if (test_stalled_point_claim_fee_raised(false)) ++pass;
   if (test_stalled_point_claim_fee_raised(true)) ++pass;
 

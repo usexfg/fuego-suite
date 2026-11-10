@@ -13,6 +13,7 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "UtxoHtlcSpv.h"
+#include "BchPointLockSwap.h"
 #include "UtxoPointLockSwap.h"
 
 #include <algorithm>
@@ -263,6 +264,7 @@ bool UtxoHtlcSpv::hasConfirmedClaim(const SwapParams& params) {
 // ── Taproot point locks: Bob verifies and claims (CROSS_CURVE_PLAN X6) ──
 
 ChainClientResult UtxoHtlcSpv::verifyPointLock(const SwapParams& params) {
+  if (usesBchPointLock()) return verifyBchPointLock(params);
   if (!m_hasKey) return ChainClientResult::fail(failurePrefix() + "no valid WIF key");
   PointLockState state;
   std::vector<uint8_t> lockScriptPubKey;
@@ -299,6 +301,7 @@ ChainClientResult UtxoHtlcSpv::verifyPointLock(const SwapParams& params) {
 }
 
 ChainClientResult UtxoHtlcSpv::claimPoint(const SwapParams& params) {
+  if (usesBchPointLock()) return claimBchPoint(params);
   const ChainClientResult verified = verifyPointLock(params);
   if (!verified.success) return ChainClientResult::notSent(verified.error);
   PointLockState state;
@@ -318,6 +321,7 @@ ChainClientResult UtxoHtlcSpv::claimPoint(const SwapParams& params) {
 }
 
 std::string UtxoHtlcSpv::pointClaimDeadline(const SwapParams& params) {
+  if (usesBchPointLock()) return bchPointClaimDeadline(params);
   PointLockState state;
   uint64_t tip = 0;
   std::string error;
@@ -328,6 +332,7 @@ std::string UtxoHtlcSpv::pointClaimDeadline(const SwapParams& params) {
 }
 
 bool UtxoHtlcSpv::hasConfirmedPointClaim(const SwapParams& params) {
+  if (usesBchPointLock()) return hasConfirmedBchPointClaim(params);
   PointLockState state;
   uint64_t tip = 0;
   std::string error;
@@ -349,8 +354,94 @@ ChainClientResult UtxoHtlcSpv::broadcastPointClaim(const SwapParams& params, con
   return ChainClientResult::ok(txid);
 }
 
+// ── BCH P2SH point locks: Bob verifies and claims (CROSS_CURVE_PLAN X7) ──
+
+ChainClientResult UtxoHtlcSpv::verifiedLockInclusion(const SwapParams& params) {
+  const UtxoOutpoint lock = lockOutpoint(params);
+  SpvTxInclusion inclusion;
+  if (!m_spv->verifyTxInclusion(lock.txid, inclusion) || !quorumIncluded(inclusion))
+    return ChainClientResult::fail(failurePrefix() + "lock transaction is not in a quorum-verified block");
+  if (inclusion.depth < requiredConfirmations(params))
+    return ChainClientResult::fail(failurePrefix() + "lock has " + std::to_string(inclusion.depth) + " of " +
+                                   std::to_string(requiredConfirmations(params)) + " required confirmations");
+  ChainClientResult verified = ChainClientResult::ok(lock.txid);
+  verified.confirmed = true;
+  verified.spvVerified = true;
+  verified.blockHeight = inclusion.blockHeight;
+  verified.confirmations = inclusion.depth;
+  verified.outputIndex = lock.vout;
+  return verified;
+}
+
+ChainClientResult UtxoHtlcSpv::verifyBchPointLock(const SwapParams& params) {
+  if (!m_hasKey) return ChainClientResult::fail(failurePrefix() + "no valid WIF key");
+  BchPointLockState state;
+  uint64_t tip = 0;
+  uint64_t lockValue = 0;
+  uint64_t currentFee = 0;
+  std::string error;
+  if (!decodeBchPointLockState(params.chainState, state))
+    return ChainClientResult::fail(failurePrefix() + "no point-lock description received from Alice");
+  if (!syncedTip(tip, error) || !lockOutput(params, bchPointLockScriptPubKey(state.terms), lockValue, error))
+    return ChainClientResult::fail(failurePrefix() + error);
+  if (lockValue < params.ctrAmount64())
+    return ChainClientResult::fail(failurePrefix() + "lock output holds " + std::to_string(lockValue) +
+                                   ", expected at least " + std::to_string(params.ctrAmount64()));
+  if (!spendFee(bchPointLockSpendVirtualSize(true), lockValue, currentFee, error))
+    return ChainClientResult::fail(failurePrefix() + error);
+  const std::string stateError = bchPointLockStateError(m_chain, params, m_pubKey, tip, lockValue, currentFee, state);
+  if (!stateError.empty()) return ChainClientResult::fail(failurePrefix() + stateError);
+  return verifiedLockInclusion(params);
+}
+
+ChainClientResult UtxoHtlcSpv::claimBchPoint(const SwapParams& params) {
+  const ChainClientResult verified = verifyBchPointLock(params);
+  if (!verified.success) return ChainClientResult::notSent(verified.error);
+  BchPointLockState state;
+  uint64_t tip = 0;
+  uint64_t lockValue = 0;
+  std::string error;
+  decodeBchPointLockState(params.chainState, state);
+  if (!syncedTip(tip, error) || !lockOutput(params, bchPointLockScriptPubKey(state.terms), lockValue, error))
+    return ChainClientResult::notSent(failurePrefix() + error);
+  const std::string late = bchPointClaimDeadlineError(m_chain, state, tip);
+  if (!late.empty()) return ChainClientResult::notSent(failurePrefix() + late);
+  std::vector<uint8_t> rawTx;
+  if (!buildBchPointClaim(m_chain, params, state, lockValue, m_pubKey, m_key, rawTx))
+    return ChainClientResult::notSent(failurePrefix() + "cannot build the claim");
+  std::string txid;
+  if (!m_spv->broadcastTx(rawTx, txid))
+    return ChainClientResult::fail(failurePrefix() + "no server accepted the transaction");
+  return ChainClientResult::ok(txid);
+}
+
+std::string UtxoHtlcSpv::bchPointClaimDeadline(const SwapParams& params) {
+  BchPointLockState state;
+  uint64_t tip = 0;
+  std::string error;
+  if (!decodeBchPointLockState(params.chainState, state)) return failurePrefix() + "no point-lock state";
+  if (!syncedTip(tip, error)) return failurePrefix() + error;
+  const std::string late = bchPointClaimDeadlineError(m_chain, state, tip);
+  return late.empty() ? late : failurePrefix() + late;
+}
+
+bool UtxoHtlcSpv::hasConfirmedBchPointClaim(const SwapParams& params) {
+  BchPointLockState state;
+  uint64_t tip = 0;
+  std::string error;
+  const UtxoOutpoint lock = lockOutpoint(params);
+  SpvSpend spend;
+  return decodeBchPointLockState(params.chainState, state) && syncedTip(tip, error) && isTxidHex(lock.txid) &&
+         m_spv->findSpend(lock.txid, lock.vout, spend) && isVerifiedSpvSpend(spend, requiredConfirmations(params)) &&
+         !secretFromBchPointClaim(params, state, spend.rawSpendingTx).empty();
+}
+
 ChainClientResult UtxoHtlcSpv::bumpClaim(const SwapParams& params) {
   if (!isPointLockSwap(params)) return ChainClientResult::notSent(failurePrefix() + "only point-lock claims carry a fee ladder");
+  if (m_chain.network.feeBump == UtxoFeeBump::NONE)
+    return ChainClientResult::notSent(failurePrefix() +
+                                      "nodes neither relay replacements nor mine by ancestor fee rate; "
+                                      "the claim waits at its fee");
   PointLockState state;
   std::vector<uint8_t> lockScriptPubKey, rawClaim, paidTo;
   uint64_t lockValue = 0;

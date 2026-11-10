@@ -52,7 +52,7 @@ jobs:
       - name: Build Go
         run: |
           cd tui && go build -o ../fuego-tui && cd ..
-          cd swapxfg && go build -o ../swapxfg . && cd ..
+          cd swapxfg && go build -o ../swapxfg-bin . && cd ..
 
       - name: Package
         id: pkg
@@ -62,7 +62,7 @@ jobs:
           mkdir "$name"
           for f in build/src/*; do [[ -x $f && -f $f ]] && strip "$f" && cp "$f" "$name/"; done
           cp fuego-tui "$name/"
-          cp swapxfg "$name/"
+          cp swapxfg-bin "$name/swapxfg"
           zip -r "$name".zip "$name"
           sha=$(shasum -a 256 "$name".zip | awk '{print toupper($1)}')
           echo "asset=$name.zip" >> $GITHUB_OUTPUT
@@ -100,7 +100,7 @@ jobs:
       - name: Build Go
         run: |
           cd tui && go build -o ../fuego-tui && cd ..
-          cd swapxfg && go build -o ../swapxfg . && cd ..
+          cd swapxfg && go build -o ../swapxfg-bin . && cd ..
 
       - name: Package
         id: pkg
@@ -110,7 +110,7 @@ jobs:
           mkdir "$name"
           for f in build/src/*; do [[ -x $f && -f $f ]] && strip "$f" && cp "$f" "$name/"; done
           cp fuego-tui "$name/"
-          cp swapxfg "$name/"
+          cp swapxfg-bin "$name/swapxfg"
           tar -czf "$name".tar.gz "$name"
           sha=$(sha256sum "$name".tar.gz | awk '{print toupper($1)}')
           echo "asset=$name.tar.gz" >> $GITHUB_OUTPUT
@@ -239,7 +239,7 @@ jobs:
       - name: Build Go
         run: |
           cd tui && go build -o ../fuego-tui && cd ..
-          cd swapxfg && go build -o ../swapxfg . && cd ..
+          cd swapxfg && go build -o ../swapxfg-bin . && cd ..
 
       - name: Package
         id: pkg
@@ -249,7 +249,7 @@ jobs:
           mkdir "$name"
           for f in build/src/*; do [[ -x $f && -f $f ]] && strip "$f" && cp "$f" "$name/"; done
           cp fuego-tui "$name/"
-          cp swapxfg "$name/"
+          cp swapxfg-bin "$name/swapxfg"
           tar -czf "$name".tar.gz "$name"
           sha=$(sha256sum "$name".tar.gz | awk '{print toupper($1)}')
           echo "asset=$name.tar.gz" >> $GITHUB_OUTPUT

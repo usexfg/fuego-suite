@@ -67,8 +67,8 @@
   - V7 (Apotheosis / Fango): Deposits introduced
   - V8 (Dragonborne): New emission speed factor (19), deposit refinements
   - V9 (Godflame): New emission speed factor (20), light PoW mode
-  - V10 (ÆzorAhai): Fire aliases, dynamic mixin, CD (Certificates of Deposit), SwapXFG
-  - V11 (HearthAMM): AMM pool, HEAT stablecoin, PI controller, CD yield pipeline
+  - V10 (Wildfire): Fire aliases, dynamic mixin, 8k minimum fee, SwapXFG
+  - V11 (Heatwave): ΗΞΔŦ flatcoin, Hearth Floor, AuntPoL, CD yield pipeline
 - All future upgrades are height-gated; a new `BLOCK_MAJOR_VERSION_12` can be added at any height
 - No explicit hybrid PoW/PoS or DAG structure — classic Nakamoto-style chain
 

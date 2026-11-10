@@ -18,6 +18,7 @@
 #include "Common/Int128.h"
 #include "Logging/LoggerGroup.h"
 #include "CryptoNoteCore/Blockchain.h"
+#include "CryptoNoteCore/Core.h"
 #include "CryptoNoteCore/ITimeProvider.h"
 #include "CryptoNoteCore/TransactionPool.h"
 #include "Serialization/ISerializer.h"
@@ -233,10 +234,10 @@ void testNoSingleSidedLpMints() {
 }
 
 void testCanonicalSpotPriceScale() {
-  // Seed pool 10000 XFG : 1000 HEAT → 10 XFG per HEAT → HEAT/XFG = 0.1
-  // Canonical price = HEAT atomics per XFG atomic × COIN = 0.1 × 1e7 = 1e6.
-  uint64_t price = ammGetSpotPrice(10000 * parameters::COIN, 1000 * parameters::COIN);
-  TEST(price == parameters::COIN / 10);
+  // Seed pool 8000 XFG : 1000 HEAT → 8 XFG per HEAT → HEAT/XFG = 0.125
+  // Canonical price = HEAT atomics per XFG atomic × COIN = 0.125 × 1e7.
+  uint64_t price = ammGetSpotPrice(8000 * parameters::COIN, 1000 * parameters::COIN);
+  TEST(price == parameters::COIN / 8);
   // Zero XFG reserve → no price (fail closed).
   TEST(ammGetSpotPrice(0, 1000 * parameters::COIN) == 0);
 }
@@ -804,6 +805,23 @@ void testSeedLpSharesMakeFirstDepositFair() {
   TEST(ammMintLpShares(pool.reserveXfg / 100, pool.reserveHeat / 100, 0, 0, 0) > 0);
 }
 
+// The /heat_metrics redemption price is the pool's XFG-per-HEAT ratio at COIN
+// scale. At the genesis seed it must be exactly 80,000,000 / 10,000,000.
+void testHeatMetricsSeedRedemptionPrice() {
+  Logging::LoggerGroup log;
+  Currency currency(CurrencyBuilder(log).currency());
+  core heatCore(currency, nullptr, log, false, false);
+
+  const uint64_t C = parameters::COIN;
+  const auto& pool = heatCore.get_blockchain_storage().getAmmPool();
+  TEST(pool.reserveXfg == 8000 * C);
+  TEST(pool.reserveHeat == 1000 * C);
+
+  const auto metrics = heatCore.getHeatMetrics();
+  TEST(metrics.redemptionPriceNum == 80000000);
+  TEST(metrics.redemptionPriceDenom == C);
+}
+
 
 TransactionOutput keyOut(uint64_t amount) {
   TransactionOutput out;
@@ -1136,8 +1154,58 @@ public:
   static uint32_t m_currency_upgrade_height_v11(const Blockchain& chain) {
     return chain.m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11);
   }
+  static void setAuntPolLegs(Blockchain& chain, uint64_t xfg, uint64_t heat) {
+    chain.m_treasuryLpPendingXfg = xfg;
+    chain.m_treasuryHeatReserve = heat;
+  }
+  static bool runEpochWork(Blockchain& chain, const Block& b, uint32_t height) {
+    return chain.processBlockEpochWork(b, height, Crypto::Hash{});
+  }
+  static uint64_t epochDuration(const Blockchain& chain) {
+    return chain.m_currency.isTestnet() ? parameters::TESTNET_EPOCH_DURATION_BLOCKS
+                                        : parameters::EPOCH_DURATION_BLOCKS;
+  }
 };
 } // namespace CryptoNote
+
+// Regression: the v11+ Treasury LP Manager (AuntPoL) must run at the epoch
+// boundary. It was nested inside the pre-v11 GENERAL_RESERVE convert branch
+// (`majorVersion < V11 && pending > 0`), so from v11 on the premium legs
+// accumulated forever, no protocol LP shares were ever minted, and the
+// bootstrap seed could never be repaid. Legs are paired at the pool ratio and
+// the unpaired excess carries to the next epoch.
+void testAuntPolPairsAtV11EpochBoundary() {
+  TestChain t("auntpol");
+  TEST(t.ok);
+  const uint64_t C = parameters::COIN;
+  const auto& pool = t.chain.getAmmPool();
+  const uint64_t xfgBefore = pool.reserveXfg, heatBefore = pool.reserveHeat;
+  const uint64_t sharesBefore = pool.totalLpShares;
+  TEST(t.chain.getProtocolLpShares() == 0);
+
+  // 80 XFG pairs with 10 HEAT at the 8:1 seed ratio; 2 HEAT is excess.
+  const uint64_t legXfg = 80 * C, legHeat = 12 * C;
+  const uint64_t pairedHeat = static_cast<uint64_t>(
+      ((uint128_t)legXfg * heatBefore) / xfgBefore);
+  TEST(pairedHeat == 10 * C);
+  VaultCoreTestAccess::setAuntPolLegs(t.chain, legXfg, legHeat);
+
+  Block b;
+  b.majorVersion = BLOCK_MAJOR_VERSION_11;
+  const uint32_t h = static_cast<uint32_t>(VaultCoreTestAccess::epochDuration(t.chain));
+  TEST(VaultCoreTestAccess::runEpochWork(t.chain, b, h));
+
+  const uint64_t shares = t.chain.getProtocolLpShares();
+  TEST(shares > 0);
+  TEST(shares == ammMintLpShares(legXfg, pairedHeat, sharesBefore, xfgBefore, heatBefore));
+  TEST(pool.reserveXfg == xfgBefore + legXfg);
+  TEST(pool.reserveHeat == heatBefore + pairedHeat);
+  TEST(pool.totalLpShares == sharesBefore + shares);
+  TEST(t.chain.getTreasuryLpPendingXfg() == 0);
+  TEST(t.chain.getTreasuryHeatReserve() == legHeat - pairedHeat);
+  // Owned value is far below the two-leg seed obligation: not repaid yet.
+  TEST(!t.chain.isBootstrapRepaid());
+}
 
 // Regression: a coinbase must not be able to create AMM pool state, at any version.
 //
@@ -1530,6 +1598,7 @@ int main() {
   testSettleAssetFlows();
   testValidateSettlementBasics();
   testCoinbaseRejectsEverySettlementTag();
+  testAuntPolPairsAtV11EpochBoundary();
   testRejectedBlockUnwindsVaultSpend();
   testVaultUtxoSetLpSurvivesSerialize();
   testVaultReorgKeepsKeyImageGate();
@@ -1541,6 +1610,7 @@ int main() {
   testHeatwaveTagCutoffHeight();
   testLimitFillsOnTheCurve();
   testSeedLpSharesMakeFirstDepositFair();
+  testHeatMetricsSeedRedemptionPrice();
   testSwapPriceBand();
   testCdActivationHeight();
   testBankingIndexTallyAndReversal();

@@ -1643,9 +1643,10 @@ core::HeatMetrics core::getHeatMetrics() const {
   m.swfBurnedXfgPendingHeat = m_blockchain.getSwfBurnedXfgPendingHeat();
   const auto& pool = m_blockchain.getAmmPool();
   if (!pool.isEmpty() && pool.reserveHeat > 0) {
-    // Pool ratio × 10^6 for precision
-    m.redemptionPriceNum = (pool.reserveXfg * 1000000ULL) / pool.reserveHeat;
-    m.redemptionPriceDenom = 1000000;
+    // Pool XFG per HEAT, scaled by COIN: (reserveXfg / reserveHeat) × COIN.
+    m.redemptionPriceNum = static_cast<uint64_t>(
+        ((uint128_t)pool.reserveXfg * parameters::COIN) / pool.reserveHeat);
+    m.redemptionPriceDenom = parameters::COIN;
   } else {
     m.redemptionPriceNum = 0;
     m.redemptionPriceDenom = 1;

@@ -173,7 +173,7 @@ Navigate with arrow keys or j/k, select with Enter, quit with q or Ctrl+C.
 
 ### ΗΞΔŦ Flatcoin & Hearth Exchange
 
-ΗΞΔŦ is Fuego's flatcoin — a stable asset pegged to purchasing power. It is **not** pegged to a fiat currency; it is pegged to inflation rate over time beginning Jan 2009 ⩰ $1.58 ||  XFG/ΗΞΔŦ ratio at launch mints 10:1 (1 XFG ⩰ $0.15)
+ΗΞΔŦ is Fuego's flatcoin — a stable asset pegged to purchasing power. It is **not** pegged to a fiat currency; it is pegged to inflation rate over time beginning Jan 2009 ⩰ $1.58 ||  XFG/ΗΞΔŦ ratio at launch mints 8:1 (1 XFG ⩰ $0.1975)
 
 | Operation | CLI Command | Description |
 |-----------|------------|-------------|
@@ -186,7 +186,7 @@ Navigate with arrow keys or j/k, select with Enter, quit with q or Ctrl+C.
 **Daemon RPC endpoints**: `/heat_metrics`, `/amm_quote`, `/amm_pool_info`, `/addswapfee`
 
 **Key Properties**:
-- Launch ratio 10:1 (1 ΗΞΔŦ = 10 XFG) at genesis
+- Launch ratio 8:1 (1 ΗΞΔŦ = 8 XFG) at genesis
 - Peg target $1.58 USD; mint premium **1%** of the burn (`HEAT_MINT_PREMIUM_BPS = 100`) — a haircut inside the burn that funds both AuntPoL legs (withheld XFG → XFG leg, the HEAT it buys → HEAT leg); PI controller removed
 - Protocol buys or mints ΗΞΔŦ for CD yield payments (structural demand, protocol pays 0% fee)
 - On-chain Hearth: constant-product AMM (swaps + backstop) plus pool depth-band makers in the per-block call auction (`HEARTH_DEPTH_BAND_PCT` of reserves, adaptive spread)

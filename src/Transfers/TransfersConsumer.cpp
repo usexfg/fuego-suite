@@ -113,28 +113,14 @@ void findMyOutputs(
         derivation, idx, out.commitKey, spendKeys, matchedSpendKey, ambiguous);
       if (ambiguous) {
         // The recovered key does not re-derive the output key. matchOwnerBoundCommitKey
-        // reports this with a false return, so it has to be checked before the
-        // legacy fallback below or that fallback would claim the output anyway.
+        // reports this with a false return; reject it.
         continue;
       }
       if (ownerBound) {
         outputs[matchedSpendKey].push_back(static_cast<uint32_t>(idx));
         continue;
       }
-
-      // No owner-bound match. Fall back to the pre-v11 form, which the sender
-      // and any view-key holder can also derive. These outputs are exposed and
-      // must be surfaced as such rather than presented as securely received.
-      const std::array<uint8_t, 32> depositSecret =
-        CryptoNote::deriveDepositSecret(derivation, idx);
-      const CryptoNote::DepositCommitmentKeys legacy =
-        CryptoNote::deriveLegacyCommitmentKeys(depositSecret);
-      if (legacy.commitKey == out.commitKey) {
-        for (const auto& spendKey : spendKeys) {
-          outputs[spendKey].push_back(static_cast<uint32_t>(idx));
-          break;
-        }
-      }
+      // Legacy form removed. Unmatched commitment outputs are not attributed.
     }
   }
 }

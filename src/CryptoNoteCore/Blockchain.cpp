@@ -76,7 +76,7 @@ bool operator<(const Crypto::KeyImage& keyImage1, const Crypto::KeyImage& keyIma
 }
 }
 
-#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 16  // v16: retired legacy AMM LP settlement removed from pushTransaction/popTransaction (forces replay so no cache can carry reserves computed by the deleted branch)
+#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 17  // v17: genesis Hearth seed is 8,000 XFG / 1,000 HEAT (forces replay so no cache can carry the old 10,000 / 1,250 reserves)
 #define CURRENT_BLOCKCHAININDICES_STORAGE_ARCHIVE_VER 1
 
 namespace CryptoNote {
@@ -148,6 +148,7 @@ SwapCdShare swapCdShare(uint8_t direction, uint64_t output, uint64_t twap,
 // coinbase blacklist had drifted from this function and let the retired legacy LP
 // tags through, which a miner could use to set AMM reserves network-wide.
 bool isHeatwaveTag(const TransactionExtraField& f) {
+  using namespace CryptoNote;
   return f.type() == typeid(TransactionExtraHeatCommitment) ||
          f.type() == typeid(TransactionExtraHeatMintAuth) ||
          f.type() == typeid(TransactionExtraHeatSendAuth) ||
@@ -170,8 +171,8 @@ bool isHeatwaveTag(const TransactionExtraField& f) {
 }
 
 bool carriesHeatwaveTag(const Transaction& tx) {
-  std::vector<CryptoNote::TransactionExtraField> fields;
-  if (!CryptoNote::parseTransactionExtra(tx.extra, fields)) return false;
+  std::vector<TransactionExtraField> fields;
+  if (!parseTransactionExtra(tx.extra, fields)) return false;
   for (const auto& f : fields) {
     if (isHeatwaveTag(f)) return true;
   }
@@ -4569,7 +4570,7 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
   // no historical blocks contain in-band fills, so nothing to preserve.
   if (block.majorVersion >= BLOCK_MAJOR_VERSION_11 && !m_ammPool.isEmpty() &&
       !g_orderbookIsInBootstrap && m_ammPool.reserveXfg > 0 &&
-      m_ammPool.reserveXfg >= parameters::HEARTH_MIN_XFG_DEPTH) {
+      m_ammPool.reserveXfg >= parameters::HEARTH_MIN_XFG_DEPTH * parameters::COIN) {
     // Fills are priced on the constant-product curve like any swap of their
     // size, against the reserves as earlier fills this block left them. They
     // used to execute at the pre-block spot price: up to the backstop cap that
@@ -5513,95 +5514,95 @@ bool CryptoNote::Blockchain::processBlockEpochWork(const Block& block, uint32_t 
                        << m_currency.formatAmount(swfShare) << " XFG → SWF";
         }
       }
+    }
 
-      // Treasury LP Manager: the protocol's own Hearth LP position, funded from
-      // BOTH assets WITHOUT cross-conversion and WITHOUT imbalanced deposits:
-      //   XFG: the treasury counter (treasury fee share + XFG donations).
-      //   HEAT: the treasury HEAT reserve (mint premiums + HEAT donations/fees).
-      // A deposit only happens when both legs can be paired AT the pool ratio
-      // (x/h = reserveXfg/reserveHeat) — balanced mints earn fair pro-rata
-      // shares (no single-sided over-credit, no LP dilution). The excess leg
-      // carries to the next epoch until the other side catches up. Yield
-      // compounds inside the reserves and counts toward bootstrap repayment
-      // via getTreasuryLpValue() (both legs, actual amounts).
-      if (block.majorVersion >= BLOCK_MAJOR_VERSION_11) {
-        // Both legs are funded by the mint premium: the withheld premium XFG
-        // is credited to m_treasuryLpPendingXfg at connect, and the HEAT it
-        // buys is credited to m_treasuryHeatReserve. No SWF transfer is
-        // involved — the SWF is the protocol collateral reserve and is never
-        // spent to pair AuntPoL.
-        const uint64_t availXfg = m_treasuryLpPendingXfg;
-        const uint64_t availHeat = m_treasuryHeatReserve;
-        uint64_t depositXfg = 0;
-        uint64_t depositHeat = 0;
-        if (!m_ammPool.isEmpty() && m_ammPool.totalLpShares > 0 &&
-            availXfg > 0 && availHeat > 0 &&
-            m_ammPool.reserveXfg > 0 && m_ammPool.reserveHeat > 0) {
-          // x/h = reserveXfg/reserveHeat → x = h × reserveXfg / reserveHeat.
-          uint64_t hFromX = static_cast<uint64_t>(
-              ((uint128_t)availXfg * m_ammPool.reserveHeat) / m_ammPool.reserveXfg);
-          if (hFromX <= availHeat) {
-            depositXfg = availXfg;                 // XFG-limited
-            depositHeat = hFromX;
-          } else {
-            depositHeat = availHeat;               // HEAT-limited
-            depositXfg = static_cast<uint64_t>(
-                ((uint128_t)availHeat * m_ammPool.reserveXfg) / m_ammPool.reserveHeat);
-          }
-          if (depositXfg > 0 && depositHeat > 0) {
-            uint64_t shares = ammMintLpShares(depositXfg, depositHeat,
-                m_ammPool.totalLpShares, m_ammPool.reserveXfg, m_ammPool.reserveHeat);
-            if (shares > 0) {
-              m_ammPool.reserveXfg += depositXfg;
-              m_ammPool.reserveHeat += depositHeat;
-              m_ammPool.totalLpShares += shares;
-              m_protocolLpShares += shares;
-              m_treasuryLpPendingXfg -= depositXfg;
-              m_treasuryHeatReserve -= depositHeat;
-              m_treasuryLpReserve += depositXfg;
-              uint64_t lpVIdx = (uint64_t(newHeight) << 32) | (++m_vaultUtxoCounter);
-              m_vault.addUtxo(lpVIdx, depositXfg, AssetType::XFG,
-                              VaultPartition::LP_RESERVE, blockHash,
-                              m_vaultKeys.viewPub);
-              logger(INFO) << "Treasury LP Manager: +" << m_currency.formatAmount(depositXfg)
-                           << " XFG + " << m_currency.formatAmount(depositHeat)
-                           << " HEAT (ratio-paired) → " << shares << " protocol LP shares";
-            }
-          }
+    // Treasury LP Manager: the protocol's own Hearth LP position, funded from
+    // BOTH assets WITHOUT cross-conversion and WITHOUT imbalanced deposits:
+    //   XFG: the treasury counter (treasury fee share + XFG donations).
+    //   HEAT: the treasury HEAT reserve (mint premiums + HEAT donations/fees).
+    // A deposit only happens when both legs can be paired AT the pool ratio
+    // (x/h = reserveXfg/reserveHeat) — balanced mints earn fair pro-rata
+    // shares (no single-sided over-credit, no LP dilution). The excess leg
+    // carries to the next epoch until the other side catches up. Yield
+    // compounds inside the reserves and counts toward bootstrap repayment
+    // via getTreasuryLpValue() (both legs, actual amounts).
+    if (block.majorVersion >= BLOCK_MAJOR_VERSION_11) {
+      // Both legs are funded by the mint premium: the withheld premium XFG
+      // is credited to m_treasuryLpPendingXfg at connect, and the HEAT it
+      // buys is credited to m_treasuryHeatReserve. No SWF transfer is
+      // involved — the SWF is the protocol collateral reserve and is never
+      // spent to pair AuntPoL.
+      const uint64_t availXfg = m_treasuryLpPendingXfg;
+      const uint64_t availHeat = m_treasuryHeatReserve;
+      uint64_t depositXfg = 0;
+      uint64_t depositHeat = 0;
+      if (!m_ammPool.isEmpty() && m_ammPool.totalLpShares > 0 &&
+          availXfg > 0 && availHeat > 0 &&
+          m_ammPool.reserveXfg > 0 && m_ammPool.reserveHeat > 0) {
+        // x/h = reserveXfg/reserveHeat → x = h × reserveXfg / reserveHeat.
+        uint64_t hFromX = static_cast<uint64_t>(
+            ((uint128_t)availXfg * m_ammPool.reserveHeat) / m_ammPool.reserveXfg);
+        if (hFromX <= availHeat) {
+          depositXfg = availXfg;                 // XFG-limited
+          depositHeat = hFromX;
+        } else {
+          depositHeat = availHeat;               // HEAT-limited
+          depositXfg = static_cast<uint64_t>(
+              ((uint128_t)availHeat * m_ammPool.reserveXfg) / m_ammPool.reserveHeat);
         }
-        // shares == 0 or unpaired excess: counters carry to the next epoch
-        // (never silently dropped).
-      } else {
-        // Legacy pre-v11: half-convert XFG to HEAT at pool rate for a balanced
-        // deposit (bit-identical to baseline).
-        if (m_treasuryLpPendingXfg > 0 && !m_ammPool.isEmpty()
-            && m_ammPool.reserveHeat > 0 && m_ammPool.reserveXfg > 0) {
-          uint64_t lpXfg = m_treasuryLpPendingXfg;
-          uint64_t lpHeat = lpXfg;
-          FixedPoint64 poolRate = FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
-          if (!poolRate.isZero()) {
-            FixedPoint64 halfFp = FixedPoint64::fromUint64(lpXfg / 2);
-            lpHeat = halfFp.div(poolRate).toUint64();
-          }
-          uint64_t lpShares = ammMintLpShares(lpXfg / 2, lpHeat,
+        if (depositXfg > 0 && depositHeat > 0) {
+          uint64_t shares = ammMintLpShares(depositXfg, depositHeat,
               m_ammPool.totalLpShares, m_ammPool.reserveXfg, m_ammPool.reserveHeat);
-          if (lpShares > 0) {
-            m_ammPool.reserveXfg += lpXfg / 2;
-            m_ammPool.reserveHeat += lpHeat;
-            m_ammPool.totalLpShares += lpShares;
-            m_protocolLpShares += lpShares;
-            m_treasuryLpReserve += lpXfg / 2;
+          if (shares > 0) {
+            m_ammPool.reserveXfg += depositXfg;
+            m_ammPool.reserveHeat += depositHeat;
+            m_ammPool.totalLpShares += shares;
+            m_protocolLpShares += shares;
+            m_treasuryLpPendingXfg -= depositXfg;
+            m_treasuryHeatReserve -= depositHeat;
+            m_treasuryLpReserve += depositXfg;
             uint64_t lpVIdx = (uint64_t(newHeight) << 32) | (++m_vaultUtxoCounter);
-            m_vault.addUtxo(lpVIdx, lpXfg / 2, AssetType::XFG,
+            m_vault.addUtxo(lpVIdx, depositXfg, AssetType::XFG,
                             VaultPartition::LP_RESERVE, blockHash,
                             m_vaultKeys.viewPub);
-            logger(INFO) << "GENERAL_RESERVE → Hearth LP (epoch " << epochNumber << "): "
-                         << m_currency.formatAmount(lpXfg / 2) << " XFG + "
-                         << m_currency.formatAmount(lpHeat) << " HEAT → "
-                         << lpShares << " LP shares"
-                         << " [vault LP_RESERVE UTXO " << lpVIdx << "]";
-            m_treasuryLpPendingXfg = 0;
+            logger(INFO) << "Treasury LP Manager: +" << m_currency.formatAmount(depositXfg)
+                         << " XFG + " << m_currency.formatAmount(depositHeat)
+                         << " HEAT (ratio-paired) → " << shares << " protocol LP shares";
           }
+        }
+      }
+      // shares == 0 or unpaired excess: counters carry to the next epoch
+      // (never silently dropped).
+    } else {
+      // Legacy pre-v11: half-convert XFG to HEAT at pool rate for a balanced
+      // deposit (bit-identical to baseline).
+      if (m_treasuryLpPendingXfg > 0 && !m_ammPool.isEmpty()
+          && m_ammPool.reserveHeat > 0 && m_ammPool.reserveXfg > 0) {
+        uint64_t lpXfg = m_treasuryLpPendingXfg;
+        uint64_t lpHeat = lpXfg;
+        FixedPoint64 poolRate = FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+        if (!poolRate.isZero()) {
+          FixedPoint64 halfFp = FixedPoint64::fromUint64(lpXfg / 2);
+          lpHeat = halfFp.div(poolRate).toUint64();
+        }
+        uint64_t lpShares = ammMintLpShares(lpXfg / 2, lpHeat,
+            m_ammPool.totalLpShares, m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+        if (lpShares > 0) {
+          m_ammPool.reserveXfg += lpXfg / 2;
+          m_ammPool.reserveHeat += lpHeat;
+          m_ammPool.totalLpShares += lpShares;
+          m_protocolLpShares += lpShares;
+          m_treasuryLpReserve += lpXfg / 2;
+          uint64_t lpVIdx = (uint64_t(newHeight) << 32) | (++m_vaultUtxoCounter);
+          m_vault.addUtxo(lpVIdx, lpXfg / 2, AssetType::XFG,
+                          VaultPartition::LP_RESERVE, blockHash,
+                          m_vaultKeys.viewPub);
+          logger(INFO) << "GENERAL_RESERVE → Hearth LP (epoch " << epochNumber << "): "
+                       << m_currency.formatAmount(lpXfg / 2) << " XFG + "
+                       << m_currency.formatAmount(lpHeat) << " HEAT → "
+                       << lpShares << " LP shares"
+                       << " [vault LP_RESERVE UTXO " << lpVIdx << "]";
+          m_treasuryLpPendingXfg = 0;
         }
       }
     }
@@ -6306,19 +6307,48 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
     return false;
   }
 
-  // H-1(b)/M-1: a single pass over every key-image-carrying input, with an exact
-  // rollback of this call's inserts on any failure. The previous shape erased
-  // earlier inputs with a type-blind boost::get — which throws boost::bad_get on
-  // the first non-KeyInput element (the remote crash) — and the SwapEscrow
-  // failure path returned without undoing anything already inserted.
-  std::vector<Crypto::KeyImage> insertedKeyImages;
-  auto rollbackSpentKeyInserts = [&]() {
-    for (const auto& keyImage : insertedKeyImages) {
-      m_indexManager.spentKeys().erase(keyImage);
-    }
-    insertedKeyImages.clear();
-  };
+  // H-1(b)/M-1: RAII guard. Owns every key-image insert and the vault/counter
+  // mutations made by this call. On any exit (return, exception) that has not
+  // called commit(), it reverses them. Unified remains gated for v12.
+  //
+  // NOTE: AMM reserve updates, output-index insertions, heat-supply, digm/pool
+  // counters and other late mutations are intentionally left outside this guard
+  // for now. They sit after the pre-check loop and validateSettlement, so late
+  // failure is rare under current code. The long-term goal is to bring every
+  // mutation this function performs under the same rollback model so the
+  // transactional boundary is uniform and future edits cannot re-open a partial
+  // mutation window. Extend the guard (or the pop path) when that work is done.
+  struct PushRollbackGuard {
+    Blockchain& bc;
+    std::vector<Crypto::KeyImage> insertedKeyImages;
+    std::vector<uint64_t> vaultIndices;
+    int64_t cdLockedDelta = 0;
+    bool committed = false;
 
+    explicit PushRollbackGuard(Blockchain& b) : bc(b) {}
+    ~PushRollbackGuard() {
+      if (committed) return;
+      for (const auto& ki : insertedKeyImages) {
+        bc.m_indexManager.spentKeys().erase(ki);
+      }
+      if (!vaultIndices.empty()) {
+        bc.m_vault.unSpendUtxos(vaultIndices);
+      }
+      if (cdLockedDelta != 0) {
+        if (cdLockedDelta < 0) {
+          bc.m_totalCdLocked += static_cast<uint64_t>(-cdLockedDelta);
+        } else {
+          bc.m_totalCdLocked = (bc.m_totalCdLocked >= static_cast<uint64_t>(cdLockedDelta))
+              ? bc.m_totalCdLocked - static_cast<uint64_t>(cdLockedDelta) : 0;
+        }
+      }
+    }
+    void commit() { committed = true; }
+  };
+  PushRollbackGuard guard(*this);
+
+  // Pre-mutation collection of every key-image-carrying input (pre-v12 types).
+  // Unified is intentionally left for the v12 cutover.
   for (size_t i = 0; i < transaction.tx.inputs.size(); ++i)
   {
     const Crypto::KeyImage* keyImage = nullptr;
@@ -6330,17 +6360,25 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
     {
       keyImage = &::boost::get<TransactionInputSwapEscrow>(transaction.tx.inputs[i]).keyImage;
     }
+    else if (transaction.tx.inputs[i].type() == typeid(TransactionInputCommitmentSpend))
+    {
+      keyImage = &::boost::get<TransactionInputCommitmentSpend>(transaction.tx.inputs[i]).keyImage;
+    }
+    else if (transaction.tx.inputs[i].type() == typeid(TransactionInputCommitmentTransfer))
+    {
+      keyImage = &::boost::get<TransactionInputCommitmentTransfer>(transaction.tx.inputs[i]).keyImage;
+    }
     if (!keyImage) continue;
 
     auto result = m_indexManager.spentKeys().insert(std::make_pair(*keyImage, block.height));
     if (!result.second)
     {
       logger(ERROR, BRIGHT_RED) << "Double spending transaction was pushed to blockchain.";
-      rollbackSpentKeyInserts();
+      // guard destructor rolls back the inserts already made
       m_indexManager.transactionMap().erase(transactionHash);
       return false;
     }
-    insertedKeyImages.push_back(*keyImage);
+    guard.insertedKeyImages.push_back(*keyImage);
   }
 
   // Vault consensus gate: reject unauthorized vault spends
@@ -6367,7 +6405,6 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
       // construction (nodes must agree on the key image), so any content-based
       // gate (isPermitted) is bypassable. Reject unconditionally.
       logger(ERROR, BRIGHT_RED) << "Rejected transaction naming a synthetic vault key image";
-      rollbackSpentKeyInserts();
       m_indexManager.transactionMap().erase(transactionHash);
       return false;
     }
@@ -6381,7 +6418,6 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
     uint64_t txClaimedBonus = 0;
     if (!getCdBonusClaims(transaction.tx, bonusByInput, txClaimedBonus)) {
       logger(ERROR, BRIGHT_RED) << "Malformed CD bonus claims at connect";
-      rollbackSpentKeyInserts();
       m_indexManager.transactionMap().erase(transactionHash);
       return false;
     }
@@ -6400,15 +6436,13 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
       auto txIt = m_indexManager.transactionMap().find(in.escrowTxId);
       if (txIt == m_indexManager.transactionMap().end()) {
         logger(ERROR, BRIGHT_RED) << "Swap escrow spend references unknown funding tx on connect";
-        rollbackSpentKeyInserts();
-        m_indexManager.transactionMap().erase(transactionHash);
+          m_indexManager.transactionMap().erase(transactionHash);
         return false;
       }
       auto amountIt = m_indexManager.swapEscrowOutputs().find(in.amount);
       if (amountIt == m_indexManager.swapEscrowOutputs().end()) {
         logger(ERROR, BRIGHT_RED) << "Swap escrow spend amount not indexed on connect";
-        rollbackSpentKeyInserts();
-        m_indexManager.transactionMap().erase(transactionHash);
+          m_indexManager.transactionMap().erase(transactionHash);
         return false;
       }
       bool foundUnused = false;
@@ -6418,8 +6452,7 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
             usage.outputIndex == in.escrowOutputIndex) {
           if (usage.isUsed) {
             logger(ERROR, BRIGHT_RED) << "Swap escrow output double-spent on connect";
-            rollbackSpentKeyInserts();
-            m_indexManager.transactionMap().erase(transactionHash);
+                  m_indexManager.transactionMap().erase(transactionHash);
             return false;
           }
           foundUnused = true;
@@ -6428,22 +6461,19 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
       }
       if (!foundUnused) {
         logger(ERROR, BRIGHT_RED) << "Swap escrow output usage entry missing on connect";
-        rollbackSpentKeyInserts();
-        m_indexManager.transactionMap().erase(transactionHash);
+          m_indexManager.transactionMap().erase(transactionHash);
         return false;
       }
     } else if (inv.type() == typeid(TransactionInputCommitmentSpend)) {
       if (have_tx_keyimg_as_spent(::boost::get<TransactionInputCommitmentSpend>(inv).keyImage)) {
         logger(ERROR, BRIGHT_RED) << "Double spending commitment transaction was pushed to blockchain.";
-        rollbackSpentKeyInserts();
-        m_indexManager.transactionMap().erase(transactionHash);
+          m_indexManager.transactionMap().erase(transactionHash);
         return false;
       }
     } else if (inv.type() == typeid(TransactionInputCommitmentTransfer)) {
       if (have_tx_keyimg_as_spent(::boost::get<TransactionInputCommitmentTransfer>(inv).keyImage)) {
         logger(ERROR, BRIGHT_RED) << "Double spending commitment transfer was pushed to blockchain.";
-        rollbackSpentKeyInserts();
-        m_indexManager.transactionMap().erase(transactionHash);
+          m_indexManager.transactionMap().erase(transactionHash);
         return false;
       }
     }
@@ -6495,15 +6525,11 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
       }
     } else if (inv.type() == typeid(TransactionInputCommitmentSpend)) {
       const auto& cin = ::boost::get<TransactionInputCommitmentSpend>(inv);
-      auto result = m_indexManager.spentKeys().insert(std::make_pair(cin.keyImage, block.height));
-      if (!result.second) {
-        logger(ERROR, BRIGHT_RED) << "Double spending commitment transaction was pushed to blockchain.";
-        m_indexManager.transactionMap().erase(transactionHash);
-        return false;
-      }
+      // Key image already inserted in the pre-mutation pass above.
       // CD redemption: reduce locked supply, spend vault UTXOs for claimed interest
       if (m_totalCdLocked >= cin.amount) {
         m_totalCdLocked -= cin.amount;
+        guard.cdLockedDelta -= static_cast<int64_t>(cin.amount);
       }
       // m_heatOnDeposit is not touched here: CDs leave it at maturity (see
       // the commitment-output branch below and processBlockEpochWork).
@@ -6530,6 +6556,8 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
             // deposits reaches this once per input.
             if (spendResult.amountSpent >= baseClaim) {
               vaultSpendRecord.cdPoolIndices.insert(vaultSpendRecord.cdPoolIndices.end(),
+                  spendResult.spentIndices.begin(), spendResult.spentIndices.end());
+              guard.vaultIndices.insert(guard.vaultIndices.end(),
                   spendResult.spentIndices.begin(), spendResult.spentIndices.end());
             } else {
               logger(ERROR, BRIGHT_RED) << "Vault CD_APY_POOL spend shortfall: needed "
@@ -6558,6 +6586,8 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
             if (bonusSpend.amountSpent >= bonusForInput) {
               vaultSpendRecord.bonusVaultIndices.insert(vaultSpendRecord.bonusVaultIndices.end(),
                   bonusSpend.spentIndices.begin(), bonusSpend.spentIndices.end());
+              guard.vaultIndices.insert(guard.vaultIndices.end(),
+                  bonusSpend.spentIndices.begin(), bonusSpend.spentIndices.end());
             } else {
               logger(ERROR, BRIGHT_RED) << "Vault BONUS_VAULT spend shortfall: needed "
                   << bonusForInput << " but could only spend " << bonusSpend.amountSpent;
@@ -6577,12 +6607,7 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
       }
     } else if (inv.type() == typeid(TransactionInputCommitmentTransfer)) {
       const auto& xfer = ::boost::get<TransactionInputCommitmentTransfer>(inv);
-      auto result = m_indexManager.spentKeys().insert(std::make_pair(xfer.keyImage, block.height));
-      if (!result.second) {
-        logger(ERROR, BRIGHT_RED) << "Double spending commitment transfer was pushed to blockchain.";
-        m_indexManager.transactionMap().erase(transactionHash);
-        return false;
-      }
+      // Key image already inserted in the pre-mutation pass above.
       // Transfer doesn't change locked supply (old CD consumed, new CD produced — net zero)
     }
   }
@@ -6947,6 +6972,7 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
     }
   }
 
+  guard.commit();
   return true;
 }
 

@@ -3,9 +3,17 @@ name: Release
 on:
   push:
     tags: ["*"]
+  # Build every release artifact (without publishing) when this workflow changes,
+  # so a broken release pipeline is caught before the next tag.
+  pull_request:
+    paths:
+      - ".github/workflows/release.yml"
+  workflow_dispatch:
 
 env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  RELEASE_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || 'dev' }}
 
 jobs:
   # ── macOS ──
@@ -16,9 +24,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
-            arch: apple
           - os: macos-15
+            arch: apple
+          - os: macos-26
             arch: apple
     steps:
       - uses: actions/checkout@v4
@@ -28,7 +36,7 @@ jobs:
         with: { go-version: stable }
 
       - name: Install dependencies
-        run: brew install boost openssl@3 icu4c jsoncpp cmake ninja
+        run: brew install boost openssl@3 icu4c jsoncpp secp256k1 cmake ninja
 
       - name: Build C++
         run: |
@@ -49,7 +57,7 @@ jobs:
       - name: Package
         id: pkg
         run: |
-          ver=${GITHUB_REF_NAME}
+          ver=${RELEASE_VERSION}
           name="xfg-macos-${{ matrix.arch }}-${ver}"
           mkdir "$name"
           for f in build/src/*; do [[ -x $f && -f $f ]] && strip "$f" && cp "$f" "$name/"; done
@@ -60,7 +68,10 @@ jobs:
           echo "asset=$name.zip" >> $GITHUB_OUTPUT
           echo "sha=$sha" >> $GITHUB_OUTPUT
 
+      # Both runners build arm64; publish one so the artifact name and release
+      # asset stay unique (upload-artifact@v4 rejects duplicate names).
       - uses: actions/upload-artifact@v4
+        if: matrix.os == 'macos-15'
         with:
           name: macos-${{ matrix.arch }}
           path: ${{ steps.pkg.outputs.asset }}
@@ -94,7 +105,7 @@ jobs:
       - name: Package
         id: pkg
         run: |
-          ver=${GITHUB_REF_NAME}
+          ver=${RELEASE_VERSION}
           name="xfg-linux-amd64-${ver}"
           mkdir "$name"
           for f in build/src/*; do [[ -x $f && -f $f ]] && strip "$f" && cp "$f" "$name/"; done
@@ -150,7 +161,7 @@ jobs:
           echo "OPENSSL_ROOT_DIR=$openssl" >> $env:GITHUB_ENV
           echo "OPENSSL_INCLUDE_DIR=$inc" >> $env:GITHUB_ENV
 
-      - name: Install Boost 1.85
+      - name: Install Boost 1.86
         shell: pwsh
         run: |
           $ProgressPreference = 'SilentlyContinue'
@@ -188,7 +199,7 @@ jobs:
         id: pkg
         shell: pwsh
         run: |
-          $ver = "${{ github.ref_name }}"
+          $ver = $env:RELEASE_VERSION
           $name = "xfg-win64-$ver"
           New-Item -ItemType Directory -Path $name -Force
           Get-ChildItem "build/src/Release/*.exe" | ForEach-Object { Copy-Item $_.FullName "$name/" }
@@ -207,58 +218,25 @@ jobs:
   # ── Raspberry Pi ARM64 ──
   build-raspberry-pi:
     name: Raspberry Pi ARM64
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
 
-      - name: Setup Go cross-compile
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v5
         with: { go-version: stable }
 
-      - name: Install cross-compilation tools
+      - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake build-essential gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libsecp256k1-dev libboost-dev libjsoncpp-dev libicu-dev libssl-dev ninja-build libboost-all-dev
-
-      - name: Create toolchain file
-        run: |
-          cat > arm64-toolchain.cmake << 'EOF'
-          set(CMAKE_SYSTEM_NAME Linux)
-          set(CMAKE_SYSTEM_PROCESSOR aarch64)
-          set(CMAKE_C_COMPILER aarch64-linux-gnu-gcc)
-          set(CMAKE_CXX_COMPILER aarch64-linux-gnu-g++)
-          set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
-          set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
-          set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
-          EOF
-
-      - name: Build Boost 1.85 for ARM64
-        run: |
-          BOOST_VER=1.85.0
-          BOOST_UNDER=${BOOST_VER//./_}
-          wget -q "https://archives.boost.io/release/${BOOST_VER}/source/boost_${BOOST_UNDER}.tar.bz2"
-          tar -xjf "boost_${BOOST_UNDER}.tar.bz2"
-          cd "boost_${BOOST_UNDER}"
-          echo "using gcc : arm : aarch64-linux-gnu-g++ ;" > user-config.jam
-          ./bootstrap.sh
-          ./b2 --user-config=user-config.jam toolset=gcc-arm target-os=linux \
-            architecture=arm address-model=64 --prefix=/tmp/boost-arm64 \
-            --with-filesystem --with-thread --with-date_time --with-chrono \
-            --with-regex --with-serialization --with-program-options \
-            --with-coroutine --with-context --with-atomic install -j$(nproc)
+          sudo apt-get install -y build-essential cmake libboost-all-dev libssl-dev libicu-dev libjsoncpp-dev libsecp256k1-dev ninja-build
 
       - name: Build C++
         run: |
-          cmake -B build -DCMAKE_TOOLCHAIN_FILE=arm64-toolchain.cmake \
-            -DBOOST_ROOT=/tmp/boost-arm64 -DCMAKE_BUILD_TYPE=Release -DUSE_VENDORED_SECP256K1=OFF
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DUSE_VENDORED_SECP256K1=OFF -G Ninja
           cmake --build build -j$(nproc)
 
       - name: Build Go
-        env:
-          GOOS: linux
-          GOARCH: arm64
-          CGO_ENABLED: 0
         run: |
           cd tui && go build -o ../fuego-tui && cd ..
           cd swapxfg && go build -o ../swapxfg . && cd ..
@@ -266,10 +244,10 @@ jobs:
       - name: Package
         id: pkg
         run: |
-          ver=${GITHUB_REF_NAME}
+          ver=${RELEASE_VERSION}
           name="xfg-linux-arm64-${ver}"
           mkdir "$name"
-          for f in build/src/*; do [[ -x $f && -f $f ]] && aarch64-linux-gnu-strip "$f" && cp "$f" "$name/"; done
+          for f in build/src/*; do [[ -x $f && -f $f ]] && strip "$f" && cp "$f" "$name/"; done
           cp fuego-tui "$name/"
           cp swapxfg "$name/"
           tar -czf "$name".tar.gz "$name"
@@ -293,16 +271,19 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake libboost-all-dev libssl-dev libicu-dev libjsoncpp-dev libsecp256k1-dev wget fuse
+          sudo apt-get install -y build-essential cmake libboost-all-dev libssl-dev libicu-dev libjsoncpp-dev libsecp256k1-dev ninja-build wget
 
       - name: Build
         id: build
+        env:
+          # appimagetool is itself an AppImage; runners have no FUSE.
+          APPIMAGE_EXTRACT_AND_RUN: 1
         run: |
-          ver=${GITHUB_REF_NAME}
+          ver=${RELEASE_VERSION}
           name="xfg-linux-appimage-${ver}"
           appdir="Fuego.AppDir"
 
-          cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DUSE_VENDORED_SECP256K1=OFF
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DUSE_VENDORED_SECP256K1=OFF
           cmake --build build -j$(nproc)
 
           mkdir -p "$appdir/usr/bin"
@@ -329,8 +310,11 @@ jobs:
           exec "${HERE}/usr/bin/fuegod" "$@"
           APPRUN_EOF
           chmod +x "$appdir/AppRun"
+          cp docs/images/PolishedFuegoGonCharcoal.png "$appdir/fuego.png"
 
-          ./appimagetool "$appdir" "$name.AppImage"
+          wget -q -O appimagetool "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage"
+          chmod +x appimagetool
+          ARCH=x86_64 ./appimagetool "$appdir" "$name.AppImage"
 
           sha=$(sha256sum "$name.AppImage" | awk '{print toupper($1)}')
           echo "asset=$name.AppImage" >> $GITHUB_OUTPUT
@@ -342,16 +326,113 @@ jobs:
           path: ${{ steps.build.outputs.asset }}
 
   # ── Docker ──
+  # Each arch builds natively (a QEMU arm64 C++ build would exceed the job time
+  # limit); the tag job then stitches the per-arch images into one manifest.
   build-docker:
-    name: Docker Multi-Arch
-    runs-on: ubuntu-latest
+    name: Docker (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
+      - name: Login to Docker Hub
+        if: github.ref_type == 'tag'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Login to GitHub Container Registry
+        if: github.ref_type == 'tag'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            fuego/fuego
+            ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=tag,suffix=-${{ matrix.arch }}
+            type=sha,suffix=-${{ matrix.arch }}
+
+      - name: Create Dockerfile
+        run: |
+          cat > Dockerfile.release << 'EOF'
+          FROM ubuntu:24.04 AS builder
+          ENV DEBIAN_FRONTEND=noninteractive
+
+          RUN apt-get update && apt-get install -y --no-install-recommends \
+              build-essential cmake ninja-build libboost-all-dev \
+              libssl-dev libicu-dev libjsoncpp-dev libsecp256k1-dev git ca-certificates \
+              && rm -rf /var/lib/apt/lists/*
+
+          WORKDIR /src
+          COPY . .
+
+          RUN cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_VENDORED_SECP256K1=OFF && \
+              cmake --build build -j$(nproc) --target Daemon SimpleWallet PaymentGateService \
+                TestnetDaemon testnet-wallet-cli SwapDaemon Optimizer
+
+          FROM ubuntu:24.04
+          ENV DEBIAN_FRONTEND=noninteractive
+
+          # Boost is linked statically (Boost_USE_STATIC_LIBS ON).
+          RUN apt-get update && apt-get install -y --no-install-recommends \
+              libssl3t64 libicu74 libjsoncpp25 libsecp256k1-1 ca-certificates \
+              && rm -rf /var/lib/apt/lists/*
+
+          COPY --from=builder /src/build/src/fuegod /src/build/src/fire_wallet \
+               /src/build/src/unified /src/build/src/testnetd /src/build/src/test_wallet \
+               /src/build/src/xfg-swapd /src/build/src/optimizer /usr/local/bin/
+
+          RUN ! ldd /usr/local/bin/* | grep "not found"
+
+          RUN useradd -m fuego
+          USER fuego
+          WORKDIR /home/fuego
+          RUN mkdir -p /home/fuego/.fuego
+          VOLUME ["/home/fuego/.fuego"]
+
+          EXPOSE 20808 28180
+          ENTRYPOINT ["fuegod"]
+          CMD ["--data-dir=/home/fuego/.fuego"]
+          EOF
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.release
+          platforms: linux/${{ matrix.arch }}
+          push: ${{ github.ref_type == 'tag' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=docker-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=docker-${{ matrix.arch }}
+
+  docker-manifest:
+    name: Docker Multi-Arch Manifest
+    if: github.ref_type == 'tag'
+    needs: build-docker
+    runs-on: ubuntu-latest
+    steps:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -368,80 +449,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: |
-            fuego/fuego
-            ghcr.io/${{ github.repository }}
-          tags: |
-            type=ref,event=tag
-            type=raw,value=latest,enable={{is_default_branch}}
-
-      - name: Create Dockerfile
+      - name: Create multi-arch manifests
         run: |
-          cat > Dockerfile << 'EOF'
-          FROM ubuntu:22.04 as builder
-
-          RUN apt-get update && apt-get install -y \
-              build-essential cmake libboost-all-dev \
-              libssl-dev libicu-dev libjsoncpp-dev libsecp256k1-dev git \
-              && rm -rf /var/lib/apt/lists/*
-
-          WORKDIR /src
-          COPY . .
-
-          RUN cmake -B build -DCMAKE_BUILD_TYPE=Release -DUSE_VENDORED_SECP256K1=OFF && \
-              cmake --build build -j$(nproc)
-
-          FROM ubuntu:22.04
-
-          RUN apt-get update && apt-get install -y \
-              libboost-filesystem1.74.0 libboost-thread1.74.0 \
-              libboost-date-time1.74.0 libboost-chrono1.74.0 \
-              libboost-regex1.74.0 libboost-serialization1.74.0 \
-              libboost-program-options1.74.0 libboost-coroutine1.74.0 \
-              libboost-context1.74.0 libboost-atomic1.74.0 \
-              libssl3 libicu70 libjsoncpp25 libsecp256k1-0 ca-certificates \
-              && rm -rf /var/lib/apt/lists/*
-
-          COPY --from=builder /src/build/src/fuegod /usr/local/bin/
-          COPY --from=builder /src/build/src/fire_wallet /usr/local/bin/
-          COPY --from=builder /src/build/src/walletd /usr/local/bin/
-          COPY --from=builder /src/build/src/testnetd /usr/local/bin/
-          COPY --from=builder /src/build/src/test_wallet /usr/local/bin/
-          COPY --from=builder /src/build/src/xfg-swapd /usr/local/bin/
-          COPY --from=builder /src/build/src/optimizer /usr/local/bin/
-          COPY --from=builder /src/build/src/FuegoI2P /usr/local/bin/
-          COPY --from=builder /src/build/src/unified /usr/local/bin/
-
-          RUN useradd -m -u 1000 fuego
-          USER fuego
-          WORKDIR /home/fuego
-          RUN mkdir -p /home/fuego/.fuego
-          VOLUME ["/home/fuego/.fuego"]
-
-          EXPOSE 20808 28180
-          ENTRYPOINT ["fuegod"]
-          CMD ["--data-dir=/home/fuego/.fuego"]
-          EOF
-
-      - name: Build and push Docker images
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tag="${GITHUB_REF_NAME}"
+          for image in fuego/fuego "ghcr.io/${GITHUB_REPOSITORY,,}"; do
+            docker buildx imagetools create \
+              -t "$image:$tag" -t "$image:latest" \
+              "$image:$tag-amd64" "$image:$tag-arm64"
+          done
 
   # ── Release ──
   release:
     name: Create Release
-    needs: [build-macos, build-ubuntu, build-windows, build-raspberry-pi, build-appimage, build-docker]
+    if: github.ref_type == 'tag'
+    needs: [build-macos, build-ubuntu, build-windows, build-raspberry-pi, build-appimage, docker-manifest]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -566,7 +587,7 @@ jobs:
             depends_on "secp256k1"
 
             def install
-              bin.install "fuegod", "fire_wallet", "walletd", "testnetd", "test_wallet", "xfg-swapd", "fuego-tui", "swapxfg", "optimizer", "FuegoI2P"
+              bin.install "fuegod", "fire_wallet", "unified", "testnetd", "test_wallet", "xfg-swapd", "fuego-tui", "swapxfg", "optimizer"
             end
 
             test do

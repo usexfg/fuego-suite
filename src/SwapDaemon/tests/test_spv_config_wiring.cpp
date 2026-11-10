@@ -25,6 +25,11 @@
 #include "SwapDaemon/Dash/DashChainClient.h"
 #include "SwapDaemon/Zec/ZecChainClient.h"
 
+#ifdef _WIN32
+// Common/WinCompat.h maps close() to closesocket(), which breaks std::ofstream::close().
+#undef close
+#endif
+
 using namespace XfgSwap;
 
 static void expectConfig(bool condition, const char* message) {

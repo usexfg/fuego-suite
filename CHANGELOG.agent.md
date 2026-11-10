@@ -1,3 +1,25 @@
+## Windows MSVC build fixes for core_tests and test_spv_config_wiring
+
+**Started**: 2026-11-09
+**Agent**: Devin
+**Status**: DONE
+**Scope**: `tests/CoreTests/TreasuryCoreTests.cpp`, `src/SwapDaemon/tests/test_spv_config_wiring.cpp`, `.github/workflows/{check,release,docs*}.yml`.
+
+Non-consensus build fixes found while making every CI workflow green (PR #74). Windows MSVC failed on `#include <unistd.h>` in `TreasuryCoreTests.cpp` (only `getpid` is used; now `<process.h>`/`_getpid` on Windows) and on `std::ofstream::close()` in `test_spv_config_wiring.cpp`, which `Common/WinCompat.h`'s `#define close(x) closesocket(x)` rewrote to `closesocket()`.
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Guard `<unistd.h>`/`getpid` in `TreasuryCoreTests.cpp` for MSVC | Devin | 2026-11-09 | DONE |
+| 2 | `#undef close` after includes in `test_spv_config_wiring.cpp` on Windows | Devin | 2026-11-09 | DONE |
+
+| Gate | Status | Signed |
+|------|--------|--------|
+| Build compiles | PASS — Linux `core_tests`, `test_spv_config_wiring`; Windows via CI | Devin 2026-11-09 |
+| Tests pass | N/A — no behavior change | Devin 2026-11-09 |
+| All tasks done | PASS | Devin 2026-11-09 |
+
+---
+
 ## Genesis Hearth seed correction: 8,000 XFG / 1,000 HEAT and COIN-scaled redemption price
 
 **Started**: 2026-11-09

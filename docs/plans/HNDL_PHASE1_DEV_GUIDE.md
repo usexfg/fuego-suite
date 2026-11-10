@@ -16,9 +16,9 @@ When a Cryptanalytically Relevant Quantum Computer (CRQC) running Shor's algorit
 4. Any confidential amounts masked under derivations of $D$ are decrypted.
 
 ### Strategic Goal of Phase 1
-Phase 1 eliminates the HNDL attack surface on the current ledger **without waiting for a consensus-shattering rewrite of RingCT**. 
+Phase 1 is designed to eliminate the HNDL attack surface on the current ledger **without waiting for a consensus-shattering rewrite of RingCT**. It is a design specification — not implemented; no ML-KEM code exists in `src/` as of this commit. 
 
-By hybridizing Ed25519 Diffie-Hellman with NIST FIPS 203 **ML-KEM-768** (CRYSTALS-Kyber-768), transaction outputs recorded today remain cryptographically immune to retroactive quantum de-anonymization. Even if Ed25519 is broken in the future, the adversary cannot recover the hybrid shared secret without also breaking Module-Lattice cryptography.
+By hybridizing Ed25519 Diffie-Hellman with NIST FIPS 203 **ML-KEM-768** (CRYSTALS-Kyber-768), transaction outputs recorded after deployment will remain cryptographically immune to retroactive quantum de-anonymization. Outputs recorded before implementation remain HNDL-exposed. Even if Ed25519 is broken in the future, the adversary cannot recover the hybrid shared secret without also breaking Module-Lattice cryptography.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐

@@ -19,7 +19,7 @@ treasury-vault drain primitive.
 ## HEAT Flatcoin (colored coin)
 
 - HEAT targets purchasing power rather than a fiat peg, and it adjusts for inflation and CPI.
-- Minting burns XFG at the Hearth pool TWAP price. The launch ratio is 1 HEAT = 10 XFG.
+- Minting burns XFG at the Hearth pool TWAP price. The launch ratio is 1 HEAT = 8 XFG.
 - From v11, every mint carries a 1% premium (`HEAT_MINT_PREMIUM_BPS = 100`). The premium is a haircut inside the declared burn, not a surcharge: the withheld premium XFG is credited to the AuntPoL XFG leg (`m_treasuryLpPendingXfg`) and is not burned, while the HEAT it buys is minted to the AuntPoL HEAT leg (`m_treasuryHeatReserve`). Total HEAT created still equals the HEAT value of the full burn.
 - The launch premium is otherwise 0%, and the PI controller has been removed.
 - The Hearthstone reference is $1.58 USD at launch (`FCI_HEARTHSTONE_INITIAL_CENTS = 158`), re-based quarterly from the on-chain Fuego Cost Index.

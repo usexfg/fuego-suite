@@ -1224,7 +1224,7 @@ func (m model) executeBurn(choice string) (tea.Model, tea.Cmd) {
 	}
 
 	xfgBurned := uint64(CurrentConfig.BurnTiers[idx])
-	// Prefer live pool rate; fall back to launch 10:1 inside EstimateHeatMinted
+	// Prefer live pool rate; fall back to launch 8:1 inside EstimateHeatMinted
 	var reserveXfg, reserveHeat uint64
 	if pool, err := doDaemonGet("/amm_pool_info"); err == nil {
 		reserveXfg = uint64(valueInt(pool, "reserve_xfg"))

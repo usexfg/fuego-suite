@@ -58,7 +58,7 @@ func BuildHeatMint(xfgBurned, heatMinted, mixin uint64) RpcCall {
 }
 
 // EstimateHeatMinted estimates HEAT from pool reserves (same formula as SimpleWallet mint_heat).
-// Falls back to launch 10:1 (XFG per HEAT) when pool empty.
+// Falls back to launch 8:1 (XFG per HEAT) when pool empty.
 func EstimateHeatMinted(xfgBurned, reserveXfg, reserveHeat uint64) uint64 {
 	if xfgBurned == 0 {
 		return 0
@@ -66,8 +66,8 @@ func EstimateHeatMinted(xfgBurned, reserveXfg, reserveHeat uint64) uint64 {
 	if reserveXfg > 0 && reserveHeat > 0 {
 		return xfgBurned * reserveHeat / reserveXfg
 	}
-	// Launch ratio: 1 HEAT = 10 XFG → heat = xfg / 10
-	return xfgBurned / 10
+	// Launch ratio: 1 HEAT = 8 XFG → heat = xfg / 8
+	return xfgBurned / 8
 }
 
 // ── HEAT CD (deposit HEAT after mint — heat_deposit, not createDeposit mint) ─

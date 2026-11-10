@@ -42,7 +42,7 @@ fuego-suite/
 ### HEAT Flatcoin (colored coin)
 - Not fiat based, peg targets purchasing power only; adjusts for inflation/CPI
 - Mint by burning XFG at hearth pool price. No launch premium (PI controller removed); from v11 a 1% **mint premium** (`HEAT_MINT_PREMIUM_BPS = 100`) is a haircut inside the burn that mints the AuntPoL HEAT leg
-- Launch ratio: 1 HEAT = 8 XFG (8:1 XFG per HEAT); genesis Hearth seed 10,000 XFG / 1,250 HEAT
+- Launch ratio: 1 HEAT = 8 XFG (8:1 XFG per HEAT); genesis Hearth seed 8,000 XFG / 1,000 HEAT
 - Hearthstone reference: $1.58 USD at launch (`FCI_HEARTHSTONE_INITIAL_CENTS = 158`), re-based quarterly from the on-chain Fuego Cost Index (see below)
 - Fuego Cost Index (FCI): miners vote a 6-item consumer basket in integer cents (power, gas, rice, milk, bread, eggs) via `TX_EXTRA_MINER_BASKET_VOTE`; trimmed median per category, 3-of-6 fresh-quorum gate per quarter, 5.04% max quarterly move
 - Certificates of Deposit (CD): V12 activation, epoch-term-locked HEAT earning protocol revenue yield

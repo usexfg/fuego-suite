@@ -3933,7 +3933,7 @@ bool simple_wallet::list_subs(const std::vector<std::string>& args) {
 
 bool simple_wallet::heat_info(const std::vector<std::string>& args) {
   success_msg_writer() << "HEAT flatcoin (v11+):";
-  success_msg_writer() << "  Launch ratio: 8 XFG per 1 HEAT (Hearth seed 10,000 XFG / 1,250 HEAT)";
+  success_msg_writer() << "  Launch ratio: 8 XFG per 1 HEAT (Hearth seed 8,000 XFG / 1,000 HEAT)";
   success_msg_writer() << "  Mint: burn XFG -> mint HEAT at the Hearth pool TWAP price (1% mint premium funds protocol LP)";
   success_msg_writer() << "  Trade: swap XFG/HEAT on Hearth (1.0% taker fee, split CD yield / maker rebate)";
   success_msg_writer() << "  Query daemon for live metrics: /heat_metrics";
@@ -3944,7 +3944,7 @@ bool simple_wallet::pool_info(const std::vector<std::string>& args) {
   success_msg_writer() << "Hearth pool (v11+):";
   success_msg_writer() << "  Pool: XFG/HEAT constant-product (X * Y = K)";
   success_msg_writer() << "  Fee: 1.0% (100 bps) taker fee, split CD yield / maker rebate";
-  success_msg_writer() << "  Bootstrap: protocol seed 10,000 XFG / 1,250 HEAT (8:1) at v11 fork, 144-block AMM-only phase";
+  success_msg_writer() << "  Bootstrap: protocol seed 8,000 XFG / 1,000 HEAT (8:1) at v11 fork, 144-block AMM-only phase";
   success_msg_writer() << "  Query daemon for live state: /amm_pool_info";
   success_msg_writer() << "  Add liquidity: add_liq <xfg> <heat>";
   success_msg_writer() << "  Remove liquidity: remove_liq <lp_shares> <min_xfg> <min_heat>";

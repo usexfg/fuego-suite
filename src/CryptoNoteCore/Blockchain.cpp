@@ -76,7 +76,7 @@ bool operator<(const Crypto::KeyImage& keyImage1, const Crypto::KeyImage& keyIma
 }
 }
 
-#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 16  // v16: retired legacy AMM LP settlement removed from pushTransaction/popTransaction (forces replay so no cache can carry reserves computed by the deleted branch)
+#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 17  // v17: genesis Hearth seed is 8,000 XFG / 1,000 HEAT (forces replay so no cache can carry the old 10,000 / 1,250 reserves)
 #define CURRENT_BLOCKCHAININDICES_STORAGE_ARCHIVE_VER 1
 
 namespace CryptoNote {
@@ -147,7 +147,7 @@ SwapCdShare swapCdShare(uint8_t direction, uint64_t output, uint64_t twap,
 // share ONE settlement-tag list. See the comment there: the previous hand-written
 // coinbase blacklist had drifted from this function and let the retired legacy LP
 // tags through, which a miner could use to set AMM reserves network-wide.
-bool CryptoNote::isHeatwaveTag(const CryptoNote::TransactionExtraField& f) {
+bool isHeatwaveTag(const TransactionExtraField& f) {
   using namespace CryptoNote;
   return f.type() == typeid(TransactionExtraHeatCommitment) ||
          f.type() == typeid(TransactionExtraHeatMintAuth) ||
@@ -170,9 +170,9 @@ bool CryptoNote::isHeatwaveTag(const CryptoNote::TransactionExtraField& f) {
          f.type() == typeid(TransactionExtraCdBonusClaim);
 }
 
-bool CryptoNote::carriesHeatwaveTag(const CryptoNote::Transaction& tx) {
-  std::vector<CryptoNote::TransactionExtraField> fields;
-  if (!CryptoNote::parseTransactionExtra(tx.extra, fields)) return false;
+bool carriesHeatwaveTag(const Transaction& tx) {
+  std::vector<TransactionExtraField> fields;
+  if (!parseTransactionExtra(tx.extra, fields)) return false;
   for (const auto& f : fields) {
     if (isHeatwaveTag(f)) return true;
   }

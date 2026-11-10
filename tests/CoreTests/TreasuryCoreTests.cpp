@@ -18,6 +18,7 @@
 #include "Common/Int128.h"
 #include "Logging/LoggerGroup.h"
 #include "CryptoNoteCore/Blockchain.h"
+#include "CryptoNoteCore/Core.h"
 #include "CryptoNoteCore/ITimeProvider.h"
 #include "CryptoNoteCore/TransactionPool.h"
 #include "Serialization/ISerializer.h"
@@ -221,9 +222,9 @@ void testNoSingleSidedLpMints() {
 }
 
 void testCanonicalSpotPriceScale() {
-  // Seed pool 10000 XFG : 1250 HEAT → 8 XFG per HEAT → HEAT/XFG = 0.125
-  // Canonical price = HEAT atomics per XFG atomic × COIN = 0.1 × 1e7 = 1e6.
-  uint64_t price = ammGetSpotPrice(10000 * parameters::COIN, 1250 * parameters::COIN);
+  // Seed pool 8000 XFG : 1000 HEAT → 8 XFG per HEAT → HEAT/XFG = 0.125
+  // Canonical price = HEAT atomics per XFG atomic × COIN = 0.125 × 1e7.
+  uint64_t price = ammGetSpotPrice(8000 * parameters::COIN, 1000 * parameters::COIN);
   TEST(price == parameters::COIN / 8);
   // Zero XFG reserve → no price (fail closed).
   TEST(ammGetSpotPrice(0, 1000 * parameters::COIN) == 0);
@@ -790,6 +791,23 @@ void testSeedLpSharesMakeFirstDepositFair() {
   TEST(shares == pool.totalLpShares / 100);
   // Without the seed's shares the same deposit took everything.
   TEST(ammMintLpShares(pool.reserveXfg / 100, pool.reserveHeat / 100, 0, 0, 0) > 0);
+}
+
+// The /heat_metrics redemption price is the pool's XFG-per-HEAT ratio at COIN
+// scale. At the genesis seed it must be exactly 80,000,000 / 10,000,000.
+void testHeatMetricsSeedRedemptionPrice() {
+  Logging::LoggerGroup log;
+  Currency currency(CurrencyBuilder(log).currency());
+  core heatCore(currency, nullptr, log, false, false);
+
+  const uint64_t C = parameters::COIN;
+  const auto& pool = heatCore.get_blockchain_storage().getAmmPool();
+  TEST(pool.reserveXfg == 8000 * C);
+  TEST(pool.reserveHeat == 1000 * C);
+
+  const auto metrics = heatCore.getHeatMetrics();
+  TEST(metrics.redemptionPriceNum == 80000000);
+  TEST(metrics.redemptionPriceDenom == C);
 }
 
 
@@ -1580,6 +1598,7 @@ int main() {
   testHeatwaveTagCutoffHeight();
   testLimitFillsOnTheCurve();
   testSeedLpSharesMakeFirstDepositFair();
+  testHeatMetricsSeedRedemptionPrice();
   testSwapPriceBand();
   testCdActivationHeight();
   testBankingIndexTallyAndReversal();

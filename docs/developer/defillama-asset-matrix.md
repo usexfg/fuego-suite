@@ -363,7 +363,7 @@ for that chain** (not assumed equal to ETH's). Until then they report as wired b
 ## Residual risk (explicit, not fixed by this work)
 
 DeFiLlama is a third-party unsigned feed. The XFG denominator comes from the Hearth pool,
-which at the current thin seed depth (~1,250 HEAT, roughly $1,975 on the HEAT side) is
+which at the current thin seed depth (~1,000 HEAT, roughly $1,580 on the HEAT side) is
 manipulable: a sustained attack can move the denominator while DeFiLlama's counterparty
 numerator stays correct, and a two-sided guard against the moved denominator does not
 remove that exposure. With no pool-based offer cap in force, the oracle bounds *display and

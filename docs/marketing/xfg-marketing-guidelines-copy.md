@@ -153,7 +153,7 @@
 
 ## Visual Identity
 
-**Full brand assets system (marks, lockups, HEAT/ΗΞΔŦ, inventory):** see [`brand-assets-guidelines.md`](./brand-assets-guidelines.md). DIGM is out of scope there.
+**Full brand assets system (marks, lockups, HEAT/ΗΞΔŦ, inventory):** see [`brand-assets-guidelines.md`](../brand/brand-assets-guidelines). DIGM is out of scope there.
 
 **Typography:**
 | Role | Font | Source | License |

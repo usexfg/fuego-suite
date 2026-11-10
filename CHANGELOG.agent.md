@@ -15,7 +15,7 @@ Non-consensus build fixes found while making every CI workflow green (PR #74). W
 | Gate | Status | Signed |
 |------|--------|--------|
 | Build compiles | PASS — Linux `core_tests`, `test_spv_config_wiring`; Windows via CI | Devin 2026-11-09 |
-| Tests pass | N/A — no behavior change | Devin 2026-11-09 |
+| Tests pass | PASS — Linux `core_tests` 281/281, `test_spv_config_wiring` all passed; Windows via CI | Devin 2026-11-09 |
 | All tasks done | PASS | Devin 2026-11-09 |
 
 ---

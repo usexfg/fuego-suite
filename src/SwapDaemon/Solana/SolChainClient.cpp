@@ -14,6 +14,7 @@
 namespace XfgSwap {
 
 static bool isZeroPub(const Crypto::PublicKey& k);
+static std::string lowerHex(std::string s);
 
 static bool isZeroSecret(const Crypto::SecretKey& s) {
   const uint8_t* p = reinterpret_cast<const uint8_t*>(&s);
@@ -118,6 +119,9 @@ ChainClientResult SolChainClient::lockPtlc(const SwapParams& params) {
   if (isZeroPub(pt)) return ChainClientResult::fail("SOL lockPtlc: no adaptor point");
   std::string ptHex = Common::podToHex(pt);
 
+  const std::string fundedEscrow = openPointEscrowFor(params, ptHex);
+  if (!fundedEscrow.empty()) return ChainClientResult::okWithState(fundedEscrow, "ptlc:" + ptHex);
+
   SolTxResult solResult;
   bool ok = m_rpc->lockPtlc(
       m_keypairBase58,
@@ -149,6 +153,26 @@ static bool isZeroPub(const Crypto::PublicKey& k) {
 }
 
 static bool isPointLockState(const std::string& chainState) { return chainState.rfind("ptlc:", 0) == 0; }
+
+// A swap negotiated as a point lock never takes the hash paths, whatever the
+// lock notice says.
+static bool usesPointLock(const SwapParams& params) {
+  return params.lockType == SwapLockType::PTLC || isPointLockState(params.chainState);
+}
+
+// The escrow address is fixed by our key and T. If a lock whose confirmation
+// was lost already funded it with these terms, reuse it: a second lock_ptlc
+// would fail on the existing account and strand the first.
+std::string SolChainClient::openPointEscrowFor(const SwapParams& params, const std::string& pointHex) {
+  const std::string ownAddress = getReceiveAddress();
+  const std::string escrow = m_rpc->deriveHtlcAddress(ownAddress, pointHex);
+  SolHtlcInfo info;
+  const bool ours = !escrow.empty() && m_rpc->getHtlcState(escrow, info) && info.lockType == 1 &&
+                    !info.claimed && !info.refunded && info.sender == ownAddress &&
+                    info.recipient == params.ctrAddress && lowerHex(info.ptlcPoint) == lowerHex(pointHex) &&
+                    info.timeoutSlot == params.ctrTimeoutBlock && info.amount == params.ctrAmount64();
+  return ours ? escrow : std::string();
+}
 
 bool SolChainClient::escrowOpenThroughRunway(const SolHtlcInfo& info, const SwapParams& params,
                                              std::string& error) {
@@ -194,7 +218,7 @@ ChainClientResult SolChainClient::verifyPointLock(const SwapParams& params) {
 ChainClientResult SolChainClient::verifyLock(const SwapParams& params) {
   // Pure PTLC locks announce themselves via chainState prefix "ptlc:" and are
   // verified against the bound adaptor point; legacy HTLC keeps the hash path.
-  if (isPointLockState(params.chainState)) return verifyPointLock(params);
+  if (usesPointLock(params)) return verifyPointLock(params);
 
   SolHtlcInfo info;
   if (!m_rpc->getHtlcState(params.ctrLockTxId, info))
@@ -238,7 +262,7 @@ ChainClientResult SolChainClient::verifyLock(const SwapParams& params) {
 }
 
 ChainClientResult SolChainClient::claim(const SwapParams& params) {
-  if (isPointLockState(params.chainState)) return claimPoint(params);
+  if (usesPointLock(params)) return claimPoint(params);
   // Legacy HTLC fallback ONLY (plan task: keep untouched). The on-chain
   // program rejects this for lock_type == 1 — pure PTLC claims go through
   // SolRpcClient::claimPtlc (completed adaptor signature, no preimage).
@@ -261,7 +285,7 @@ std::string SolChainClient::tryExtractClaimedSecret(const SwapParams& params) {
   // e*P, t*G == T enforced) and the recovered secret t is stored in
   // state.preimage exactly like an HTLC preimage — same read-back contract,
   // different verification upstream.
-  if (params.chainState.rfind("ptlc:", 0) == 0) {
+  if (usesPointLock(params)) {
     SolHtlcInfo ptlcInfo;
     if (!m_rpc->getHtlcState(params.ctrLockTxId, ptlcInfo)) return {};
     if (!ptlcInfo.claimed || ptlcInfo.lockType != 1) return {};

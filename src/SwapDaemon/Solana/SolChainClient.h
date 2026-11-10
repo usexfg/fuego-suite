@@ -37,6 +37,7 @@ public:
   bool getCurrentHeight(uint64_t& height) override;
 
 private:
+  std::string openPointEscrowFor(const SwapParams& params, const std::string& pointHex);
   ChainClientResult verifyPointLock(const SwapParams& params);
   ChainClientResult claimPoint(const SwapParams& params);
   bool escrowOpenThroughRunway(const SolHtlcInfo& info, const SwapParams& params, std::string& error);

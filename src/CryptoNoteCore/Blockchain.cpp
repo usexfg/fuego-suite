@@ -76,7 +76,7 @@ bool operator<(const Crypto::KeyImage& keyImage1, const Crypto::KeyImage& keyIma
 }
 }
 
-#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 19  // v19: limit deposits carry withdrawnHeight; orderbook snapshots carry pruned deposits. v18: v18: orderbook auction state and its rollback records are cached (forces replay: a v17 cache has none, and a node restarted from one re-entered bootstrap and forked)
+#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 20  // v20: HEAT supply counts only XFG-valued CD fees as new (cd_fee_heat_from_xfg). v19: limit deposits carry withdrawnHeight; orderbook snapshots carry pruned deposits. v18: v18: orderbook auction state and its rollback records are cached (forces replay: a v17 cache has none, and a node restarted from one re-entered bootstrap and forked)
 #define CURRENT_BLOCKCHAININDICES_STORAGE_ARCHIVE_VER 1
 
 namespace CryptoNote {
@@ -407,6 +407,7 @@ public:
 
       logger(INFO) << operation << "HEAT/AMM/PI state";
       s(m_bs.m_heatSupply, "heat_supply");
+      s(m_bs.m_cdFeeHeatFromXfg, "cd_fee_heat_from_xfg");
       s(m_bs.m_heatOnDeposit, "heat_on_deposit");
       s(m_bs.m_cdExpiryByEpoch, "cd_expiry_by_epoch");
       s(m_bs.m_digmSupply, "digm_supply");
@@ -1226,6 +1227,7 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
     m_totalRolloverAccrued = 0;
     m_totalCdLocked = 0;
     m_heatSupply = 0;
+    m_cdFeeHeatFromXfg = 0;
     m_heatOnDeposit = 0;
     m_cdExpiryByEpoch.clear();
     m_blockCdCreatedHeat = 0;
@@ -1339,6 +1341,7 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
         preEpoch.ammTotalLpShares = m_ammPool.totalLpShares;
         preEpoch.feePoolBalance = m_feePoolBalance;
         preEpoch.cdHearthFeeAccumulator = m_ammPool.cdHearthFeeAccumulator;
+        preEpoch.cdFeeHeatFromXfg = m_cdFeeHeatFromXfg;
         m_epochSnapshots.push_back({b, preEpoch});
       }
 
@@ -3785,6 +3788,7 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
       preEpoch.ammTotalLpShares = m_ammPool.totalLpShares;
       preEpoch.feePoolBalance = m_feePoolBalance;
       preEpoch.cdHearthFeeAccumulator = m_ammPool.cdHearthFeeAccumulator;
+      preEpoch.cdFeeHeatFromXfg = m_cdFeeHeatFromXfg;
       m_epochSnapshots.push_back({height, preEpoch});
     }
   }
@@ -4737,6 +4741,7 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
         m_ammPool.cdHearthFeeAccumulator =
           (m_ammPool.cdHearthFeeAccumulator > UINT64_MAX - feeHeatEq)
             ? UINT64_MAX : m_ammPool.cdHearthFeeAccumulator + feeHeatEq;
+        m_cdFeeHeatFromXfg += feeHeatEq;
 
         m_ammPool.pendingHeat -= heatCost;
         m_ammPool.reserveXfg -= (netXfg + cdFeeXfg);  // maker share of the fee stays with LPs
@@ -5787,9 +5792,10 @@ bool CryptoNote::Blockchain::processBlockEpochWork(const Block& block, uint32_t 
           logger(ERROR, BRIGHT_RED) << "CD yield mint overflow";
           return false;
         }
+        const uint64_t newHeat = heatMinted + std::min(m_cdFeeHeatFromXfg, m_ammPool.cdHearthFeeAccumulator);
         heatMinted += m_ammPool.cdHearthFeeAccumulator;
         if (heatMinted > 0 && m_heatSupply <= UINT64_MAX - heatMinted) {
-          m_heatSupply += heatMinted;
+          m_heatSupply += newHeat;
           m_heatCdFeePool += heatMinted;
           // Credit fee pool so the F-001 caps allow CD interest claims.
           // Pool and claims are denominated in the same units (HEAT atomics).
@@ -5804,6 +5810,7 @@ bool CryptoNote::Blockchain::processBlockEpochWork(const Block& block, uint32_t 
                           m_vaultKeys.viewPub);
         }
         m_ammPool.cdHearthFeeAccumulator = 0;
+        m_cdFeeHeatFromXfg = 0;
       }
     }
 
@@ -6108,6 +6115,7 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
           m_ammPool.reserveXfg += rec.xfg;
           if (m_ammPool.cdHearthFeeAccumulator >= rec.feeHeat)
             m_ammPool.cdHearthFeeAccumulator -= rec.feeHeat;
+          m_cdFeeHeatFromXfg = m_cdFeeHeatFromXfg >= rec.feeHeat ? m_cdFeeHeatFromXfg - rec.feeHeat : 0;
         } else {
           // User order matched in the auction: escrow leg + proceeds only.
           if (rec.feeHeat > 0 && m_ammPool.cdHearthFeeAccumulator >= rec.feeHeat)
@@ -6238,6 +6246,7 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
     m_ammPool.totalLpShares = snap.ammTotalLpShares;
     m_feePoolBalance = snap.feePoolBalance;
     m_ammPool.cdHearthFeeAccumulator = snap.cdHearthFeeAccumulator;
+    m_cdFeeHeatFromXfg = snap.cdFeeHeatFromXfg;
     m_vault.removeAboveIndex(uint64_t(poppedHeight) << 32);
     m_epochSnapshots.pop_back();
   } else if (!m_epochSnapshots.empty() && m_epochSnapshots.back().first < poppedHeight) {
@@ -6800,6 +6809,7 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
           reserveIn += auth.inputAmount;
           reserveOut -= auth.outputAmount + cd.fromReserve;
           m_ammPool.cdHearthFeeAccumulator += cd.heat;
+          if (!xfgIn) m_cdFeeHeatFromXfg += cd.heat;
           logger(INFO) << "AMM swap " << (xfgIn ? "XFG→HEAT" : "HEAT→XFG") << " settled: pool +"
                        << m_currency.formatAmount(auth.inputAmount) << ", -"
                        << m_currency.formatAmount(auth.outputAmount + cd.fromReserve)
@@ -7328,6 +7338,7 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
         reserveOut += auth.outputAmount + cd.fromReserve;
         m_ammPool.cdHearthFeeAccumulator = m_ammPool.cdHearthFeeAccumulator >= cd.heat
             ? m_ammPool.cdHearthFeeAccumulator - cd.heat : 0;
+        if (!xfgIn) m_cdFeeHeatFromXfg = m_cdFeeHeatFromXfg >= cd.heat ? m_cdFeeHeatFromXfg - cd.heat : 0;
         break;
       } else if (field.type() == typeid(TransactionExtraLpAddAuth)) {
         // Auth-only LP add reversal. The legacy-tag path that used to be handled

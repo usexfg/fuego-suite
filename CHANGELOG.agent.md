@@ -6407,3 +6407,29 @@ Not covered:
 - View-only / tracking wallets cannot list orders (derivation needs the spend secret).
 - Self-trade exclusion in `runAuction` keys on `addressHash`; with per-order hashes it no longer matches two orders of one wallet (audit M7; it was already bypassable with a second hash).
 - The wallet code paths have no automated test; the derivation and consensus acceptance do.
+
+## HEAT supply accounting (audit 2026-11-11: M3)
+
+**Feature name**: Count only XFG-valued CD fees as new HEAT supply
+**Agent**: Claude
+**Start date**: 2026-11-11
+**Consensus impact**: none on validity (`m_heatSupply` feeds `/heat_metrics`, the public audit snapshot and an overflow guard). Cache archive 19 -> 20.
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `m_cdFeeHeatFromXfg`: the XFG-valued part of `cdHearthFeeAccumulator` (HEAT→XFG swaps, backstop buys); push/pop symmetric, cached, in epoch snapshots | Claude | 2026-11-11 | DONE |
+| 2 | Epoch mint adds only `cdYield HEAT + m_cdFeeHeatFromXfg` to `m_heatSupply`; the HEAT-sourced part of the accumulator already existed | Claude | 2026-11-11 | DONE |
+| 3 | Test: mixed HEAT/XFG-sourced fees → supply grows by exactly the XFG-sourced part | Claude | 2026-11-11 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j4` full build rc=0 |
+| Tests pass | DONE — core_tests 347/347 |
+| Mutation check | DONE — reverting to whole-accumulator counting fails the test |
+| All tasks done | DONE |
+
+Not covered:
+- The XFG removed from reserves as a CD fee stays in pool marker outputs that nothing can spend, but is not added to the burn tally. Changing that moves the Eternal Flame and therefore the block reward, so it was left for a separate decision.
+- Pops of a backstop buy and of a HEAT→XFG swap restore `m_cdFeeHeatFromXfg` by code reading; no pop test drives them.

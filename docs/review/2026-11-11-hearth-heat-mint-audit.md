@@ -21,7 +21,8 @@ Line numbers are `src/CryptoNoteCore/Blockchain.cpp` unless another file is name
 | H2, H3 | Fixed: median oracle, mint cap, reserve-bounded backstop, oracle-priced epoch work |
 | H4 | Fixed: min size, required expiry, per-block cap, pruning of withdrawn orders |
 | H5 | Fixed: per-order one-time keys (wallet-only) |
-| M*, L* | Open |
+| M3 | Fixed: supply counts only XFG-valued CD fees as new HEAT |
+| M1, M2, M4-M7, L* | Open |
 
 Details and test evidence: `CHANGELOG.agent.md`, section "Hearth critical fixes".
 

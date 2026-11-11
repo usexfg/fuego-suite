@@ -535,12 +535,14 @@ namespace CryptoNote {
       uint64_t swfHeatBalance;
       uint64_t feePoolBalance;
       uint64_t cdHearthFeeAccumulator;
+      uint64_t cdFeeHeatFromXfg = 0;
       bool bootstrapRepaid;
       uint64_t bonusVaultBalance;
       uint64_t bonusVaultPendingXfg;
 
       void serialize(ISerializer& s) {
         s(heatSupply, "heat_supply"); s(heatOnDeposit, "heat_on_deposit");
+        s(cdFeeHeatFromXfg, "cd_fee_heat_from_xfg");
         s(heatCdFeePool, "heat_cd_fee_pool"); s(cdYieldPool, "cd_yield_pool");
         s(cdReserve, "cd_reserve"); s(treasuryBalance, "treasury_balance");
         s(treasuryHeatReserve, "treasury_heat_reserve");
@@ -581,6 +583,10 @@ namespace CryptoNote {
 
     // HEAT stablecoin state
     uint64_t m_heatSupply = 0;
+    // Part of cdHearthFeeAccumulator valued from XFG fees (HEAT→XFG swaps and
+    // backstop buys). Only this part is new HEAT when the epoch mints the
+    // accumulator; the rest was HEAT taken from reserves or escrow.
+    uint64_t m_cdFeeHeatFromXfg = 0;
     // HEAT in CDs still earning: added at creation, dropped at the boundary
     // closing the CD's last credited epoch. The v11+ epoch-rate denominator.
     uint64_t m_heatOnDeposit = 0;

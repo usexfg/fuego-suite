@@ -1206,6 +1206,7 @@ public:
   static bool hasLimitDeposit(const Blockchain& chain, const Crypto::Hash& orderId) {
     return chain.m_limitDeposits.count(orderId) > 0;
   }
+  static uint64_t cdFeeHeatFromXfg(const Blockchain& chain) { return chain.m_cdFeeHeatFromXfg; }
   static void popOrderbookBlock(Blockchain& chain, uint32_t height) {
     chain.restoreOrderbookSnapshotFor(height);
   }
@@ -1974,6 +1975,33 @@ void testLimitOrderKeysUnlinkable() {
   TEST(!withdrawSignedBy(walletSpendPublic, walletSpendSecret, keysA.viewPublicKey));
 }
 
+// Audit 2026-11-11 M3: the epoch added the whole CD fee accumulator to the
+// HEAT supply, though most of it was HEAT taken from escrow or reserves. Only
+// the part valued from XFG fees is new HEAT.
+void testHeatSupplyCountsOnlyXfgValuedFees() {
+  TestChain t("heat_supply");
+  TEST(t.ok);
+  uint32_t height = enterHearthAuctionPhase(t);
+  const auto& pool = t.chain.getAmmPool();
+  VaultCoreTestAccess::recordSpots(t.chain, height - 16, 16, ammGetSpotPrice(pool.reserveXfg, pool.reserveHeat));
+  VaultCoreTestAccess::addLimitDeposit(t.chain, hearthOrderId(90), 0, 400 * parameters::COIN,
+                                       parameters::COIN, height - 1);
+  VaultCoreTestAccess::runOrderbookBlock(t.chain, height);
+  const uint64_t accumulator = t.chain.getAmmPool().cdHearthFeeAccumulator;
+  const uint64_t fromXfg = VaultCoreTestAccess::cdFeeHeatFromXfg(t.chain);
+  TEST(fromXfg > 0 && accumulator > fromXfg);
+
+  const uint32_t epoch = static_cast<uint32_t>(VaultCoreTestAccess::epochDuration(t.chain));
+  const uint32_t boundary = (height / epoch + 1) * epoch;
+  const uint64_t supplyBefore = t.chain.getHeatSupply();
+  Block b;
+  b.majorVersion = BLOCK_MAJOR_VERSION_11;
+  TEST(VaultCoreTestAccess::runEpochWork(t.chain, b, boundary));
+  TEST(t.chain.getHeatSupply() - supplyBefore == fromXfg);
+  TEST(t.chain.getAmmPool().cdHearthFeeAccumulator == 0);
+  TEST(VaultCoreTestAccess::cdFeeHeatFromXfg(t.chain) == 0);
+}
+
 int main() {
   testCdInterestCompounding();
   testLegacyDepositWithdrawsForPrincipal();
@@ -2026,6 +2054,7 @@ int main() {
   testLimitDepositBounds();
   testWithdrawnDepositsPrunedAndRestored();
   testLimitOrderKeysUnlinkable();
+  testHeatSupplyCountsOnlyXfgValuedFees();
   fprintf(stderr, "=== Treasury/Core Tests ===\nPassed: %d / %d\n", tests_passed, tests_run);
   return tests_passed == tests_run ? 0 : 1;
 }

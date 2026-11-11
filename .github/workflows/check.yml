@@ -331,9 +331,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
-            arch: apple
           - os: macos-15
+            arch: apple
+          - os: macos-26
             arch: apple
     steps:
       - uses: actions/checkout@v4

@@ -425,6 +425,52 @@ arithmetic for an unreachable branch adds split risk without benefit.
 | Tests pass | NOT RUN | — | — |
 | Brace/paren balance + hunk placement reviewed | YES | Claude Opus 5 | 2026-11-05 |
 
+## AppImage bundles non-system shared libraries and smoke-tests in clean Ubuntu
+
+**Started**: 2026-11-10
+**Agent**: Devin
+**Status**: DONE (packaging/script). Full C++ release build is left to CI; the VM has no CMake/Boost toolchain.
+**Scope**: `.github/workflows/release.yml`, `scripts/package-appimage.sh`, `CHANGELOG.agent.md`.
+
+The release AppImage now assembles its AppDir through `scripts/package-appimage.sh`: executables are copied into `usr/bin`, their `ldd` dependency closure is collected, every non-glibc shared library is copied into `usr/lib`, and `AppRun` exports that directory through `LD_LIBRARY_PATH`. The release job then runs the produced AppImage in a clean `ubuntu:24.04` container with `APPIMAGE_EXTRACT_AND_RUN=1` so missing bundled libraries fail the workflow instead of reaching users.
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Add AppDir packaging script with recursive shared-library collection | Devin | 2026-11-10 | DONE |
+| 2 | Wire release AppImage job to the packaging script | Devin | 2026-11-10 | DONE |
+| 3 | Add clean-container AppImage smoke test | Devin | 2026-11-10 | DONE |
+| 4 | Validate script syntax and packaging behavior with synthetic executables | Devin | 2026-11-10 | DONE |
+
+| Gate | Status | Signed |
+|------|--------|--------|
+| Build compiles | PENDING (CI) — no full C++ build on VM | Devin 2026-11-10 |
+| Tests pass | PENDING (CI) — local packaging smoke test PASS | Devin 2026-11-10 |
+| All tasks done | DONE | Devin 2026-11-10 |
+
+---
+
+## Windows MSVC build fixes for core_tests and test_spv_config_wiring
+
+**Started**: 2026-11-09
+**Agent**: Devin
+**Status**: DONE
+**Scope**: `tests/CoreTests/TreasuryCoreTests.cpp`, `src/SwapDaemon/tests/test_spv_config_wiring.cpp`, `.github/workflows/{check,release,docs*}.yml`.
+
+Non-consensus build fixes found while making every CI workflow green (PR #74). Windows MSVC failed on `#include <unistd.h>` in `TreasuryCoreTests.cpp` (only `getpid` is used; now `<process.h>`/`_getpid` on Windows) and on `std::ofstream::close()` in `test_spv_config_wiring.cpp`, which `Common/WinCompat.h`'s `#define close(x) closesocket(x)` rewrote to `closesocket()`.
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Guard `<unistd.h>`/`getpid` in `TreasuryCoreTests.cpp` for MSVC | Devin | 2026-11-09 | DONE |
+| 2 | `#undef close` after includes in `test_spv_config_wiring.cpp` on Windows | Devin | 2026-11-09 | DONE |
+
+| Gate | Status | Signed |
+|------|--------|--------|
+| Build compiles | PASS — Linux `core_tests`, `test_spv_config_wiring`; Windows via CI | Devin 2026-11-09 |
+| Tests pass | PASS — Linux `core_tests` 281/281, `test_spv_config_wiring` all passed; Windows via CI | Devin 2026-11-09 |
+| All tasks done | PASS | Devin 2026-11-09 |
+
+---
+
 ## Genesis Hearth seed correction: 8,000 XFG / 1,000 HEAT and COIN-scaled redemption price
 
 **Started**: 2026-11-09

@@ -1,6 +1,6 @@
 # Cross-curve point locks (F33, R12a)
 
-> Version 1.0 — 2026-11-08 — Status: IN IMPLEMENTATION
+> Version 1.1 — 2026-11-11 — Status: X1-X8 IMPLEMENTED, all transport gates pass in CI; X9-X10 delivery
 > Owner decisions (2026-11-08): R12 option (a); hash-locked pairs stay ACTIVE until their point lock
 > ships; BTC, LTC and BCH move to ACTIVE (remediation 1.8); R11 (delete `src/SwapDaemon/CLV/`) approved;
 > the Valise suite pin may change; all suite fixes go to usexfg/fuego-suite as one pull request.
@@ -69,8 +69,9 @@ pre-change code) before it is marked done, and a signed row in `CHANGELOG.agent.
 - No `PointTimelock` is deployed on any chain today. Until the owner deploys it on a chain (a funded
   key, one transaction per chain through the deterministic deployer), that chain keeps the hash lock and
   F33 (owner decision: stay ACTIVE meanwhile).
-- The SOL program source already holds the point claim (`lock_ptlc`, `claim_ptlc`). No mainnet deployment
-  of it is known. The daemon reads the configured program's code: until a program carrying both point
+- The SOL program's point lock could not run before 2026-11-11 (it did not build for Solana and
+  exceeded the compute budget); it now uses the runtime's curve25519 syscalls and passes the validator
+  gate. No mainnet deployment of it is known, and a deployment needs those syscalls active on the cluster. The daemon reads the configured program's code: until a program carrying both point
   instructions is deployed under a program id the owner holds, SOL stays on the hash lock and F33.
 - SOL point locks bind the escrow to the XFG adaptor point directly; the cross-curve proof is not used.
 - BTC, LTC and BCH point locks add a step: Alice must be online after locking to send the claim

@@ -1192,6 +1192,12 @@ public:
     return bytes;
   }
   static void resetToStartup(Blockchain& chain) { chain.rebuildCache(); }
+  static void recordSpots(Blockchain& chain, uint32_t fromHeight, uint32_t count, uint64_t price) {
+    for (uint32_t i = 0; i < count; ++i) chain.m_blockSpotHistory.push_back({fromHeight + i, price});
+  }
+  static uint64_t oraclePriceBefore(const Blockchain& chain, uint32_t height) {
+    return chain.hearthOraclePriceBefore(height);
+  }
   static void loadOrderbookState(Blockchain& chain, const std::vector<uint8_t>& bytes) {
     Common::MemoryInputStream in(bytes.data(), bytes.size());
     BinaryInputStreamSerializer s(in);
@@ -1225,6 +1231,7 @@ void testAuntPolPairsAtV11EpochBoundary() {
   Block b;
   b.majorVersion = BLOCK_MAJOR_VERSION_11;
   const uint32_t h = static_cast<uint32_t>(VaultCoreTestAccess::epochDuration(t.chain));
+  VaultCoreTestAccess::recordSpots(t.chain, 0, h, ammGetSpotPrice(xfgBefore, heatBefore));
   TEST(VaultCoreTestAccess::runEpochWork(t.chain, b, h));
 
   const uint64_t shares = t.chain.getProtocolLpShares();
@@ -1772,6 +1779,88 @@ void testHearthOrderbookStateSurvivesRestart() {
   TEST(VaultCoreTestAccess::saveOrderbookState(t.chain) == nextBlockState);
 }
 
+// Audit 2026-11-11 H2: the mint price was the mean of 8 end-of-block spots, so
+// a few blocks of pushed price set what a mint paid. It is now the lower of
+// the 8-block and the epoch median.
+void testHearthOracleResistsShortPump() {
+  TestChain t("hearth_oracle");
+  TEST(t.ok);
+  const uint64_t P = parameters::COIN / 8;
+  const uint32_t epoch = static_cast<uint32_t>(VaultCoreTestAccess::epochDuration(t.chain));
+  TEST(VaultCoreTestAccess::oraclePriceBefore(t.chain, 10) == 0);
+  VaultCoreTestAccess::recordSpots(t.chain, 0, epoch, P);
+  VaultCoreTestAccess::recordSpots(t.chain, epoch, 8, 2 * P);
+  TEST(VaultCoreTestAccess::oraclePriceBefore(t.chain, epoch + 8) == P);
+  VaultCoreTestAccess::recordSpots(t.chain, epoch + 8, 8, P / 2);
+  TEST(VaultCoreTestAccess::oraclePriceBefore(t.chain, epoch + 16) == P / 2);
+  TEST(VaultCoreTestAccess::oraclePriceBefore(t.chain, epoch + 8) == P);
+}
+
+// Audit 2026-11-11 H2: mint size had no bound; one block may now mint at most
+// HEARTH_MINT_MAX_BPS_PER_BLOCK of the pool's HEAT reserve.
+void testHearthMintCapPerBlock() {
+  TestChain t("hearth_mintcap");
+  TEST(t.ok);
+  const uint64_t C = parameters::COIN;
+  const auto& pool = t.chain.getAmmPool();
+  VaultCoreTestAccess::recordSpots(t.chain, 0, 16, ammGetSpotPrice(pool.reserveXfg, pool.reserveHeat));
+  std::vector<uint8_t> mint;
+  addHeatMintAuthToExtra(mint, 100 * C, 12 * C);
+  const Transaction mintTx = settlementTx({101 * C}, {commitmentOut(12 * C, parameters::HEAT_TERM)}, mint);
+
+  Blockchain::SettlementScratch scratch;
+  scratch.mintCapHeatLeft = hearthMintCapHeat(pool.reserveHeat);
+  TEST(scratch.mintCapHeatLeft == 50 * C);
+  AssetFlows flows;
+  uint64_t fee = 0;
+  std::string err;
+  int accepted = 0;
+  for (int i = 0; i < 5; ++i) {
+    if (t.chain.validateSettlement(mintTx, 100, scratch, flows, fee, err)) ++accepted;
+  }
+  TEST(accepted == 4);
+  TEST(err.find("mint cap") != std::string::npos);
+  TEST(t.chain.blockMintCapHeat() == 50 * C);
+}
+
+// Audit 2026-11-11 H3: AuntPoL deposits at the pool ratio, so pairing while
+// the pool is pushed off the oracle price sells the protocol's legs to the
+// pusher. The epoch skips the pairing and the legs carry over.
+void testAuntPolSkipsPushedPool() {
+  TestChain t("auntpol_pushed");
+  TEST(t.ok);
+  const uint64_t C = parameters::COIN;
+  const auto& pool = t.chain.getAmmPool();
+  const uint64_t xfgBefore = pool.reserveXfg, heatBefore = pool.reserveHeat;
+  VaultCoreTestAccess::setAuntPolLegs(t.chain, 80 * C, 12 * C);
+  Block b;
+  b.majorVersion = BLOCK_MAJOR_VERSION_11;
+  const uint32_t h = static_cast<uint32_t>(VaultCoreTestAccess::epochDuration(t.chain));
+  VaultCoreTestAccess::recordSpots(t.chain, 0, h, 2 * ammGetSpotPrice(xfgBefore, heatBefore));
+  TEST(VaultCoreTestAccess::runEpochWork(t.chain, b, h));
+  TEST(t.chain.getProtocolLpShares() == 0);
+  TEST(pool.reserveXfg == xfgBefore && pool.reserveHeat == heatBefore);
+  TEST(t.chain.getTreasuryLpPendingXfg() == 80 * C);
+}
+
+// Audit 2026-11-11 H2: the backstop cap was 5× auction volume, so crossing
+// one's own orders lifted it without bound. It is now at most 5% of the XFG
+// reserve per block whatever the auction did.
+void testHearthBackstopBoundedByReserves() {
+  TestChain t("hearth_backstop");
+  TEST(t.ok);
+  uint32_t height = enterHearthAuctionPhase(t);
+  const AmmPoolState before = t.chain.getAmmPool();
+  VaultCoreTestAccess::addLimitDeposit(t.chain, hearthOrderId(60), 1, 3000 * parameters::COIN,
+                                       parameters::ORDER_PRICE_TICK, height - 1);
+  VaultCoreTestAccess::runOrderbookBlock(t.chain, height);
+  const AmmPoolState after = t.chain.getAmmPool();
+  const uint64_t bidBandXfg = before.reserveXfg / 9 + parameters::COIN;
+  const uint64_t backstopBound = (before.reserveXfg + bidBandXfg) * parameters::HEARTH_BACKSTOP_MAX_BPS / 10000;
+  TEST(after.reserveXfg - before.reserveXfg <= bidBandXfg + backstopBound);
+  TEST(VaultCoreTestAccess::escrowLeft(t.chain, hearthOrderId(60)) > 0);
+}
+
 int main() {
   testCdInterestCompounding();
   testLegacyDepositWithdrawsForPrincipal();
@@ -1817,6 +1906,10 @@ int main() {
   testHearthBuyFromPoolBandConservesHeat();
   testHearthBandSweepsNeverLowerK();
   testHearthOrderbookStateSurvivesRestart();
+  testHearthOracleResistsShortPump();
+  testHearthMintCapPerBlock();
+  testAuntPolSkipsPushedPool();
+  testHearthBackstopBoundedByReserves();
   fprintf(stderr, "=== Treasury/Core Tests ===\nPassed: %d / %d\n", tests_passed, tests_run);
   return tests_passed == tests_run ? 0 : 1;
 }

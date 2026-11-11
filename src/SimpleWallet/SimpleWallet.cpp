@@ -3989,7 +3989,7 @@ bool simple_wallet::mint_heat(const std::vector<std::string>& args) {
     return false;
   }
 
-  // Consensus prices the mint at the 8-block TWAP; build a little under it so
+  // Consensus prices the mint at the Hearth oracle price; build a little under it so
   // the TWAP moving before inclusion does not invalidate the mint.
   //
   // The v11 mint premium is a haircut inside the burn: heat(premiumXfg) of the
@@ -4024,7 +4024,7 @@ bool simple_wallet::mint_heat(const std::vector<std::string>& args) {
   success_msg_writer() << "  Burn: " << m_currency.formatAmount(xfgAmount) << " XFG";
   success_msg_writer() << "  Mint: " << m_currency.formatAmount(heatAmount) << " HEAT";
   success_msg_writer() << "  Price: " << m_currency.formatAmount(poolTwap)
-                       << " HEAT per XFG (8-block TWAP, minted "
+                       << " HEAT per XFG (Hearth oracle price, minted "
                        << parameters::WALLET_MINT_TWAP_MARGIN_BPS / 100.0 << "% under it)";
   success_msg_writer() << "  Mint premium: " << m_currency.formatAmount(premiumXfg)
                        << " XFG of the burn (" << parameters::HEAT_MINT_PREMIUM_BPS / 100.0
@@ -4180,7 +4180,7 @@ bool simple_wallet::swap(const std::vector<std::string>& args) {
     // sale, often far more HEAT. Offer it; the command stays a Hearth sale.
     if (mintAmount > 0) {
       success_msg_writer() << "Mint instead: " << m_currency.formatAmount(mintAmount)
-                           << " HEAT (burns the XFG at the 8-block TWAP; no pool price impact)"
+                           << " HEAT (burns the XFG at the Hearth oracle price; no pool price impact)"
                            << " — use: mint_heat " << m_currency.formatAmount(amount);
     } else {
       success_msg_writer() << "Mint instead: unavailable (no Hearth TWAP yet)";

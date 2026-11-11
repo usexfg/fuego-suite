@@ -1548,12 +1548,12 @@ namespace CryptoNote
     // Dynamax: probe at maxMixin (32); wallet ring construction uses available outs
     mixin = normalizeMixinProbe(mixin, m_currency.maxMixin());
 
-    // Auto-compute heatMinted using the rolling 8-block TWAP of Hearth spot price.
+    // Auto-compute heatMinted at the Hearth oracle price (getHearthTwap).
     // Canonical scale: price = HEAT atomics per XFG atomic × COIN.
     // expectedHeat = xfgBurned × price / COIN.
     // Falls back to spot pool rate if TWAP unavailable. Fail closed if no price.
     {
-      // Consensus prices a mint at the 8-block TWAP and refuses one without
+      // Consensus prices a mint at the oracle price and refuses one without
       // it. Build a little under it, so the TWAP moving before inclusion does
       // not invalidate the mint.
       const uint64_t twap = m_node.getHearthTwap();

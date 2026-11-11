@@ -6317,3 +6317,33 @@ Not covered:
 - Orderbook state stays in file-static globals shared by every `Blockchain` in a process; only persistence was added.
 - `PoolOrderOrchestrator::shouldRegenerate` no longer has a consensus caller; left in place (covered by `Phase3_OrderbookTest`).
 - `Phase5_AdversarialTests.cpp` has `int main() { return 0; }`; it tests nothing.
+
+## Hearth oracle and bounds (audit 2026-11-11: H2, H3)
+
+**Feature name**: Median mint oracle, per-block mint cap, reserve-bounded backstop, oracle-priced epoch work
+**Agent**: Claude
+**Start date**: 2026-11-11
+**Plan**: `docs/review/2026-11-11-hearth-heat-mint-audit.md` (recommendation 5)
+**Consensus impact**: v11+ only (not live).
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `twapBefore` → `hearthOraclePriceBefore`: min(8-block lower median, epoch lower median) of end-of-block spots; used by mint validation, mint premium, swap/backstop CD fee conversion, wallet price RPC | Claude | 2026-11-11 | DONE |
+| 2 | Per-block mint cap `HEARTH_MINT_MAX_BPS_PER_BLOCK` (5% of pool HEAT at block open) in `validateSettlement` and block templates (`blockMintCapHeat`) | Claude | 2026-11-11 | DONE |
+| 3 | Backstop always ≤ `HEARTH_BACKSTOP_MAX_BPS` of `reserveXfg`, auction volume can only lower it | Claude | 2026-11-11 | DONE |
+| 4 | Epoch conversions (bonus vault, CD fee rate, CD yield mint) priced at the oracle; AuntPoL pairing skipped when spot is > 2% from the oracle | Claude | 2026-11-11 | DONE |
+| 5 | Wallet/RPC wording updated from "8-block TWAP" to "Hearth oracle price" | Claude | 2026-11-11 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j4` full build rc=0 |
+| Tests pass | DONE — core_tests 319/319 (new: oracle pump, mint cap, AuntPoL pushed pool, backstop bound; AuntPoL pairing test now seeds price history) |
+| Mutation check | DONE — 4 breaks (short median only, cap check off, auction-volume backstop, AuntPoL guard off) each fail a test |
+| All tasks done | DONE |
+
+Not covered:
+- The block-template mint cap (`TransactionPool::fill_block_template`) has no test; `tests/UnitTests/TransactionPool.cpp` is not built (BUILD_TESTS=OFF).
+- The per-block 2× price band still applies to direct swaps only. Auction and backstop moves are not banded; the medians make single-block moves irrelevant to pricing, not impossible.
+- Parameters (5% mint cap, 2% AuntPoL deviation, epoch-long median) are initial values, not derived from simulation.

@@ -446,6 +446,11 @@ const uint64_t HEARTH_FEE_DIVISOR = 10000;
 const uint64_t HEARTH_CD_SHARE_PCT_V11 = 30; // v11: 30% CD yield / 70% maker
 const uint64_t HEARTH_CD_SHARE_PCT_V12 = 70; // v12: 70% CD yield / 30% maker
 const uint64_t ORDER_PRICE_TICK = COIN / 100; // min price granularity (1%)
+const uint64_t HEARTH_MINT_MAX_BPS_PER_BLOCK =
+    500; // HEAT minted per block ≤ 5% of the pool's HEAT reserve at block open
+const uint64_t HEARTH_AUNTPOL_MAX_SPOT_DEVIATION_BPS =
+    200; // AuntPoL pairs only while pool spot is within 2% of the oracle price
+const uint64_t HEARTH_ORACLE_SHORT_WINDOW = 8; // blocks in the short median
 const uint64_t HEARTH_BACKSTOP_MAX_BPS =
     500; // backstop fills ≤ 5× auction volume per block
 constexpr uint64_t HEARTH_POOL_SEED_XFG =
@@ -647,6 +652,11 @@ inline uint64_t hearthCdSharePct(uint8_t blockMajorVersion) {
 }
 inline uint64_t hearthMakerRebatePct(uint8_t blockMajorVersion) {
   return 100 - hearthCdSharePct(blockMajorVersion);
+}
+
+// HEAT one block may mint, from the pool's HEAT reserve at block open.
+inline uint64_t hearthMintCapHeat(uint64_t reserveHeat) {
+  return (reserveHeat / 10000) * parameters::HEARTH_MINT_MAX_BPS_PER_BLOCK;
 }
 
 // Mint premium for a block major version. Consensus paths pass the version of

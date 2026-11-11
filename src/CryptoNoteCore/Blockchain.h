@@ -90,6 +90,7 @@ namespace CryptoNote {
     virtual bool haveSpentKeyImages(const CryptoNote::Transaction& tx) override;
     virtual bool checkTransactionSize(size_t blobSize) override;
     virtual bool checkTransactionSettlement(const CryptoNote::Transaction& tx, uint64_t& fee) override;
+    virtual uint64_t blockMintCapHeat() override;
 
     bool init() { return init(Tools::getDefaultDataDirectory(), true); }
     bool init(const std::string& config_folder, bool load_existing);
@@ -160,13 +161,13 @@ namespace CryptoNote {
     // Returns 0 if no blocks accumulated this epoch.
     uint64_t getPoolTwap() const;
 
-    // Rolling 8-block TWAP for HEAT mint price validation.
-    // Simple average of the last 8 blocks' hearthPoolRatio.
-    // Canonical scale: HEAT atomics per XFG atomic × COIN.
+    // The price the next block's HEAT mints are validated at (see
+    // hearthOraclePriceBefore). Canonical scale: HEAT atomics per XFG atomic × COIN.
     uint64_t getRollingTwap() const;
-    // TWAP of the 8 v11 blocks below `height` (0 below two blocks): the price
-    // HEAT mints at, and the rate CD fee shares are valued at, in block `height`.
-    uint64_t twapBefore(uint32_t height) const;
+    // Lower of the median end-of-block spot over the last 8 blocks and over
+    // the last epoch, below `height` (0 below two blocks): the price HEAT mints
+    // at, and the rate fee shares are valued at, in block `height`.
+    uint64_t hearthOraclePriceBefore(uint32_t height) const;
 
     struct OrderbookLevel {
       uint64_t price;
@@ -201,6 +202,8 @@ namespace CryptoNote {
       // must keep the price inside HEARTH_MAX_BLOCK_PRICE_MOVE_PCT of it.
       // 0 checks no band.
       uint64_t openingSpot = 0;
+      // HEAT this block may still mint (hearthMintCapHeat at block open).
+      uint64_t mintCapHeatLeft = UINT64_MAX;
     };
     // v11+ settlement of one transaction against the current chain state: its
     // single settlement tag becomes per-asset sources and sinks (AssetFlows),
@@ -605,8 +608,8 @@ namespace CryptoNote {
 
     // End-of-block Hearth spot price of each v11 block, (height, price), most
     // recent last — kept for MAX_ROLLBACK_HISTORY blocks beyond the 8-block
-    // TWAP window and saved with the block cache. twapBefore(h) averages the 8
-    // entries below h, so validation, settlement, a reorg and a restart all
+    // window and saved with the block cache. hearthOraclePriceBefore(h) reads
+    // the entries below h, so validation, settlement, a reorg and a restart all
     // see the same price. The old window dropped its oldest entry on each
     // push and restored none on a pop, and was never saved: after a reorg or a
     // restart a node priced mints differently from its peers.
@@ -646,7 +649,7 @@ namespace CryptoNote {
 
     // Mint-premium HEAT credited to the treasury reserve (AuntPoL HEAT leg) per
     // mint transaction, keyed by tx hash. Recorded at connect so popTransaction
-    // can debit exactly what was credited: recomputing twapBefore(height) during
+    // can debit exactly what was credited: recomputing hearthOraclePriceBefore(height) during
     // a pop is not safe — the block's TWAP contribution is already gone.
     std::map<Crypto::Hash, uint64_t, HashLess> m_mintPremiumHeatByTx;
 

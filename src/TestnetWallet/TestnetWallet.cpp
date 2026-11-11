@@ -1,0 +1,247 @@
+// Copyright (c) 2017-2026 Fuego Developers
+// Copyright (c) 2018-2019 Conceal Network & Conceal Devs
+// Copyright (c) 2016-2019 The Karbowanec developers
+// Copyright (c) 2012-2018 The CryptoNote developers
+//
+// This file is part of Fuego.
+//
+// Fuego is free software distributed in the hope that it
+// will be useful, but WITHOUT ANY WARRANTY; without even the
+// implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+// PURPOSE. You can redistribute it and/or modify it under the terms
+// of the GNU General Public License v3 or later versions as published
+// by the Free Software Foundation. Fuego includes elements written
+// by third parties. See file labeled LICENSE for more details.
+// You should have received a copy of the GNU General Public License
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
+
+#include "../SimpleWallet/SimpleWallet.h"
+#include "TestnetWallet.h"
+
+#include <chrono>
+#include <ctime>
+#include <fstream>
+#include <future>
+#include <iomanip>
+#include <thread>
+#include <set>
+#include <sstream>
+#include <regex>
+#include <limits>
+
+#include <boost/format.hpp>
+#include <boost/bind.hpp>
+#include <boost/lexical_cast.hpp>
+#include <boost/program_options.hpp>
+#include <boost/algorithm/string.hpp>
+#include <boost/filesystem.hpp>
+
+#include "Common/Base58.h"
+#include "Common/CommandLine.h"
+#include "Common/SignalHandler.h"
+#include "Common/StringTools.h"
+#include "Common/PathTools.h"
+#include "Common/Util.h"
+#include "Common/DnsTools.h"
+#include "CryptoNoteCore/CryptoNoteFormatUtils.h"
+#include "CryptoNoteProtocol/CryptoNoteProtocolHandler.h"
+#include "NodeRpcProxy/NodeRpcProxy.h"
+#include "Rpc/CoreRpcServerCommandsDefinitions.h"
+#include "Rpc/HttpClient.h"
+#include "CryptoNoteCore/CryptoNoteTools.h"
+#include "CryptoNoteCore/AliasIndex.h"
+#include "CryptoNoteCore/TransactionExtra.h"
+
+namespace CryptoNote
+{
+  //----------------------------------------------------------------------------------------------------
+  // testnet_wallet constructor - extends simple_wallet with testnet-specific commands
+  //----------------------------------------------------------------------------------------------------
+  CryptoNote::testnet_wallet::testnet_wallet(System::Dispatcher& dispatcher, const CryptoNote::Currency& currency, Logging::LoggerManager& log) :
+    simple_wallet(dispatcher, currency, log)
+  {
+    // Register testnet-specific deposit commands
+    register_testnet_commands();
+  }
+
+  bool CryptoNote::testnet_wallet::requireV11(const std::string& cmdName) {
+    try {
+      uint64_t height = m_node->getLastLocalBlockHeight();
+      uint32_t v11Height = m_currency.upgradeHeight(CryptoNote::BLOCK_MAJOR_VERSION_11);
+      if (height < v11Height) {
+        fail_msg_writer() << cmdName << " requires v11+ (block " << v11Height
+                          << "), current height: " << height;
+        return false;
+      }
+    } catch (...) {
+      fail_msg_writer() << cmdName << ": cannot determine block height, try again later";
+      return false;
+    }
+    return true;
+  }
+
+  //----------------------------------------------------------------------------------------------------
+  void CryptoNote::testnet_wallet::register_testnet_commands()
+  {
+    // Inherits: mint_heat, create_cd, heat_list, list_heat, list_cds, balance, swap, add_liq from simple_wallet
+
+    // @ Alias system commands (inherited from simple_wallet)
+
+    // Override swap command to pass --testnet flag to swapxfg
+  /*  m_consoleHandler.setHandler("swap", boost::bind(&testnet_wallet::swap_tui, this, boost::arg<1>()), "swap - Launch swapxfg testnet swap terminal"); */
+  }
+
+  //----------------------------------------------------------------------------------------------------
+  // Testnet-specific command implementations
+  //----------------------------------------------------------------------------------------------------
+
+  bool CryptoNote::testnet_wallet::swap_tui(const std::vector<std::string>& /*args*/) {
+    launchSwapxfg(true);
+    return true;
+  }
+
+  //----------------------------------------------------------------------------------------------------
+  // Testnet-specific deposit command implementations
+  //----------------------------------------------------------------------------------------------------
+
+  bool CryptoNote::testnet_wallet::burn(const std::vector<std::string> &args)
+  {
+    // HEAT burn deposit - testnet version
+    if (args.size() != 1)
+    {
+      fail_msg_writer() << "Usage: burn <amount>";
+      fail_msg_writer() << "Valid amounts: 0.08, 0.8, 8, 80 TEST";
+      return true;
+    }
+
+    if (!requireV11("burn")) return true;
+
+    try
+    {
+      uint64_t burn_amount = 0;
+      bool ok = m_currency.parseAmount(args[0], burn_amount);
+
+      if (!ok || 0 == burn_amount)
+      {
+        fail_msg_writer() << "Invalid amount format: " << args[0];
+        return true;
+      }
+
+      std::vector<uint64_t> valid_amounts = {
+        CryptoNote::parameters::TEST_AMOUNT_TIER_0,
+        CryptoNote::parameters::TEST_AMOUNT_TIER_1,
+        CryptoNote::parameters::TEST_AMOUNT_TIER_2,
+        CryptoNote::parameters::TEST_AMOUNT_TIER_3
+      };
+
+      auto it = std::find(valid_amounts.begin(), valid_amounts.end(), burn_amount);
+      if (it == valid_amounts.end()) {
+        fail_msg_writer() << "Invalid amount. Valid tiers: 0.08, 0.8, 8, 80 TEST";
+        return true;
+      }
+
+      uint32_t burn_term = CryptoNote::parameters::HEAT_TERM;
+
+      // Determine banking fee based on amount tier (testnet rates: 0.1% of TEST_AMOUNT_TIER)
+      uint64_t banking_fee = 0;
+      if (burn_amount == CryptoNote::parameters::TEST_AMOUNT_TIER_0) {
+        banking_fee = CryptoNote::parameters::TEST_BANK_FEE_TIER_0;
+      } else if (burn_amount == CryptoNote::parameters::TEST_AMOUNT_TIER_1) {
+        banking_fee = CryptoNote::parameters::TEST_BANK_FEE_TIER_1;
+      } else if (burn_amount == CryptoNote::parameters::TEST_AMOUNT_TIER_2) {
+        banking_fee = CryptoNote::parameters::TEST_BANK_FEE_TIER_2;
+      } else if (burn_amount == CryptoNote::parameters::TEST_AMOUNT_TIER_3) {
+        banking_fee = CryptoNote::parameters::TEST_BANK_FEE_TIER_3;
+      }
+      uint64_t fee = m_currency.minimumFee();
+
+      // Confirmation
+      success_msg_writer() << "";
+      success_msg_writer() << "TESTNET Burn Transaction Summary:";
+      success_msg_writer() << "  Amount: " << m_currency.formatAmount(burn_amount) << " TEST (PERMANENT)";
+      success_msg_writer() << "  Banking Fee: " << m_currency.formatAmount(banking_fee) << " TEST (0.1% of amount to stakers)";
+      success_msg_writer() << "  Network Fee: " << m_currency.formatAmount(fee) << " TEST (minimum txn fee to miners)";
+      success_msg_writer() << "  Commitment Type: 〘HEAT〙 ✺ These funds will be BURNED (to mint HEAT)";
+      success_msg_writer() << "";
+      success_msg_writer() << "Confirm? (1) OK  (2) No ";
+
+      std::string confirm;
+      m_consoleHandler.readLine(confirm);
+
+      if (confirm != "1" && confirm != "OK" && confirm != "Ok" && confirm != "ok") {
+        success_msg_writer() << "Cancelled.";
+        return true;
+      }
+
+      // v10 HEAT mint via auth tag — no STARK commitment needed on-chain
+      success_msg_writer() << "Creating TEST burn (HEAT v10): " << m_currency.formatAmount(burn_amount) << " TEST";
+      uint64_t heatAmount = burn_amount;  // 1:1 XFG→HEAT expected rate
+      success_msg_writer() << "  Minting: " << m_currency.formatAmount(heatAmount) << " HEAT";
+
+      CryptoNote::TransactionId txId = m_wallet->mintHeatV10(burn_amount, heatAmount, fee + banking_fee, 0);
+      if (CryptoNote::WALLET_LEGACY_INVALID_TRANSACTION_ID == txId) {
+        fail_msg_writer() << "Mint HEAT transaction failed";
+        return true;
+      }
+      success_msg_writer() << "HEAT mint transaction created. TX ID: " << txId;
+      return true;
+    }
+    catch (const std::exception& e)
+    {
+      fail_msg_writer() << "Error: " << e.what();
+      return true;
+    }
+  }
+
+  //----------------------------------------------------------------------------------------------------
+  // COLD deposits (tag 0xCD) have been removed from the codebase.
+  // This function is retained as a stub for compatibility.
+  bool CryptoNote::testnet_wallet::cold(const std::vector<std::string> &args)
+  {
+    fail_msg_writer() << "COLD deposits are no longer supported.";
+    return true;
+  }
+
+  //----------------------------------------------------------------------------------------------------
+  bool CryptoNote::testnet_wallet::list_burns(const std::vector<std::string> &args)
+  {
+    // List all HEAT burn deposits
+    try
+    {
+      success_msg_writer() << "";
+      success_msg_writer() << "=== TESTNET Burn Transactions ===";
+      success_msg_writer() << "";
+
+      size_t depositCount = m_wallet->getDepositCount();
+      size_t burnCount = 0;
+
+      for (size_t i = 0; i < depositCount; ++i) {
+        Deposit deposit;
+        if (m_wallet->getDeposit(i, deposit)) {
+          // Check if this is a HEAT/burn deposit (FOREVER term)
+          if (deposit.term == CryptoNote::parameters::HEAT_TERM) {
+            burnCount++;
+            success_msg_writer() << "  [" << i << "] Amount: " << m_currency.formatAmount(deposit.amount)
+                                 << " TEST | Status: Burned"
+                                 << " | Type: HEAT";
+          }
+        }
+      }
+
+      if (burnCount == 0) {
+        success_msg_writer() << "  No burn transactions found.";
+      } else {
+        success_msg_writer() << "";
+        success_msg_writer() << "Total burn transactions: " << burnCount;
+      }
+
+      success_msg_writer() << "";
+      return true;
+    }
+    catch (const std::exception& e)
+    {
+      fail_msg_writer() << "Error listing burns: " << e.what();
+      return true;
+    }
+  }
+}

@@ -1,20 +1,19 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
+// Copyright (c) 2017-2022 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it
+// Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You can redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #pragma  once
 
@@ -46,6 +45,7 @@ namespace Tools
       const std::string& walletFilename);
 
 
+    void configure(const std::string& bindIp, uint16_t port, const std::string& rpcUser, const std::string& rpcPassword);
     static void init_options(boost::program_options::options_description& desc);
     bool init(const boost::program_options::variables_map& vm);
 
@@ -63,6 +63,15 @@ namespace Tools
 
     //json_rpc
     bool on_getbalance(const wallet_rpc::COMMAND_RPC_GET_BALANCE::request& req, wallet_rpc::COMMAND_RPC_GET_BALANCE::response& res);
+    bool on_get_address(const wallet_rpc::COMMAND_RPC_GET_ADDRESS::request& req, wallet_rpc::COMMAND_RPC_GET_ADDRESS::response& res);
+    bool on_sign_offer(const wallet_rpc::COMMAND_RPC_SIGN_OFFER::request& req, wallet_rpc::COMMAND_RPC_SIGN_OFFER::response& res);
+    bool on_sign_cancel(const wallet_rpc::COMMAND_RPC_SIGN_CANCEL::request& req, wallet_rpc::COMMAND_RPC_SIGN_CANCEL::response& res);
+    bool on_sign_order(const wallet_rpc::COMMAND_RPC_SIGN_ORDER::request& req, wallet_rpc::COMMAND_RPC_SIGN_ORDER::response& res);
+    bool on_initiate_swap(const wallet_rpc::COMMAND_RPC_INITIATE_SWAP::request& req, wallet_rpc::COMMAND_RPC_INITIATE_SWAP::response& res);
+    bool on_complete_swap(const wallet_rpc::COMMAND_RPC_COMPLETE_SWAP::request& req, wallet_rpc::COMMAND_RPC_COMPLETE_SWAP::response& res);
+    bool on_refund_swap(const wallet_rpc::COMMAND_RPC_REFUND_SWAP::request& req, wallet_rpc::COMMAND_RPC_REFUND_SWAP::response& res);
+    bool on_create_afk_lock(const wallet_rpc::COMMAND_RPC_CREATE_AFK_LOCK::request& req, wallet_rpc::COMMAND_RPC_CREATE_AFK_LOCK::response& res);
+    bool on_claim_afk_swap(const wallet_rpc::COMMAND_RPC_CLAIM_AFK_SWAP::request& req, wallet_rpc::COMMAND_RPC_CLAIM_AFK_SWAP::response& res);
     bool on_create_integrated(const wallet_rpc::COMMAND_RPC_CREATE_INTEGRATED::request& req, wallet_rpc::COMMAND_RPC_CREATE_INTEGRATED::response& res);
     bool on_transfer(const wallet_rpc::COMMAND_RPC_TRANSFER::request& req, wallet_rpc::COMMAND_RPC_TRANSFER::response& res);
     bool on_store(const wallet_rpc::COMMAND_RPC_STORE::request& req, wallet_rpc::COMMAND_RPC_STORE::response& res);
@@ -77,6 +86,31 @@ namespace Tools
     bool on_estimate_fusion(const wallet_rpc::COMMAND_RPC_ESTIMATE_FUSION::request& req, wallet_rpc::COMMAND_RPC_ESTIMATE_FUSION::response& res);
     bool on_send_fusion(const wallet_rpc::COMMAND_RPC_SEND_FUSION::request& req, wallet_rpc::COMMAND_RPC_SEND_FUSION::response& res);
     bool on_reset(const wallet_rpc::COMMAND_RPC_RESET::request& req, wallet_rpc::COMMAND_RPC_RESET::response& res);
+
+    // Phase 7: CD / COLD wallet RPC bridges
+    bool on_list_cds(const wallet_rpc::COMMAND_RPC_LIST_CDS::request& req, wallet_rpc::COMMAND_RPC_LIST_CDS::response& res);
+    bool on_create_cd(const wallet_rpc::COMMAND_RPC_CREATE_CD::request& req, wallet_rpc::COMMAND_RPC_CREATE_CD::response& res);
+    bool on_withdraw_cd(const wallet_rpc::COMMAND_RPC_WITHDRAW_CD::request& req, wallet_rpc::COMMAND_RPC_WITHDRAW_CD::response& res);
+    bool on_rollover_cd(const wallet_rpc::COMMAND_RPC_ROLLOVER_CD::request& req, wallet_rpc::COMMAND_RPC_ROLLOVER_CD::response& res);
+    bool on_estimate_cd_yield(const wallet_rpc::COMMAND_RPC_ESTIMATE_CD_YIELD::request& req, wallet_rpc::COMMAND_RPC_ESTIMATE_CD_YIELD::response& res);
+
+    // HEAT & Hearth wallet RPC bridges
+    bool on_heat_mint(const wallet_rpc::COMMAND_RPC_HEAT_MINT::request& req, wallet_rpc::COMMAND_RPC_HEAT_MINT::response& res);
+    bool on_send_heat(const wallet_rpc::COMMAND_RPC_SEND_HEAT::request& req, wallet_rpc::COMMAND_RPC_SEND_HEAT::response& res);
+    bool on_amm_swap(const wallet_rpc::COMMAND_RPC_AMM_SWAP::request& req, wallet_rpc::COMMAND_RPC_AMM_SWAP::response& res);
+    bool on_sell_xfg(const wallet_rpc::COMMAND_RPC_AMM_SWAP::request& req, wallet_rpc::COMMAND_RPC_AMM_SWAP::response& res);
+    bool on_buy_xfg(const wallet_rpc::COMMAND_RPC_AMM_SWAP::request& req, wallet_rpc::COMMAND_RPC_AMM_SWAP::response& res);
+    bool on_amm_add_liquidity(const wallet_rpc::COMMAND_RPC_AMM_ADD_LIQUIDITY::request& req, wallet_rpc::COMMAND_RPC_AMM_ADD_LIQUIDITY::response& res);
+    bool on_amm_remove_liquidity(const wallet_rpc::COMMAND_RPC_AMM_REMOVE_LIQUIDITY::request& req, wallet_rpc::COMMAND_RPC_AMM_REMOVE_LIQUIDITY::response& res);
+    bool on_amm_claim_lp_fees(const wallet_rpc::COMMAND_RPC_AMM_CLAIM_LP_FEES::request& req, wallet_rpc::COMMAND_RPC_AMM_CLAIM_LP_FEES::response& res);
+    bool on_heat_deposit(const wallet_rpc::COMMAND_RPC_HEAT_DEPOSIT::request& req, wallet_rpc::COMMAND_RPC_HEAT_DEPOSIT::response& res);
+
+    // v11+ Hearth limit order wallet RPC
+    bool on_place_limit_order(const wallet_rpc::COMMAND_RPC_PLACE_LIMIT_ORDER::request& req, wallet_rpc::COMMAND_RPC_PLACE_LIMIT_ORDER::response& res);
+    bool on_donate(const wallet_rpc::COMMAND_RPC_DONATE::request& req, wallet_rpc::COMMAND_RPC_DONATE::response& res);
+    bool on_cancel_limit_order(const wallet_rpc::COMMAND_RPC_CANCEL_LIMIT_ORDER::request& req, wallet_rpc::COMMAND_RPC_CANCEL_LIMIT_ORDER::response& res);
+    bool on_get_limit_orders(const wallet_rpc::COMMAND_RPC_GET_LIMIT_ORDERS::request& req, wallet_rpc::COMMAND_RPC_GET_LIMIT_ORDERS::response& res);
+    bool on_get_cd_claim_preview(const wallet_rpc::COMMAND_RPC_GET_CD_CLAIM_PREVIEW::request& req, wallet_rpc::COMMAND_RPC_GET_CD_CLAIM_PREVIEW::response& res);
 
     bool handle_command_line(const boost::program_options::variables_map& vm);
 

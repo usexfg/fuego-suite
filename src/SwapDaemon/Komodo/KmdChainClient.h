@@ -1,0 +1,67 @@
+#pragma once
+
+#include "../IChainClient.h"
+#include "../Spv/ISpvClient.h"
+#include "KmdRpcClient.h"
+#include <string>
+#include <memory>
+
+namespace XfgSwap {
+
+// Komodo (KMD) chain client — dual-mode (SPV + RPC full-node).
+//
+// KMD is a Zcash/Bitcoin fork with standard UTXO model. Uses the same
+// Electrum protocol as BCH for SPV verification. The HTLC script structure
+// is identical to BTC/BCH (OP_SHA256 hash lock + OP_CHECKLOCKTIMEVERIFY refund).
+//
+// KMD-specific differences from BCH:
+//   - Address prefixes: P2PKH (0x3C), P2SH (0x55), WIF (0xBC)
+//   - Uses KmdHtlcScript instead of BchHtlcScript
+//   - P2SH (not P2WSH)
+class KmdChainClient : public IChainClient {
+public:
+  // Full-node mode
+  KmdChainClient(std::unique_ptr<KmdRpcClient> rpc, const std::string& wif);
+
+  // SPV mode (no RPC client)
+  KmdChainClient(std::shared_ptr<ISpvClient> spvClient, const std::string& wif);
+
+  std::string chainName() const override { return "KMD"; }
+  bool usesSpvVerification() const override { return m_spvClient != nullptr; }
+  bool isReadyForNewSwap() override { return false; } // Neither transport has a complete safe swap path
+
+  std::string getReceiveAddress() const override;
+  ChainClientResult lock(const SwapParams& params) override;
+  ChainClientResult verifyLock(const SwapParams& params) override;
+  ChainClientResult claim(const SwapParams& params) override;
+  ChainClientResult refund(const SwapParams& params) override;
+  ChainClientResult verifyReserveProof(const std::string& expectedMessage,
+                                       uint64_t minAmount,
+                                       const std::string& proof) override;
+  ChainClientResult getTransactionDetails(const std::string& txId,
+                                          ChainClientResult& result) override;
+  bool getCurrentHeight(uint64_t& height) override;
+
+  std::string tryExtractClaimedSecret(const SwapParams& params) override;
+
+  // Extract the HTLC claim preimage from a spending transaction.
+  // In SPV mode, fetches the raw tx via the SPV client.
+  // In full-node mode, uses the RPC client.
+  // Returns empty string on failure.
+  std::string extractSecret(const std::string& spendingTxid,
+                            const std::string& htlcRedeemScriptHex);
+
+private:
+  // SPV-mode verifyLock: fetch raw tx, parse outputs, verify amount and inclusion
+  ChainClientResult verifyLockSpv(const SwapParams& params);
+
+  // SPV-mode extractSecret: fetch raw spending tx, parse scriptSig
+  std::string extractSecretSpv(const std::string& spendingTxid,
+                               const std::vector<uint8_t>& htlcP2shScriptPubKey);
+
+  std::unique_ptr<KmdRpcClient> m_rpc;   // null in SPV mode
+  std::string m_wif;                      // empty in SPV mode
+  std::shared_ptr<ISpvClient> m_spvClient; // null in full-node mode
+};
+
+} // namespace XfgSwap

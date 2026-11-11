@@ -1,0 +1,44 @@
+---
+title: "Supported pairs"
+description: "Chains available through swapXFG / SwapDaemon."
+keywords: ["swap pairs", "swapXFG", "BTC", "ETH", "SOL", "fuego"]
+---
+
+## Model
+
+swapXFG uses a **chain client** registry rather than one binary per pair forever. Client modules under `src/SwapDaemon/` include (among others): Bitcoin, Bitcoin Cash, Ethereum and EVM-family chains, Solana, Monero, Litecoin, Dash, Doge, and additional staging clients.
+
+Availability depends on **your build flags and config** (`fuego_swapd` / suite config). Always check the running daemon’s supported chains and RPC help.
+
+## Common pairs (product intent)
+
+| Side A | Side B | Notes |
+|--------|--------|-------|
+| XFG | BTC / BCH / LTC / … | UTXO family clients |
+| XFG | ETH / other EVM | Ethereum-style clients |
+| XFG | SOL | Solana client |
+| XFG | XMR | Monero / adaptor patterns |
+
+Exact production-ready set changes with releases — do not treat a four-row table as exhaustive forever.
+
+## On-chain vs cross-chain
+
+| Venue | Assets | Fee model |
+|-------|--------|-----------|
+| **Hearth** | XFG ↔ HEAT | 1% Hearth fee (`HEARTH_FEE_BPS`) |
+| **swapXFG** | XFG ↔ external chains | 2% atomic fee (1% initiation + 1% claim, `SWAP_FEE_RATE_BPS`) → 80/20 at v11+ (pre-v11 replay: 69/11/20) |
+
+These are the **only two protocol earnings streams**. The 1% mint premium is not a third stream — it is a haircut inside the mint burn that funds both AuntPoL legs (withheld XFG → XFG leg, the HEAT it buys → HEAT leg). The 0.1% CD creation fee is charged in XFG to the dev fund. Neither is protocol revenue.
+
+## Running SwapDaemon
+
+```bash
+# Example shape — see binary --help for your build
+./fuego_swapd --config fuego_swapd.json
+```
+
+Requires a synced Fuego node and appropriate counterparty endpoints for the chains you enable.
+
+## Aliases
+
+Where Fire Alias resolution is enabled, you may address peers by alias; the daemon resolves to a full address before initiate.

@@ -5,132 +5,132 @@
 
 #include "gtest/gtest.h"
 
-#include <CryptoNoteCore/DepositIndex.h>
+#include <CryptoNoteCore/BankingIndex.h>
 
 using namespace CryptoNote;
 
-class DepositIndexTest : public ::testing::Test {
+class BankingIndexTest : public ::testing::Test {
 public:
   const std::size_t DEFAULT_HEIGHT = 10;
-  DepositIndexTest() : index(static_cast<DepositIndex::DepositHeight>(DEFAULT_HEIGHT)) {
+  BankingIndexTest() : index(static_cast<BankingIndex::DepositHeight>(DEFAULT_HEIGHT)) {
   }
-  DepositIndex index;
+  BankingIndex index;
 };
 
-TEST_F(DepositIndexTest, EmptyAfterCreate) {
+TEST_F(BankingIndexTest, EmptyAfterCreate) {
   ASSERT_EQ(0, index.fullDepositAmount());
   ASSERT_EQ(0, index.fullInterestAmount());
 }
 
-TEST_F(DepositIndexTest, AddBlockUpdatesGlobalAmount) {
+TEST_F(BankingIndexTest, AddBlockUpdatesGlobalAmount) {
   index.pushBlock(10, 1);
   ASSERT_EQ(10, index.fullDepositAmount());
 }
 
-TEST_F(DepositIndexTest, AddBlockUpdatesFullInterest) {
+TEST_F(BankingIndexTest, AddBlockUpdatesFullInterest) {
   index.pushBlock(10, 1);
   ASSERT_EQ(1, index.fullInterestAmount());
 }
 
-TEST_F(DepositIndexTest, GlobalAmountIsSumOfBlockDeposits) {
+TEST_F(BankingIndexTest, GlobalAmountIsSumOfBlockDeposits) {
   index.pushBlock(9, 1);
   index.pushBlock(12, 1);
   ASSERT_EQ(9 + 12, index.fullDepositAmount());
 }
 
-TEST_F(DepositIndexTest, AddEmptyBlockDoesntChangeAmount) {
+TEST_F(BankingIndexTest, AddEmptyBlockDoesntChangeAmount) {
   index.pushBlock(9, 1);
   index.pushBlock(0, 0);
   ASSERT_EQ(9, index.fullDepositAmount());
 }
 
-TEST_F(DepositIndexTest, AddEmptyBlockDoesntChangeInterest) {
+TEST_F(BankingIndexTest, AddEmptyBlockDoesntChangeInterest) {
   index.pushBlock(9, 1);
   index.pushBlock(0, 0);
   ASSERT_EQ(1, index.fullInterestAmount());
 }
 
-TEST_F(DepositIndexTest, FirstBlockPushUpdatesDepositAmountAtHeight0) {
+TEST_F(BankingIndexTest, FirstBlockPushUpdatesDepositAmountAtHeight0) {
   index.pushBlock(9, 1);
   ASSERT_EQ(9, index.depositAmountAtHeight(0));
 }
 
-TEST_F(DepositIndexTest, FirstBlockPushUpdatesDepositInterestAtHeight0) {
+TEST_F(BankingIndexTest, FirstBlockPushUpdatesDepositInterestAtHeight0) {
   index.pushBlock(9, 1);
   ASSERT_EQ(1, index.depositInterestAtHeight(0));
 }
 
-TEST_F(DepositIndexTest, FullDepositAmountEqualsDepositAmountAtLastHeight) {
+TEST_F(BankingIndexTest, FullDepositAmountEqualsDepositAmountAtLastHeight) {
   index.pushBlock(9, 1);
   index.pushBlock(12, 2);
   ASSERT_EQ(index.fullDepositAmount(), index.depositAmountAtHeight(index.size() - 1));
 }
 
-TEST_F(DepositIndexTest, FullInterestAmountEqualsDepositInterestAtLastHeight) {
+TEST_F(BankingIndexTest, FullInterestAmountEqualsDepositInterestAtLastHeight) {
   index.pushBlock(9, 1);
   index.pushBlock(12, 2);
   ASSERT_EQ(index.fullInterestAmount(), index.depositInterestAtHeight(index.size() - 1));
 }
 
-TEST_F(DepositIndexTest, FullDepositAmountEqualsDepositAmountAtHeightGreaterThanLastHeight) {
+TEST_F(BankingIndexTest, FullDepositAmountEqualsDepositAmountAtHeightGreaterThanLastHeight) {
   index.pushBlock(9, 1);
   index.pushBlock(12, 2);
   ASSERT_EQ(index.fullDepositAmount(), index.depositAmountAtHeight(index.size()));
 }
 
-TEST_F(DepositIndexTest, FullInterestAmountEqualsInterestAmountAtHeightGreaterThanLastHeight) {
+TEST_F(BankingIndexTest, FullInterestAmountEqualsInterestAmountAtHeightGreaterThanLastHeight) {
   index.pushBlock(9, 1);
   index.pushBlock(12, 2);
   ASSERT_EQ(index.fullInterestAmount(), index.depositInterestAtHeight(index.size()));
 }
 
-TEST_F(DepositIndexTest, RemoveReducesGlobalAmount) {
+TEST_F(BankingIndexTest, RemoveReducesGlobalAmount) {
   index.pushBlock(12, 1);
   index.popBlock();
   ASSERT_EQ(0, index.fullDepositAmount());
 }
 
-TEST_F(DepositIndexTest, AddEmptyBlockIncrementsSize) {
+TEST_F(BankingIndexTest, AddEmptyBlockIncrementsSize) {
   index.pushBlock(0, 0);
   ASSERT_EQ(1, index.size());
   index.pushBlock(0, 0);
   ASSERT_EQ(2, index.size());
 }
 
-TEST_F(DepositIndexTest, PopEmptyBlockDecrementsSize) {
+TEST_F(BankingIndexTest, PopEmptyBlockDecrementsSize) {
   index.pushBlock(0, 0);
   index.popBlock();
   ASSERT_EQ(0, index.size());
 }
 
-TEST_F(DepositIndexTest, AddNonEmptyBlockIncrementsSize) {
+TEST_F(BankingIndexTest, AddNonEmptyBlockIncrementsSize) {
   index.pushBlock(9, 1);
   ASSERT_EQ(1, index.size());
   index.pushBlock(12, 1);
   ASSERT_EQ(2, index.size());
 }
 
-TEST_F(DepositIndexTest, PopNonEmptyBlockDecrementsSize) {
+TEST_F(BankingIndexTest, PopNonEmptyBlockDecrementsSize) {
   index.pushBlock(9, 1);
   index.popBlock();
   ASSERT_EQ(0, index.size());
 }
 
-TEST_F(DepositIndexTest, PopLastEmptyBlockDoesNotChangeFullDepositAmount) {
+TEST_F(BankingIndexTest, PopLastEmptyBlockDoesNotChangeFullDepositAmount) {
   index.pushBlock(9, 1);
   index.pushBlock(0, 0);
   index.popBlock();
   ASSERT_EQ(9, index.fullDepositAmount());
 }
 
-TEST_F(DepositIndexTest, PopLastEmptyBlockDoesNotChangeFullInterestAmount) {
+TEST_F(BankingIndexTest, PopLastEmptyBlockDoesNotChangeFullInterestAmount) {
   index.pushBlock(9, 1);
   index.pushBlock(0, 0);
   index.popBlock();
   ASSERT_EQ(1, index.fullInterestAmount());
 }
 
-TEST_F(DepositIndexTest, MultipleRemovals) {
+TEST_F(BankingIndexTest, MultipleRemovals) {
   index.pushBlock(10, 1);
   index.pushBlock(0, 0);
   index.pushBlock(11, 1);
@@ -140,7 +140,7 @@ TEST_F(DepositIndexTest, MultipleRemovals) {
   ASSERT_EQ(0, index.fullDepositAmount());
 }
 
-TEST_F(DepositIndexTest, MultipleRemovalsDecrementSize) {
+TEST_F(BankingIndexTest, MultipleRemovalsDecrementSize) {
   index.pushBlock(10, 1);
   index.pushBlock(11, 1);
   index.pushBlock(0, 0);
@@ -149,14 +149,14 @@ TEST_F(DepositIndexTest, MultipleRemovalsDecrementSize) {
   ASSERT_EQ(4 - 1, index.size());
 }
 
-TEST_F(DepositIndexTest, PopBlockReducesFullAmount) {
+TEST_F(BankingIndexTest, PopBlockReducesFullAmount) {
   index.pushBlock(10, 1);
   index.pushBlock(12, 1);
   index.popBlock();
   ASSERT_EQ(10, index.fullDepositAmount());
 }
 
-TEST_F(DepositIndexTest, PopBlockDecrementsSize) {
+TEST_F(BankingIndexTest, PopBlockDecrementsSize) {
   index.pushBlock(9, 1);
   index.pushBlock(12, 1);
 
@@ -165,41 +165,41 @@ TEST_F(DepositIndexTest, PopBlockDecrementsSize) {
   ASSERT_EQ(size - 1, index.size());
 }
 
-TEST_F(DepositIndexTest, DepositAmountAtAnyHeightIsZeroAfterCreation) {
+TEST_F(BankingIndexTest, DepositAmountAtAnyHeightIsZeroAfterCreation) {
   ASSERT_EQ(0, index.depositAmountAtHeight(10));
 }
 
-TEST_F(DepositIndexTest, DepositInterestAtAnyHeightIsZeroAfterCreation) {
+TEST_F(BankingIndexTest, DepositInterestAtAnyHeightIsZeroAfterCreation) {
   ASSERT_EQ(0, index.depositInterestAtHeight(10));
 }
 
-TEST_F(DepositIndexTest, DepositAmountIsZeroAtAnyHeightBeforeFirstDeposit) {
+TEST_F(BankingIndexTest, DepositAmountIsZeroAtAnyHeightBeforeFirstDeposit) {
   index.pushBlock(0, 0);
   index.pushBlock(9, 1);
   ASSERT_EQ(0, index.depositAmountAtHeight(0));
 }
 
-TEST_F(DepositIndexTest, DepositInterestIsZeroAtAnyHeightBeforeFirstDeposit) {
+TEST_F(BankingIndexTest, DepositInterestIsZeroAtAnyHeightBeforeFirstDeposit) {
   index.pushBlock(0, 0);
   index.pushBlock(9, 1);
   ASSERT_EQ(0, index.depositInterestAtHeight(0));
 }
 
-TEST_F(DepositIndexTest, DepositAmountAtHeightInTheMiddle) {
+TEST_F(BankingIndexTest, DepositAmountAtHeightInTheMiddle) {
   index.pushBlock(9, 1);
   index.pushBlock(12, 1);
   index.pushBlock(14, 1);
   ASSERT_EQ(9 + 12, index.depositAmountAtHeight(1));
 }
 
-TEST_F(DepositIndexTest, MaxAmountIsReturnedForHeightLargerThanLastBlock) {
+TEST_F(BankingIndexTest, MaxAmountIsReturnedForHeightLargerThanLastBlock) {
   index.pushBlock(9, 1);
   index.pushBlock(12, 1);
   index.pushBlock(14, 1);
   ASSERT_EQ(index.depositAmountAtHeight(20), index.fullDepositAmount());
 }
 
-TEST_F(DepositIndexTest, DepositAmountAtHeightInTheMiddleLooksForLowerBound) {
+TEST_F(BankingIndexTest, DepositAmountAtHeightInTheMiddleLooksForLowerBound) {
   index.pushBlock(9, 1);
   index.pushBlock(12, 1);
   index.pushBlock(14, 1);
@@ -207,7 +207,7 @@ TEST_F(DepositIndexTest, DepositAmountAtHeightInTheMiddleLooksForLowerBound) {
   ASSERT_EQ(9 + 12 + 14, index.depositAmountAtHeight(2));
 }
 
-TEST_F(DepositIndexTest, DepositAmountAtHeightInTheMiddleIgnoresEmptyBlocks) {
+TEST_F(BankingIndexTest, DepositAmountAtHeightInTheMiddleIgnoresEmptyBlocks) {
   index.pushBlock(9, 1);
   index.pushBlock(0, 0);
   index.pushBlock(12, 1);
@@ -218,16 +218,16 @@ TEST_F(DepositIndexTest, DepositAmountAtHeightInTheMiddleIgnoresEmptyBlocks) {
   ASSERT_EQ(9 + 12, index.depositAmountAtHeight(3));
 }
 
-TEST_F(DepositIndexTest, MultiPopZeroChangesNothing) {
+TEST_F(BankingIndexTest, MultiPopZeroChangesNothing) {
   ASSERT_EQ(0, index.popBlocks(0));
   ASSERT_EQ(0, index.depositAmountAtHeight(0));
 }
 
-TEST_F(DepositIndexTest, DepositAmountAtNonExistingHeight) {
+TEST_F(BankingIndexTest, DepositAmountAtNonExistingHeight) {
   ASSERT_EQ(0, index.depositAmountAtHeight(4));
 }
 
-TEST_F(DepositIndexTest, MultiPopZeroClearsIndex) {
+TEST_F(BankingIndexTest, MultiPopZeroClearsIndex) {
   index.pushBlock(9, 1);
   index.pushBlock(12, 1);
   index.pushBlock(14, 1);
@@ -235,30 +235,30 @@ TEST_F(DepositIndexTest, MultiPopZeroClearsIndex) {
   ASSERT_EQ(0, index.depositAmountAtHeight(0));
 }
 
-TEST_F(DepositIndexTest, GetInterestOnHeight) {
+TEST_F(BankingIndexTest, GetInterestOnHeight) {
   index.pushBlock(9, 1);
   index.pushBlock(12, 1);
   index.pushBlock(14, 1);
   ASSERT_EQ(3, index.depositInterestAtHeight(14));
 }
 
-TEST_F(DepositIndexTest, CanSubmitNegativeDeposit) {
+TEST_F(BankingIndexTest, CanSubmitNegativeDeposit) {
   index.pushBlock(20, 1);
   index.pushBlock(-14, 1);
 }
 
-TEST_F(DepositIndexTest, DepositAmountCanBeReduced) {
+TEST_F(BankingIndexTest, DepositAmountCanBeReduced) {
   index.pushBlock(9, 1);
   index.pushBlock(12, 1);
   index.pushBlock(-14, 1);
   ASSERT_EQ(9 + 12 - 14, index.fullDepositAmount());
 }
 
-TEST_F(DepositIndexTest, PopBlocksZeroReturnsZero) {
+TEST_F(BankingIndexTest, PopBlocksZeroReturnsZero) {
   ASSERT_EQ(0, index.popBlocks(0));
 }
 
-TEST_F(DepositIndexTest, PopBlocksRemovesEmptyBlocks) {
+TEST_F(BankingIndexTest, PopBlocksRemovesEmptyBlocks) {
   index.pushBlock(1, 1);
   index.pushBlock(0, 0);
   index.pushBlock(0, 0);

@@ -1,0 +1,15 @@
+---
+title: "LP pool (redirect)"
+description: "Hearth replaced the standalone “0.3% LP pool” docs framing."
+keywords: ["Hearth", "LP", "liquidity"]
+---
+
+The on-chain XFG/HEAT market is **Hearth**. Live fee: **1%** (`HEARTH_FEE_BPS`), paid by the taker, **100% → CD yield**. LP income is the pool's trading P&L (fee-adjusted spread + appreciation), realized on withdrawal — not the flat fee.
+
+Read:
+
+- [How Hearth works](/features/hearth/how-hearth-works)
+- [Providing liquidity](/features/hearth/providing-liquidity)
+- [Fee earning](/features/hearth/fee-earning)
+
+The old “0.3% LP pool only” description is **incorrect** for current code (0.3% appears as orderbook **spread** machinery and DIGM fee constants, not Hearth’s trade fee).

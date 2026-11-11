@@ -1,0 +1,14 @@
+[toolchain]
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+xfg_htlc = "J4H9vUpp5CtJF9x4iPAMj7fqp5fpH9KTGcRzRC8e72ig"
+
+[provider]
+cluster = "Localnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]

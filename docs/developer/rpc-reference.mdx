@@ -1,0 +1,81 @@
+---
+title: "RPC command reference"
+description: "Where to find RPC command definitions and how to add new endpoints."
+keywords: ["RPC", "developer", "command definitions", "endpoint", "fuego"]
+---
+
+## Command definitions
+
+All RPC request/response structs are defined in:
+
+```
+src/Rpc/CoreRpcServerCommandsDefinitions.h
+```
+
+Daemon-side RPC commands use `COMMAND_RPC_` prefix. Wallet-side commands use `WALLET_RPC_COMMAND_` prefix.
+
+## Adding a new daemon endpoint
+
+<Steps>
+  <Step title="Define command structs">
+    Add `COMMAND_RPC_YOUR_ENDPOINT` with `request` and `response` inner structs to `CoreRpcServerCommandsDefinitions.h`. Use `KV_SERIALIZE` / `KV_MEMBER` macros for JSON serialization.
+  </Step>
+  <Step title="Declare handler in RpcServer.h">
+    ```cpp
+    bool on_your_endpoint(
+      const COMMAND_RPC_YOUR_ENDPOINT::request& req,
+      COMMAND_RPC_YOUR_ENDPOINT::response& res
+    );
+    ```
+  </Step>
+  <Step title="Register route in RpcServer.cpp">
+    Add to the `s_handlers` map in `RpcServer.cpp`:
+    ```cpp
+    {"/your_endpoint", {&RpcServer::on_your_endpoint, false}},
+    ```
+    The `false` means the endpoint does not require a running blockchain (set `true` if it does).
+  </Step>
+  <Step title="Implement the handler">
+    Follow existing handlers like `on_get_fee_pool_info` as a model. Access core state via `m_core`.
+  </Step>
+</Steps>
+
+## Key access patterns
+
+```cpp
+// Fee pool state
+m_core.get_blockchain_storage().getFeePoolBalance()
+m_core.get_blockchain_storage().getTreasuryBalance()
+
+// Epoch data
+m_core.getCommitmentIndex().getEpochCount()
+m_core.getCommitmentIndex().getEpochReport(epochN)
+
+// Interest calculation
+m_core.currency().calculateCdInterest(
+  amount, creationHeight, currentHeight,
+  m_core.getCommitmentIndex()
+)
+
+// Current height
+m_core.get_current_blockchain_height()
+```
+
+## Wallet RPC
+
+Wallet-side RPC handlers live in:
+- `src/Wallet/WalletRpcServer.h` — declarations
+- `src/Wallet/WalletRpcServer.cpp` — implementations
+
+Wallet RPC handlers access the wallet via `m_wallet` (a `WalletGreen` reference).
+
+## Serialization macros
+
+```cpp
+// In command struct request/response:
+BEGIN_KV_SERIALIZE_MAP()
+  KV_SERIALIZE(field_name)
+  KV_SERIALIZE_OPT(optional_field, default_value)
+  KV_MEMBER(field_name)  // alternative syntax
+END_KV_SERIALIZE_MAP()
+```

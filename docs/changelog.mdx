@@ -1,0 +1,82 @@
+---
+title: "Changelog"
+description: "Fuego Suite Updates & Features"
+---
+
+<CodeGroup>
+```text Changelog
+v1.11.00 (Consensus v12 — Hearth orderbook rework, treasury, CD economics)
+* **Hearth orderbook**: in-band CLOB matcher + gossiped orders retired. Limit orders are now tx-extra-backed (`TransactionExtraLimitDeposit`) deposits executed at block time against the pool at the live spot price; height-based expiry; partial fills with claimable proceeds (`TransactionExtraLimitWithdraw`).
+* Per-block call auction: user-vs-user crossing at a max-volume clearing price (price discovery); tx-extra-backed deposits; AMM is a volume-capped backstop (`HEARTH_BACKSTOP_MAX_BPS`).
+* Fee model: 1% taker fee with a versioned split — **30% CD yield / 70% maker rebate at v11**, flipping to **70/30 at v12** (auction makers; LPs on pool fills). Min price tick (`ORDER_PRICE_TICK`).
+* All v12-gated consensus work re-gated to v11 (chain height at decision: 1,015,027 < 1,111,111).
+* **Canonical price scale**: HEAT/XFG × COIN (1e7) everywhere — mint, swaps, quotes, TWAP; Q64.64/1e8/1e18 purged from price paths (legacy preserved for pre-v12 re-validation).
+* **LP**: balanced deposits only (single-sided mints nothing); fair pro-rata shares; LP income = pool trading P&L, not the flat fee.
+* **Fees**: taker pays the 1% Hearth fee via fee-adjusted output; fee debited from LP reserves → HEAT-denominated `cdHearthFeeAccumulator` → `CD_APY_POOL` at epoch; consumed XFG burned 50/50 (EF/SWF). `/addswapfee` authenticated; swap fees accounted exactly (2% claim / 1% refund).
+* **Treasury**: Treasury LP Manager (AuntPoL) provisions the protocol's ratio-paired LP position. **Both legs are funded by the 1% mint premium** (`HEAT_MINT_PREMIUM_BPS`): the withheld premium XFG is the XFG leg and the HEAT it buys is the HEAT leg (plus HEAT donations). The two pair at the pool ratio, with no SWF transfer and no cross-conversion; bootstrap repayment = two-leg owned-reserves check; overall burn tally (`total_burned_xfg`).
+* **Fee routing (v11)**: atomic swap fees split **80% CD / 20% Bonus Vault / 0% Treasury** (pre-v11 blocks replay 69/11/20); the 1% mint premium is a haircut inside the mint burn that funds both AuntPoL legs (withheld XFG → XFG leg, the HEAT it buys → HEAT leg); the 0.1% CD creation fee is charged in XFG to `FUEGO_DEV_FUND_ADDRESS`.
+* **CD economics**: HEAT-denominated epoch rates, CD-only APY denominator, block-level interest cap, youngest-ring interest cap, consensus term whitelist, legacy XFG deposits withdraw-only at v12.
+* Security fixes: AMM swap settlement from actual balance deltas, coinbase settlement-tag rejection, orderbook UAF, mainnet fee-pool funding, epoch snapshot at block start.
+
+v1.10.04 (Docs + consensus)
+* Hearth flat fee routing corrected: 1% → **100% CD yield** (`cdHearthFeeAccumulator`); LPs earn the swap spread, not the fee. Removed 50/50 CD/LP split from consensus code + docs.
+v1.10.03 (Docs)
+* Public Mintlify docs rewritten for current product: HEAT mint → HEAT CDs,
+  Hearth (1% fee 100% CD yield; LPs earn the spread), swapXFG (1% fee 69/11/20), dual-asset architecture.
+* Removed primary nav for STARK-only heat-burns and core DIGM onboarding weight.
+* Docs CI: `.github/workflows/docs.yml` (alignment tests + mint validate/broken-links).
+* Single changelog source: `docs/changelog.mdx` only.
+* Strategy marketing fee copy aligned to live CryptoNoteConfig.h constants.
+
+v1.10.02 (Current)
+* AFK atomic swaps: soft-order auto-execution engine (OfferManager), griefing
+  protection with taker rate-limiting, partial fills, price-drift auto-cancel,
+  headless daemon mode with StatusServer monitoring endpoint.
+* Cross-chain timelock-ordering safety via SwapTimelock (SOL/ETH/XMR/BCH/ARB/BASE).
+* ETH EIP-155 offline signing (secp256k1); adaptor-secret at-rest persistence
+  with CryptoNight-KDF + ChaCha8 + HMAC-SHA256.
+* Ed25519 P2P message authentication for all swap peer messages.
+* Wallet integrity upgraded to HMAC-SHA256 (v7); file permissions set to 0600.
+* RPC error responses sanitized (no internal details exposed to clients).
+* Alias registration privacy: per-tx sub-address rotation, ring-sig mixin.
+* Small-subgroup point rejection in adaptor/DLEQ verifiers.
+* RNG fork safety (pthread_atfork reseed); modulo-bias elimination.
+* Taker P2P swap-request relay; cancel-command fix.
+* Arbitrum and Base L2 chain support (EVM adaptor swaps).
+* SwapP2P hardened: default loopback bind, worker cap, bounded message queue.
+* PriceOracle bootstrap drift guard (±50% from seed rate).
+
+v1.10.01
+* Clean up repo for release.
+* Fix stream tools endianness conversion for integers.
+
+v1.9.3
+* Intent-based soft orders for AFK atomic swaps.
+* Implement AFK Adaptor Swaps: Taker flow, monitoring view, and refund mechanism.
+* TUI Updates.
+* ZK prover for HEAT merkle.
+* Elderfier broadcast fix to keep merkle as source of truth not p2pmsg.
+* Update Boost dependency to 1.86+ (migrated to `io_context`, `executor_work_guard`).
+* OpenSSL 4.x support.
+* secp256k1 external dependency support (system package or submodule).
+* RPC Server Modernization.
+* Implement CD banking fee burn and SwapDaemon CD support.
+
+v1.9.2
+* Add subaddresses support to core and simplewallet.
+* Initialize Fuego Flutter Wallet project.
+* Add Elderfier CLI menu system.
+* Digm coin branch integration.
+
+v1.9.1
+* Add comprehensive walletd build workflow.
+* Update difficulty calculation adjustments.
+
+v1.9.0
+* Add comprehensive simplewallet functionality for checking CDs, Burns, and Aliases.
+* Dandelion++ support (Upgrade Height v10).
+* (FuegoMeshtastic and FuegoI2P components exist but are in integration phases, see codebase).
+```
+</CodeGroup>
+
+> **Privacy Note:** Fuego relies on Ring Signatures and stealth addresses to provide privacy by hiding the sender, receiver, and breaking transaction linkage. Fuego uses per-amount decoy selection, and HEAT burns provide permanent decoys that bulk up the ring pool. Amounts transferred are currently visible on-chain. Deposit types are also visible (HEAT=0x08, CD=0xCD, YIELD=0x07) unless obscured.

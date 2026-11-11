@@ -1,20 +1,19 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
+// Copyright (c) 2017-2022 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it
+// Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You can redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "PaymentGateService.h"
 
@@ -32,6 +31,13 @@
 #include "Rpc/RpcServer.h"
 #include <System/Context.h>
 #include "Wallet/WalletGreen.h"
+
+#include "SwapDaemon/SwapDaemon.h"
+#include "SwapDaemon/SwapDatabase.h"
+#include "SwapDaemon/StatusServer.h"
+#include "SwapDaemon/RpcServer.h"
+#include "CryptoNoteCore/SwapOfferRelay.h"
+#include <boost/filesystem.hpp>
 
 #ifdef ERROR
 #undef ERROR
@@ -192,6 +198,25 @@ void PaymentGateService::runInProcess(Logging::LoggerRef& log) {
     << config.remoteNodeConfig.daemonHost << ":" << config.remoteNodeConfig.daemonPort;
   rpcServer.start(config.remoteNodeConfig.daemonHost, config.remoteNodeConfig.daemonPort);
   log(Logging::INFO) << "Core rpc server started ok";
+
+  // Initialize swap offer relay
+  auto swapRelay = std::make_unique<CryptoNote::SwapOfferRelay>(core, p2pNode, &p2pNode);
+  swapRelay->start();
+  rpcServer.setSwapRelay(swapRelay.get());
+  log(Logging::INFO) << "Swap offer relay started";
+
+  // Initialize SwapDaemon (embedded — replaces standalone xfg-swapd)
+  std::string swapDataDir = config.coreConfig.configFolder + "/swaps";
+  boost::filesystem::create_directories(swapDataDir);
+  auto swapDb = std::make_unique<XfgSwap::SwapDatabase>(swapDataDir);
+  auto swapDaemon = std::make_unique<XfgSwap::SwapDaemon>(
+    "127.0.0.1", config.remoteNodeConfig.daemonPort, swapDataDir, logger);
+  swapDaemon->setSwapRelay(swapRelay.get());
+  // Disable P2P for embedded mode (fuegod already has its own P2P on different port)
+  swapDaemon->start(0, "");
+  rpcServer.setSwapDb(swapDb.get());
+  rpcServer.setSwapDaemon(swapDaemon.get());
+  log(Logging::INFO) << "SwapDaemon started";
 
   log(Logging::INFO) << "Spawning p2p server";
 

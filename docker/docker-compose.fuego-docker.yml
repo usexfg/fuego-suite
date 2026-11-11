@@ -1,0 +1,196 @@
+version: '3.8'
+
+# 🐳 Fuego Docker Compose - Enhanced Configuration
+# Multiple profiles for different use cases
+
+services:
+  # Main Fuego Node Service
+  fuego-node:
+    build:
+      context: .
+      dockerfile: Dockerfile.fuego-docker
+      args:
+        BUILD_TYPE: Release
+        ENABLE_OPTIMIZATIONS: "ON"
+        BUILD_TESTS: "OFF"
+        STATIC_BUILD: "ON"
+        PARALLEL_BUILD: "4"
+    container_name: fuego-node
+    restart: unless-stopped
+    ports:
+      - "20808:20808"  # P2P port
+      - "28180:28180"  # RPC port
+    volumes:
+      - fuego-data:/home/fuego/.fuego
+      - fuego-logs:/home/fuego/logs
+      - ./config:/home/fuego/config:ro
+    environment:
+      - FUEGO_LOG_LEVEL=2
+      - FUEGO_DATA_DIR=/home/fuego/.fuego
+      - FUEGO_LOG_DIR=/home/fuego/logs
+    networks:
+      - fuego-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:28180/getinfo"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    profiles:
+      - node
+      - full
+      - development
+
+  # Wallet Service
+  fuego-wallet:
+    build:
+      context: .
+      dockerfile: Dockerfile.fuego-docker
+    container_name: fuego-wallet
+    restart: unless-stopped
+    ports:
+      - "8070:8070"   # Wallet RPC port
+    volumes:
+      - fuego-wallet-data:/home/fuego/.fuego-wallet
+      - fuego-logs:/home/fuego/logs
+    environment:
+      - FUEGO_LOG_LEVEL=2
+      - FUEGO_WALLET_DIR=/home/fuego/.fuego-wallet
+    networks:
+      - fuego-network
+    depends_on:
+      fuego-node:
+        condition: service_healthy
+    entrypoint: ["walletd"]
+    command: [
+      "--daemon-host=fuego-node",
+      "--daemon-port=28180",
+      "--bind-port=8070",
+      "--bind-ip=0.0.0.0",
+      "--wallet-dir=/home/fuego/.fuego-wallet"
+    ]
+    profiles:
+      - wallet
+      - full
+      - development
+
+  # Nginx Reverse Proxy (Optional)
+  nginx:
+    image: nginx:alpine
+    container_name: fuego-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./nginx/html:/usr/share/nginx/html:ro
+    networks:
+      - fuego-network
+    depends_on:
+      - fuego-node
+      - fuego-wallet
+    profiles:
+      - web
+      - full
+
+  # Monitoring Stack (Optional)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: fuego-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - fuego-network
+    profiles:
+      - monitoring
+      - full
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: fuego-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    networks:
+      - fuego-network
+    depends_on:
+      - prometheus
+    profiles:
+      - monitoring
+      - full
+
+  # Development Tools (Optional)
+  fuego-cli:
+    build:
+      context: .
+      dockerfile: Dockerfile.fuego-docker
+    container_name: fuego-cli
+    restart: "no"
+    volumes:
+      - fuego-data:/home/fuego/.fuego:ro
+      - ./scripts:/home/fuego/scripts:ro
+    environment:
+      - FUEGO_DATA_DIR=/home/fuego/.fuego
+    networks:
+      - fuego-network
+    depends_on:
+      fuego-node:
+        condition: service_healthy
+    entrypoint: ["/bin/bash"]
+    command: ["-c", "while true; do sleep 3600; done"]
+    profiles:
+      - development
+
+# Volumes
+volumes:
+  fuego-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${FUEGO_DATA_PATH:-./data/fuego}
+  fuego-wallet-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${FUEGO_WALLET_PATH:-./data/wallet}
+  fuego-logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${FUEGO_LOGS_PATH:-./data/logs}
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+
+# Networks
+networks:
+  fuego-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+          gateway: 172.20.0.1

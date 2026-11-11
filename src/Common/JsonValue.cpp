@@ -4,19 +4,18 @@
 // Copyright (c) 2017-2017 UltraNote developers
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
-// Copyright (c) 2018-2021 Fandom Gold Society
-// Copyright (c) 2019-2021 Fango Developers
+// Copyright (c) 2017-2022 Fuego Developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it 
+// Fuego is free software distributed in the hope that it
 // will be useful- but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You are encouraged to redistribute it and/or modify it
 // under the terms of the GNU General Public License v3 or later
 // versions as published by the Free Software Foundation.
 // You should receive a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>
 
 #include "JsonValue.h"
 #include <iomanip>
@@ -31,7 +30,7 @@ JsonValue::JsonValue() : type(NIL) {
 JsonValue::JsonValue(const JsonValue& other) {
   switch (other.type) {
   case ARRAY:
-    new(valueArray)Array(*reinterpret_cast<const Array*>(other.valueArray));
+    new(valueArray)Array(*reinterpret_cast<const Array*>(other.valueArray) );
     break;
   case BOOL:
     valueBool = other.valueBool;
@@ -42,13 +41,13 @@ JsonValue::JsonValue(const JsonValue& other) {
   case NIL:
     break;
   case OBJECT:
-    new(valueObject)Object(*reinterpret_cast<const Object*>(other.valueObject));
+    new(valueObject)Object(*reinterpret_cast<const Object*>(other.valueObject) );
     break;
   case REAL:
     valueReal = other.valueReal;
     break;
   case STRING:
-    new(valueString)String(*reinterpret_cast<const String*>(other.valueString));
+    new(valueString)String(*reinterpret_cast<const String*>(other.valueString) );
     break;
   }
 

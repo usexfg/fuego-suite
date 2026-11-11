@@ -1,18 +1,17 @@
 // Copyright (c) 2012-2018 The CryptoNote developers
 // Copyright (c) 2016-2019 The Karbowanec developers
-// Copyright (c) 2018-2021 Fandom Gold Society
-// Copyright (c) 2019-2021 Fango Developers
+// Copyright (c) 2017-2022 Fuego Developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it 
+// Fuego is free software distributed in the hope that it
 // will be useful- but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You are encouraged to redistribute it and/or modify it
 // under the terms of the GNU General Public License v3 or later
 // versions as published by the Free Software Foundation.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #pragma once
 
@@ -27,8 +26,9 @@
 #include <list>
 #include <boost/optional.hpp>
 #include "CryptoNote.h"
-#include "CryptoNoteCore/CryptoNoteBasic.h"
-#include "Rpc/CoreRpcServerCommandsDefinitions.h"
+#include "../src/CryptoNoteCore/CryptoNoteBasic.h"
+#include "../src/crypto/subaddress.h"
+#include "../src/Rpc/CoreRpcServerCommandsDefinitions.h"
 #include "ITransfersContainer.h"
 #include "IWallet.h"
 
@@ -103,11 +103,16 @@ public:
   virtual void actualDepositBalanceUpdated(uint64_t actualDepositBalance) {}
   virtual void pendingDepositBalanceUpdated(uint64_t pendingDepositBalance) {}
   virtual void actualInvestmentBalanceUpdated(uint64_t actualInvestmentBalance) {}
-  virtual void pendingInvestmentBalanceUpdated(uint64_t pendingInvestmentBalance) {}  
+  virtual void pendingInvestmentBalanceUpdated(uint64_t pendingInvestmentBalance) {}
+  virtual void actualHeatBalanceUpdated(uint64_t actualHeatBalance) {}
+  virtual void pendingHeatBalanceUpdated(uint64_t pendingHeatBalance) {}
   virtual void externalTransactionCreated(TransactionId transactionId) {}
   virtual void sendTransactionCompleted(TransactionId transactionId, std::error_code result) {}
   virtual void transactionUpdated(TransactionId transactionId) {}
   virtual void depositsUpdated(const std::vector<DepositId>& depositIds) {}
+  virtual void burnSecretCreated(const std::string& txHash) {}
+  virtual void burnProofGenerated(const std::string& txHash) {}
+  virtual void coldDepositSecretCreated(const std::string& txHash) {}
 };
 
 class IWalletLegacy {
@@ -135,9 +140,10 @@ public:
   virtual uint64_t pendingBalance() = 0;
   virtual uint64_t actualDepositBalance() = 0;
   virtual uint64_t actualInvestmentBalance() = 0;
-  virtual uint64_t getWalletMaximum() = 0;
+  virtual uint64_t actualHeatBalance() = 0;
   virtual uint64_t pendingDepositBalance() = 0;
-  virtual uint64_t pendingInvestmentBalance() = 0;  
+  virtual uint64_t pendingInvestmentBalance() = 0;
+  virtual uint64_t pendingHeatBalance() = 0;
 
   virtual size_t getTransactionCount() = 0;
   virtual size_t getTransferCount() = 0;
@@ -161,8 +167,38 @@ public:
   virtual std::list<TransactionOutputInformation> selectFusionTransfersToSend(uint64_t threshold, size_t minInputCount, size_t maxInputCount) = 0;
   virtual TransactionId sendFusionTransaction(const std::list<TransactionOutputInformation>& fusionInputs, uint64_t fee, const std::string& extra = "", uint64_t mixIn = 0, uint64_t unlockTimestamp = 0) = 0;
   virtual TransactionId deposit(uint32_t term, uint64_t amount, uint64_t fee, uint64_t mixIn = 0) = 0;
+   virtual TransactionId deposit(uint32_t term, uint64_t amount, uint64_t fee, const std::string& extra, uint64_t mixIn = 0) = 0;
+
+  virtual TransactionId mintHeatV10(uint64_t xfgBurned, uint64_t heatMinted, uint64_t fee, uint64_t mixIn = 0) = 0;
+  virtual TransactionId sendHeatV10(const AccountPublicAddress& recipient, uint64_t amount, uint64_t fee, uint64_t mixIn = 0, bool isSubaddress = false) = 0;
+  virtual TransactionId ammSwapV10(uint8_t direction, uint64_t inputAmount, uint64_t outputAmount,
+                                    uint64_t minOutput, uint64_t fee, uint64_t mixIn = 0) = 0;
+  virtual TransactionId lpAddV10(uint64_t amountXfg, uint64_t amountHeat, uint64_t fee, uint64_t mixIn = 0) = 0;
+  virtual TransactionId lpRemoveV10(uint64_t lpShares, uint64_t minXfg, uint64_t minHeat, uint64_t fee, uint64_t mixIn = 0) = 0;
+  virtual TransactionId lpClaimFeesV10(uint64_t lpShares, uint64_t minXfg, uint64_t minHeat, uint64_t fee, uint64_t mixIn = 0) = 0;
+  virtual TransactionId heatDepositV10(uint64_t amount, uint32_t termEpochs, uint64_t bankingFee, uint64_t fee, uint64_t mixIn = 0) = 0;
+
+  // v13 Orderbook
+  virtual TransactionId placeOrderV13(uint8_t side, uint64_t amount, uint64_t price, uint32_t expiration, uint64_t fee, uint64_t mixIn = 0) = 0;
+  virtual TransactionId cancelOrderV13(const Crypto::Hash& orderId, uint64_t fee, uint64_t mixIn = 0) = 0;
+  virtual TransactionId marketBuyV13(uint64_t xfgWanted, uint64_t maxHeatCost, uint64_t fee, uint64_t mixIn = 0) = 0;
+  virtual TransactionId marketSellV13(uint64_t xfgToSell, uint64_t minHeatReceive, uint64_t fee, uint64_t mixIn = 0) = 0;
+
   virtual TransactionId withdrawDeposits(const std::vector<DepositId>& depositIds, uint64_t fee) = 0;
+  virtual TransactionId donateToTreasury(Crypto::SecretKey& transactionSK,
+                                         uint64_t amount,
+                                         uint64_t fee,
+                                         uint64_t mixIn) = 0;
   virtual std::error_code cancelTransaction(size_t transferId) = 0;
+
+  // AFK Adaptor Swaps
+  virtual std::error_code create_afk_lock(uint64_t amount, uint32_t timeout_hours, uint8_t pair, std::string& lockId, std::string& adaptorPoint, std::string& preSig, std::string& hashLock) = 0;
+  virtual std::error_code claim_afk_swap(const std::string& swapId, const std::string& secret_s, const std::string& target_chain, const std::string& fee_address, const std::string& payout_address, std::string& txHash) = 0;
+
+  // Sub-address support: subscribe the wallet scanner to this (major, minor) index.
+  // Returns the encoded sub-address string. Idempotent.
+  virtual std::string registerSubAddress(uint32_t major, uint32_t minor,
+                                         uint8_t version = Crypto::SUBADDRESS_VERSION_V2) = 0;
 
 };
 

@@ -1,0 +1,49 @@
+---
+title: "Hearth, fees, and HEAT CD yield"
+description: "How Hearth and swapXFG fees fund HEAT CD yield under live constants."
+keywords: ["Hearth", "real yield", "HEAT CD", "fees", "fuego"]
+---
+
+## Real yield, not emissions
+
+HEAT CD yield is paid from **fees**, not token printing.
+
+## Two fee engines
+
+### 1) swapXFG (cross-chain)
+
+- Rate: **1%** of XFG side (`SWAP_FEE_RATE_BPS = 100`)
+- Split: **80% CD · 20% Bonus Vault** at v11 (pre-v11 blocks replay 69/11/20)
+
+### 2) Hearth (XFG/HEAT on-chain)
+
+- One inventory, two uses: AMM curve (swaps + backstop) and depth-band makers in the call auction
+- Rate: **1%** (`HEARTH_FEE_BPS = 100`)
+- Split: **30% CD yield · 70% maker rebate** at v11, flipping to **70% CD / 30% maker** at v12 (LPs receive the maker share when the pool is the counterparty; LPs also earn pool P&L)
+
+## User path
+
+```
+Mint HEAT from XFG (Hearth TWAP)
+  → Lock HEAT CD (6–72 epochs mainnet)
+  → Fees from swaps + Hearth accrue to CD pool
+  → Withdraw or rollover at maturity
+```
+
+## Epochs
+
+Mainnet epoch = **900 blocks** (~5 days at ~480s). Distribution and accounting are epoch-scoped.
+
+## Superseded claims (do not use)
+
+The following are **incorrect** for current code and must not be treated as product facts:
+
+- Hearth protocol trade fee of 0.3% or 100% CD / 0% LP (live: **1%** `HEARTH_FEE_BPS`, **30/70** CD / maker rebate at v11, **70/30** at v12)
+- Atomic swap fees “69% CD / 11% Bonus / 20% Treasury” as a current split (live at v11: **80% CD / 20% Bonus Vault**; the old split survives only as pre-v11 replay)
+- Opening a CD by locking **XFG** (live: lock **HEAT** after mint)
+
+## Further reading
+
+- [How Hearth works](/features/hearth/how-hearth-works)
+- [Interest and yield](/features/commitment-deposits/interest-and-yield)
+- [Fee pool API](/api-reference/fee-pool)

@@ -1,26 +1,25 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
+// Copyright (c) 2017-2026 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it
+// Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You can redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "HttpServer.h"
 #include <boost/scope_exit.hpp>
 
 #include <Common/Base64.h>
-#include <HTTP/HttpParser.h>
+#include "HTTP/HttpParser.h"
 #include <System/InterruptedException.h>
 #include <System/TcpStream.h>
 #include <System/Ipv4Address.h>
@@ -46,7 +45,7 @@ HttpServer::HttpServer(System::Dispatcher& dispatcher, Logging::ILogger& log)
 void HttpServer::start(const std::string& address, uint16_t port, const std::string& user, const std::string& password) {
   m_listener = System::TcpListener(m_dispatcher, System::Ipv4Address(address), port);
   workingContextGroup.spawn(std::bind(&HttpServer::acceptLoop, this));
-  
+
   		if (!user.empty() || !password.empty()) {
 			m_credentials = Tools::Base64::encode(user + ":" + password);
 		}
@@ -58,8 +57,9 @@ void HttpServer::stop() {
 }
 
 void HttpServer::acceptLoop() {
+
   try {
-    System::TcpConnection connection; 
+    System::TcpConnection connection;
     bool accepted = false;
 
     while (!accepted) {
@@ -74,7 +74,7 @@ void HttpServer::acceptLoop() {
     }
 
     m_connections.insert(&connection);
-    BOOST_SCOPE_EXIT_ALL(this, &connection) { 
+    BOOST_SCOPE_EXIT_ALL(this, &connection) {
       m_connections.erase(&connection); };
 
 	workingContextGroup.spawn(std::bind(&HttpServer::acceptLoop, this));
@@ -96,10 +96,15 @@ void HttpServer::acceptLoop() {
     for (;;) {
       HttpRequest req;
       HttpResponse resp;
-	  resp.addHeader("Access-Control-Allow-Origin", "*");
-	  resp.addHeader("content-type", "application/json");
-	
+      // No default CORS: a wildcard Access-Control-Allow-Origin would let any
+      // website issue RPC calls to the daemon (CSRF). CORS is opt-in via
+      // RpcServer::enableCors, which sets a configurable allow-origin domain.
+      resp.addHeader("content-type", "application/json");
+
       parser.receiveRequest(stream, req);
+      // Stamp the TCP-layer peer IP so RpcServer rate limiting can key on it.
+      // This is the only trusted source; X-Forwarded-For is not consulted.
+      req.addHeader("X-Remote-Addr", addr.first.toDottedDecimal());
 				if (authenticate(req)) {
 					processRequest(req, resp);
 				}

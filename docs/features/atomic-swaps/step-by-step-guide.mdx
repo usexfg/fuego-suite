@@ -1,0 +1,53 @@
+---
+title: "Step-by-step swap guide"
+description: "Initiate and complete a swapXFG atomic swap."
+keywords: ["swap guide", "swapXFG", "atomic swap", "XFG"]
+---
+
+Flow is the same idea across pairs; endpoints and chain daemons differ.
+
+## Prerequisites
+
+- Synced `fuegod`
+- SwapDaemon configured for the pair
+- Counterparty chain node/RPC as required
+- XFG (or counterparty asset) funded
+- A counterparty online on the same offer/protocol
+
+## Initiate
+
+Via TUI / RPC (names vary):
+
+```
+initiate <counterparty> <amount> <ASSET>
+```
+
+Save the **swap ID**.
+
+## Monitor
+
+```bash
+curl -X POST http://127.0.0.1:28080/getswapstatus \
+  -H 'Content-Type: application/json' \
+  -d '{"swap_id": "YOUR_SWAP_ID"}'
+```
+
+```bash
+curl -X POST http://127.0.0.1:28080/listswaps \
+  -H 'Content-Type: application/json' \
+  -d '{}'
+```
+
+## States (adaptor path sketch)
+
+```
+keys exchanged → escrow funded → presigs ready
+  → counterparty locked → secret revealed
+  → success  OR  refunded
+```
+
+On success, the **2% protocol fee** (1% initiation + 1% claim) is taken and routed **80% CD / 20% Bonus Vault** (v11+). Blocks before v11 settled 69/11/20 and keep that split on replay.
+
+## Counterparty disappears
+
+Wait for timelock → [refund](/features/atomic-swaps/fees-and-timeouts). Do not double-spend manual recoveries outside the daemon state machine.

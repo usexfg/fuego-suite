@@ -5,208 +5,174 @@ on:
     branches:
       - "**"
     tags-ignore:
-      - "*" # We don't want this to run on release
+      - "*"
   pull_request:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build-windows:
     name: Windows
-    runs-on: windows-latest
-    env:
-      BOOST_ROOT: C:/hostedtoolcache/windows/Boost/1.72.0/x86_64
+    runs-on: windows-2025
     steps:
-      - uses: actions/checkout@master
-
-      - name: Setup msbuild
-        uses: microsoft/setup-msbuild@v1.0.2
-
-      - name: Install Boost
-        shell: powershell
-        run: |
-          echo "${env:BOOST_ROOT}"
-          $Url = "https://sourceforge.net/projects/boost/files/boost-binaries/1.72.0/boost_1_72_0-msvc-14.2-64.exe"
-          (New-Object System.Net.WebClient).DownloadFile($Url, "$env:TEMP\boost.exe")
-          Start-Process -Wait -FilePath "$env:TEMP\boost.exe" "/SILENT","/SP-","/SUPPRESSMSGBOXES","/DIR=${env:BOOST_ROOT}"
-
-      - name: Build
-        shell: powershell
-        id: build
-        run: |
-          $build_folder = "build"
-          $sha = "${{ github.sha }}"
-          $xfg_ver = $sha.SubString(0,7)
-          $release_name = "fango-cli-win64-v$xfg_ver"
-          mkdir "$build_folder"
-          cd "$build_folder"
-          cmake -G "Visual Studio 16 2019" ..
-          msbuild fangoX.sln /p:Configuration=Release /m
-          cd src\Release
-          Compress-Archive -Path *.exe -DestinationPath "$release_name.zip"
-          $sha256 = (Get-FileHash "$release_name.zip").Hash
-          $asset_path = "./$build_folder/src/Release/$release_name.zip"
-          mkdir "$release_name"
-          cp *.exe "$release_name/"
-          echo "::set-output name=sha256::${sha256}"
-          echo "::set-output name=release_name::${release_name}.zip"
-          echo "::set-output name=asset_path::${asset_path}"
-          echo "::set-output name=xfg_ver::${xfg_ver}"
-          echo "::set-output name=artifact_path::$build_folder/src/Release/$release_name"
-
-      - name: Upload To GH Artifacts
-        uses: actions/upload-artifact@v1.0.0
+      - uses: actions/checkout@v4
         with:
-          name: ${{ steps.build.outputs.release_name }}
-          path: ${{ steps.build.outputs.artifact_path }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          submodules: recursive
 
-  build-ubuntu18:
-    name: Ubuntu 18.04
-    runs-on: ubuntu-18.04
-    steps:
-      - uses: actions/checkout@master
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Install OpenSSL
+        shell: pwsh
+        run: |
+          $candidates = @(
+            "C:\Program Files\OpenSSL-Win64",
+            "C:\Program Files\OpenSSL",
+            "C:\Program Files\FireDaemon OpenSSL 3"
+          )
+          $openssl = $candidates | Where-Object { Test-Path "$_\include\openssl\ssl.h" } | Select-Object -First 1
+          if (-not $openssl) {
+            $found = Get-ChildItem -Path "C:\Program Files" -Filter "ssl.h" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($found) { $openssl = (Get-Item $found.FullName).Directory.Parent.Parent.FullName }
+          }
+          if (-not $openssl) {
+            choco install openssl -y --no-progress
+            $openssl = $candidates | Where-Object { Test-Path "$_\include\openssl\ssl.h" } | Select-Object -First 1
+            if (-not $openssl) {
+              $found = Get-ChildItem -Path "C:\Program Files" -Filter "ssl.h" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($found) { $openssl = (Get-Item $found.FullName).Directory.Parent.Parent.FullName }
+            }
+          }
+          if (-not $openssl) { throw "OpenSSL not found" }
+          $inc = Join-Path $openssl "include"
+          Write-Host "OPENSSL_ROOT_DIR=$openssl"
+          Write-Host "OPENSSL_INCLUDE_DIR=$inc"
+          echo "OPENSSL_ROOT_DIR=$openssl" >> $env:GITHUB_ENV
+          echo "OPENSSL_INCLUDE_DIR=$inc" >> $env:GITHUB_ENV
+
+      - name: Install Boost 1.85
+        shell: pwsh
+        run: |
+          $ProgressPreference = 'SilentlyContinue'
+          $Url = "https://archives.boost.io/release/1.85.0/binaries/boost_1_85_0-msvc-14.3-64.exe"
+          Invoke-WebRequest -Uri $Url -OutFile "$env:TEMP\boost.exe" -UseBasicParsing
+          Start-Process -Wait "$env:TEMP\boost.exe" -ArgumentList "/SILENT","/SP-","/SUPPRESSMSGBOXES","/DIR=C:\boost"
+          echo "BOOST_ROOT=C:\boost" >> $env:GITHUB_ENV
+
+      - name: Install jsoncpp
+        shell: pwsh
+        run: vcpkg install jsoncpp:x64-windows openssl:x64-windows
 
       - name: Build
-        id: build
+        shell: pwsh
+        run: |
+          $vcpkgDir = if (Test-Path "C:\vcpkg") { "C:\vcpkg" } else { "$env:VCPKG_INSTALLATION_ROOT" }
+          $toolchain = Join-Path $vcpkgDir "scripts/buildsystems/vcpkg.cmake"
+          cmake -S "${{ github.workspace }}" -B "${{ github.workspace }}/build" -G "Visual Studio 18 2026" -A x64 `
+            -DCMAKE_TOOLCHAIN_FILE="$toolchain" `
+            -DBOOST_ROOT="C:\boost" `
+            -DBOOST_LIBRARYDIR="C:\boost\lib" `
+            -DBOOST_INCLUDEDIR="C:\boost\include\boost-1_85" `
+            -DOPENSSL_ROOT_DIR="$env:OPENSSL_ROOT_DIR" `
+            -DOPENSSL_INCLUDE_DIR="$env:OPENSSL_INCLUDE_DIR"
+          # MSBuild can exit non-zero without printing a build summary, which
+          # leaves a failing project invisible in the console log while every
+          # other target still links. The file loggers below record errors and
+          # warnings only and are dumped on failure; they are what identified
+          # the __uint128_t error in core_tests. /nodeReuse:false keeps worker
+          # nodes from outliving the step.
+          cmake --build "${{ github.workspace }}/build" --config Release -j $env:NUMBER_OF_PROCESSORS -- `
+            /nodeReuse:false `
+            "/flp1:logfile=${{ github.workspace }}/msbuild-errors.log;errorsonly;verbosity=diagnostic" `
+            "/flp2:logfile=${{ github.workspace }}/msbuild-warnings.log;warningsonly"
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            Write-Host "=============== MSBuild errors ==============="
+            $err_log = "${{ github.workspace }}/msbuild-errors.log"
+            if ((Test-Path $err_log) -and (Get-Item $err_log).Length -gt 0) {
+              Get-Content $err_log
+            } else {
+              Write-Host "(error log empty — MSBuild returned $code without logging an error)"
+            }
+            Write-Host "=============================================="
+            throw "MSBuild exited $code"
+          }
+
+  build-ubuntu24:
+    name: Ubuntu 24.04
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libboost-all-dev
-          build_folder="build/debug"
-          xfg_ver=${GITHUB_SHA::7}
-          xfg_ver_folder=$(echo $xfg_ver | sed 's/\.//g')
-          release_name=fango-cli-ubuntu-1804-dev"$xfg_ver"
-          mkdir -p "$build_folder"
-          cd "$build_folder"
-          cmake ../.. -DCMAKE_BUILD_TYPE=Debug
-          make -j2
-          mkdir -p "$release_name"
-          exeFiles=()
-          for f in src/*; do [[ -x $f && -f $f ]] && exeFiles+=( "$f" ); done
-          strip "${exeFiles[@]}"
-          cp "${exeFiles[@]}" "$release_name/"
-          echo "::set-output name=release_name::${release_name}.zip"
-          echo "::set-output name=artifact_path::$build_folder/$release_name"
-
-      - name: Upload To GH Artifacts
-        uses: actions/upload-artifact@v1.0.0
-        with:
-          name: ${{ steps.build.outputs.release_name }}
-          path: ${{ steps.build.outputs.artifact_path }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  build-ubuntu20:
-    name: Ubuntu 20.04
-    runs-on: ubuntu-20.04
-    steps:
-      - uses: actions/checkout@master
-
+          sudo apt-get install -y build-essential cmake libboost-all-dev libssl-dev libicu-dev libjsoncpp-dev libsecp256k1-dev ninja-build
+          
       - name: Build
-        id: build
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DUSE_VENDORED_SECP256K1=OFF -G Ninja
+          cmake --build build -j$(nproc)
+        
+  sanitizers-ubuntu:
+    name: Sanitizers (ASan+UBSan)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libboost-all-dev
-          build_folder="build/debug"
-          xfg_ver=${GITHUB_SHA::7}
-          xfg_ver_folder=$(echo $xfg_ver | sed 's/\.//g')
-          release_name=fango-cli-ubuntu-2004-dev"$xfg_ver"
-          mkdir -p "$build_folder"
-          cd "$build_folder"
-          cmake ../.. -DCMAKE_BUILD_TYPE=Debug
-          make -j2
-          mkdir -p "$release_name"
-          exeFiles=()
-          for f in src/*; do [[ -x $f && -f $f ]] && exeFiles+=( "$f" ); done
-          strip "${exeFiles[@]}"
-          cp "${exeFiles[@]}" "$release_name/"
-          echo "::set-output name=release_name::${release_name}.zip"
-          echo "::set-output name=artifact_path::$build_folder/$release_name"
+          sudo apt-get install -y build-essential cmake libboost-all-dev libssl-dev libicu-dev libjsoncpp-dev libsecp256k1-dev ninja-build
 
-      - name: Upload To GH Artifacts
-        uses: actions/upload-artifact@v1.0.0
-        with:
-          name: ${{ steps.build.outputs.release_name }}
-          path: ${{ steps.build.outputs.artifact_path }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build with sanitizers
+        run: |
+          cmake -B build-san -DCMAKE_BUILD_TYPE=Debug -DUSE_VENDORED_SECP256K1=OFF \
+            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
+            -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined" \
+            -G Ninja
+          cmake --build build-san -j$(nproc) --target CryptoNoteCore core_tests test_orderbook
+
+      - name: Run core tests under sanitizers
+        run: |
+          ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+            ./build-san/src/test_daemons/core_tests
+          ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+            ./build-san/src/test_daemons/test_orderbook
 
   build-macos:
     name: macOS
-    runs-on: macOS-10.15
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            arch: apple
+          - os: macos-15
+            arch: apple
     steps:
-      - uses: actions/checkout@master
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          brew install boost openssl@3 icu4c jsoncpp secp256k1 cmake ninja
 
       - name: Build
-        id: build
         run: |
-          build_folder="build/"
-          xfg_ver=${GITHUB_SHA::7}
-          xfg_ver_folder=$(echo $xfg_ver | sed 's/\.//g')
-          release_name=fango-cli-macos-dev"$xfg_ver"
-          brew install gcc boost
-          mkdir "$build_folder"
-          cd "$build_folder"
-          cmake -DCMAKE_C_FLAGS="-mmacosx-version-min=10.12" -DCMAKE_CXX_FLAGS="-mmacosx-version-min=10.12" ..
-          make -j2
-          mkdir "$release_name"
-          exeFiles=()
-          for f in src/*; do [[ -x $f && -f $f ]] && strip "$f" && exeFiles+=( "$f" ); done
-          strip "${exeFiles[@]}"
-          cp "${exeFiles[@]}" "$release_name/"
-          zip -r "$release_name".zip "$release_name"
-          sha256=$(shasum -a 256 "$release_name".zip | awk '{print toupper($1)}')
-          asset_path="./$build_folder$release_name.zip"
-          echo "::set-output name=sha256::${sha256}"
-          echo "::set-output name=release_name::${release_name}.zip"
-          echo "::set-output name=asset_path::${asset_path}"
-          echo "::set-output name=krb_ver::${krb_ver}"
-          echo "::set-output name=artifact_path::$build_folder/$release_name"
-
-      - name: Upload To GH Artifacts
-        uses: actions/upload-artifact@v1.0.0
-        with:
-          name: ${{ steps.build.outputs.release_name }}
-          path: ${{ steps.build.outputs.artifact_path }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  build-macos11:
-    name: macOS-11
-    runs-on: macOS-11
-    steps:
-      - uses: actions/checkout@master
-
-      - name: Build
-        id: build
-        run: |
-          build_folder="build/"
-          xfg_ver=${GITHUB_SHA::7}
-          xfg_ver_folder=$(echo $xfg_ver | sed 's/\.//g')
-          release_name=fango-cli-macos11-dev"$xfg_ver"
-          brew install gcc boost
-          mkdir "$build_folder"
-          cd "$build_folder"
-          cmake -DCMAKE_C_FLAGS="-mmacosx-version-min=10.12" -DCMAKE_CXX_FLAGS="-mmacosx-version-min=10.12" ..
-          make -j2
-          mkdir "$release_name"
-          exeFiles=()
-          for f in src/*; do [[ -x $f && -f $f ]] && strip "$f" && exeFiles+=( "$f" ); done
-          strip "${exeFiles[@]}"
-          cp "${exeFiles[@]}" "$release_name/"
-          zip -r "$release_name".zip "$release_name"
-          sha256=$(shasum -a 256 "$release_name".zip | awk '{print toupper($1)}')
-          asset_path="./$build_folder$release_name.zip"
-          echo "::set-output name=sha256::${sha256}"
-          echo "::set-output name=release_name::${release_name}.zip"
-          echo "::set-output name=asset_path::${asset_path}"
-          echo "::set-output name=krb_ver::${krb_ver}"
-          echo "::set-output name=artifact_path::$build_folder/$release_name"
-
-      - name: Upload To GH Artifacts
-        uses: actions/upload-artifact@v1.0.0
-        with:
-          name: ${{ steps.build.outputs.release_name }}
-          path: ${{ steps.build.outputs.artifact_path }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DBOOST_ROOT="$(brew --prefix boost)" \
+            -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)" \
+            -DICU_ROOT="$(brew --prefix icu4c)" \
+            -DUSE_VENDORED_SECP256K1=OFF
+          cmake --build build -j$(sysctl -n hw.logicalcpu)

@@ -1,26 +1,43 @@
+// Copyright (c) 2017-2026 Fuego Developers
 // Copyright (c) 2011-2017 The Cryptonote developers
-// Copyright (c) 2017-2018 The Circle Foundation & Conceal Devs
 // Copyright (c) 2018-2019 The TurtleCoin developers
 // Copyright (c) 2016-2020 The Karbo developers
 // Copyright (c) 2018-2021 Conceal Network & Conceal Devs
-// Distributed under the MIT/X11 software license, see the accompanying
-// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+//
+// This file is part of Fuego.
+//
+// Fuego is free software distributed in the hope that it
+// will be useful, but WITHOUT ANY WARRANTY; without even the
+// implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+// PURPOSE. You can redistribute it and/or modify it under the terms
+// of the GNU General Public License v3 or later versions as published
+// by the Free Software Foundation. Fuego includes elements written
+// by third parties. See file labeled LICENSE for more details.
+// You should have received a copy of the GNU General Public License
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #pragma once
 
 #include "P2pProtocolTypes.h"
 
-#include "crypto/crypto.h"
-#include "CryptoNoteConfig.h"
-#include "CryptoNoteCore/CryptoNoteStatInfo.h"
+#include "../crypto/crypto.h"
+#include "../CryptoNoteConfig.h"
+#include "../CryptoNoteCore/CryptoNoteStatInfo.h"
 
 // new serialization
 #include "Serialization/ISerializer.h"
 #include "Serialization/SerializationOverloads.h"
 #include "CryptoNoteCore/CryptoNoteSerialization.h"
 
+// For EMPTY_STRUCT definition (needed for P2P messages)
+#include "Rpc/CoreRpcServerCommandsDefinitions.h"
+
 namespace CryptoNote
 {
+  // EMPTY_STRUCT is defined in CoreRpcServerCommandsDefinitions.h
+  // Forward declare here to avoid circular includes
+  struct EMPTY_STRUCT;
+
   inline bool serialize(uuid& v, Common::StringView name, ISerializer& s) {
     return s.binary(&v, sizeof(v), name);
   }
@@ -62,7 +79,7 @@ namespace CryptoNote
       KV_MEMBER(my_port)
     }
   };
-  
+
   struct CORE_SYNC_DATA
   {
     uint32_t current_height;
@@ -99,7 +116,7 @@ namespace CryptoNote
     {
       basic_node_data node_data;
       CORE_SYNC_DATA payload_data;
-      std::list<PeerlistEntry> local_peerlist; 
+      std::list<PeerlistEntry> local_peerlist;
 
       void serialize(ISerializer& s) {
         KV_MEMBER(node_data)
@@ -148,7 +165,7 @@ namespace CryptoNote
   struct COMMAND_PING
   {
     /*
-      Used to make "callback" connection, to be sure that opponent node 
+      Used to make "callback" connection, to be sure that opponent node
       have accessible connection point. Only other nodes can add peer to peerlist,
       and ONLY in case when peer has accepted connection and answered to ping.
     */
@@ -174,9 +191,9 @@ namespace CryptoNote
     };
   };
 
-  
+
 #ifdef ALLOW_DEBUG_COMMANDS
-  //These commands are considered as insecure, and made in debug purposes for a limited lifetime. 
+  //These commands are considered as insecure, and made in debug purposes for a limited lifetime.
   //Anyone who feel unsafe with this commands can disable the ALLOW_GET_STAT_COMMAND macro.
 
   struct proof_of_trust
@@ -211,7 +228,7 @@ namespace CryptoNote
         KV_MEMBER(tr)
       }
     };
-    
+
     struct response
     {
       std::string version;
@@ -289,5 +306,384 @@ namespace CryptoNote
 
 #endif
 
+  /************************************************************************/
 
-}
+
+  /************************************************************************/
+  /* SWAP OFFER GOSSIP - P2P relay for atomic swap offers                */
+  /************************************************************************/
+  struct COMMAND_SWAP_OFFER
+  {
+    enum { ID = P2P_COMMANDS_POOL_BASE + 13 };
+
+    struct request
+    {
+      std::string offerId;                // Unique offer identifier (hex)
+      uint64_t    xfgAmount;              // XFG atomic units to swap
+      uint64_t    rateNum;                // Rate: XFG per 1 CTR, scaled by 1e7
+      uint8_t     pair;                   // 0=XMR, 1=ETH, 2=BCH
+      Crypto::PublicKey makerPubKey;      // Maker's wallet pubkey
+      Crypto::Signature signature;        // Signs offerId with maker's key
+      uint64_t    timestamp;
+      uint32_t    ttlBlocks;              // Offer expires after this many blocks
+      uint32_t    postedHeight;           // Block height when posted
+      bool        isSoftOrder;            // True if this is a soft intent order
+      uint8_t     allowedSlippagePct;
+      bool        dandelion_stem = false;
+      uint32_t    hop_count = 0;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(offerId)
+        KV_MEMBER(xfgAmount)
+        KV_MEMBER(rateNum)
+        KV_MEMBER(pair)
+        KV_MEMBER(makerPubKey)
+        KV_MEMBER(signature)
+        KV_MEMBER(timestamp)
+        KV_MEMBER(ttlBlocks)
+        KV_MEMBER(postedHeight)
+        KV_MEMBER(isSoftOrder)
+        KV_MEMBER(allowedSlippagePct)
+        KV_MEMBER(dandelion_stem)
+        KV_MEMBER(hop_count)
+      }
+    };
+    typedef EMPTY_STRUCT response;
+  };
+
+  /************************************************************************/
+  /* SWAP CANCEL - P2P relay for cancelling a swap offer                  */
+  /************************************************************************/
+  struct COMMAND_SWAP_CANCEL
+  {
+    enum { ID = P2P_COMMANDS_POOL_BASE + 14 };
+
+    struct request
+    {
+      std::string offerId;
+      Crypto::PublicKey makerPubKey;
+      Crypto::Signature signature;        // Signs "cancel:<offerId>:<timestamp>" with maker's key
+      uint64_t          timestamp;        // Anti-replay: bounds the cancel signature lifetime
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(offerId)
+        KV_MEMBER(makerPubKey)
+        KV_MEMBER(signature)
+        KV_MEMBER(timestamp)
+      }
+    };
+    typedef EMPTY_STRUCT response;
+  };
+
+  /************************************************************************/
+  /* SWAP TRADE COMPLETED - broadcast completed swap for TWAP             */
+  /************************************************************************/
+  struct COMMAND_SWAP_REQUEST
+  {
+    enum { ID = P2P_COMMANDS_POOL_BASE + 15 };
+
+    struct request
+    {
+      std::string offerId;
+      uint64_t    amount; // partial fill request amount
+      std::string takerPubKey;
+      std::string proofOfFunds; // signature to prove balance (get_reserve_proof)
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(offerId)
+        KV_MEMBER(amount)
+        KV_MEMBER(takerPubKey)
+        KV_MEMBER(proofOfFunds)
+      }
+    };
+    typedef EMPTY_STRUCT response;
+  };
+
+  // Fill-result gossip (maker → all peers): after the maker's SwapDaemon
+  // creates the AFK lock, it publishes the result; every relay stores it
+  // keyed by takerPubKey so the taker can poll its LOCAL fuegod.
+  struct COMMAND_SWAP_REQUEST_RESULT
+  {
+    enum { ID = P2P_COMMANDS_POOL_BASE + 19 };
+
+    struct request
+    {
+      std::string takerPubKey;
+      std::string offerId;
+      std::string lockId;
+      std::string makerEndpoint;
+      std::string adaptorPoint;  // hex, T = t*G
+      std::string hashLock;      // hex, H(t) — counterparty-family hash
+      std::string preSig;        // hex, maker's adaptor pre-signature
+      std::string ctrAddress;    // maker's counterparty-chain receive address
+      uint64_t    createdAt;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(takerPubKey)
+        KV_MEMBER(offerId)
+        KV_MEMBER(lockId)
+        KV_MEMBER(makerEndpoint)
+        KV_MEMBER(adaptorPoint)
+        KV_MEMBER(hashLock)
+        KV_MEMBER(preSig)
+        KV_MEMBER(ctrAddress)
+        KV_MEMBER(createdAt)
+      }
+    };
+    typedef EMPTY_STRUCT response;
+  };
+
+  struct COMMAND_SWAP_TRADE
+  {
+    enum { ID = P2P_COMMANDS_POOL_BASE + 16 };
+
+    struct request
+    {
+      uint8_t     pair;
+      uint64_t    xfgAmount;
+      uint64_t    ctrAmount;
+      uint64_t    rateScaled;             // Rate * 1e7 (integer representation)
+      uint32_t    blockHeight;
+      uint64_t    timestamp;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(pair)
+        KV_MEMBER(xfgAmount)
+        KV_MEMBER(ctrAmount)
+        KV_MEMBER(rateScaled)
+        KV_MEMBER(blockHeight)
+        KV_MEMBER(timestamp)
+      }
+    };
+    typedef EMPTY_STRUCT response;
+  };
+
+  /************************************************************************/
+  /* ORDER BOOK - P2P relay for atomic swap orders (new v2 format)           */
+  /************************************************************************/
+  struct COMMAND_ORDER_OPEN
+  {
+    enum { ID = P2P_COMMANDS_POOL_BASE + 20 };
+
+    struct request
+    {
+      std::string        orderId;
+      uint8_t           side;            // 0 = BID, 1 = ASK
+      uint8_t           pair;
+      uint64_t          price;
+      uint64_t          amount;
+      Crypto::PublicKey makerPubKey;
+      Crypto::Signature signature;
+      uint64_t          nonce;
+      uint64_t          timestamp;
+      uint32_t          ttlBlocks;
+      uint32_t          postedHeight;
+      // WIRE CONTRACT — do not change `uint8_t` to `bool` for consistency with
+      // COMMAND_SWAP_OFFER::request (which uses bool) or
+      // NOTIFY_NEW_TRANSACTIONS_request (which also uses bool). The KV format is
+      // name-keyed but TYPE-TAG-STRICT: uint8_t serializes with tag
+      // BIN_KV_SERIALIZE_TYPE_UINT8 (8) and bool with BIN_KV_SERIALIZE_TYPE_BOOL
+      // (11), and JsonValue::getBool() throws on a non-BOOL value. Changing the
+      // type therefore makes every COMMAND_ORDER_OPEN undecodable on remote
+      // peers: LevinProtocol::decode fails, notifyAdaptor throws
+      // "Failed to load_from_binary", and the connection is dropped — killing
+      // orderbook relay mesh-wide with no compile error and no test failure.
+      uint8_t           dandelion_stem;
+      uint32_t          hop_count;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(orderId)
+        KV_MEMBER(side)
+        KV_MEMBER(pair)
+        KV_MEMBER(price)
+        KV_MEMBER(amount)
+        KV_MEMBER(makerPubKey)
+        KV_MEMBER(signature)
+        KV_MEMBER(nonce)
+        KV_MEMBER(timestamp)
+        KV_MEMBER(ttlBlocks)
+        KV_MEMBER(postedHeight)
+        KV_MEMBER(dandelion_stem)
+        KV_MEMBER(hop_count)
+      }
+    };
+    typedef EMPTY_STRUCT response;
+  };
+
+  /************************************************************************/
+  /* ORDER CANCEL - P2P relay for cancelling a swap order                */
+  /************************************************************************/
+  struct COMMAND_ORDER_CANCEL
+  {
+    enum { ID = P2P_COMMANDS_POOL_BASE + 21 };
+
+    struct request
+    {
+      std::string        orderId;
+      uint8_t           side;
+      uint8_t           pair;
+      Crypto::PublicKey makerPubKey;
+      Crypto::Signature signature;
+      uint64_t          timestamp;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(orderId)
+        KV_MEMBER(side)
+        KV_MEMBER(pair)
+        KV_MEMBER(makerPubKey)
+        KV_MEMBER(signature)
+        KV_MEMBER(timestamp)
+      }
+    };
+    typedef EMPTY_STRUCT response;
+  };
+
+  /************************************************************************/
+  /* ORDER EXCHANGE - P2P relay for completing an order book fill        */
+  /************************************************************************/
+  struct COMMAND_ORDER_FILL
+  {
+    enum { ID = P2P_COMMANDS_POOL_BASE + 22 };
+
+    struct request
+    {
+      std::string takerOrderId;
+      std::string makerOrderId;
+      uint64_t    fillAmount;
+      uint64_t    fillPrice;
+      uint64_t    timestamp;
+      uint32_t    blockHeight;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(takerOrderId)
+        KV_MEMBER(makerOrderId)
+        KV_MEMBER(fillAmount)
+        KV_MEMBER(fillPrice)
+        KV_MEMBER(timestamp)
+        KV_MEMBER(blockHeight)
+      }
+    };
+    typedef EMPTY_STRUCT response;
+  };
+
+  /************************************************************************/
+  /* ORDER RESERVATION - pre-commit phase for order fills                   */
+  /************************************************************************/
+  struct COMMAND_ORDER_RESERVE
+  {
+    enum { ID = P2P_COMMANDS_POOL_BASE + 23 };
+
+    struct request
+    {
+      std::string reservationId;
+      std::string takerOrderId;
+      std::string makerOrderId;
+      uint64_t    amount;
+      std::string takerPubKey;
+      uint64_t    timestamp;
+      uint32_t    ttlSeconds;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(reservationId)
+        KV_MEMBER(takerOrderId)
+        KV_MEMBER(makerOrderId)
+        KV_MEMBER(amount)
+        KV_MEMBER(takerPubKey)
+        KV_MEMBER(timestamp)
+        KV_MEMBER(ttlSeconds)
+      }
+    };
+    typedef EMPTY_STRUCT response;
+  };
+
+  /************************************************************************/
+  /* ORDER RESERVATION ACKNOWLEDGMENT - maker signs reservation          */
+  /************************************************************************/
+  struct COMMAND_ORDER_RESERVE_ACK
+  {
+    enum { ID = P2P_COMMANDS_POOL_BASE + 24 };
+
+    struct request
+    {
+      std::string reservationId;
+      std::string makerOrderId;
+      Crypto::PublicKey makerPubKey;
+      Crypto::Signature    signature;
+      uint64_t            timestamp;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(reservationId)
+        KV_MEMBER(makerOrderId)
+        KV_MEMBER(makerPubKey)
+        KV_MEMBER(signature)
+        KV_MEMBER(timestamp)
+      }
+    };
+    typedef EMPTY_STRUCT response;
+  };
+
+  /************************************************************************/
+  /* COMMAND_CD_OFFER - Confidential Deposit offer                           */
+  /************************************************************************/
+  struct COMMAND_CD_OFFER
+  {
+    enum { ID = P2P_COMMANDS_POOL_BASE + 17 };
+
+    struct request
+    {
+      std::string offerId;
+      bool        isSell;
+      uint64_t    cdAmount;
+      uint32_t    cdTerm;
+      uint32_t    cdEpoch;
+      std::string cdKeyImage;
+      uint64_t    askPrice;
+      Crypto::PublicKey makerPubKey;
+      Crypto::Signature signature;
+      uint64_t    timestamp;
+      uint32_t    ttlBlocks;
+      uint32_t    postedHeight;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(offerId)
+        KV_MEMBER(isSell)
+        KV_MEMBER(cdAmount)
+        KV_MEMBER(cdTerm)
+        KV_MEMBER(cdEpoch)
+        KV_MEMBER(cdKeyImage)
+        KV_MEMBER(askPrice)
+        KV_MEMBER(makerPubKey)
+        KV_MEMBER(signature)
+        KV_MEMBER(timestamp)
+        KV_MEMBER(ttlBlocks)
+        KV_MEMBER(postedHeight)
+      }
+    };
+    typedef EMPTY_STRUCT response;
+  };
+
+  /************************************************************************/
+  /* COMMAND_CD_CANCEL - cancel a Confidential Deposit offer                 */
+  /************************************************************************/
+  struct COMMAND_CD_CANCEL
+  {
+    enum { ID = P2P_COMMANDS_POOL_BASE + 18 };
+
+    struct request
+    {
+      std::string offerId;
+      Crypto::PublicKey makerPubKey;
+      Crypto::Signature signature;
+      uint64_t          timestamp;        // Anti-replay: bounds the cancel signature lifetime
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(offerId)
+        KV_MEMBER(makerPubKey)
+        KV_MEMBER(signature)
+        KV_MEMBER(timestamp)
+      }
+    };
+    typedef EMPTY_STRUCT response;
+  };
+
+} // namespace CryptoNote

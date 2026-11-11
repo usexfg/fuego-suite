@@ -1,34 +1,33 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
-// Copyright (c) 2018-2019 Conceal Network & Conceal Devs
+// Copyright (c) 2017-2022 Fuego Developers
 // Copyright (c) 2016-2019 The Karbowanec developers
+// Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free & open source software distributed in the hope 
-// that it will be useful, but WITHOUT ANY WARRANTY; without even
+// Fuego is free & open source software distributed in the hope
+// it will be useful, but WITHOUT ANY WARRANTY; without even an
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You may redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include <boost/optional.hpp>
 #include <boost/program_options.hpp>
 
-#include <System/ContextGroup.h>
-#include <System/ContextGroupTimeout.h>
-#include <System/Dispatcher.h>
-#include <System/Event.h>
-#include <System/InterruptedException.h>
-#include <System/Ipv4Address.h>
-#include <System/Ipv4Resolver.h>
-#include <System/TcpConnection.h>
-#include <System/TcpConnector.h>
-#include <System/Timer.h>
+#include "../System/ContextGroup.h"
+#include "../System/ContextGroupTimeout.h"
+#include "../System/Dispatcher.h"
+#include "../System/Event.h"
+#include "../System/InterruptedException.h"
+#include "../System/Ipv4Address.h"
+#include "../System/Ipv4Resolver.h"
+#include "../System/TcpConnection.h"
+#include "../System/TcpConnector.h"
+#include "../System/Timer.h"
 
 #include "Common/CommandLine.h"
 #include "Common/StringTools.h"
@@ -49,8 +48,8 @@ using namespace CryptoNote;
 
 namespace {
   const command_line::arg_descriptor<std::string, true> arg_ip           = {"ip", "set ip"};
-  const command_line::arg_descriptor<uint16_t>      arg_port = { "port", "set port" };
-  const command_line::arg_descriptor<uint16_t>      arg_rpc_port           = {"rpc_port", "set rpc port"};
+  const command_line::arg_descriptor<uint16_t>      arg_port             = { "port", "set port" };
+  const command_line::arg_descriptor<uint16_t>      arg_rpc_port         = {"rpc_port", "set rpc port"};
   const command_line::arg_descriptor<uint32_t, true> arg_timeout         = {"timeout", "set timeout"};
   const command_line::arg_descriptor<std::string> arg_priv_key           = {"private_key", "private key to subscribe debug command", "", true};
   const command_line::arg_descriptor<uint64_t>    arg_peer_id            = {"peer_id", "peer_id if known(if not - will be requested)", 0};
@@ -72,7 +71,7 @@ void withTimeout(System::Dispatcher& dispatcher, unsigned timeout, std::function
   std::string result;
   System::ContextGroup cg(dispatcher);
   System::ContextGroupTimeout cgTimeout(dispatcher, cg, std::chrono::milliseconds(timeout));
-  
+
   cg.spawn([&] {
     try {
       f();
@@ -92,7 +91,7 @@ void withTimeout(System::Dispatcher& dispatcher, unsigned timeout, std::function
 
 
 std::ostream& get_response_schema_as_json(std::ostream& ss, response_schema &rs) {
-  
+
   ss << "{" << ENDL
      << "  \"status\": \"" << rs.status << "\"," << ENDL
      << "  \"COMMAND_REQUEST_NETWORK_STATE_status\": \"" << rs.COMMAND_REQUEST_NETWORK_STATE_status << "\"," << ENDL
@@ -157,9 +156,9 @@ bool print_COMMAND_REQUEST_STAT_INFO(const COMMAND_REQUEST_STAT_INFO::response &
 
 
   std::cout << "Tx pool size:        " << si.payload_info.tx_pool_size << ENDL;
-  std::cout << "BC height:           " << si.payload_info.blockchain_height << ENDL;
-  std::cout << "Mining speed:          " << si.payload_info.mining_speed << ENDL;
-  std::cout << "Alternative blocks:  " << si.payload_info.alternative_blocks << ENDL;
+  std::cout << "Chain height:           " << si.payload_info.blockchain_height << ENDL;
+  std::cout << "Mining Speed (hashrate):          " << si.payload_info.mining_speed << ENDL;
+  std::cout << "Alt blocks:             " << si.payload_info.alternative_blocks << ENDL;
   std::cout << "Top block id:        " << si.payload_info.top_block_id_str << ENDL;
   return true;
 }
@@ -285,8 +284,8 @@ bool handle_request_stat(po::variables_map& vm, PeerIdType peer_id) {
         rs.COMMAND_REQUEST_STAT_INFO_status = "OK";
       } catch (const std::exception &e) {
         std::stringstream ss;
-        ss << "ERROR: Failed to invoke remote command COMMAND_REQUEST_STAT_INFO to " 
-           << command_line::get_arg(vm, arg_ip) << ":" << command_line::get_arg(vm, arg_port) 
+        ss << "ERROR: Failed to invoke remote command COMMAND_REQUEST_STAT_INFO to "
+           << command_line::get_arg(vm, arg_ip) << ":" << command_line::get_arg(vm, arg_port)
            << " - " << e.what();
         rs.COMMAND_REQUEST_STAT_INFO_status = ss.str();
       }
@@ -373,11 +372,11 @@ int main(int argc, char *argv[]) {
   if (command_line::has_arg(vm, arg_request_stat_info) || command_line::has_arg(vm, arg_request_net_state)) {
     return handle_request_stat(vm, command_line::get_arg(vm, arg_peer_id)) ? 0 : 1;
   }
-  
+
   if (command_line::has_arg(vm, arg_get_daemon_info)) {
     return handle_get_daemon_info(vm) ? 0 : 1;
-  } 
-  
+  }
+
   if (command_line::has_arg(vm, arg_generate_keys)) {
     return generate_and_print_keys() ? 0 : 1;
   }

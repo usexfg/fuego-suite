@@ -1,0 +1,118 @@
+# Hearth — Fuego's On-Chain Exchange
+
+*The market where ΗΞΔŦ finds its price — and where your XFG becomes more than a balance.*
+
+---
+
+## Step into the Hearth
+
+Fuego is a blockchain that mints its own money — ΗΞΔŦ, the flatcoin — and **Hearth is where that money lives, moves, and grows**. It's an exchange that runs on the chain itself: no custody, no order books held by a company, no waiting on a centralized venue to decide what anything is worth. Every price on Hearth is discovered by the people trading on it — one clearing price, once per block, for everyone.
+
+This brochure is about what Hearth **lets you do**. Pick a path:
+
+| You want to… | Start here |
+|---|---|
+| Convert XFG into ΗΞΔŦ (or back) — instantly | [Swap](#swap) |
+| Trade at a price you set, then walk away | [Limit orders](#limit-orders) |
+| Put your XFG and ΗΞΔŦ to work together | [Provide liquidity](#provide-liquidity) |
+| Get paid for quoting the market | [Earn as a maker](#earn-as-a-maker) |
+| Lock ΗΞΔŦ and earn real yield | [Own Certificates of Deposit](/features/heat/mint-heat) |
+| Mint brand-new ΗΞΔŦ from XFG | [Mint on Hearth's price](/features/heat/mint-heat) |
+
+---
+
+## Swap
+
+The simplest door in: hand over one asset, receive the other at the market's current price, settled on-chain in the same block you asked. No account, no KYC, no middleman — your wallet is your exchange account.
+
+- **XFG → ΗΞΔŦ:** sell XFG into the pool, receive ΗΞΔŦ.
+- **ΗΞΔŦ → XFG:** buy XFG with ΗΞΔŦ.
+
+Direct swaps price on the pool’s constant-product curve (the same inventory LPs deposited). That inventory is also quoted as depth-band orders in the per-block auction — not a second book. A small swap fills near the current price; a large one moves it. Before a sale, `sell_xfg` shows what you'll receive, where it leaves the pool's price, and what **minting** the same XFG would give instead, then asks before it sells.
+
+You always set a **minimum you're willing to accept**, so a fast-moving market can't fill you at a price you didn't agree to.
+
+```
+sell_xfg <amount_xfg> <min_heat>
+buy_xfg  <amount_heat> <min_xfg>
+```
+
+From the wallet RPC (SimpleWallet `--rpc-bind` and walletd) the same trades are `sell_xfg` and `buy_xfg`, or `amm_swap` with `direction` 0 or 1. Minting is `heat_mint`.
+
+> Want ΗΞΔŦ without buying it? You can also **mint it** — burn XFG and receive fresh ΗΞΔŦ at Hearth's discovered price. See [minting ΗΞΔŦ](/features/heat/mint-heat).
+
+---
+
+## Limit orders
+
+Maybe you don't want the price right now — you want **your** price. Post a bid or an ask backed by real funds. Each block, Hearth runs a call auction (your order vs other users **and** vs the pool’s depth-band quotes from LP inventory), then any leftover can fill on the AMM curve if your limit is crossed. Set it and walk away: fills, partial fills, and proceeds are credited on-chain and claimable whenever you come back.
+
+- **Buy ΗΞΔŦ** below the market and wait for the pullback.
+- **Sell ΗΞΔŦ** at your target and let the market come to you.
+
+```
+place_order buy  <amount_heat> <price> [exp_blocks]
+place_order sell <amount_xfg>  <price> [exp_blocks]
+cancel_order <tx_hash>     # claim deposit + proceeds whenever you like
+orderbook                  # see the live book and last clearing price
+```
+
+> The fee schedule is on your side when you post: **makers pay nothing — and actually get paid** (see below). Takers pay 1%, 70% of which flows to ΗΞΔŦ CD holders.
+
+---
+
+## Earn as a maker
+
+Every order that fills as the **maker** side — the liquidity someone else traded against — earns a **30% rebate of the taker fee**. Post liquidity on Hearth and your resting orders don't just wait: they work. The rebate lands in your order's proceeds automatically.
+
+There's no separate command — it's what your limit orders do by default. Post both sides at prices you believe in, and the market pays you for quoting it.
+
+---
+
+## Provide liquidity
+
+If you believe in the pair, become part of its depth. Add XFG **and** ΗΞΔŦ to the pool in a balanced pair, and you own a proportional slice of every trade's flow:
+
+- Your share of the pool's **trading P&L** as prices move.
+- The **70% maker share of fees** at v11 (30% at v12) whenever the pool is the counterparty.
+- Withdraw anytime by burning your LP shares for your proportional reserves.
+
+```
+add_liq [xfg_amount] [heat_amount]     # no args = see the current pool ratio
+remove_liq <lp_shares> <min_xfg> <min_heat>
+claim_lp_fees <lp_shares>
+```
+
+> Add liquidity with no args first — the pool expects a balanced pair at its current ratio, and it'll tell you exactly what that is.
+
+---
+
+## Own ΗΞΔŦ — and make it earn
+
+Hearth's 70% fee share feeds a yield pool for **ΗΞΔŦ Certificates of Deposit**. So the very same ΗΞΔŦ you trade on Hearth can be locked into a CD that earns protocol revenue — funded by real fees, never by printing.
+
+**Buy your ΗΞΔŦ on Hearth** (swap or limit order, or mint it), then lock it:
+
+```
+heat_cd <amount_heat> <term_epochs>
+claim_cd <deposit_id_or_txn_hash>
+```
+
+The longer the term, the richer the loyalty tier. Yield comes from what traders pay — a market that pays its holders.
+
+---
+
+## Your money, your rules
+
+Everything you commit to Hearth stays yours:
+
+- **Every order is backed** — funds sit in escrow on-chain; nothing exists as an unbacked promise.
+- **Partial fills accumulate** on your order, claimable with your deposit.
+- **Expired orders return everything** — deposit plus proceeds — automatically claimable.
+- **One price per block** — no race to the front of the queue, no sandwich games.
+
+Hearth doesn't ask you to trust a venue. It asks you to trade on one — and then pays you for being part of it.
+
+---
+
+**Continue reading:** [mint ΗΞΔŦ](/features/heat/mint-heat) · [ΗΞΔŦ Certificates of Deposit](/features/heat/mint-heat) · [provide liquidity, in depth](/features/hearth/providing-liquidity) · [the fee model](/features/hearth/fee-earning) · [the technology](/features/hearth/README)

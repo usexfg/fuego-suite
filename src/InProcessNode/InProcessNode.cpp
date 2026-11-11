@@ -1,20 +1,19 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
+// Copyright (c) 2017-2022 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it
+// Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You can redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "InProcessNode.h"
 
@@ -74,13 +73,13 @@ void InProcessNode::init(const Callback& callback) {
     protocol.addObserver(this);
     core.addObserver(this);
 
-    work.reset(new boost::asio::io_service::work(ioService));
+    workGuard.emplace(boost::asio::make_work_guard(ioService));
     workerThread.reset(new std::thread(&InProcessNode::workerFunc, this));
 
     state = INITIALIZED;
   }
 
-  ioService.post(std::bind(callback, ec));
+  boost::asio::post(ioService, std::bind(callback, ec));
 }
 
 bool InProcessNode::shutdown() {
@@ -97,10 +96,10 @@ bool InProcessNode::doShutdown() {
   core.removeObserver(this);
   state = NOT_INITIALIZED;
 
-  work.reset();
+  workGuard.reset();
   ioService.stop();
   workerThread->join();
-  ioService.reset();
+  ioService.restart();
   return true;
 }
 
@@ -118,7 +117,7 @@ void InProcessNode::getNewBlocks(std::vector<Crypto::Hash>&& knownBlockIds, std:
     return;
   }
 
-  ioService.post(
+  boost::asio::post(ioService,
     std::bind(&InProcessNode::getNewBlocksAsync,
       this,
       std::move(knownBlockIds),
@@ -192,7 +191,7 @@ void InProcessNode::getTransactionOutsGlobalIndices(const Crypto::Hash& transact
     return;
   }
 
-  ioService.post(
+  boost::asio::post(ioService,
     std::bind(&InProcessNode::getTransactionOutsGlobalIndicesAsync,
       this,
       std::cref(transactionHash),
@@ -242,7 +241,7 @@ void InProcessNode::getRandomOutsByAmounts(std::vector<uint64_t>&& amounts, uint
     return;
   }
 
-  ioService.post(
+  boost::asio::post(ioService,
     std::bind(&InProcessNode::getRandomOutsByAmountsAsync,
       this,
       std::move(amounts),
@@ -289,6 +288,51 @@ std::error_code InProcessNode::doGetRandomOutsByAmounts(std::vector<uint64_t>&& 
   return std::error_code();
 }
 
+void InProcessNode::getRandomCommitmentOutsForAmount(uint64_t amount, uint64_t outsCount, uint32_t maxHeight,
+    std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>& result, const Callback& callback)
+{
+  std::unique_lock<std::mutex> lock(mutex);
+  if (state != INITIALIZED) {
+    lock.unlock();
+    callback(make_error_code(CryptoNote::error::NOT_INITIALIZED));
+    return;
+  }
+
+  boost::asio::post(ioService,
+    std::bind(&InProcessNode::getRandomCommitmentOutsForAmountAsync, this, amount, outsCount, maxHeight, std::ref(result), callback)
+  );
+}
+
+void InProcessNode::getRandomCommitmentOutsForAmountAsync(uint64_t amount, uint64_t outsCount, uint32_t maxHeight,
+    std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>& result, const Callback& callback)
+{
+  std::error_code ec = doGetRandomCommitmentOutsForAmount(amount, outsCount, maxHeight, result);
+  callback(ec);
+}
+
+std::error_code InProcessNode::doGetRandomCommitmentOutsForAmount(uint64_t amount, uint64_t outsCount, uint32_t maxHeight,
+    std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>& result)
+{
+  {
+    std::unique_lock<std::mutex> lock(mutex);
+    if (state != INITIALIZED) {
+      return make_error_code(CryptoNote::error::NOT_INITIALIZED);
+    }
+  }
+
+  try {
+    if (!core.get_random_commitment_outs_for_amount(amount, outsCount, maxHeight, result)) {
+      return make_error_code(CryptoNote::error::REQUEST_ERROR);
+    }
+  } catch (std::system_error& e) {
+    return e.code();
+  } catch (std::exception&) {
+    return make_error_code(CryptoNote::error::INTERNAL_NODE_ERROR);
+  }
+
+  return std::error_code();
+}
+
 
 void InProcessNode::relayTransaction(const CryptoNote::Transaction& transaction, const Callback& callback)
 {
@@ -299,7 +343,7 @@ void InProcessNode::relayTransaction(const CryptoNote::Transaction& transaction,
     return;
   }
 
-  ioService.post(
+  boost::asio::post(ioService,
     std::bind(&InProcessNode::relayTransactionAsync,
       this,
       transaction,
@@ -468,7 +512,7 @@ void InProcessNode::queryBlocks(std::vector<Crypto::Hash>&& knownBlockIds, uint6
     return;
   }
 
-  ioService.post(
+  boost::asio::post(ioService,
           std::bind(&InProcessNode::queryBlocksLiteAsync,
                   this,
                   std::move(knownBlockIds),
@@ -530,7 +574,7 @@ void InProcessNode::getPoolSymmetricDifference(std::vector<Crypto::Hash>&& known
     return;
   }
 
-  ioService.post([this, knownPoolTxIds, knownBlockId, &isBcActual, &newTxs, &deletedTxIds, callback] () mutable {
+  boost::asio::post(ioService, [this, knownPoolTxIds, knownBlockId, &isBcActual, &newTxs, &deletedTxIds, callback] () mutable {
     this->getPoolSymmetricDifferenceAsync(std::move(knownPoolTxIds), knownBlockId, isBcActual, newTxs, deletedTxIds, callback);
   });
 }
@@ -563,7 +607,7 @@ void InProcessNode::getMultisignatureOutputByGlobalIndex(uint64_t amount, uint32
     return;
   }
 
-  ioService.post([this, amount, gindex, &out, callback]() mutable {
+  boost::asio::post(ioService,[this, amount, gindex, &out, callback]() mutable {
     this->getOutByMSigGIndexAsync(amount, gindex, out, callback);
   });
 }
@@ -588,7 +632,7 @@ void InProcessNode::getBlocks(const std::vector<uint32_t>& blockHeights, std::ve
     return;
   }
 
-  ioService.post(
+  boost::asio::post(ioService,
     std::bind(
       static_cast<
         void(InProcessNode::*)(
@@ -672,7 +716,7 @@ void InProcessNode::getBlocks(const std::vector<Crypto::Hash>& blockHashes, std:
     return;
   }
 
-  ioService.post(
+  boost::asio::post(ioService,
     std::bind(
       static_cast<
         void(InProcessNode::*)(
@@ -735,7 +779,7 @@ void InProcessNode::getBlocks(uint64_t timestampBegin, uint64_t timestampEnd, ui
     return;
   }
 
-  ioService.post(
+  boost::asio::post(ioService,
     std::bind(
       static_cast<
         void(InProcessNode::*)(
@@ -811,7 +855,7 @@ void InProcessNode::getTransactions(const std::vector<Crypto::Hash>& transaction
     return;
   }
 
-  ioService.post(
+  boost::asio::post(ioService,
     std::bind(
       static_cast<
         void(InProcessNode::*)(
@@ -876,7 +920,7 @@ void InProcessNode::getPoolTransactions(uint64_t timestampBegin, uint64_t timest
     return;
   }
 
-  ioService.post(
+  boost::asio::post(ioService,
     std::bind(
       &InProcessNode::getPoolTransactionsAsync,
       this,
@@ -935,7 +979,7 @@ void InProcessNode::getTransactionsByPaymentId(const Crypto::Hash& paymentId, st
     return;
   }
 
-  ioService.post(
+  boost::asio::post(ioService,
     std::bind(
       &InProcessNode::getTransactionsByPaymentIdAsync,
       this,
@@ -956,7 +1000,7 @@ void InProcessNode::getTransaction(const Crypto::Hash &transactionHash, CryptoNo
     return;
   }
 
-  ioService.post(
+  boost::asio::post(ioService,
       std::bind(
           static_cast<
               void (InProcessNode::*)(
@@ -1051,7 +1095,7 @@ void InProcessNode::isSynchronized(bool& syncStatus, const Callback& callback) {
     return;
   }
 
-  ioService.post(
+  boost::asio::post(ioService,
     std::bind(
       &InProcessNode::isSynchronizedAsync,
       this,
@@ -1066,4 +1110,58 @@ void InProcessNode::isSynchronizedAsync(bool& syncStatus, const Callback& callba
   callback(std::error_code());
 }
 
+std::error_code InProcessNode::getCdInterest(uint64_t amount, uint32_t creationHeight,
+                                              uint32_t currentHeight, uint64_t& outInterest) {
+  return core.calculateCdInterest(amount, creationHeight, currentHeight, outInterest, 0, false);
+}
+
+std::error_code InProcessNode::getCdClaimInfo(uint64_t amount, uint32_t creationHeight,
+                                              uint32_t currentHeight, CdClaimInfo& out,
+                                              uint32_t term) {
+  out = CdClaimInfo{};
+  CdClaimEstimate est;
+  std::error_code ec = core.estimateCdClaim(amount, creationHeight, currentHeight, term, est);
+  if (ec) return ec;
+  // Field-for-field the mapping NodeRpcProxy applies to /estimate_cd_yield, so
+  // a wallet computes the same claim in-process and over RPC.
+  out.formulaInterest = (est.baseInterest > UINT64_MAX - est.bonusInterest)
+      ? UINT64_MAX : (est.baseInterest + est.bonusInterest);
+  out.claimableInterest = (est.claimableBase > UINT64_MAX - est.claimableBonus)
+      ? UINT64_MAX : (est.claimableBase + est.claimableBonus);
+  out.feePoolBalance = est.feePoolBalance;
+  out.vaultBalance = est.cdApyVaultBalance;
+  out.poolInfoPresent = true;
+  out.baseInterest = est.baseInterest;
+  out.bonusInterest = est.bonusInterest;
+  out.bonusVaultBalance = est.bonusVaultBacking;
+  out.claimableBonus = est.claimableBonus;
+  return {};
+}
+
+std::error_code InProcessNode::getEpochFeeRate(uint32_t epoch, uint64_t& outFeeRate) {
+  return core.getCommitmentEpochFeeRate(epoch, outFeeRate);
+}
+
+std::error_code InProcessNode::getAmmPoolReserves(AmmPoolReserves& out) {
+  ICore::AmmPoolReserves reserves;
+  auto ec = core.getAmmPoolReserves(reserves);
+  if (ec) return ec;
+  out.reserveXfg = reserves.reserveXfg;
+  out.reserveHeat = reserves.reserveHeat;
+  return {};
+}
+
+uint64_t InProcessNode::getHearthTwap() {
+  return core.getHearthTwap();
+}
+
+std::error_code InProcessNode::getAmmPoolInfo(AmmPoolInfo& info) {
+  ICore::AmmPoolInfo coreInfo;
+  auto ec = core.getAmmPoolInfo(coreInfo);
+  if (ec) return ec;
+  info.reserveXfg = coreInfo.reserveXfg;
+  info.reserveHeat = coreInfo.reserveHeat;
+  info.spotPrice = coreInfo.spotPrice;
+  return {};
+}
 } //namespace CryptoNote

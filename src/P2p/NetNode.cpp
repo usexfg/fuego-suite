@@ -1,3 +1,5 @@
+// Copyright (c) 2017-2026 Fuego Developers
+// Copyright (c) 2020-2026 Elderfire Privacy Group
 // Copyright (c) 2011-2017 The Cryptonote developers
 // Copyright (c) 2017-2018 The Circle Foundation & Conceal Devs
 // Copyright (c) 2018-2019 The TurtleCoin developers
@@ -19,6 +21,7 @@
 
 #include <miniupnpc/miniupnpc.h>
 #include <miniupnpc/upnpcommands.h>
+#include <miniupnpc/upnpdev.h>
 
 #include <System/Context.h>
 #include <System/ContextGroupTimeout.h>
@@ -38,12 +41,21 @@
 #include <CryptoNoteConfig.h>
 #include "ConnectionContext.h"
 #include "LevinProtocol.h"
+#include "NetworkAddressTypes.h"
 #include "P2pProtocolDefinitions.h"
+#include "net/Socks5.h"
+#include "net/TorControl.h"
 
 #include "Serialization/BinaryInputStreamSerializer.h"
 #include "Serialization/BinaryOutputStreamSerializer.h"
 #include "Serialization/SerializationOverloads.h"
 #include "Common/StringTools.h"
+#include "CryptoNoteCore/CommitmentIndex.h"
+#include "CryptoNoteCore/Core.h"
+
+#ifdef ENABLE_FUEGOMESH
+#include "FuegoMeshtastic/MeshtasticIntegration.h"
+#endif
 
 using namespace Common;
 using namespace Logging;
@@ -61,11 +73,11 @@ size_t get_random_index_with_fixed_probability(size_t max_index) {
   return (x * x * x ) / (max_index * max_index); //parabola \/
 }
 
-void addPortMapping(Logging::LoggerRef& logger, uint32_t port) {
+void addPortMapping(const Logging::LoggerRef& logger, uint32_t port, uint32_t externalPort) {
   // Add UPnP port mapping
-  logger(INFO) <<  "Attempting to add IGD port mapping.";
+  logger(INFO) << "Attempting to add IGD port mapping.";
   int result;
-  UPNPDev* deviceList = upnpDiscover(1000, NULL, NULL, 0, 0, &result);
+  UPNPDev *deviceList = upnpDiscover(1000, nullptr, nullptr, 0, 0, 2, &result);
   UPNPUrls urls;
   IGDdatas igdData;
   char lanAddress[64];
@@ -222,7 +234,15 @@ namespace CryptoNote
     // intervals
     // m_peer_handshake_idle_maker_interval(CryptoNote::P2P_DEFAULT_HANDSHAKE_INTERVAL),
     m_connections_maker_interval(1),
-    m_peerlist_store_interval(60 * 30, false) {
+    m_peerlist_store_interval(60 * 30, false)
+#ifdef ENABLE_FUEGOMESH
+    , m_meshtasticEnabled(false)
+    , m_meshtasticFallbackMode(false)
+#endif
+  {
+#ifdef ENABLE_FUEGOMESH
+    m_meshtastic = std::unique_ptr<MeshtasticIntegration>(new MeshtasticIntegration());
+#endif
   }
 
   void NodeServer::serialize(ISerializer& s) {
@@ -244,10 +264,42 @@ namespace CryptoNote
     break;                                                                                                                                       \
   }
 
+  // Commands allowed on anonymity zones (I2P/Tor).
+  // Debug commands and swap gossip are filtered to prevent leaking clearnet IPs
+  // or wallet public keys over privacy networks.
+  static bool is_allowed_on_anonymity_zone(uint32_t command) {
+    switch (command) {
+      // P2P core
+      case COMMAND_HANDSHAKE::ID:
+      case COMMAND_TIMED_SYNC::ID:
+      // Block chain protocol (needed for sync)
+      case BC_COMMANDS_POOL_BASE + 1:  // NOTIFY_NEW_BLOCK
+      case BC_COMMANDS_POOL_BASE + 2:  // NOTIFY_NEW_TRANSACTIONS
+      case BC_COMMANDS_POOL_BASE + 3:  // NOTIFY_REQUEST_GET_OBJECTS
+      case BC_COMMANDS_POOL_BASE + 4:  // NOTIFY_RESPONSE_GET_OBJECTS
+      case BC_COMMANDS_POOL_BASE + 6:  // NOTIFY_REQUEST_CHAIN
+      case BC_COMMANDS_POOL_BASE + 7:  // NOTIFY_RESPONSE_CHAIN_ENTRY
+      case BC_COMMANDS_POOL_BASE + 8:  // NOTIFY_NEW_LITE_BLOCK
+      case BC_COMMANDS_POOL_BASE + 9:  // NOTIFY_MISSING_TXS
+      case BC_COMMANDS_POOL_BASE + 10: // NOTIFY_REQUEST_TX_POOL
+        return true;
+      default:
+        return false;
+    }
+  }
+
   int NodeServer::handleCommand(const LevinProtocol::Command &cmd, BinaryArray &out, P2pConnectionContext &ctx, bool &handled)
   {
     int ret = 0;
     handled = true;
+
+    // Filter commands on anonymity zones to prevent IP leaks
+    if (is_anonymity_zone(ctx.m_zone) && !is_allowed_on_anonymity_zone(cmd.command)) {
+      logger(Logging::DEBUGGING) << ctx << "Filtered command " << cmd.command
+        << " on " << zone_to_string(ctx.m_zone) << " zone (privacy protection)";
+      handled = false;
+      return 0;
+    }
 
     if (cmd.isResponse && cmd.command == COMMAND_TIMED_SYNC::ID)
     {
@@ -264,6 +316,7 @@ namespace CryptoNote
       INVOKE_HANDLER(COMMAND_HANDSHAKE, &NodeServer::handle_handshake)
       INVOKE_HANDLER(COMMAND_TIMED_SYNC, &NodeServer::handle_timed_sync)
       INVOKE_HANDLER(COMMAND_PING, &NodeServer::handle_ping)
+
 #ifdef ALLOW_DEBUG_COMMANDS
       INVOKE_HANDLER(COMMAND_REQUEST_STAT_INFO, &NodeServer::handle_get_stat_info)
       INVOKE_HANDLER(COMMAND_REQUEST_NETWORK_STATE, &NodeServer::handle_get_network_state)
@@ -353,6 +406,14 @@ namespace CryptoNote
   }
 
   //-----------------------------------------------------------------------------------
+  void NodeServer::externalRelayNotifyToStem(int command, const BinaryArray &data_buff, const net_connection_id *excludeConnection)
+  {
+    m_dispatcher.remoteSpawn([this, command, data_buff, excludeConnection] {
+      relay_notify_stem(command, data_buff, excludeConnection);
+    });
+  }
+
+  //-----------------------------------------------------------------------------------
   void NodeServer::externalRelayNotifyToList(int command, const BinaryArray &data_buff, const std::list<boost::uuids::uuid> relayList)
   {
     m_dispatcher.remoteSpawn([this, command, data_buff, relayList] {
@@ -386,7 +447,7 @@ namespace CryptoNote
 	return true;
   }
   //-----------------------------------------------------------------------------------
-  
+
   bool NodeServer::unblock_host(const uint32_t address_ip)
   {
     auto i = m_blocked_hosts.find(address_ip);
@@ -460,7 +521,7 @@ namespace CryptoNote
 	  std::unique_lock<std::mutex> lock(mutex);
 	  return block_host(address_ip, seconds);
   }
-  
+
   bool NodeServer::unban_host(const uint32_t address_ip)
   {
 	  std::unique_lock<std::mutex> lock(mutex);
@@ -536,7 +597,182 @@ namespace CryptoNote
     std::copy(seedNodes.begin(), seedNodes.end(), std::back_inserter(m_seed_nodes));
 
     m_hide_my_port = config.getHideMyPort();
+
+#ifdef ENABLE_FUEGOMESH
+    if (config.getMeshtasticEnabled()) {
+      if (!initMeshtastic(config.getMeshtasticConfig())) {
+        logger(WARNING) << "Failed to initialize meshtastic, continuing without it";
+      }
+    }
+#endif
+
+    // Initialize network zones based on config
+    if (!init_network_zones(config)) {
+      logger(ERROR, BRIGHT_RED) << "Failed to initialize network zones";
+      return false;
+    }
+
     return true;
+  }
+
+  NodeServer::network_zone_data& NodeServer::get_zone(NetworkZone zone) {
+    auto it = m_network_zones.find(zone);
+    if (it == m_network_zones.end()) {
+      // Return or create default public zone
+      return m_network_zones[NetworkZone::Public];
+    }
+    return it->second;
+  }
+
+  bool NodeServer::init_network_zones(const NetNodeConfig& config) {
+    // Public zone is always present
+    auto& pub = m_network_zones[NetworkZone::Public];
+    pub.enabled = true;
+
+    // I2P zone
+    if (config.getI2PEnabled()) {
+      auto& i2p = m_network_zones[NetworkZone::I2P];
+      i2p.enabled = true;
+      i2p.proxy_host = config.getI2PSocksHost();
+      i2p.proxy_port = config.getI2PSocksPort();
+      logger(INFO, BRIGHT_CYAN) << "I2P zone enabled, SOCKS5 proxy: "
+        << i2p.proxy_host << ":" << i2p.proxy_port;
+
+      if (!i2p.peerlist.init(false)) {
+        logger(ERROR) << "Failed to init I2P peerlist";
+        return false;
+      }
+    }
+
+    // Tor zone
+    if (config.getTorEnabled()) {
+      auto& tor = m_network_zones[NetworkZone::Tor];
+      tor.enabled = true;
+      tor.proxy_host = config.getTorSocksHost();
+      tor.proxy_port = config.getTorSocksPort();
+      logger(INFO, BRIGHT_CYAN) << "Tor zone enabled, SOCKS5 proxy: "
+        << tor.proxy_host << ":" << tor.proxy_port;
+
+      if (!tor.peerlist.init(false)) {
+        logger(ERROR) << "Failed to init Tor peerlist";
+        return false;
+      }
+    }
+
+    // Disable public zone if restrict-to-privacy-net is set
+    if (config.getRestrictToPrivacyNet()) {
+      if (!config.getI2PEnabled() && !config.getTorEnabled()) {
+        logger(ERROR, BRIGHT_RED) << "--p2p-restrict-to-privacy-net requires --p2p-use-i2p or --p2p-use-tor";
+        return false;
+      }
+      m_network_zones[NetworkZone::Public].enabled = false;
+      logger(INFO, BRIGHT_YELLOW) << "Clearnet P2P disabled — operating in privacy-only mode";
+    }
+
+    // Register anonymous inbound addresses
+    for (const auto& ai : config.getAnonymousInbound()) {
+      auto it = m_network_zones.find(ai.zone);
+      if (it == m_network_zones.end() || !it->second.enabled) {
+        logger(ERROR) << "Anonymous inbound address for disabled zone: " << zone_to_string(ai.zone);
+        return false;
+      }
+
+      if (ai.zone == NetworkZone::I2P) {
+        i2p_address addr;
+        if (!i2p_address::from_string(ai.our_address, addr)) {
+          logger(ERROR) << "Invalid I2P anonymous inbound address: " << ai.our_address;
+          return false;
+        }
+        it->second.our_address = network_address(addr);
+      } else if (ai.zone == NetworkZone::Tor) {
+        tor_address addr;
+        if (!tor_address::from_string(ai.our_address, addr)) {
+          logger(ERROR) << "Invalid Tor anonymous inbound address: " << ai.our_address;
+          return false;
+        }
+        it->second.our_address = network_address(addr);
+      }
+
+      if (ai.max_connections > 0) {
+        it->second.max_in_peers = ai.max_connections;
+      }
+
+      logger(INFO) << "Anonymous inbound for " << zone_to_string(ai.zone)
+        << ": " << ai.our_address << " bind=" << ai.bind_address;
+    }
+
+    return true;
+  }
+
+  bool NodeServer::try_to_connect_via_proxy(const network_address& na, NetworkZone zone,
+    bool just_take_peerlist, uint64_t last_seen_stamp, PeerType peer_type)
+  {
+    auto zone_it = m_network_zones.find(zone);
+    if (zone_it == m_network_zones.end() || !zone_it->second.enabled) {
+      logger(WARNING) << "Attempted connection via disabled zone: " << zone_to_string(zone);
+      return false;
+    }
+
+    const auto& zd = zone_it->second;
+    std::string target_host = na.str();
+    uint16_t target_port = static_cast<uint16_t>(na.port());
+
+    // Strip the port from the target_host if it's an I2P address (port is implicit)
+    if (na.is_i2p()) {
+      target_host = na.as_i2p().host_str();
+      target_port = i2p_address::DEFAULT_PORT;
+    } else if (na.is_tor()) {
+      target_host = na.as_tor().host_str();
+    }
+
+    logger(DEBUGGING) << "Connecting via " << zone_to_string(zone) << " proxy to " << target_host << ":" << target_port;
+
+    try {
+      auto result = net::socks5_connect_to(m_dispatcher, zd.proxy_host, zd.proxy_port, target_host, target_port);
+
+      if (result.error != net::Socks5Error::Success) {
+        logger(DEBUGGING) << "SOCKS5 connect to " << target_host << " failed: " << net::socks5_error_string(result.error);
+        return false;
+      }
+
+      P2pConnectionContext ctx(m_dispatcher, logger.getLogger(), std::move(result.connection));
+      ctx.m_connection_id = boost::uuids::random_generator()();
+      ctx.m_remote_ip = 0;       // unknown for privacy connections
+      ctx.m_remote_port = 0;
+      ctx.m_is_income = false;
+      ctx.m_started = time(nullptr);
+      ctx.m_zone = zone;
+      ctx.m_remote_address = na;
+
+      CryptoNote::LevinProtocol proto(ctx.connection);
+      if (!handshake(proto, ctx, just_take_peerlist)) {
+        logger(DEBUGGING) << "Handshake failed with " << zone_to_string(zone) << " peer " << na;
+        return false;
+      }
+
+      if (!just_take_peerlist) {
+        boost::uuids::uuid connectionId = ctx.m_connection_id;
+        m_connections.emplace(connectionId, std::move(ctx));
+        auto connIt = m_connections.find(connectionId);
+        if (connIt != m_connections.end()) {
+          connIt->second.context = nullptr;
+          m_workingContextGroup.spawn([this, connectionId] {
+            auto it = m_connections.find(connectionId);
+            if (it != m_connections.end()) {
+              connectionHandler(connectionId, it->second);
+            }
+          });
+        }
+      }
+
+      return true;
+    } catch (System::InterruptedException&) {
+      logger(DEBUGGING) << "Connection to " << na << " via " << zone_to_string(zone) << " interrupted";
+      return false;
+    } catch (const std::exception& e) {
+      logger(DEBUGGING) << "Exception connecting to " << na << " via " << zone_to_string(zone) << ": " << e.what();
+      return false;
+    }
   }
 
   bool NodeServer::append_net_address(std::vector<NetworkAddress>& nodes, const std::string& addr) {
@@ -569,9 +805,21 @@ namespace CryptoNote
   //-----------------------------------------------------------------------------------
 
   bool NodeServer::init(const NetNodeConfig& config) {
+    bool any_privacy_zone = config.getI2PEnabled() || config.getTorEnabled();
+
+    // DNS seed resolution: skip when privacy zones are active to prevent DNS leaks.
+    // DNS queries could reveal that this node is running Fuego to the DNS server.
     if (!config.getTestnet()) {
-      for (auto seed : CryptoNote::SEED_NODES) {
-        append_net_address(m_seed_nodes, seed);
+      if (any_privacy_zone && config.getRestrictToPrivacyNet()) {
+        logger(INFO, BRIGHT_YELLOW) << "DNS seed resolution disabled — privacy-only mode active";
+      } else {
+        for (auto seed : CryptoNote::SEED_NODES) {
+          append_net_address(m_seed_nodes, seed);
+        }
+        if (any_privacy_zone) {
+          logger(WARNING, BRIGHT_YELLOW) << "DNS seed resolution is active alongside privacy zones. "
+            << "Use --p2p-restrict-to-privacy-net to disable DNS seeds and prevent potential DNS leaks.";
+        }
       }
     } else {
       m_network_id.data[0] += 1;
@@ -604,23 +852,57 @@ namespace CryptoNote
     m_ip_address = 0;
     m_last_stat_request_time = 0;
 
-    //configure self
-    // m_net_server.get_config_object().m_pcommands_handler = this;
-    // m_net_server.get_config_object().m_invoke_timeout = CryptoNote::P2P_DEFAULT_INVOKE_TIMEOUT;
-
-    //try to bind
-    logger(INFO) <<  "Binding on " << m_bind_ip << ":" << m_port;
-    m_listeningPort = Common::fromString<uint16_t>(m_port);
-
-    m_listener = System::TcpListener(m_dispatcher, System::Ipv4Address(m_bind_ip), static_cast<uint16_t>(m_listeningPort));
-
-    logger(INFO, BRIGHT_GREEN) << "Net service bound on " << m_bind_ip << ":" << m_listeningPort;
-
-    if(m_external_port) {
-      logger(INFO) <<  "External port defined as " << m_external_port;
+    // Bind warning: if privacy zones active with wildcard bind, warn about IP leak risk
+    if (any_privacy_zone && m_bind_ip == "0.0.0.0") {
+      logger(WARNING, BRIGHT_RED) << "WARNING: --p2p-bind-ip is 0.0.0.0 while I2P/Tor is active. "
+        << "Clearnet peers can connect and correlate your IP with your privacy zone activity. "
+        << "Consider --p2p-bind-ip 127.0.0.1 or --p2p-restrict-to-privacy-net.";
     }
 
-    addPortMapping(logger, m_listeningPort);
+    // Skip clearnet listener entirely in privacy-only mode
+    if (config.getRestrictToPrivacyNet()) {
+      logger(INFO, BRIGHT_YELLOW) << "Clearnet P2P listener disabled — privacy-only mode";
+      m_listeningPort = 0;
+    } else {
+      //try to bind
+      logger(INFO) <<  "Binding on " << m_bind_ip << ":" << m_port;
+      m_listeningPort = Common::fromString<uint16_t>(m_port);
+
+      m_listener = System::TcpListener(m_dispatcher, System::Ipv4Address(m_bind_ip), static_cast<uint16_t>(m_listeningPort));
+
+      logger(INFO, BRIGHT_GREEN) << "Net service bound on " << m_bind_ip << ":" << m_listeningPort;
+
+      if(m_external_port) {
+        logger(INFO) <<  "External port defined as " << m_external_port;
+      }
+
+      // UPnP: skip when any privacy zone is active — UPnP broadcasts reveal real IP
+      if (any_privacy_zone) {
+        logger(INFO, BRIGHT_YELLOW) << "UPnP port mapping disabled — privacy zone active";
+      } else {
+        addPortMapping(logger, m_listeningPort, m_external_port);
+      }
+    }
+
+    if (config.getTorEnabled() && m_listeningPort > 0) {
+      m_hiddenService = std::unique_ptr<CryptoNote::net::TorHiddenService>(
+        new CryptoNote::net::TorHiddenService(m_dispatcher));
+      std::string target = "127.0.0.1:" + std::to_string(m_listeningPort);
+      if (m_hiddenService->create_hidden_service(m_listeningPort, target)) {
+        std::string onion = m_hiddenService->get_onion_host();
+        logger(INFO, BRIGHT_GREEN) << "Tor hidden service published: "
+          << onion << ":" << m_listeningPort;
+        auto& tor_zone = m_network_zones[NetworkZone::Tor];
+        tor_address addr;
+        if (tor_address::from_string(onion, addr, m_listeningPort)) {
+          tor_zone.our_address = network_address(addr);
+        }
+      } else {
+        logger(WARNING, BRIGHT_YELLOW)
+          << "Tor hidden service creation failed. Is Tor running with ControlPort 9051?";
+        m_hiddenService.reset();
+      }
+    }
 
     return true;
   }
@@ -658,6 +940,13 @@ namespace CryptoNote
   //-----------------------------------------------------------------------------------
 
   bool NodeServer::deinit()  {
+#ifdef ENABLE_FUEGOMESH
+    shutdownMeshtastic();
+#endif
+    if (m_hiddenService) {
+      m_hiddenService->shutdown();
+      m_hiddenService.reset();
+    }
     return store_config();
   }
 
@@ -732,7 +1021,7 @@ namespace CryptoNote
     {
       logger(Logging::WARNING) << context
                                << "COMMAND_HANDSHAKE Warning, your software may be out of date. Please visit: "
-                               << "https://github.com/fandomgold/fango/releases for the latest version.";
+                               << "https://github.com/usexfg/fuego-suite/releases for the latest version.";
     }
 
     if (!handle_remote_peerlist(rsp.local_peerlist, rsp.node_data.local_time, context)) {
@@ -751,7 +1040,16 @@ namespace CryptoNote
     }
 
     context.peerId = rsp.node_data.peer_id;
-    m_peerlist.set_peer_just_seen(rsp.node_data.peer_id, context.m_remote_ip, context.m_remote_port);
+
+    // Update peer seen time in the correct zone's peerlist
+    if (is_anonymity_zone(context.m_zone)) {
+      auto zone_it = m_network_zones.find(context.m_zone);
+      if (zone_it != m_network_zones.end() && zone_it->second.enabled) {
+        zone_it->second.peerlist.set_peer_just_seen(rsp.node_data.peer_id, context.m_remote_ip, context.m_remote_port);
+      }
+    } else {
+      m_peerlist.set_peer_just_seen(rsp.node_data.peer_id, context.m_remote_ip, context.m_remote_port);
+    }
 
     if (rsp.node_data.peer_id == m_config.m_peer_id)  {
       logger(Logging::TRACE) << context << "Connection to self detected, dropping connection";
@@ -875,7 +1173,8 @@ namespace CryptoNote
       ctx.m_remote_port = na.port;
       ctx.m_is_income = false;
       ctx.m_started = time(nullptr);
-
+      ctx.m_zone = NetworkZone::Public;
+      ctx.m_remote_address = network_address(na);
 
       try {
         System::Context<bool> handshakeContext(m_dispatcher, [&] {
@@ -1034,6 +1333,12 @@ namespace CryptoNote
 
         if(++try_count > m_seed_nodes.size()) {
           logger(ERROR) << "Failed to connect to any of seed peers, continuing without seeds";
+#ifdef ENABLE_FUEGOMESH
+          if (m_meshtasticEnabled && !m_meshtasticFallbackMode) {
+            logger(INFO) << "Attempting meshtastic fallback connection...";
+            m_meshtasticFallbackMode = true;
+          }
+#endif
           break;
         }
         if(++current_index >= m_seed_nodes.size())
@@ -1071,6 +1376,20 @@ namespace CryptoNote
       }
     }
 
+#ifdef ENABLE_FUEGOMESH
+    if (m_meshtasticEnabled) {
+      conn_count = get_outgoing_connections_count();
+      if (conn_count < m_config.m_net_config.connections_count && m_meshtasticFallbackMode) {
+        logger(INFO) << "TCP connections low (" << conn_count << "/" << m_config.m_net_config.connections_count 
+                     << "), attempting meshtastic relay sync";
+        if (m_meshtastic->isRunning()) {
+          auto peers = m_meshtastic->getPeers();
+          logger(INFO) << "Meshtastic network has " << peers.size() << " peers available";
+        }
+      }
+    }
+#endif
+
     return true;
   }
   //-----------------------------------------------------------------------------------
@@ -1083,7 +1402,7 @@ namespace CryptoNote
     {
       m_peerlist.get_and_empty_anchor_peerlist(apl);
     }
-  
+
       size_t conn_count = get_outgoing_connections_count();
       //add new connections from white peers
       while (conn_count < expected_connections)
@@ -1165,6 +1484,20 @@ namespace CryptoNote
       return false;
     logger(Logging::TRACE) << context << "REMOTE PEERLIST: TIME_DELTA: " << delta << ", remote peerlist size=" << peerlist_.size();
     logger(Logging::TRACE) << context << "REMOTE PEERLIST: " <<  print_peerlist_to_string(peerlist_);
+
+    // Zone-segregated peer merge: peers from a connection go ONLY into that zone's peerlist.
+    // A peer discovered over I2P is stored ONLY in the I2P zone. Never leaked to clearnet.
+    NetworkZone connection_zone = context.m_zone;
+    if (is_anonymity_zone(connection_zone)) {
+      auto zone_it = m_network_zones.find(connection_zone);
+      if (zone_it != m_network_zones.end() && zone_it->second.enabled) {
+        return zone_it->second.peerlist.merge_peerlist(peerlist_);
+      }
+      logger(Logging::DEBUGGING) << "Dropping remote peerlist for disabled zone: " << zone_to_string(connection_zone);
+      return true; // not an error, just ignore
+    }
+
+    // Public zone uses the original peerlist
     return m_peerlist.merge_peerlist(peerlist_);
   }
   //-----------------------------------------------------------------------------------
@@ -1276,6 +1609,77 @@ namespace CryptoNote
         conn.pushMessage(P2pMessage(P2pMessage::NOTIFY, command, data_buff));
       }
     });
+  }
+
+  void NodeServer::relay_notify_stem(int command, const BinaryArray& data_buff, const net_connection_id* excludeConnection) {
+    net_connection_id excludeId = excludeConnection ? *excludeConnection : boost::value_initialized<net_connection_id>();
+
+    time_t now = time(nullptr);
+
+    if (m_dandelionEpochEnd == 0 || now >= m_dandelionEpochEnd) {
+      m_dandelionEpochEnd = now + parameters::DANDELION_EPOCH_SECONDS;
+
+      std::vector<boost::uuids::uuid> outbound_peers;
+      forEachConnection([&](P2pConnectionContext& conn) {
+        if (!conn.m_is_income && conn.peerId && conn.m_connection_id != excludeId &&
+            (conn.m_state == CryptoNoteConnectionContext::state_normal ||
+             conn.m_state == CryptoNoteConnectionContext::state_synchronizing)) {
+          outbound_peers.push_back(conn.m_connection_id);
+        }
+      });
+      if (outbound_peers.empty()) {
+        forEachConnection([&](P2pConnectionContext& conn) {
+          if (conn.peerId && conn.m_connection_id != excludeId &&
+              (conn.m_state == CryptoNoteConnectionContext::state_normal ||
+               conn.m_state == CryptoNoteConnectionContext::state_synchronizing)) {
+            outbound_peers.push_back(conn.m_connection_id);
+          }
+        });
+      }
+      if (!outbound_peers.empty()) {
+        m_dandelionStemSuccessor = outbound_peers[Crypto::rand<size_t>() % outbound_peers.size()];
+      } else {
+        m_dandelionStemSuccessor = boost::value_initialized<boost::uuids::uuid>();
+      }
+    }
+
+    if (!m_dandelionStemSuccessor.is_nil()) {
+      auto it = m_connections.find(m_dandelionStemSuccessor);
+      if (it != m_connections.end() && it->second.m_connection_id != excludeId &&
+          (it->second.m_state == CryptoNoteConnectionContext::state_normal ||
+           it->second.m_state == CryptoNoteConnectionContext::state_synchronizing)) {
+        it->second.pushMessage(P2pMessage(P2pMessage::NOTIFY, command, data_buff));
+        return;
+      }
+      m_dandelionStemSuccessor = boost::value_initialized<boost::uuids::uuid>();
+    }
+
+    std::vector<boost::uuids::uuid> outbound_peers;
+    forEachConnection([&](P2pConnectionContext& conn) {
+      if (!conn.m_is_income && conn.peerId && conn.m_connection_id != excludeId &&
+          (conn.m_state == CryptoNoteConnectionContext::state_normal ||
+           conn.m_state == CryptoNoteConnectionContext::state_synchronizing)) {
+        outbound_peers.push_back(conn.m_connection_id);
+      }
+    });
+
+    if (outbound_peers.empty()) {
+      forEachConnection([&](P2pConnectionContext& conn) {
+        if (conn.peerId && conn.m_connection_id != excludeId &&
+            (conn.m_state == CryptoNoteConnectionContext::state_normal ||
+             conn.m_state == CryptoNoteConnectionContext::state_synchronizing)) {
+          outbound_peers.push_back(conn.m_connection_id);
+        }
+      });
+    }
+
+    if (!outbound_peers.empty()) {
+      size_t index = Crypto::rand<size_t>() % outbound_peers.size();
+      auto it = m_connections.find(outbound_peers[index]);
+      if (it != m_connections.end()) {
+        it->second.pushMessage(P2pMessage(P2pMessage::NOTIFY, command, data_buff));
+      }
+    }
   }
 
   //-----------------------------------------------------------------------------------
@@ -1435,6 +1839,9 @@ namespace CryptoNote
   }
   //-----------------------------------------------------------------------------------
 
+
+  //-----------------------------------------------------------------------------------
+
   bool NodeServer::log_peerlist()
   {
     std::list<PeerlistEntry> pl_wite;
@@ -1444,7 +1851,7 @@ namespace CryptoNote
     return true;
   }
   //-----------------------------------------------------------------------------------
-  
+
   bool NodeServer::log_banlist()
   {
 	  logger(INFO) << "Banned nodes:" << ENDL << print_banlist_to_string(m_blocked_hosts) << ENDL;
@@ -1538,10 +1945,29 @@ namespace CryptoNote
         ctx.m_connection_id = boost::uuids::random_generator()();
         ctx.m_is_income = true;
         ctx.m_started = time(nullptr);
+        ctx.m_zone = NetworkZone::Public; // clearnet accept loop — inbound I2P/Tor handled by SAM/HS listener
 
         auto addressAndPort = ctx.connection.getPeerAddressAndPort();
         ctx.m_remote_ip = hostToNetwork(addressAndPort.first.getValue());
         ctx.m_remote_port = addressAndPort.second;
+        ctx.m_remote_address = network_address(ipv4_network_address(ctx.m_remote_ip, ctx.m_remote_port));
+
+        // Rate-limit inbound connections: max per IP, max total
+        {
+          uint32_t hostIp = networkToHost(ctx.m_remote_ip);
+          std::lock_guard<std::mutex> lock(mutex);
+          auto it = m_inboundCounts.find(hostIp);
+          size_t sameIpCount = (it != m_inboundCounts.end()) ? it->second : 0;
+          if (sameIpCount >= P2P_MAX_INBOUND_PER_IP ||
+              m_totalInboundCount >= P2P_MAX_INCOMING_CONNECTIONS) {
+            logger(DEBUGGING) << "Rejecting inbound connection from "
+                              << Common::ipAddressToString(ctx.m_remote_ip)
+                              << " (per-IP: " << sameIpCount << ", total inbound: " << m_totalInboundCount << ")";
+            continue;
+          }
+          m_inboundCounts[hostIp] = sameIpCount + 1;
+          m_totalInboundCount++;
+        }
 
         auto iter = m_connections.emplace(ctx.m_connection_id, std::move(ctx)).first;
         const boost::uuids::uuid& connectionId = iter->first;
@@ -1666,6 +2092,17 @@ namespace CryptoNote
       writeContext.wait();
 
       on_connection_close(ctx);
+      bool wasInbound = ctx.m_is_income;
+      uint32_t hostIp = 0;
+      if (wasInbound) {
+        hostIp = networkToHost(ctx.m_remote_ip);
+        std::lock_guard<std::mutex> lock(mutex);
+        auto it = m_inboundCounts.find(hostIp);
+        if (it != m_inboundCounts.end() && it->second > 0) {
+          if (--it->second == 0) m_inboundCounts.erase(it);
+        }
+        if (m_totalInboundCount > 0) m_totalInboundCount--;
+      }
       m_connections.erase(connectionId);
     });
 
@@ -1728,4 +2165,93 @@ namespace CryptoNote
       logger(DEBUGGING) << "interrupt() throws unknown exception";
     }
   }
+
+#ifdef ENABLE_FUEGOMESH
+  bool NodeServer::initMeshtastic(const MeshtasticConfig& config) {
+    if (!config.enabled) {
+      logger(INFO) << "Meshtastic integration disabled";
+      return false;
+    }
+
+    if (!m_meshtastic->initialize(config)) {
+      logger(ERROR) << "Failed to initialize meshtastic: " << m_meshtastic->getErrorMessage();
+      return false;
+    }
+
+    if (!m_meshtastic->start()) {
+      logger(ERROR) << "Failed to start meshtastic: " << m_meshtastic->getErrorMessage();
+      return false;
+    }
+
+    m_meshtasticEnabled = true;
+    logger(INFO) << "Meshtastic integration started with node: " << m_meshtastic->getLocalNodeName() 
+                 << " (0x" << std::hex << m_meshtastic->getLocalNodeNum() << std::dec << ")";
+    
+    m_meshtastic->setMessageCallback([this](const MeshtasticMessage& msg) {
+      logger(DEBUGGING) << "Received meshtastic packet from 0x" << std::hex << msg.from << std::dec;
+    });
+
+    return true;
+  }
+
+  void NodeServer::shutdownMeshtastic() {
+    if (m_meshtastic) {
+      m_meshtastic->stop();
+      m_meshtasticEnabled = false;
+      m_meshtasticFallbackMode = false;
+      logger(INFO) << "Meshtastic integration stopped";
+    }
+  }
+
+  bool NodeServer::connectViaMeshtastic(const NetworkAddress& na) {
+    if (!m_meshtasticEnabled || !m_meshtastic->isRunning()) {
+      return false;
+    }
+
+    logger(DEBUGGING) << "Attempting meshtastic connection to " << Common::ipAddressToString(na.ip) << ":" << na.port;
+    return false;
+  }
+
+  void NodeServer::relayBlockViaMeshtastic(const BinaryArray& blockData) {
+    if (m_meshtasticEnabled && m_meshtastic->isRunning()) {
+      logger(DEBUGGING) << "Relaying block via meshtastic (" << blockData.size() << " bytes)";
+      m_meshtastic->broadcastBlock(blockData);
+    }
+  }
+
+  void NodeServer::relayTransactionViaMeshtastic(const BinaryArray& txData) {
+    if (m_meshtasticEnabled && m_meshtastic->isRunning()) {
+      logger(DEBUGGING) << "Relaying transaction via meshtastic (" << txData.size() << " bytes)";
+      m_meshtastic->relayTransaction(txData);
+    }
+  }
+
+  bool NodeServer::relayTransactionViaMesh(const BinaryArray& txBlob) {
+#ifdef ENABLE_FUEGOMESH
+    if (m_meshtasticEnabled && m_meshtastic->isRunning()) {
+      std::vector<uint8_t> data(txBlob.begin(), txBlob.end());
+      return m_meshtastic->relayTransaction(data);
+    }
+#endif
+    return false;
+  }
+
+  bool NodeServer::relayBlockSignalViaMesh(uint32_t height, const Crypto::Hash& blockHash) {
+#ifdef ENABLE_FUEGOMESH
+    if (m_meshtasticEnabled && m_meshtastic->isRunning()) {
+      return m_meshtastic->sendBlockSignal(height, blockHash.data, sizeof(blockHash.data));
+    }
+#endif
+    return false;
+  }
+
+  bool NodeServer::isMeshtasticEnabled() const {
+#ifdef ENABLE_FUEGOMESH
+    return m_meshtasticEnabled && m_meshtastic && m_meshtastic->isRunning();
+#else
+    return false;
+#endif
+  }
+#endif
+
   }

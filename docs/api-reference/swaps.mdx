@@ -1,0 +1,30 @@
+---
+title: "Swaps API"
+description: "swapXFG / SwapDaemon RPC patterns for atomic swaps."
+keywords: ["swaps", "swapXFG", "atomic", "API", "fuego"]
+---
+
+## Fee reminder
+
+Completed XFG-side swaps: **1%**, split **80% CD / 20% Bonus Vault** from v11 (pre-v11 blocks replay 69/11/20).
+
+## Common endpoints (shapes)
+
+Exact paths depend on whether you hit wallet RPC, node, or SwapDaemon. Typical operations:
+
+| Operation | Purpose |
+|-----------|---------|
+| `listswaps` | Active / recent swaps |
+| `getswapstatus` | One swap by id |
+| `refund_swap` | Refund after timelock |
+| initiate / offer APIs | Start a swap (daemon-specific) |
+
+Example status:
+
+```bash
+curl -X POST http://127.0.0.1:28080/getswapstatus \
+  -H 'Content-Type: application/json' \
+  -d '{"swap_id": "YOUR_SWAP_ID"}'
+```
+
+See [How swaps work](/features/atomic-swaps/how-swaps-work) for state machine context.

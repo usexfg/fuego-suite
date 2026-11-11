@@ -1,31 +1,38 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
+// Copyright (c) 2017-2026 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it
+// Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You can redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "TransactionExtra.h"
-#include "crypto/chacha8.h"
+#include "CryptoNoteTools.h"
+#include "../CryptoNoteConfig.h"
+#include "../crypto/hash.h"
+#include "../crypto/crypto.h"
+#include "../crypto/chacha8.h"
 #include "Common/int-util.h"
 #include "Common/MemoryInputStream.h"
 #include "Common/StreamTools.h"
 #include "Common/StringTools.h"
 #include "Common/Varint.h"
-#include "CryptoNoteTools.h"
 #include "Serialization/BinaryOutputStreamSerializer.h"
 #include "Serialization/BinaryInputStreamSerializer.h"
+#include "crypto/keccak.h"
+#include <memory>
+#include <sstream>
+#include <chrono>
+#include <iostream>
 
 using namespace Crypto;
 using namespace Common;
@@ -59,7 +66,7 @@ namespace CryptoNote
           {
             if (read<uint8_t>(iss) != 0)
             {
-              return false; // all bytes should be zero
+              return false;
             }
           }
 
@@ -119,10 +126,374 @@ namespace CryptoNote
           transactionExtraFields.push_back(ttl);
           break;
         }
+
+        case TX_EXTRA_ADDITIONAL_PUBKEYS:
+        {
+          uint8_t count = read<uint8_t>(iss);
+          if (count == 0) {
+            return false;
+          }
+          TransactionExtraAdditionalPubKeys addl;
+          addl.keys.resize(count);
+          for (uint8_t i = 0; i < count; ++i) {
+            read(iss, addl.keys[i].data, sizeof(addl.keys[i].data));
+          }
+          transactionExtraFields.push_back(addl);
+          break;
         }
-      }
-    }
-    catch (std::exception &)
+
+        case TX_EXTRA_JANUS_BASE:
+        {
+          TransactionExtraJanusBase janus;
+          read(iss, janus.publicKey.data, sizeof(janus.publicKey.data));
+          transactionExtraFields.push_back(janus);
+          break;
+        }
+
+        case TX_EXTRA_MINER_BASKET_VOTE:
+        {
+          TransactionExtraMinerBasketVote vote{};
+          ar(vote, "vote");
+          transactionExtraFields.push_back(vote);
+          break;
+        }
+
+        case TX_EXTRA_MINER_PARADIO_VOTE:
+        {
+          TransactionExtraMinerParadioVote vote;
+          ar(vote, "vote");
+          transactionExtraFields.push_back(vote);
+          break;
+        }
+
+        case TX_EXTRA_HEAT_COMMITMENT:
+        {
+          TransactionExtraHeatCommitment heatCommitment;
+          read(iss, heatCommitment.commitment.data, sizeof(heatCommitment.commitment.data));
+          heatCommitment.amount = 0;
+          for (int i = 0; i < 8; ++i) {
+            heatCommitment.amount |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+          }
+          uint8_t heatMetaSize = read<uint8_t>(iss);
+          if (heatMetaSize > 0) {
+            heatCommitment.metadata.resize(heatMetaSize);
+            read(iss, heatCommitment.metadata.data(), heatMetaSize);
+          }
+          transactionExtraFields.push_back(heatCommitment);
+          break;
+        }
+        // REMOVED: COLD migration parsing
+        // case TX_EXTRA_COLD_MIGRATION:
+        // {
+        //   TransactionExtraColdMigration migration;
+        //   read(iss, migration.originalTxHash.data, sizeof(migration.originalTxHash.data));
+        //   read(iss, migration.commitment.data, sizeof(migration.commitment.data));
+        //   migration.amount = 0;
+        //   for (int i = 0; i < 8; ++i) {
+        //     migration.amount |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+        //   }
+        //   migration.term = 0;
+        //   for (int i = 0; i < 4; ++i) {
+        //     migration.term |= static_cast<uint32_t>(read<uint8_t>(iss)) << (i * 8);
+        //   }
+        //   migration.targetChainCode = read<uint8_t>(iss);
+        //   transactionExtraFields.push_back(migration);
+        //   break;
+        // }
+
+        // REMOVED: 0xCB legacy bond parsing (no bond claims exist)
+        // REMOVED: 0xCC legacy bond claim parsing (no bond claims exist)
+
+        case TX_EXTRA_CD_BONUS_CLAIM:
+        {
+          TransactionExtraCdBonusClaim claim;
+          claim.inputIndex = read<uint8_t>(iss);
+          claim.claimedBonus = 0;
+          for (int i = 0; i < 8; ++i) {
+            claim.claimedBonus |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+          }
+          transactionExtraFields.push_back(claim);
+          break;
+        }
+
+        case TX_EXTRA_BURN_RECEIPT:
+        {
+          TransactionExtraBurnReceipt burnReceipt;
+          if (getBurnReceiptFromExtra(transactionExtra, burnReceipt)) {
+            transactionExtraFields.push_back(burnReceipt);
+          } else {
+            return false;
+          }
+          break;
+        }
+
+         case TX_EXTRA_DEPOSIT_SECRET:
+         {
+           uint8_t dsLen = read<uint8_t>(iss);
+           if (dsLen > 0) {
+             for (uint8_t i = 0; i < dsLen; ++i)
+               read<uint8_t>(iss);
+           }
+           break;
+         }
+
+         case TX_EXTRA_AMM_SWAP:
+         {
+           TransactionExtraAmmSwap swap;
+           swap.direction = read<uint8_t>(iss);
+           swap.inputAmount = 0;
+           for (int i = 0; i < 8; ++i)
+             swap.inputAmount |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+           swap.minOutput = 0;
+           for (int i = 0; i < 8; ++i)
+             swap.minOutput |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+           transactionExtraFields.push_back(swap);
+           break;
+         }
+
+         case TX_EXTRA_AMM_ADD_LIQ:
+         {
+           TransactionExtraAmmAddLiquidity add;
+           add.amountXfg = 0;
+           for (int i = 0; i < 8; ++i)
+             add.amountXfg |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+           add.amountHeat = 0;
+           for (int i = 0; i < 8; ++i)
+             add.amountHeat |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+           transactionExtraFields.push_back(add);
+           break;
+         }
+
+          case TX_EXTRA_AMM_REM_LIQ:
+          {
+            TransactionExtraAmmRemoveLiquidity rem;
+            rem.lpSharesBurned = 0;
+            for (int i = 0; i < 8; ++i)
+              rem.lpSharesBurned |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+            rem.minAmountXfg = 0;
+            for (int i = 0; i < 8; ++i)
+              rem.minAmountXfg |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+            rem.minAmountHeat = 0;
+            for (int i = 0; i < 8; ++i)
+              rem.minAmountHeat |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+            transactionExtraFields.push_back(rem);
+            break;
+          }
+
+          case TX_EXTRA_AMM_COMPOUND:
+          {
+            TransactionExtraAmmCompound compound;
+            transactionExtraFields.push_back(compound);
+            break;
+          }
+
+          case TX_EXTRA_AMM_CLAIM:
+          {
+            TransactionExtraAmmClaim claim;
+            claim.lpShares = 0;
+            for (int i = 0; i < 8; ++i)
+              claim.lpShares |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+            claim.minAmountXfg = 0;
+            for (int i = 0; i < 8; ++i)
+              claim.minAmountXfg |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+            claim.minAmountHeat = 0;
+            for (int i = 0; i < 8; ++i)
+              claim.minAmountHeat |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+            transactionExtraFields.push_back(claim);
+             break;
+           }
+
+           case TX_EXTRA_HEAT_MINT_AUTH:
+           {
+             TransactionExtraHeatMintAuth auth;
+             auth.xfgBurned = 0;
+             for (int i = 0; i < 8; ++i)
+               auth.xfgBurned |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+             auth.heatMinted = 0;
+             for (int i = 0; i < 8; ++i)
+               auth.heatMinted |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+             transactionExtraFields.push_back(auth);
+              break;
+            }
+
+            case TX_EXTRA_HEAT_SEND_AUTH:
+            {
+              TransactionExtraHeatSendAuth auth;
+              auth.heatAmount = 0;
+              for (int i = 0; i < 8; ++i)
+                auth.heatAmount |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+              transactionExtraFields.push_back(auth);
+              break;
+            }
+
+            case TX_EXTRA_AMM_SWAP_AUTH:
+           {
+             TransactionExtraAmmSwapAuth auth;
+             auth.direction = read<uint8_t>(iss);
+             auth.inputAmount = 0;
+             for (int i = 0; i < 8; ++i)
+               auth.inputAmount |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+             auth.outputAmount = 0;
+             for (int i = 0; i < 8; ++i)
+               auth.outputAmount |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+             auth.minOutput = 0;
+             for (int i = 0; i < 8; ++i)
+               auth.minOutput |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+             transactionExtraFields.push_back(auth);
+             break;
+           }
+
+           case TX_EXTRA_AMM_LP_ADD_AUTH:
+           {
+             TransactionExtraLpAddAuth auth;
+             auth.amountXfg = 0;
+             for (int i = 0; i < 8; ++i)
+               auth.amountXfg |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+             auth.amountHeat = 0;
+             for (int i = 0; i < 8; ++i)
+               auth.amountHeat |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+             auth.lpShares = 0;
+             for (int i = 0; i < 8; ++i)
+               auth.lpShares |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+             transactionExtraFields.push_back(auth);
+             break;
+           }
+
+            case TX_EXTRA_AMM_LP_REM_AUTH:
+            {
+              TransactionExtraLpRemoveAuth auth;
+              auth.lpSharesBurned = 0;
+              for (int i = 0; i < 8; ++i)
+                auth.lpSharesBurned |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+              auth.minAmountXfg = 0;
+              for (int i = 0; i < 8; ++i)
+                auth.minAmountXfg |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+              auth.minAmountHeat = 0;
+              for (int i = 0; i < 8; ++i)
+                auth.minAmountHeat |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+              transactionExtraFields.push_back(auth);
+              break;
+            }
+
+            case TX_EXTRA_ORDER_PLACE:
+            {
+              TransactionExtraOrderPlace order;
+              order.side = read<uint8_t>(iss);
+              order.price = 0;
+              for (int i = 0; i < 8; ++i)
+                order.price |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+              order.expiration = 0;
+              for (int i = 0; i < 4; ++i)
+                order.expiration |= static_cast<uint32_t>(read<uint8_t>(iss)) << (i * 8);
+              transactionExtraFields.push_back(order);
+              break;
+            }
+
+            case TX_EXTRA_ORDER_CANCEL:
+            {
+              TransactionExtraOrderCancel cancel;
+              read(iss, cancel.orderId.data, sizeof(cancel.orderId.data));
+              transactionExtraFields.push_back(cancel);
+              break;
+            }
+
+            case TX_EXTRA_MARKET_BUY_AUTH:
+            {
+              TransactionExtraMarketBuyAuth auth;
+              auth.xfgWanted = 0;
+              for (int i = 0; i < 8; ++i)
+                auth.xfgWanted |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+              auth.maxHeatCost = 0;
+              for (int i = 0; i < 8; ++i)
+                auth.maxHeatCost |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+              transactionExtraFields.push_back(auth);
+              break;
+            }
+
+            case TX_EXTRA_MARKET_SELL_AUTH:
+            {
+              TransactionExtraMarketSellAuth auth;
+              readVarint(iss, auth.xfgToSell);
+              readVarint(iss, auth.minHeatReceive);
+              transactionExtraFields.push_back(auth);
+              break;
+            }
+
+            case TX_EXTRA_LIMIT_DEPOSIT:
+            {
+              TransactionExtraLimitDeposit deposit;
+              deposit.side = read<uint8_t>(iss);
+              readVarint(iss, deposit.amount);
+              readVarint(iss, deposit.targetPrice);
+              readVarint(iss, deposit.expiration);
+              read(iss, deposit.orderId.data, sizeof(deposit.orderId.data));
+              read(iss, deposit.addressHash.data, sizeof(deposit.addressHash.data));
+              transactionExtraFields.push_back(deposit);
+              break;
+            }
+
+            case TX_EXTRA_LIMIT_WITHDRAW:
+            {
+              TransactionExtraLimitWithdraw withdraw;
+              read(iss, withdraw.orderId.data, sizeof(withdraw.orderId.data));
+              read(iss, withdraw.spendPublicKey.data, sizeof(withdraw.spendPublicKey.data));
+              read(iss, withdraw.viewPublicKey.data, sizeof(withdraw.viewPublicKey.data));
+              read(iss, withdraw.outputsHash.data, sizeof(withdraw.outputsHash.data));
+              read(iss, withdraw.proof.data, sizeof(withdraw.proof.data));
+              transactionExtraFields.push_back(withdraw);
+              break;
+            }
+
+            case TX_EXTRA_TREASURY_FUND:
+            {
+              TransactionExtraTreasuryFund fund;
+              fund.asset = read<uint8_t>(iss);
+              fund.amount = 0;
+              for (int i = 0; i < 8; ++i)
+                fund.amount |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+              transactionExtraFields.push_back(fund);
+              break;
+            }
+
+            case TX_EXTRA_ALIAS:
+           {
+             TransactionExtraAliasRegistration alias;
+             if (getAliasFromExtra(transactionExtra, alias)) {
+               transactionExtraFields.push_back(alias);
+             } else {
+               return false;
+             }
+             break;
+           }
+
+            case TX_EXTRA_ALIAS_RELEASE:
+           {
+             TransactionExtraAliasRelease release;
+             if (getAliasReleaseFromExtra(transactionExtra, release)) {
+               transactionExtraFields.push_back(release);
+             } else {
+               return false;
+             }
+             break;
+           }
+
+           case TX_EXTRA_ALIAS_TRANSFER:
+           {
+             TransactionExtraAliasTransfer transfer;
+             if (getAliasTransferFromExtra(transactionExtra, transfer)) {
+               transactionExtraFields.push_back(transfer);
+             } else {
+               return false;
+             }
+             break;
+           }
+
+           default:
+             return false;
+       }
+     }
+     }
+     catch (std::exception &)
     {
       return false;
     }
@@ -152,6 +523,16 @@ namespace CryptoNote
       return addTransactionPublicKeyToExtra(extra, t.publicKey);
     }
 
+    bool operator()(const TransactionExtraAdditionalPubKeys &t)
+    {
+      return addAdditionalPubKeysToExtra(extra, t.keys);
+    }
+
+    bool operator()(const TransactionExtraJanusBase &t)
+    {
+      return addJanusBaseToExtra(extra, t.publicKey);
+    }
+
     bool operator()(const TransactionExtraNonce &t)
     {
       return addExtraNonceToTransactionExtra(extra, t.nonce);
@@ -172,6 +553,162 @@ namespace CryptoNote
       appendTTLToExtra(extra, t.ttl);
       return true;
     }
+
+    bool operator()(const TransactionExtraMinerBasketVote &t)
+    {
+      return addMinerBasketVoteToExtra(extra, t);
+    }
+
+    bool operator()(const TransactionExtraMinerParadioVote &t)
+    {
+      return addMinerParadioVoteToExtra(extra, t);
+    }
+
+    bool operator()(const TransactionExtraHeatCommitment &t)
+    {
+      return addHeatCommitmentToExtra(extra, t);
+    }
+
+    bool operator()(const TransactionExtraBurnReceipt &t)
+    {
+      return addBurnReceiptToExtra(extra, t);
+    }
+    
+    // REMOVED: COLD SimpleCD writer
+    // bool operator()(const TransactionExtraSimpleCD &t)
+    // {
+    //   extra.push_back(TX_EXTRA_SIMPLE_CD);
+    //   extra.insert(extra.end(), t.commitment.data, t.commitment.data + sizeof(t.commitment.data));
+    //   uint64_t amount = t.amount;
+    //   for (int i = 0; i < 8; ++i) { extra.push_back(static_cast<uint8_t>(amount & 0xFF)); amount >>= 8; }
+    //   uint32_t term = t.term;
+    //   for (int i = 0; i < 4; ++i) { extra.push_back(static_cast<uint8_t>(term & 0xFF)); term >>= 8; }
+    //   return true;
+    // }
+
+    // REMOVED: COLD commitment writer
+    // bool operator()(const TransactionExtraColdCommitment &t)
+    // {
+    //   return addColdCommitmentToExtra(extra, t);
+    // }
+
+    // REMOVED: COLD deposit receipt — TransactionExtraDepositReceipt removed from variant
+
+    bool operator()(const TransactionExtraAliasRegistration &t)
+    {
+      return addAliasToExtra(extra, t);
+    }
+
+    bool operator()(const TransactionExtraAliasRelease &t)
+    {
+      return addAliasReleaseToExtra(extra, t);
+    }
+
+    bool operator()(const TransactionExtraAliasTransfer &t)
+    {
+      return addAliasTransferToExtra(extra, t);
+    }
+
+    // REMOVED: COLD migration writer
+    // bool operator()(const TransactionExtraColdMigration &t)
+    // {
+    //   return addColdMigrationToExtra(extra, t);
+    // }
+
+    // REMOVED: 0xCB/0xCC legacy bond writers (types removed from variant)
+
+    bool operator()(const TransactionExtraCdBonusClaim &t)
+    {
+      return addCdBonusClaimToExtra(extra, t);
+    }
+
+    bool operator()(const TransactionExtraAmmSwap &t)
+    {
+      return addAmmSwapToExtra(extra, t.direction, t.inputAmount, t.minOutput);
+    }
+
+    bool operator()(const TransactionExtraAmmAddLiquidity &t)
+    {
+      return addAmmAddLiquidityToExtra(extra, t.amountXfg, t.amountHeat);
+    }
+
+    bool operator()(const TransactionExtraAmmRemoveLiquidity &t)
+    {
+      return addAmmRemoveLiquidityToExtra(extra, t.lpSharesBurned, t.minAmountXfg, t.minAmountHeat);
+    }
+
+    bool operator()(const TransactionExtraAmmCompound &t)
+    {
+      return addAmmCompoundToExtra(extra);
+    }
+
+    bool operator()(const TransactionExtraAmmClaim &t)
+    {
+      return addAmmClaimToExtra(extra, t.lpShares, t.minAmountXfg, t.minAmountHeat);
+    }
+
+    bool operator()(const TransactionExtraHeatMintAuth &t)
+    {
+      return addHeatMintAuthToExtra(extra, t.xfgBurned, t.heatMinted);
+    }
+
+    bool operator()(const TransactionExtraHeatSendAuth &t)
+    {
+      return addHeatSendAuthToExtra(extra, t.heatAmount);
+    }
+
+    bool operator()(const TransactionExtraAmmSwapAuth &t)
+    {
+      return addAmmSwapAuthToExtra(extra, t.direction, t.inputAmount, t.outputAmount,
+                                   t.minOutput);
+    }
+
+    bool operator()(const TransactionExtraLpAddAuth &t)
+    {
+      return addLpAddAuthToExtra(extra, t.amountXfg, t.amountHeat, t.lpShares);
+    }
+
+    bool operator()(const TransactionExtraLpRemoveAuth &t)
+    {
+      return addLpRemoveAuthToExtra(extra, t.lpSharesBurned, t.minAmountXfg, t.minAmountHeat);
+    }
+
+    bool operator()(const TransactionExtraOrderPlace &t)
+    {
+      return addOrderPlaceToExtra(extra, t.side, t.price, t.expiration);
+    }
+
+    bool operator()(const TransactionExtraOrderCancel &t)
+    {
+      return addOrderCancelToExtra(extra, t.orderId);
+    }
+
+    bool operator()(const TransactionExtraMarketBuyAuth &t)
+    {
+      return addMarketBuyAuthToExtra(extra, t.xfgWanted, t.maxHeatCost);
+    }
+
+    bool operator()(const TransactionExtraMarketSellAuth &t)
+    {
+      return addMarketSellAuthToExtra(extra, t.xfgToSell, t.minHeatReceive);
+    }
+
+    bool operator()(const TransactionExtraLimitDeposit &t)
+    {
+      return addLimitDepositToExtra(extra, t.side, t.amount, t.targetPrice, t.expiration, t.orderId, t.addressHash);
+    }
+
+    bool operator()(const TransactionExtraLimitWithdraw &t)
+    {
+      return addLimitWithdrawToExtra(extra, t.orderId, t.spendPublicKey, t.viewPublicKey,
+                                     t.outputsHash, t.proof);
+    }
+
+    bool operator()(const TransactionExtraTreasuryFund &t)
+    {
+      return addTreasuryFundToExtra(extra, t.asset, t.amount);
+    }
+
   };
 
   bool writeTransactionExtra(std::vector<uint8_t> &tx_extra, const std::vector<TransactionExtraField> &tx_extra_fields)
@@ -209,6 +746,54 @@ namespace CryptoNote
     return true;
   }
 
+  bool addAdditionalPubKeysToExtra(std::vector<uint8_t> &tx_extra, const std::vector<PublicKey> &keys)
+  {
+    if (keys.empty() || keys.size() > 255) {
+      return false;
+    }
+    tx_extra.push_back(TX_EXTRA_ADDITIONAL_PUBKEYS);
+    tx_extra.push_back(static_cast<uint8_t>(keys.size()));
+    for (const auto &key : keys) {
+      tx_extra.insert(tx_extra.end(), key.data, key.data + sizeof(key.data));
+    }
+    return true;
+  }
+
+  bool getAdditionalPubKeysFromExtra(const std::vector<uint8_t> &tx_extra, std::vector<PublicKey> &keys)
+  {
+    std::vector<TransactionExtraField> fields;
+    if (!parseTransactionExtra(tx_extra, fields)) {
+      return false;
+    }
+    TransactionExtraAdditionalPubKeys addl;
+    if (!findTransactionExtraFieldByType(fields, addl)) {
+      return false;
+    }
+    keys = addl.keys;
+    return true;
+  }
+
+  bool addJanusBaseToExtra(std::vector<uint8_t> &tx_extra, const PublicKey &janusBase)
+  {
+    tx_extra.push_back(TX_EXTRA_JANUS_BASE);
+    tx_extra.insert(tx_extra.end(), janusBase.data, janusBase.data + sizeof(janusBase.data));
+    return true;
+  }
+
+  bool getJanusBaseFromExtra(const std::vector<uint8_t> &tx_extra, PublicKey &janusBase)
+  {
+    std::vector<TransactionExtraField> fields;
+    if (!parseTransactionExtra(tx_extra, fields)) {
+      return false;
+    }
+    TransactionExtraJanusBase janus;
+    if (!findTransactionExtraFieldByType(fields, janus)) {
+      return false;
+    }
+    janusBase = janus.publicKey;
+    return true;
+  }
+
   bool addExtraNonceToTransactionExtra(std::vector<uint8_t> &tx_extra, const BinaryArray &extra_nonce)
   {
     if (extra_nonce.size() > TX_EXTRA_NONCE_MAX_COUNT)
@@ -218,12 +803,9 @@ namespace CryptoNote
 
     size_t start_pos = tx_extra.size();
     tx_extra.resize(tx_extra.size() + 2 + extra_nonce.size());
-    //write tag
     tx_extra[start_pos] = TX_EXTRA_NONCE;
-    //write len
     ++start_pos;
     tx_extra[start_pos] = static_cast<uint8_t>(extra_nonce.size());
-    //write data
     ++start_pos;
     memcpy(&tx_extra[start_pos], extra_nonce.data(), extra_nonce.size());
     return true;
@@ -263,6 +845,40 @@ namespace CryptoNote
     std::copy(reinterpret_cast<const uint8_t *>(blob.data()), reinterpret_cast<const uint8_t *>(blob.data() + blob.size()), std::back_inserter(tx_extra));
 
     return true;
+  }
+
+  bool addMinerBasketVoteToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraMinerBasketVote& vote)
+  {
+    BinaryArray blob;
+    if (!toBinaryArray(vote, blob)) return false;
+    tx_extra.reserve(tx_extra.size() + 1 + blob.size());
+    tx_extra.push_back(TX_EXTRA_MINER_BASKET_VOTE);
+    std::copy(blob.begin(), blob.end(), std::back_inserter(tx_extra));
+    return true;
+  }
+
+  bool getMinerBasketVoteFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraMinerBasketVote& vote)
+  {
+    std::vector<TransactionExtraField> tx_extra_fields;
+    parseTransactionExtra(tx_extra, tx_extra_fields);
+    return findTransactionExtraFieldByType(tx_extra_fields, vote);
+  }
+
+  bool addMinerParadioVoteToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraMinerParadioVote& vote)
+  {
+    BinaryArray blob;
+    if (!toBinaryArray(vote, blob)) return false;
+    tx_extra.reserve(tx_extra.size() + 1 + blob.size());
+    tx_extra.push_back(TX_EXTRA_MINER_PARADIO_VOTE);
+    std::copy(blob.begin(), blob.end(), std::back_inserter(tx_extra));
+    return true;
+  }
+
+  bool getMinerParadioVoteFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraMinerParadioVote& vote)
+  {
+    std::vector<TransactionExtraField> tx_extra_fields;
+    parseTransactionExtra(tx_extra, tx_extra_fields);
+    return findTransactionExtraFieldByType(tx_extra_fields, vote);
   }
 
   std::vector<std::string> get_messages_from_extra(const std::vector<uint8_t> &extra, const Crypto::PublicKey &txkey, const Crypto::SecretKey *recepient_secret_key)
@@ -448,6 +1064,1115 @@ namespace CryptoNote
   {
     s(data, "data");
     return true;
+  }
+
+  bool TransactionExtraMinerBasketVote::serialize(ISerializer &s)
+  {
+    s(present_mask, "present_mask");
+    // Only the fields flagged in present_mask are serialized on the wire.
+    // This lets a miner contribute a partial basket (e.g. only power + gas)
+    // without polluting the epoch median for commodities they didn't price.
+    // Phase 1: all votes land permanently on-chain for future back-pay audit.
+    if (present_mask & (1 << 0)) s(power, "power");
+    if (present_mask & (1 << 1)) s(milk,  "milk");
+    if (present_mask & (1 << 2)) s(bread, "bread");
+    if (present_mask & (1 << 3)) s(eggs,  "eggs");
+    if (present_mask & (1 << 4)) s(gas,   "gas");
+    if (present_mask & (1 << 5)) s(rice,  "rice");
+    return true;
+  }
+
+  bool TransactionExtraMinerParadioVote::serialize(ISerializer &s)
+  {
+    // Future DIGM Paradio feature: miner embeds a song title (UTF-8, max 128 B)
+    // as a block-level vote for which track plays next on the Paradio stream.
+    // Kept separate from the basket vote (tag 0x39) so each is independently
+    // optional and consensus for either subsystem is independent.
+    s(song_title, "song_title");
+    return true;
+  }
+
+  bool TransactionExtraHeatCommitment::serialize(ISerializer &s)
+  {
+    s(commitment, "commitment");
+    s(amount, "amount");
+    s(metadata, "metadata");
+    return true;
+  }
+
+  // REMOVED: 0x07 YIELD serialize (struct removed; never in variant)
+
+  // REMOVED: COLD commitment serialize
+  // bool TransactionExtraColdCommitment::serialize(ISerializer &s)
+  // {
+  //   s(commitment, "commitment");
+  //   s(amount, "amount");
+  //   s(term, "term");
+  //   s(claimChainCode, "claimChainCode");
+  //   s(metadata, "metadata");
+  //   s(gift_secret, "gift_secret");
+  //   return true;
+  // }
+
+  // REMOVED: COLD migration serialize
+  // bool TransactionExtraColdMigration::serialize(ISerializer &s)
+  // {
+  //   s(originalTxHash, "originalTxHash");
+  //   s(commitment, "commitment");
+  //   s(amount, "amount");
+  //   s(term, "term");
+  //   s(targetChainId, "targetChainId");
+  //   return true;
+  // }
+
+  // REMOVED: 0xCB/0xCC legacy bond serialize (structs removed)
+
+  bool TransactionExtraAliasRegistration::serialize(ISerializer &s)
+  {
+    s(version, "version");
+    s(alias, "alias");
+    s(aliasHash, "aliasHash");
+    s(addressHash, "addressHash");
+    s(ownerAddress, "ownerAddress");
+    s(aliasType, "aliasType");
+    s(networkId, "networkId");
+    return true;
+  }
+
+  bool TransactionExtraAliasRegistration::isValid() const
+  {
+    return !alias.empty() && !ownerAddress.empty();
+  }
+
+  bool TransactionExtraAliasRelease::serialize(ISerializer &s)
+  {
+    s(version, "version");
+    s(alias, "alias");
+    s(aliasHash, "aliasHash");
+    s(ownerAddress, "ownerAddress");
+    s(proof, "proof");
+    return true;
+  }
+
+  bool TransactionExtraAliasRelease::isValid() const
+  {
+    return !alias.empty() && !ownerAddress.empty();
+  }
+
+  bool TransactionExtraAliasTransfer::serialize(ISerializer &s)
+  {
+    s(version, "version");
+    s(alias, "alias");
+    s(aliasHash, "aliasHash");
+    s(oldOwnerAddress, "oldOwnerAddress");
+    s(newOwnerAddress, "newOwnerAddress");
+    s(newAddressHash, "newAddressHash");
+    s(proof, "proof");
+    return true;
+  }
+
+  bool TransactionExtraAliasTransfer::isValid() const
+  {
+    return !alias.empty() && !oldOwnerAddress.empty() && !newOwnerAddress.empty();
+  }
+
+  bool addHeatCommitmentToExtra(std::vector<uint8_t> &tx_extra, const TransactionExtraHeatCommitment &commitment)
+  {
+    tx_extra.push_back(TX_EXTRA_HEAT_COMMITMENT);
+    tx_extra.insert(tx_extra.end(), commitment.commitment.data, commitment.commitment.data + sizeof(commitment.commitment.data));
+    uint64_t amount = commitment.amount;
+    for (int i = 0; i < 8; ++i) {
+      tx_extra.push_back(static_cast<uint8_t>(amount & 0xFF));
+      amount >>= 8;
+    }
+    size_t rawSize = commitment.metadata.size();
+    uint8_t metadataSize = static_cast<uint8_t>(rawSize > 128 ? 128 : rawSize);
+    tx_extra.push_back(metadataSize);
+    if (metadataSize > 0) {
+      tx_extra.insert(tx_extra.end(), commitment.metadata.begin(), commitment.metadata.begin() + metadataSize);
+    }
+    return true;
+  }
+
+  // REMOVED: createTxExtraWithHeatCommitment — no new 0x08 extras.
+  // addHeatCommitmentToExtra stays for variant round-trip of historical data.
+
+  bool getHeatCommitmentFromExtra(const std::vector<uint8_t> &tx_extra, TransactionExtraHeatCommitment &commitment)
+  {
+    size_t pos = 0;
+    bool found = false;
+    while (pos < tx_extra.size()) {
+      if (tx_extra[pos] == TX_EXTRA_HEAT_COMMITMENT) {
+        found = true;
+        pos++;
+        break;
+      }
+      pos++;
+    }
+    if (!found) return false;
+    if (pos + 32 > tx_extra.size()) return false;
+    std::memcpy(commitment.commitment.data, &tx_extra[pos], 32);
+    pos += 32;
+    if (pos + 8 > tx_extra.size()) return false;
+    commitment.amount = 0;
+    for (int i = 0; i < 8; ++i) {
+      commitment.amount |= static_cast<uint64_t>(tx_extra[pos + i]) << (i * 8);
+    }
+    pos += 8;
+    if (pos >= tx_extra.size()) return false;
+    uint8_t metadataSize = tx_extra[pos];
+    pos += 1;
+    if (metadataSize > 0) {
+      if (pos + metadataSize > tx_extra.size()) return false;
+      commitment.metadata.assign(tx_extra.begin() + pos, tx_extra.begin() + pos + metadataSize);
+    } else {
+      commitment.metadata.clear();
+    }
+    return true;
+  }
+
+  // REMOVED: 0x07 YIELD writers/readers (addYieldCommitmentToExtra,
+  // createTxExtraWithYieldCommitment, getYieldCommitmentFromExtra) — never
+  // parsed, never consensus. See TransactionExtra.h.
+
+  // REMOVED: 0x08 creation helpers (computeCommitment, computeHeatCommitment,
+  // buildHeatExtra) — no new 0x08 extras. Historical parsing stays above.
+
+  // REMOVED: COLD commitment computation
+  // Crypto::Hash computeColdCommitment(const std::array<uint8_t, 32> &secret,
+  //                                    uint64_t amount_atomic,
+  //                                    const Crypto::Hash &tx_prefix_hash,
+  //                                    uint32_t network_id,
+  //                                    uint32_t target_chain_id,
+  //                                    uint32_t commitment_version,
+  //                                    uint32_t term)
+  // {
+  //   return computeCommitment(secret, amount_atomic, tx_prefix_hash, network_id, target_chain_id, commitment_version, term);
+  // }
+
+  // REMOVED: COLD extra builder
+  // bool buildColdExtra(const std::array<uint8_t, 32> &secret,
+  //                     uint64_t amount_atomic,
+  //                     const Crypto::Hash &tx_prefix_hash,
+  //                     uint32_t network_id,
+  //                     uint32_t target_chain_id,
+  //                     uint32_t commitment_version,
+  //                     uint32_t term,
+  //                     uint8_t claimChainCode,
+  //                     const std::vector<uint8_t> &metadata,
+  //                     const std::vector<uint8_t> &gift_secret,
+  //                     std::vector<uint8_t> &extra)
+  // {
+  //   Crypto::Hash commitment = computeColdCommitment(secret, amount_atomic, tx_prefix_hash, network_id, target_chain_id, commitment_version, term);
+  //   const Crypto::Hash zero = {};
+  //   if (!memcmp(&commitment, &zero, sizeof(zero))) {
+  //     return false;
+  //   }
+  //   return CryptoNote::createTxExtraWithColdCommitment(commitment, amount_atomic, term, claimChainCode, metadata, gift_secret, extra);
+  // }
+
+  // REMOVED: COLD commitment serialization
+  // bool addColdCommitmentToExtra(std::vector<uint8_t> &tx_extra, const CryptoNote::TransactionExtraColdCommitment &commitment)
+  // {
+  //   tx_extra.push_back(TX_EXTRA_COLD_COMMITMENT);
+  //   tx_extra.insert(tx_extra.end(), commitment.commitment.data, commitment.commitment.data + 32);
+  //   uint64_t amount = commitment.amount;
+  //   for (int i = 0; i < 8; ++i) {
+  //     tx_extra.push_back(static_cast<uint8_t>(amount & 0xFF));
+  //     amount >>= 8;
+  //   }
+  //   uint32_t term = commitment.term;
+  //   for (int i = 0; i < 4; ++i) {
+  //     tx_extra.push_back(static_cast<uint8_t>(term & 0xFF));
+  //     term >>= 8;
+  //   }
+  //   tx_extra.push_back(commitment.claimChainCode);
+  //   uint8_t metadataSize = static_cast<uint8_t>(commitment.metadata.size());
+  //   tx_extra.push_back(metadataSize);
+  //   if (metadataSize > 0) {
+  //     tx_extra.insert(tx_extra.end(), commitment.metadata.begin(), commitment.metadata.end());
+  //   }
+  //   uint8_t giftSecretSize = static_cast<uint8_t>(commitment.gift_secret.size());
+  //   tx_extra.push_back(giftSecretSize);
+  //   if (giftSecretSize > 0) {
+  //     tx_extra.insert(tx_extra.end(), commitment.gift_secret.begin(), commitment.gift_secret.end());
+  //   }
+  //   return true;
+  // }
+
+  // REMOVED: COLD migration serialization
+  // bool addColdMigrationToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraColdMigration& migration) {
+  //   tx_extra.push_back(TX_EXTRA_COLD_MIGRATION);
+  //   tx_extra.insert(tx_extra.end(), migration.originalTxHash.data, migration.originalTxHash.data + 32);
+  //   tx_extra.insert(tx_extra.end(), migration.commitment.data, migration.commitment.data + 32);
+  //   uint64_t amount = migration.amount;
+  //   for (int i = 0; i < 8; ++i) {
+  //     tx_extra.push_back(static_cast<uint8_t>(amount & 0xFF));
+  //     amount >>= 8;
+  //   }
+  //   uint32_t term = migration.term;
+  //   for (int i = 0; i < 4; ++i) {
+  //     tx_extra.push_back(static_cast<uint8_t>(term & 0xFF));
+  //     term >>= 8;
+  //   }
+  //   tx_extra.push_back(migration.targetChainId);
+  //   return true;
+  // }
+
+  // REMOVED: 0xCB/0xCC legacy bond extras (add/getLegacyBond(Claim)ToExtra —
+  // no bond claims exist; tags no longer parse)
+
+  bool addCdBonusClaimToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraCdBonusClaim& claim) {
+    tx_extra.push_back(TX_EXTRA_CD_BONUS_CLAIM);
+    tx_extra.push_back(claim.inputIndex);
+    uint64_t v = claim.claimedBonus;
+    for (int i = 0; i < 8; ++i) {
+      tx_extra.push_back(static_cast<uint8_t>(v & 0xFF));
+      v >>= 8;
+    }
+    return true;
+  }
+
+  bool getCdBonusClaimFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraCdBonusClaim& claim) {
+    if (tx_extra.empty() || tx_extra[0] != TX_EXTRA_CD_BONUS_CLAIM) {
+      return false;
+    }
+    size_t pos = 1;
+    if (pos + 9 > tx_extra.size()) return false;
+    claim.inputIndex = tx_extra[pos++];
+    claim.claimedBonus = 0;
+    for (int i = 0; i < 8; ++i, ++pos) {
+      claim.claimedBonus |= static_cast<uint64_t>(tx_extra[pos]) << (i * 8);
+    }
+    return true;
+  }
+
+  bool getCdBonusClaims(const Transaction& tx,
+                        std::map<uint32_t, uint64_t>& bonusByInput,
+                        uint64_t& totalBonus) {
+    bonusByInput.clear();
+    totalBonus = 0;
+    std::vector<TransactionExtraField> txExtraFields;
+    if (!parseTransactionExtra(tx.extra, txExtraFields)) {
+      return false;
+    }
+    for (const auto& field : txExtraFields) {
+      if (field.type() != typeid(TransactionExtraCdBonusClaim)) continue;
+      const auto& bc = boost::get<TransactionExtraCdBonusClaim>(field);
+      if (bc.inputIndex >= tx.inputs.size()) return false;
+      if (tx.inputs[bc.inputIndex].type() != typeid(TransactionInputCommitmentSpend)) return false;
+      if (bonusByInput.count(bc.inputIndex)) return false;
+      if (bc.claimedBonus == 0) continue;
+      // The declared bonus must fit inside the interest this input actually
+      // claims. Without this, connect-time computes
+      //   baseClaim = claimedInterest > bonus ? claimedInterest - bonus : 0
+      // so an over-declared bonus floors the base to zero and the full declared
+      // amount is still debited from BONUS_VAULT — letting a single matured CD
+      // claiming 1 atomic unit of interest burn the entire vault. The interest
+      // itself is already capped by checkCommitmentSpendInput, so bounding the
+      // bonus by it transitively bounds the bonus by the real entitlement.
+      const auto& csIn = boost::get<TransactionInputCommitmentSpend>(tx.inputs[bc.inputIndex]);
+      if (bc.claimedBonus > csIn.claimedInterest) return false;
+      if (bc.claimedBonus > UINT64_MAX - totalBonus) return false;
+      bonusByInput[bc.inputIndex] = bc.claimedBonus;
+      totalBonus += bc.claimedBonus;
+    }
+    return true;
+  }
+
+  // REMOVED: COLD commitment creation
+  // bool createTxExtraWithColdCommitment(const Crypto::Hash &commitment, uint64_t amount, uint32_t term,
+  //                                     uint8_t claimChainCode, const std::vector<uint8_t> &metadata,
+  //                                     const std::vector<uint8_t> &gift_secret, std::vector<uint8_t> &extra)
+  // {
+  //   TransactionExtraColdCommitment coldCommitment;
+  //   coldCommitment.commitment = commitment;
+  //   coldCommitment.amount = amount;
+  //   coldCommitment.term = term;
+  //   coldCommitment.claimChainCode = claimChainCode;
+  //   coldCommitment.metadata = metadata;
+  //   coldCommitment.gift_secret = gift_secret;
+  //   return addColdCommitmentToExtra(extra, coldCommitment);
+  // }
+
+  // REMOVED: COLD commitment reader
+  // bool getColdCommitmentFromExtra(const std::vector<uint8_t> &tx_extra, TransactionExtraColdCommitment &commitment)
+  // {
+  //   if (tx_extra.empty() || tx_extra[0] != TX_EXTRA_COLD_COMMITMENT) {
+  //     return false;
+  //   }
+  //   size_t pos = 1;
+  //   if (pos + 32 > tx_extra.size()) return false;
+  //   std::memcpy(commitment.commitment.data, &tx_extra[pos], 32);
+  //   pos += 32;
+  //   if (pos + 8 > tx_extra.size()) return false;
+  //   commitment.amount = 0;
+  //   for (int i = 0; i < 8; ++i) {
+  //     commitment.amount |= static_cast<uint64_t>(tx_extra[pos + i]) << (i * 8);
+  //   }
+  //   pos += 8;
+  //   if (pos + 4 > tx_extra.size()) return false;
+  //   commitment.term = 0;
+  //   for (int i = 0; i < 4; ++i) {
+  //     commitment.term |= static_cast<uint32_t>(tx_extra[pos + i]) << (i * 8);
+  //   }
+  //   pos += 4;
+  //   if (pos >= tx_extra.size()) return false;
+  //   commitment.claimChainCode = tx_extra[pos];
+  //   pos++;
+  //   if (pos >= tx_extra.size()) return false;
+  //   uint8_t metadataSize = tx_extra[pos];
+  //   pos++;
+  //   if (pos + metadataSize > tx_extra.size()) return false;
+  //   if (metadataSize > 0) {
+  //     commitment.metadata.assign(&tx_extra[pos], &tx_extra[pos] + metadataSize);
+  //     pos += metadataSize;
+  //   } else {
+  //     commitment.metadata.clear();
+  //   }
+  //   if (pos >= tx_extra.size()) return false;
+  //   uint8_t giftSecretSize = tx_extra[pos];
+  //   pos++;
+  //   if (pos + giftSecretSize > tx_extra.size()) return false;
+  //   if (giftSecretSize > 0) {
+  //     commitment.gift_secret.assign(&tx_extra[pos], &tx_extra[pos] + giftSecretSize);
+  //   } else {
+  //     commitment.gift_secret.clear();
+  //   }
+  //   return true;
+  // }
+
+  bool getBurnReceiptFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraBurnReceipt& burnReceipt) {
+    if (tx_extra.empty() || tx_extra[0] != TX_EXTRA_BURN_RECEIPT) {
+      return false;
+    }
+
+    size_t pos = 1;
+
+    // Parse proof_pubkey (32 bytes)
+    if (pos + sizeof(Crypto::PublicKey) > tx_extra.size()) return false;
+    std::memcpy(&burnReceipt.proof_pubkey, &tx_extra[pos], sizeof(Crypto::PublicKey));
+    pos += sizeof(Crypto::PublicKey);
+
+    // Parse tx_hash (variable length)
+    if (pos >= tx_extra.size()) return false;
+    uint32_t hashLen = 0;
+    for (int i = 0; i < 4 && pos < tx_extra.size(); ++i, ++pos) {
+      hashLen |= static_cast<uint32_t>(tx_extra[pos]) << (i * 8);
+    }
+    if (pos + hashLen > tx_extra.size()) return false;
+    burnReceipt.tx_hash.assign(reinterpret_cast<const char*>(&tx_extra[pos]), hashLen);
+    pos += hashLen;
+
+    // Parse timestamp (8 bytes)
+    if (pos + 8 > tx_extra.size()) return false;
+    burnReceipt.timestamp = 0;
+    for (int i = 0; i < 8; ++i) {
+      burnReceipt.timestamp |= static_cast<uint64_t>(tx_extra[pos + i]) << (i * 8);
+    }
+
+    return true;
+  }
+
+  bool addBurnReceiptToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraBurnReceipt& burnReceipt) {
+    tx_extra.push_back(TX_EXTRA_BURN_RECEIPT);
+
+    // Add proof_pubkey
+    tx_extra.insert(tx_extra.end(), reinterpret_cast<const uint8_t*>(&burnReceipt.proof_pubkey),
+                    reinterpret_cast<const uint8_t*>(&burnReceipt.proof_pubkey) + sizeof(Crypto::PublicKey));
+
+    // Add tx_hash length and data
+    uint32_t hashLen = static_cast<uint32_t>(burnReceipt.tx_hash.length());
+    for (int i = 0; i < 4; ++i) {
+      tx_extra.push_back(static_cast<uint8_t>(hashLen & 0xFF));
+      hashLen >>= 8;
+    }
+    tx_extra.insert(tx_extra.end(), burnReceipt.tx_hash.begin(), burnReceipt.tx_hash.end());
+
+    // Add timestamp
+    uint64_t timestamp = burnReceipt.timestamp;
+    for (int i = 0; i < 8; ++i) {
+      tx_extra.push_back(static_cast<uint8_t>(timestamp & 0xFF));
+      timestamp >>= 8;
+    }
+
+    return true;
+  }
+
+  bool createTxExtraWithBurnReceipt(const TransactionExtraBurnReceipt& burnReceipt, std::vector<uint8_t>& extra) {
+    extra.clear();
+    return addBurnReceiptToExtra(extra, burnReceipt);
+  }
+
+  // REMOVED: COLD deposit receipt functions
+  // bool getDepositReceiptFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraDepositReceipt& depositReceipt) {
+  //   if (tx_extra.empty() || tx_extra[0] != TX_EXTRA_COLD_RECEIPT) {
+  //     return false;
+  //   }
+  //   // ... (full implementation removed)
+  //   return true;
+  // }
+
+  // bool addDepositReceiptToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraDepositReceipt& depositReceipt) {
+  //   tx_extra.push_back(TX_EXTRA_COLD_RECEIPT);
+  //   // ... (full implementation removed)
+  //   return true;
+  // }
+
+  // bool createTxExtraWithDepositReceipt(const TransactionExtraDepositReceipt& depositReceipt, std::vector<uint8_t>& extra) {
+  //   extra.clear();
+  //   return addDepositReceiptToExtra(extra, depositReceipt);
+  // }
+
+  bool addAliasToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraAliasRegistration& alias) {
+    if (!alias.isValid()) {
+      return false;
+    }
+
+    // Write tag
+    tx_extra.push_back(TX_EXTRA_ALIAS);
+
+    // Serialize the alias registration
+    BinaryArray ba;
+    bool r = toBinaryArray(alias, ba);
+    if (!r) return false;
+
+    // Write size + data
+    Tools::write_varint(std::back_inserter(tx_extra), ba.size());
+    tx_extra.insert(tx_extra.end(), ba.begin(), ba.end());
+
+    return true;
+  }
+
+  bool getAliasFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraAliasRegistration& alias) {
+    // Find the 0xEA tag in extra
+    for (size_t i = 0; i < tx_extra.size(); ++i) {
+      if (tx_extra[i] == TX_EXTRA_ALIAS) {
+        // Read size
+        size_t offset = i + 1;
+        if (offset >= tx_extra.size()) return false;
+
+        uint64_t size = 0;
+        auto begin = tx_extra.begin() + offset;
+        auto end = tx_extra.end();
+        int bytes_read = Tools::read_varint<64, std::vector<uint8_t>::const_iterator, uint64_t>(std::move(begin), std::move(end), size);
+        if (bytes_read <= 0) return false;
+        offset += bytes_read;
+
+        if (offset + size > tx_extra.size()) return false;
+
+        // Deserialize
+        BinaryArray ba(tx_extra.begin() + offset, tx_extra.begin() + offset + size);
+        return fromBinaryArray(alias, ba);
+      }
+    }
+    return false;
+  }
+
+  bool addAliasReleaseToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraAliasRelease& release) {
+    if (!release.isValid()) return false;
+
+    tx_extra.push_back(TX_EXTRA_ALIAS_RELEASE);
+    BinaryArray ba;
+    if (!toBinaryArray(release, ba)) return false;
+    Tools::write_varint(std::back_inserter(tx_extra), ba.size());
+    tx_extra.insert(tx_extra.end(), ba.begin(), ba.end());
+    return true;
+  }
+
+  bool getAliasReleaseFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraAliasRelease& release) {
+    for (size_t i = 0; i < tx_extra.size(); ++i) {
+      if (tx_extra[i] == TX_EXTRA_ALIAS_RELEASE) {
+        size_t offset = i + 1;
+        if (offset >= tx_extra.size()) return false;
+        uint64_t size = 0;
+        auto begin = tx_extra.begin() + offset;
+        auto end = tx_extra.end();
+        int bytes_read = Tools::read_varint<64, std::vector<uint8_t>::const_iterator, uint64_t>(std::move(begin), std::move(end), size);
+        if (bytes_read <= 0) return false;
+        offset += bytes_read;
+        if (offset + size > tx_extra.size()) return false;
+        BinaryArray ba(tx_extra.begin() + offset, tx_extra.begin() + offset + size);
+        return fromBinaryArray(release, ba);
+      }
+    }
+    return false;
+  }
+
+  bool addAliasTransferToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraAliasTransfer& transfer) {
+    if (!transfer.isValid()) return false;
+
+    tx_extra.push_back(TX_EXTRA_ALIAS_TRANSFER);
+    BinaryArray ba;
+    if (!toBinaryArray(transfer, ba)) return false;
+    Tools::write_varint(std::back_inserter(tx_extra), ba.size());
+    tx_extra.insert(tx_extra.end(), ba.begin(), ba.end());
+    return true;
+  }
+
+  bool getAliasTransferFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraAliasTransfer& transfer) {
+    for (size_t i = 0; i < tx_extra.size(); ++i) {
+      if (tx_extra[i] == TX_EXTRA_ALIAS_TRANSFER) {
+        size_t offset = i + 1;
+        if (offset >= tx_extra.size()) return false;
+        uint64_t size = 0;
+        auto begin = tx_extra.begin() + offset;
+        auto end = tx_extra.end();
+        int bytes_read = Tools::read_varint<64, std::vector<uint8_t>::const_iterator, uint64_t>(std::move(begin), std::move(end), size);
+        if (bytes_read <= 0) return false;
+        offset += bytes_read;
+        if (offset + size > tx_extra.size()) return false;
+        BinaryArray ba(tx_extra.begin() + offset, tx_extra.begin() + offset + size);
+        return fromBinaryArray(transfer, ba);
+      }
+    }
+    return false;
+  }
+
+  // REMOVED: COLD SimpleCD commitment creation
+  // bool createTxExtraWithSimpleCDCommitment(const Crypto::Hash& commitment, uint64_t amount, uint32_t term, std::vector<uint8_t>& extra) {
+  //   TransactionExtraSimpleCD cdCommitment;
+  //   cdCommitment.commitment = commitment;
+  //   cdCommitment.amount = amount;
+  //   cdCommitment.term = term;
+  //   extra.push_back(TX_EXTRA_SIMPLE_CD);
+  //   extra.insert(extra.end(), cdCommitment.commitment.data, cdCommitment.commitment.data + 32);
+  //   for (int i = 0; i < 8; ++i) { extra.push_back(static_cast<uint8_t>((cdCommitment.amount >> (i*8)) & 0xFF)); }
+  //   for (int i = 0; i < 4; ++i) { extra.push_back(static_cast<uint8_t>((cdCommitment.term >> (i*8)) & 0xFF)); }
+  //   return true;
+  // }
+
+  bool addAmmSwapToExtra(std::vector<uint8_t>& tx_extra, uint8_t direction, uint64_t inputAmount, uint64_t minOutput) {
+    tx_extra.push_back(TX_EXTRA_AMM_SWAP);
+    tx_extra.push_back(direction);
+    for (int i = 0; i < 8; ++i) tx_extra.push_back(static_cast<uint8_t>((inputAmount >> (i*8)) & 0xFF));
+    for (int i = 0; i < 8; ++i) tx_extra.push_back(static_cast<uint8_t>((minOutput >> (i*8)) & 0xFF));
+    return true;
+  }
+
+  bool addAmmAddLiquidityToExtra(std::vector<uint8_t>& tx_extra, uint64_t amountXfg, uint64_t amountHeat) {
+    tx_extra.push_back(TX_EXTRA_AMM_ADD_LIQ);
+    for (int i = 0; i < 8; ++i) tx_extra.push_back(static_cast<uint8_t>((amountXfg >> (i*8)) & 0xFF));
+    for (int i = 0; i < 8; ++i) tx_extra.push_back(static_cast<uint8_t>((amountHeat >> (i*8)) & 0xFF));
+    return true;
+  }
+
+  bool addAmmRemoveLiquidityToExtra(std::vector<uint8_t>& tx_extra, uint64_t lpSharesBurned, uint64_t minXfg, uint64_t minHeat) {
+    tx_extra.push_back(TX_EXTRA_AMM_REM_LIQ);
+    for (int i = 0; i < 8; ++i) tx_extra.push_back(static_cast<uint8_t>((lpSharesBurned >> (i*8)) & 0xFF));
+    for (int i = 0; i < 8; ++i) tx_extra.push_back(static_cast<uint8_t>((minXfg >> (i*8)) & 0xFF));
+    for (int i = 0; i < 8; ++i) tx_extra.push_back(static_cast<uint8_t>((minHeat >> (i*8)) & 0xFF));
+    return true;
+  }
+
+  bool addAmmCompoundToExtra(std::vector<uint8_t>& tx_extra) {
+    tx_extra.push_back(TX_EXTRA_AMM_COMPOUND);
+    return true;
+  }
+
+  bool addAmmClaimToExtra(std::vector<uint8_t>& tx_extra, uint64_t lpShares, uint64_t minXfg, uint64_t minHeat) {
+    tx_extra.push_back(TX_EXTRA_AMM_CLAIM);
+    for (int i = 0; i < 8; ++i) tx_extra.push_back(static_cast<uint8_t>((lpShares >> (i*8)) & 0xFF));
+    for (int i = 0; i < 8; ++i) tx_extra.push_back(static_cast<uint8_t>((minXfg >> (i*8)) & 0xFF));
+    for (int i = 0; i < 8; ++i) tx_extra.push_back(static_cast<uint8_t>((minHeat >> (i*8)) & 0xFF));
+    return true;
+  }
+
+  bool addHeatMintAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t xfgBurned, uint64_t heatMinted) {
+    tx_extra.push_back(TX_EXTRA_HEAT_MINT_AUTH);
+    for (int i = 0; i < 8; ++i) tx_extra.push_back(static_cast<uint8_t>((xfgBurned >> (i*8)) & 0xFF));
+    for (int i = 0; i < 8; ++i) tx_extra.push_back(static_cast<uint8_t>((heatMinted >> (i*8)) & 0xFF));
+    return true;
+  }
+
+  bool addHeatSendAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t heatAmount) {
+    tx_extra.push_back(TX_EXTRA_HEAT_SEND_AUTH);
+    for (int i = 0; i < 8; ++i) tx_extra.push_back(static_cast<uint8_t>((heatAmount >> (i*8)) & 0xFF));
+    return true;
+  }
+
+  bool addAmmSwapAuthToExtra(std::vector<uint8_t>& tx_extra, uint8_t direction, uint64_t inputAmount,
+                             uint64_t outputAmount, uint64_t minOutput) {
+    tx_extra.push_back(TX_EXTRA_AMM_SWAP_AUTH);
+    tx_extra.push_back(direction);
+    for (int i = 0; i < 8; ++i) tx_extra.push_back(static_cast<uint8_t>((inputAmount >> (i*8)) & 0xFF));
+    for (int i = 0; i < 8; ++i) tx_extra.push_back(static_cast<uint8_t>((outputAmount >> (i*8)) & 0xFF));
+    for (int i = 0; i < 8; ++i) tx_extra.push_back(static_cast<uint8_t>((minOutput >> (i*8)) & 0xFF));
+    return true;
+  }
+
+  bool addLpAddAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t amountXfg, uint64_t amountHeat,
+                           uint64_t lpShares) {
+    tx_extra.push_back(TX_EXTRA_AMM_LP_ADD_AUTH);
+    for (int i = 0; i < 8; ++i) tx_extra.push_back(static_cast<uint8_t>((amountXfg >> (i*8)) & 0xFF));
+    for (int i = 0; i < 8; ++i) tx_extra.push_back(static_cast<uint8_t>((amountHeat >> (i*8)) & 0xFF));
+    for (int i = 0; i < 8; ++i) tx_extra.push_back(static_cast<uint8_t>((lpShares >> (i*8)) & 0xFF));
+    return true;
+  }
+
+  bool addLpRemoveAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t lpSharesBurned,
+                              uint64_t minXfg, uint64_t minHeat) {
+    tx_extra.push_back(TX_EXTRA_AMM_LP_REM_AUTH);
+    for (int i = 0; i < 8; ++i) tx_extra.push_back(static_cast<uint8_t>((lpSharesBurned >> (i*8)) & 0xFF));
+    for (int i = 0; i < 8; ++i) tx_extra.push_back(static_cast<uint8_t>((minXfg >> (i*8)) & 0xFF));
+    for (int i = 0; i < 8; ++i) tx_extra.push_back(static_cast<uint8_t>((minHeat >> (i*8)) & 0xFF));
+    return true;
+  }
+
+  bool addOrderPlaceToExtra(std::vector<uint8_t>& tx_extra, uint8_t side, uint64_t price, uint32_t expiration) {
+    tx_extra.push_back(TX_EXTRA_ORDER_PLACE);
+    tx_extra.push_back(side);
+    for (int i = 0; i < 8; ++i) tx_extra.push_back(static_cast<uint8_t>((price >> (i*8)) & 0xFF));
+    for (int i = 0; i < 4; ++i) tx_extra.push_back(static_cast<uint8_t>((expiration >> (i*8)) & 0xFF));
+    return true;
+  }
+
+  bool addOrderCancelToExtra(std::vector<uint8_t>& tx_extra, const Crypto::Hash& orderId) {
+    tx_extra.push_back(TX_EXTRA_ORDER_CANCEL);
+    tx_extra.insert(tx_extra.end(), orderId.data, orderId.data + sizeof(orderId.data));
+    return true;
+  }
+
+  bool addMarketBuyAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t xfgWanted, uint64_t maxHeatCost) {
+    tx_extra.push_back(TX_EXTRA_MARKET_BUY_AUTH);
+    for (int i = 0; i < 8; ++i) {
+      tx_extra.push_back(static_cast<uint8_t>(xfgWanted & 0xFF));
+      xfgWanted >>= 8;
+    }
+    for (int i = 0; i < 8; ++i) {
+      tx_extra.push_back(static_cast<uint8_t>(maxHeatCost & 0xFF));
+      maxHeatCost >>= 8;
+    }
+    return true;
+  }
+
+  bool addMarketSellAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t xfgToSell, uint64_t minHeatReceive) {
+    tx_extra.push_back(TX_EXTRA_MARKET_SELL_AUTH);
+    for (int i = 0; i < 8; ++i) {
+      tx_extra.push_back(static_cast<uint8_t>(xfgToSell & 0xFF));
+      xfgToSell >>= 8;
+    }
+    for (int i = 0; i < 8; ++i) {
+      tx_extra.push_back(static_cast<uint8_t>(minHeatReceive & 0xFF));
+      minHeatReceive >>= 8;
+    }
+    return true;
+  }
+
+  bool addLimitDepositToExtra(std::vector<uint8_t>& tx_extra, uint8_t side, uint64_t amount, uint64_t targetPrice, uint32_t expiration, const Crypto::Hash& orderId, const Crypto::Hash& addressHash) {
+    tx_extra.push_back(TX_EXTRA_LIMIT_DEPOSIT);
+    tx_extra.push_back(side);
+    // Consensus parser (parseTransactionExtra, TX_EXTRA_LIMIT_DEPOSIT) reads
+    // these fields as base-128 varints — mirror Common::writeVarint exactly.
+    auto pushVarint = [&tx_extra](uint64_t v) {
+      while (v >= 0x80) {
+        tx_extra.push_back(static_cast<uint8_t>(v | 0x80));
+        v >>= 7;
+      }
+      tx_extra.push_back(static_cast<uint8_t>(v));
+    };
+    pushVarint(amount);
+    pushVarint(targetPrice);
+    pushVarint(expiration);
+    for (size_t i = 0; i < sizeof(orderId.data); ++i) tx_extra.push_back(orderId.data[i]);
+    for (size_t i = 0; i < sizeof(addressHash.data); ++i) tx_extra.push_back(addressHash.data[i]);
+    return true;
+  }
+  
+  Crypto::Hash getLimitWithdrawOutputHash(const std::vector<CryptoNote::TransactionOutput>& outputs) {
+    // Reuse the canonical transaction-prefix serializer while isolating the
+    // output vector. Version, inputs, unlock time, and extra remain fixed so
+    // the same digest is reproducible by wallets and consensus.
+    CryptoNote::TransactionPrefix prefix{};
+    prefix.outputs = outputs;
+    const CryptoNote::BinaryArray serializedOutputs = CryptoNote::toBinaryArray(prefix);
+    Crypto::Hash result{};
+    Crypto::cn_fast_hash(serializedOutputs.data(), serializedOutputs.size(), result);
+    return result;
+  }
+
+  Crypto::Hash getLimitWithdrawAuthHash(const Crypto::Hash& orderId,
+                                        const Crypto::Hash& addressHash,
+                                        const Crypto::Hash& outputsHash) {
+    static constexpr char domain[] = "FuegoLimitWithdrawV1";
+    std::vector<uint8_t> authData;
+    authData.reserve(sizeof(domain) - 1 + sizeof(orderId.data) + sizeof(addressHash.data) + sizeof(outputsHash.data));
+    authData.insert(authData.end(), domain, domain + sizeof(domain) - 1);
+    authData.insert(authData.end(), orderId.data, orderId.data + sizeof(orderId.data));
+    authData.insert(authData.end(), addressHash.data, addressHash.data + sizeof(addressHash.data));
+    authData.insert(authData.end(), outputsHash.data, outputsHash.data + sizeof(outputsHash.data));
+
+    Crypto::Hash result{};
+    Crypto::cn_fast_hash(authData.data(), authData.size(), result);
+    return result;
+  }
+
+  bool addLimitWithdrawToExtra(std::vector<uint8_t>& tx_extra,
+                               const Crypto::Hash& orderId,
+                               const Crypto::PublicKey& spendPublicKey,
+                               const Crypto::PublicKey& viewPublicKey,
+                               const Crypto::Hash& outputsHash,
+                               const Crypto::Signature& proof) {
+    tx_extra.push_back(TX_EXTRA_LIMIT_WITHDRAW);
+    for (size_t i = 0; i < sizeof(orderId.data); ++i) tx_extra.push_back(orderId.data[i]);
+    for (size_t i = 0; i < sizeof(spendPublicKey.data); ++i) tx_extra.push_back(spendPublicKey.data[i]);
+    for (size_t i = 0; i < sizeof(viewPublicKey.data); ++i) tx_extra.push_back(viewPublicKey.data[i]);
+    for (size_t i = 0; i < sizeof(outputsHash.data); ++i) tx_extra.push_back(outputsHash.data[i]);
+    for (size_t i = 0; i < sizeof(proof.data); ++i) tx_extra.push_back(proof.data[i]);
+    return true;
+  }
+
+  bool addTreasuryFundToExtra(std::vector<uint8_t>& tx_extra, uint8_t asset, uint64_t amount) {
+    tx_extra.push_back(TX_EXTRA_TREASURY_FUND);
+    tx_extra.push_back(asset);
+    for (int i = 0; i < 8; ++i) { tx_extra.push_back(static_cast<uint8_t>(amount & 0xFF)); amount >>= 8; }
+    return true;
+  }
+
+  DepositCommitmentKeys deriveCommitmentKeys(const std::array<uint8_t, 32>& depositSecret) {
+    DepositCommitmentKeys keys;
+    static const char label[] = "fuego_commit_key";
+    uint8_t preimage[48];
+    memcpy(preimage,      label,               16);
+    memcpy(preimage + 16, depositSecret.data(), 32);
+    Crypto::hash_to_scalar(preimage, sizeof(preimage),
+      reinterpret_cast<Crypto::EllipticCurveScalar&>(keys.keyScalar));
+    Crypto::secret_key_to_public_key(keys.keyScalar, keys.commitKey);
+    Crypto::generate_key_image(keys.commitKey, keys.keyScalar, keys.keyImage);
+    {
+      static const char amLabel[] = "fuego_amount_mask";
+      uint8_t amPre[49];
+      memcpy(amPre,      amLabel,              17);
+      memcpy(amPre + 17, depositSecret.data(), 32);
+      Crypto::hash_to_scalar(amPre, sizeof(amPre),
+        reinterpret_cast<Crypto::EllipticCurveScalar&>(keys.amountMask));
+    }
+    return keys;
+  }
+
+  std::array<uint8_t, 32> deriveDepositSecret(const Crypto::KeyDerivation& derivation, size_t outputIndex) {
+    uint8_t preimage[36];
+    memcpy(preimage, &derivation, 32);
+    uint32_t outIdx = static_cast<uint32_t>(outputIndex);
+    preimage[32] = outIdx & 0xFF;
+    preimage[33] = (outIdx >> 8) & 0xFF;
+    preimage[34] = (outIdx >> 16) & 0xFF;
+    preimage[35] = (outIdx >> 24) & 0xFF;
+    Crypto::Hash secHash = Crypto::cn_fast_hash(preimage, sizeof(preimage));
+    std::array<uint8_t, 32> depositSecret;
+    memcpy(depositSecret.data(), secHash.data, 32);
+    return depositSecret;
+  }
+
+  DepositCommitmentKeys deriveLegacyCommitmentKeys(const std::array<uint8_t, 32>& depositSecret) {
+    return deriveCommitmentKeys(depositSecret);
+  }
+
+  bool deriveCommitmentOutputKey(
+    const Crypto::KeyDerivation& derivation,
+    size_t outputIndex,
+    const Crypto::PublicKey& recipientSpendPublicKey,
+    Crypto::PublicKey& commitKey) {
+
+    // An unset spend key must be a hard failure. The all-zero encoding is a
+    // valid (order-4) curve point, so it would otherwise pass check_key, and a
+    // caller that forgot to populate the recipient's spend key would emit an
+    // output nobody can spend — or, if this fell back to the legacy form, one the
+    // sender and any view-key holder can. Protocol-owned outputs (pool escrow
+    // markers) do not come through here: they use computePoolCommitKey().
+    if (recipientSpendPublicKey == Crypto::PublicKey{}) {
+      return false;
+    }
+
+    return deriveOwnerBoundCommitKey(derivation, outputIndex, recipientSpendPublicKey, commitKey);
+  }
+
+  bool deriveOwnerBoundCommitKey(
+    const Crypto::KeyDerivation& derivation,
+    size_t outputIndex,
+    const Crypto::PublicKey& recipientSpendPublicKey,
+    Crypto::PublicKey& commitKey) {
+
+    if (!Crypto::check_key(recipientSpendPublicKey)) {
+      return false;
+    }
+    if (!Crypto::derive_public_key(derivation, outputIndex, recipientSpendPublicKey, commitKey)) {
+      return false;
+    }
+    return Crypto::check_key(commitKey);
+  }
+
+  bool matchOwnerBoundCommitKey(
+    const Crypto::KeyDerivation& derivation,
+    size_t outputIndex,
+    const Crypto::PublicKey& commitKey,
+    const std::unordered_set<Crypto::PublicKey>& spendPublicKeys,
+    Crypto::PublicKey& outMatchedSpendKey,
+    bool& outAmbiguous) {
+
+    outAmbiguous = false;
+    if (!Crypto::check_key(commitKey)) {
+      return false;
+    }
+
+    // underive_public_key solves P - tG = B for the single B that produced this
+    // output, so it is evaluated once. Iterating it per candidate key would
+    // return the same B each time and report a false ambiguity.
+    Crypto::PublicKey candidate;
+    if (!Crypto::underive_public_key(derivation, outputIndex, commitKey, candidate)) {
+      return false;
+    }
+    if (!Crypto::check_key(candidate)) {
+      return false;
+    }
+    if (spendPublicKeys.find(candidate) == spendPublicKeys.end()) {
+      return false;
+    }
+
+    // A genuine second match would require a different spend public key to
+    // produce the identical output key at the same index, which cannot happen
+    // for distinct keys. Confirm the recovered key really does re-derive the
+    // output rather than trusting the subtraction alone.
+    Crypto::PublicKey verify;
+    if (!Crypto::derive_public_key(derivation, outputIndex, candidate, verify)) {
+      return false;
+    }
+    if (verify != commitKey) {
+      outAmbiguous = true;
+      return false;
+    }
+
+    outMatchedSpendKey = candidate;
+    return true;
+  }
+
+  bool deriveOwnerBoundKeyImage(
+    const Crypto::KeyDerivation& derivation,
+    size_t outputIndex,
+    const Crypto::PublicKey& commitKey,
+    const Crypto::SecretKey& recipientSpendSecret,
+    Crypto::SecretKey& outSpendSecret,
+    Crypto::KeyImage& outKeyImage) {
+
+    if (!Crypto::check_key(commitKey)) {
+      return false;
+    }
+
+    // derive_secret_key throws on a non-canonical scalar. Validate first so a
+    // bad secret is reported as a rejection rather than an exception.
+    Crypto::PublicKey spendPublic;
+    if (!Crypto::secret_key_to_public_key(recipientSpendSecret, spendPublic)) {
+      return false;
+    }
+
+    Crypto::SecretKey spendSecret;
+    Crypto::derive_secret_key(derivation, outputIndex, recipientSpendSecret, spendSecret);
+
+    // The derived scalar must reproduce the published output key. A mismatch means
+    // the wrong spend secret, so no key image may be produced for it.
+    Crypto::PublicKey check;
+    if (!Crypto::secret_key_to_public_key(spendSecret, check)) {
+      return false;
+    }
+    if (check != commitKey) {
+      return false;
+    }
+
+    Crypto::generate_key_image(commitKey, spendSecret, outKeyImage);
+    outSpendSecret = spendSecret;
+    return true;
+  }
+
+  bool deriveRecordedCommitmentKeyImage(
+    const Crypto::KeyDerivation& derivation,
+    size_t outputIndex,
+    const Crypto::PublicKey& commitKey,
+    const Crypto::SecretKey* recipientSpendSecret,
+    Crypto::KeyImage& outKeyImage) {
+
+    outKeyImage = Crypto::KeyImage{};
+
+    if (recipientSpendSecret != nullptr) {
+      Crypto::SecretKey ignoredScalar;
+      Crypto::KeyImage keyImage;
+      if (deriveOwnerBoundKeyImage(
+            derivation, outputIndex, commitKey, *recipientSpendSecret, ignoredScalar, keyImage)) {
+        outKeyImage = keyImage;
+        return true;
+      }
+    }
+
+    // Not owner-bound under this spend secret (or there is no spend secret).
+    // The legacy form needs only the view-derived ECDH secret, so it is derivable
+    // either way and stays trackable by a view-only wallet.
+    const DepositCommitmentKeys legacy =
+      deriveLegacyCommitmentKeys(deriveDepositSecret(derivation, outputIndex));
+    if (legacy.commitKey == commitKey) {
+      outKeyImage = legacy.keyImage;
+      return true;
+    }
+    return false;
+  }
+
+  bool resolveCommitmentSpendKeys(
+    const Crypto::KeyDerivation& derivation,
+    size_t outputIndex,
+    const Crypto::PublicKey& publishedCommitKey,
+    const Crypto::SecretKey& recipientSpendSecret,
+    CommitmentSpendKeys& out) {
+
+    const DepositCommitmentKeys legacy =
+      deriveLegacyCommitmentKeys(deriveDepositSecret(derivation, outputIndex));
+
+    // P was never recorded, so this output predates the scanner that records it
+    // and was recognised through the legacy form. There is nothing to verify the
+    // legacy keys against; consensus rejects a signature over the wrong ring key.
+    if (publishedCommitKey == Crypto::PublicKey{}) {
+      out.form = CommitmentDerivation::LegacyExposed;
+      out.commitKey = legacy.commitKey;
+      out.spendScalar = legacy.keyScalar;
+      out.keyImage = legacy.keyImage;
+      return true;
+    }
+
+    Crypto::SecretKey spendScalar;
+    Crypto::KeyImage keyImage;
+    if (deriveOwnerBoundKeyImage(
+          derivation, outputIndex, publishedCommitKey, recipientSpendSecret, spendScalar, keyImage)) {
+      out.form = CommitmentDerivation::OwnerBound;
+      out.commitKey = publishedCommitKey;
+      out.spendScalar = spendScalar;
+      out.keyImage = keyImage;
+      return true;
+    }
+
+    // Not reproducible from the spend secret, so this is a pre-v11 output. Its
+    // scalar depends only on the ECDH secret, which is exactly why the owner-bound
+    // form exists; it stays spendable so old funds are not stranded.
+    if (legacy.commitKey == publishedCommitKey) {
+      out.form = CommitmentDerivation::LegacyExposed;
+      out.commitKey = legacy.commitKey;
+      out.spendScalar = legacy.keyScalar;
+      out.keyImage = legacy.keyImage;
+      return true;
+    }
+
+    return false;
+  }
+
+  namespace {
+  struct DepositKeyData {
+    Crypto::KeyDerivation derivation;
+    uint8_t tag[2];
+  };
+  static_assert(sizeof(DepositKeyData) == sizeof(Crypto::KeyDerivation) + 2, "");
+
+  static Crypto::chacha8_key depositEncKey(const Crypto::KeyDerivation& derivation) {
+    DepositKeyData kd;
+    kd.derivation = derivation;
+    kd.tag[0] = 0xD5;
+    kd.tag[1] = 0x00;
+    Crypto::Hash h = Crypto::cn_fast_hash(&kd, sizeof(kd));
+    Crypto::chacha8_key out;
+    memcpy(out.data, &h, sizeof(out.data));
+    return out;
+  }
+
+  static Crypto::chacha8_iv depositEncIV(const Crypto::PublicKey& txPubKey) {
+    Crypto::chacha8_iv iv;
+    memcpy(iv.data, &txPubKey, sizeof(iv.data));
+    return iv;
+  }
+  } // anonymous namespace
+
+  bool encryptDepositSecret(const DepositSecretPayload& plaintext,
+                            const Crypto::PublicKey& recipientViewPubKey,
+                            TransactionExtraDepositSecret& out) {
+    Crypto::SecretKey ephSecKey;
+    Crypto::generate_keys(out.ephPubKey, ephSecKey);
+    Crypto::KeyDerivation derivation;
+    if (!Crypto::generate_key_derivation(recipientViewPubKey, ephSecKey, derivation))
+      return false;
+    Crypto::chacha8_key encKey = depositEncKey(derivation);
+    Crypto::chacha8_iv  encIV  = depositEncIV(out.ephPubKey);
+    out.encryptedPayload.resize(sizeof(DepositSecretPayload));
+    Crypto::chacha8(&plaintext, sizeof(DepositSecretPayload),
+                    encKey, encIV,
+                    reinterpret_cast<char*>(out.encryptedPayload.data()));
+    Crypto::Hash ckHash;
+    keccak(out.encryptedPayload.data(), out.encryptedPayload.size(), ckHash.data, sizeof(ckHash.data));
+    memcpy(out.checksum, ckHash.data, 4);
+    return true;
+  }
+
+  bool decryptDepositSecret(const TransactionExtraDepositSecret& encrypted,
+                            const Crypto::SecretKey& walletViewSecKey,
+                            DepositSecretPayload& out) {
+    if (encrypted.encryptedPayload.size() != sizeof(DepositSecretPayload))
+      return false;
+    Crypto::Hash ckHash;
+    keccak(encrypted.encryptedPayload.data(), encrypted.encryptedPayload.size(),
+           ckHash.data, sizeof(ckHash.data));
+    if (memcmp(encrypted.checksum, ckHash.data, 4) != 0)
+      return false;
+    Crypto::KeyDerivation derivation;
+    if (!Crypto::generate_key_derivation(encrypted.ephPubKey, walletViewSecKey, derivation))
+      return false;
+    Crypto::chacha8_key encKey = depositEncKey(derivation);
+    Crypto::chacha8_iv  encIV  = depositEncIV(encrypted.ephPubKey);
+    Crypto::chacha8(encrypted.encryptedPayload.data(), sizeof(DepositSecretPayload),
+                    encKey, encIV,
+                    reinterpret_cast<char*>(&out));
+    return true;
+  }
+
+  bool addDepositSecretToExtra(std::vector<uint8_t>& tx_extra,
+                               const TransactionExtraDepositSecret& secret) {
+    if (secret.encryptedPayload.size() != sizeof(DepositSecretPayload))
+      return false;
+    const uint8_t totalLen = 32 + 4 + static_cast<uint8_t>(secret.encryptedPayload.size());
+    tx_extra.push_back(TX_EXTRA_DEPOSIT_SECRET);
+    tx_extra.push_back(totalLen);
+    const auto* pubBytes = reinterpret_cast<const uint8_t*>(&secret.ephPubKey);
+    tx_extra.insert(tx_extra.end(), pubBytes, pubBytes + 32);
+    tx_extra.insert(tx_extra.end(), secret.checksum, secret.checksum + 4);
+    tx_extra.insert(tx_extra.end(),
+                    secret.encryptedPayload.begin(),
+                    secret.encryptedPayload.end());
+    return true;
+  }
+
+  bool getDepositSecretFromExtra(const std::vector<uint8_t>& tx_extra,
+                                 TransactionExtraDepositSecret& out) {
+    const size_t expectedLen = 32 + 4 + sizeof(DepositSecretPayload);
+    for (size_t i = 0; i + 1 < tx_extra.size(); ++i) {
+      if (tx_extra[i] != TX_EXTRA_DEPOSIT_SECRET)
+        continue;
+      uint8_t len = tx_extra[i + 1];
+      if (len != expectedLen || i + 2 + len > tx_extra.size())
+        return false;
+      memcpy(&out.ephPubKey, &tx_extra[i + 2], 32);
+      memcpy(out.checksum,  &tx_extra[i + 2 + 32], 4);
+      out.encryptedPayload.assign(tx_extra.begin() + i + 2 + 32 + 4,
+                                  tx_extra.begin() + i + 2 + len);
+      return true;
+    }
+    return false;
+  }
+
+  Crypto::PublicKey computePoolCommitKey() {
+    static const char SEED[] = "fuego.hearth.pool.commit.key.v1";
+    Crypto::Hash h;
+    Crypto::cn_fast_hash(SEED, sizeof(SEED) - 1, h);
+    Crypto::SecretKey scalar;
+    Crypto::hash_to_scalar(&h, sizeof(h), scalar);
+    Crypto::PublicKey pub;
+    Crypto::secret_key_to_public_key(scalar, pub);
+    return pub;
+  }
+
+  Crypto::Hash hashOutput(const TransactionOutput& output) {
+    return getObjectHash(output);
   }
 
 } // namespace CryptoNote

@@ -1,20 +1,19 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
+// Copyright (c) 2017-2022 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it
+// Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You can redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #pragma once
 
@@ -30,11 +29,13 @@
 
 #include "CryptoNoteCore/MessageQueue.h"
 #include "CryptoNoteCore/BlockchainMessages.h"
+#include "CryptoNoteCore/CdClaimEstimate.h"
 
 namespace CryptoNote {
 
 struct COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS_request;
 struct COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS_response;
+struct COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS_out_entry;
 struct NOTIFY_RESPONSE_GET_OBJECTS_request;
 struct NOTIFY_REQUEST_GET_OBJECTS_request;
 
@@ -52,6 +53,9 @@ struct MultisignatureInput;
 struct KeyInput;
 struct TransactionPrefixInfo;
 struct tx_verification_context;
+
+class SwapOfferRelay;
+class CdOfferRelay;
 
 class ICore {
 public:
@@ -80,9 +84,18 @@ public:
   virtual std::vector<Crypto::Hash> findBlockchainSupplement(const std::vector<Crypto::Hash>& remoteBlockIds, size_t maxCount,
     uint32_t& totalBlockCount, uint32_t& startBlockIndex) = 0;
   virtual bool get_random_outs_for_amounts(const COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS_request& req, COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS_response& res) = 0;
+  virtual bool get_random_commitment_outs_for_amount(uint64_t amount, uint64_t count, uint32_t maxHeight, std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS_out_entry>& result) = 0;
+  // Bulk lookup of creation heights for (amount, global_index) pairs. Used by wallets for OSPEAD decoy filtering.
+  virtual bool get_output_heights(const std::vector<std::pair<uint64_t, uint32_t>>& queries,
+                                  std::vector<uint32_t>& heights) = 0;
   virtual bool get_tx_outputs_gindexs(const Crypto::Hash& tx_id, std::vector<uint32_t>& indexs) = 0;
+  // Lookup output keys at explicit per-amount global indexes.
+  virtual bool get_outs_for_amount(uint64_t amount, const std::vector<uint64_t>& indexes,
+                                   std::vector<Crypto::PublicKey>& keys) = 0;
   virtual bool getOutByMSigGIndex(uint64_t amount, uint64_t gindex, MultisignatureOutput& out) = 0;
   virtual i_cryptonote_protocol* get_protocol() = 0;
+  virtual SwapOfferRelay& getSwapRelay() = 0;
+  virtual CdOfferRelay& getCdRelay() = 0;
   virtual bool handle_incoming_tx(const BinaryArray& tx_blob, tx_verification_context& tvc, bool keeped_by_block) = 0; //Deprecated. Should be removed with CryptoNoteProtocolHandler.
   virtual std::vector<Transaction> getPoolTransactions() = 0;
   virtual bool getPoolTransaction(const Crypto::Hash &tx_hash, Transaction &transaction) = 0;
@@ -117,12 +130,68 @@ public:
   virtual bool getPoolTransactionsByTimestamp(uint64_t timestampBegin, uint64_t timestampEnd, uint32_t transactionsNumberLimit, std::vector<Transaction>& transactions, uint64_t& transactionsNumberWithinTimestamps) = 0;
   virtual bool getTransactionsByPaymentId(const Crypto::Hash& paymentId, std::vector<Transaction>& transactions) = 0;
 
+  virtual uint8_t getCurrentBlockMajorVersion() = 0;
   virtual std::unique_ptr<IBlock> getBlock(const Crypto::Hash& blocksId) = 0;
   virtual bool handleIncomingTransaction(const Transaction& tx, const Crypto::Hash& txHash, size_t blobSize, tx_verification_context& tvc, bool keptByBlock, uint32_t height) = 0;
   virtual std::error_code executeLocked(const std::function<std::error_code()>& func) = 0;
 
   virtual bool addMessageQueue(MessageQueue<BlockchainMessage>& messageQueue) = 0;
   virtual bool removeMessageQueue(MessageQueue<BlockchainMessage>& messageQueue) = 0;
+
+  // CD interest calculation delegated to Currency + CommitmentIndex.
+  // Non-pure so mock/stub ICore implementations compile without changes.
+  virtual std::error_code calculateCdInterest(uint64_t amount, uint32_t creationHeight,
+                                                uint32_t currentHeight, uint64_t& outInterest,
+                                                uint32_t term = 0,
+                                                bool autoRolled = false) {
+    outInterest = 0;
+    return {};
+  }
+  virtual std::error_code getCommitmentEpochFeeRate(uint32_t epoch, uint64_t& outFeeRate) {
+    outFeeRate = 0;
+    return {};
+  }
+
+  // AMM pool reserves for HEAT mint rate computation.
+  struct AmmPoolReserves {
+    uint64_t reserveXfg = 1;
+    uint64_t reserveHeat = 1;
+  };
+  virtual std::error_code getAmmPoolReserves(AmmPoolReserves& out) {
+    out = {1, 1};
+    return {};
+  }
+  virtual uint64_t getHearthTwap() { return 0; }
+  struct AmmPoolInfo {
+    uint64_t reserveXfg = 0;
+    uint64_t reserveHeat = 0;
+    uint64_t spotPrice = 0;
+  };
+  virtual std::error_code getAmmPoolInfo(AmmPoolInfo& info) {
+    return std::make_error_code(std::errc::not_supported);
+  }
+
+  // HEAT backing available for CD interest claims and the CD_APY_POOL vault
+  // partition balance. Non-pure so stubs compile; real core overrides.
+  virtual uint64_t getFeePoolBalance() { return 0; }
+  virtual uint64_t getCdApyVaultBalance() { return 0; }
+  // v11+: BV-backed tier bonus (realized Bonus Vault inflows) and the
+  // BONUS_VAULT counter. Non-pure so stubs compile.
+  virtual std::error_code calculateCdBonus(uint64_t amount, uint32_t creationHeight,
+                                           uint32_t currentHeight, uint64_t& outBonus,
+                                           uint32_t term = 0) {
+    outBonus = 0;
+    return {};
+  }
+  virtual uint64_t getBonusVaultBalance() { return 0; }
+  virtual uint64_t getBonusVaultUtxoBalance() { return 0; }
+  // Pool-aware CD claim estimate (see CdClaimEstimate). Non-pure so stubs compile.
+  virtual std::error_code estimateCdClaim(uint64_t amount, uint32_t creationHeight,
+                                          uint32_t currentHeight, uint32_t term,
+                                          CdClaimEstimate& out) {
+    out = CdClaimEstimate{};
+    return std::make_error_code(std::errc::not_supported);
+  }
 };
 
 } //namespace CryptoNote

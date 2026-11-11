@@ -1,20 +1,19 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
+// Copyright (c) 2017-2022 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it
+// Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You can redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #pragma once
 
@@ -45,7 +44,7 @@ class WalletGetRandomOutsByAmountsRequest: public WalletRequest
 {
 public:
   WalletGetRandomOutsByAmountsRequest(const std::vector<uint64_t>& amounts, uint64_t outsCount, std::shared_ptr<SendTransactionContext> context, Callback cb) :
-    m_amounts(amounts), m_outsCount(outsCount), m_context(context), m_cb(cb) {};
+    m_amounts(amounts), m_outsCount(outsCount), m_context(std::move(context)), m_cb(std::move(cb)) {};
 
   virtual ~WalletGetRandomOutsByAmountsRequest() {};
 
@@ -57,6 +56,55 @@ public:
 private:
   std::vector<uint64_t> m_amounts;
   uint64_t m_outsCount;
+  std::shared_ptr<SendTransactionContext> m_context;
+  Callback m_cb;
+};
+
+class WalletGetRandomCommitmentOutsRequest: public WalletRequest
+{
+public:
+  WalletGetRandomCommitmentOutsRequest(uint64_t amount, uint64_t outsCount, uint32_t maxHeight,
+      std::shared_ptr<SendTransactionContext> context, Callback cb)
+    : m_amount(amount), m_outsCount(outsCount), m_maxHeight(maxHeight), m_context(std::move(context)), m_cb(std::move(cb)) {}
+
+  virtual ~WalletGetRandomCommitmentOutsRequest() {}
+
+  virtual void perform(INode& node, std::function<void(WalletRequest::Callback, std::error_code)> cb) override
+  {
+    node.getRandomCommitmentOutsForAmount(m_amount, m_outsCount, m_maxHeight,
+      std::ref(m_context->commitmentOuts), std::bind(cb, m_cb, std::placeholders::_1));
+  }
+
+private:
+  uint64_t m_amount;
+  uint64_t m_outsCount;
+  uint32_t m_maxHeight;
+  std::shared_ptr<SendTransactionContext> m_context;
+  Callback m_cb;
+};
+
+// Sidecar lookup that enriches each daemon-returned decoy in context->outs with
+// its creation block height, so OSPEAD can filter by spend-probability. Chained
+// AFTER WalletGetRandomOutsByAmountsRequest and BEFORE ring-sizing in
+// WalletTransactionSender::sendTransactionAfterOspeadHeights. Queries are taken
+// from m_context->ospeadHeightQueries; heights are written into
+// m_context->ospeadHeights. Non-blocking — dispatches through INode async machinery.
+class WalletGetOutputsHeightsRequest: public WalletRequest
+{
+public:
+  WalletGetOutputsHeightsRequest(std::shared_ptr<SendTransactionContext> context, Callback cb)
+    : m_context(std::move(context)), m_cb(std::move(cb)) {}
+
+  virtual ~WalletGetOutputsHeightsRequest() {}
+
+  virtual void perform(INode& node, std::function<void(WalletRequest::Callback, std::error_code)> cb) override
+  {
+    node.getOutputsHeights(m_context->ospeadHeightQueries,
+                           m_context->ospeadHeights,
+                           std::bind(cb, m_cb, std::placeholders::_1));
+  }
+
+private:
   std::shared_ptr<SendTransactionContext> m_context;
   Callback m_cb;
 };

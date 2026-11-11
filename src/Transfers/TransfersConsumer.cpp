@@ -1,26 +1,26 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
+// Copyright (c) 2017-2022 Fuego Developers
 // Copyright (c) 2014-2016 XDN developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it
+// Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You can redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "TransfersConsumer.h"
 
 #include <numeric>
 #include <future>
+#include <cstring>
 
 #include "CommonTypes.h"
 #include "Common/StringTools.h"
@@ -28,6 +28,8 @@
 #include "CryptoNoteCore/CryptoNoteFormatUtils.h"
 #include "CryptoNoteCore/TransactionApi.h"
 #include "CryptoNoteCore/TransactionExtra.h"
+#include "CryptoNoteConfig.h"
+#include "crypto/subaddress.h"
 
 #include "IWallet.h"
 #include "INode.h"
@@ -62,6 +64,69 @@ void checkOutputKey(
 
 }
 
+void scanOutputsWithDerivation(
+  const ITransactionReader& tx,
+  const KeyDerivation& derivation,
+  const std::unordered_set<PublicKey>& spendKeys,
+  std::unordered_map<PublicKey, std::vector<uint32_t>>& outputs) {
+
+  size_t outputCount = tx.getOutputCount();
+  for (size_t idx = 0; idx < outputCount; ++idx) {
+    auto outType = tx.getOutputType(size_t(idx));
+    if (outType == TransactionTypes::OutputType::Key) {
+      uint64_t amount;
+      KeyOutput out;
+      tx.getOutput(idx, out, amount);
+      checkOutputKey(derivation, out.key, idx, idx, spendKeys, outputs);
+    } else if (outType == TransactionTypes::OutputType::Multisignature) {
+
+      uint64_t amount;
+      MultisignatureOutput out;
+      tx.getOutput(idx, out, amount);
+      for (const auto& key : out.keys) {
+        checkOutputKey(derivation, key, idx, idx, spendKeys, outputs);
+     }
+
+    } else if (outType == TransactionTypes::OutputType::Commitment) {
+      uint64_t amount;
+      TransactionOutputCommitment out;
+      tx.getOutput(idx, out, amount);
+
+      // Two derivations may produce this output key. Try the owner-bound form
+      // first: it uses underive_public_key to find WHICH spend key matched,
+      // rather than attributing the output to the first element of spendKeys.
+      Crypto::PublicKey matchedSpendKey;
+      bool ambiguous = false;
+      const bool ownerBound = CryptoNote::matchOwnerBoundCommitKey(
+        derivation, idx, out.commitKey, spendKeys, matchedSpendKey, ambiguous);
+      if (ambiguous) {
+        // The recovered key does not re-derive the output key. matchOwnerBoundCommitKey
+        // reports this with a false return, so it has to be checked before the
+        // legacy fallback below or that fallback would claim the output anyway.
+        continue;
+      }
+      if (ownerBound) {
+        outputs[matchedSpendKey].push_back(static_cast<uint32_t>(idx));
+        continue;
+      }
+
+      // No owner-bound match. Fall back to the pre-v11 form, which the sender
+      // and any view-key holder can also derive. These outputs are exposed and
+      // must be surfaced as such rather than presented as securely received.
+      const std::array<uint8_t, 32> depositSecret =
+        CryptoNote::deriveDepositSecret(derivation, idx);
+      const CryptoNote::DepositCommitmentKeys legacy =
+        CryptoNote::deriveLegacyCommitmentKeys(depositSecret);
+      if (legacy.commitKey == out.commitKey) {
+        for (const auto& spendKey : spendKeys) {
+          outputs[spendKey].push_back(static_cast<uint32_t>(idx));
+          break;
+        }
+      }
+    }
+  }
+}
+
 void findMyOutputs(
   const ITransactionReader& tx,
   const SecretKey& viewSecretKey,
@@ -70,36 +135,42 @@ void findMyOutputs(
 
   auto txPublicKey = tx.getTransactionPublicKey();
   KeyDerivation derivation;
-
-  if (!generate_key_derivation( txPublicKey, viewSecretKey, derivation)) {
-    return;
+  if (generate_key_derivation(txPublicKey, viewSecretKey, derivation)) {
+    scanOutputsWithDerivation(tx, derivation, spendKeys, outputs);
   }
 
-  size_t keyIndex = 0;
-  size_t outputCount = tx.getOutputCount();
-
-  for (size_t idx = 0; idx < outputCount; ++idx) {
-
-    auto outType = tx.getOutputType(size_t(idx));
-
-    if (outType == TransactionTypes::OutputType::Key) {
-
-      uint64_t amount;
-      KeyOutput out;
-      tx.getOutput(idx, out, amount);
-      checkOutputKey(derivation, out.key, keyIndex, idx, spendKeys, outputs);
-      ++keyIndex;
-
-    } else if (outType == TransactionTypes::OutputType::Multisignature) {
-
-      uint64_t amount;
-      MultisignatureOutput out;
-      tx.getOutput(idx, out, amount);
-      for (const auto& key : out.keys) {
-        checkOutputKey(derivation, key, idx, idx, spendKeys, outputs);
-        ++keyIndex;
-     }
+  std::vector<PublicKey> additional;
+  if (getAdditionalPubKeysFromExtra(tx.getExtra(), additional) &&
+      additional.size() == tx.getOutputCount()) {
+    for (size_t idx = 0; idx < additional.size(); ++idx) {
+      KeyDerivation extraDer;
+      if (!generate_key_derivation(additional[idx], viewSecretKey, extraDer)) {
+        continue;
+      }
+      auto outType = tx.getOutputType(idx);
+      if (outType == TransactionTypes::OutputType::Key) {
+        uint64_t amount;
+        KeyOutput out;
+        tx.getOutput(idx, out, amount);
+        checkOutputKey(extraDer, out.key, idx, idx, spendKeys, outputs);
+      } else if (outType == TransactionTypes::OutputType::Commitment) {
+        uint64_t amount;
+        TransactionOutputCommitment out;
+        tx.getOutput(idx, out, amount);
+        Crypto::PublicKey matchedSpendKey;
+        bool ambiguous = false;
+        if (CryptoNote::matchOwnerBoundCommitKey(
+              extraDer, idx, out.commitKey, spendKeys, matchedSpendKey, ambiguous) && !ambiguous) {
+          outputs[matchedSpendKey].push_back(static_cast<uint32_t>(idx));
+        }
+      }
     }
+  }
+
+  for (auto& entry : outputs) {
+    auto& indexes = entry.second;
+    std::sort(indexes.begin(), indexes.end());
+    indexes.erase(std::unique(indexes.begin(), indexes.end()), indexes.end());
   }
 }
 
@@ -389,7 +460,15 @@ std::error_code createTransfers(
 
   auto txPubKey = tx.getTransactionPublicKey();
   auto txHash = tx.getTransactionHash();
-  std::vector<PublicKey> temp_keys;	
+  std::vector<PublicKey> temp_keys;
+  std::vector<PublicKey> additionalPubKeys;
+  const bool hasAdditional = getAdditionalPubKeysFromExtra(tx.getExtra(), additionalPubKeys);
+  PublicKey janusBase;
+  const bool hasJanus = getJanusBaseFromExtra(tx.getExtra(), janusBase);
+  PublicKey masterView;
+  const bool haveMasterView = secret_key_to_public_key(account.viewSecretKey, masterView);
+  const bool isV2SubAccount = haveMasterView &&
+      memcmp(&account.address.viewPublicKey, &masterView, sizeof(PublicKey)) != 0;
   std::lock_guard<std::mutex> lk(seen_mutex);
 
   if (account.spendSecretKey == NULL_SECRET_KEY)
@@ -413,14 +492,29 @@ std::error_code createTransfers(
 
     if (
       outType != TransactionTypes::OutputType::Key &&
-      outType != TransactionTypes::OutputType::Multisignature) {
+      outType != TransactionTypes::OutputType::Multisignature &&
+      outType != TransactionTypes::OutputType::Commitment) {
       continue;
     }
 
-    TransactionOutputInformationIn info;
+    // Zero-initialised: keyImage and commitmentKey are hashed into the spent-output
+    // index and written to the wallet cache, so a branch that cannot fill them must
+    // leave a defined value rather than stack contents.
+    TransactionOutputInformationIn info{};
+
+    PublicKey usedTxPub = txPubKey;
+    if (hasAdditional && idx < additionalPubKeys.size()) {
+      usedTxPub = additionalPubKeys[idx];
+    }
+
+    if (isV2SubAccount && hasJanus && !hasAdditional &&
+        account.spendSecretKey != NULL_SECRET_KEY &&
+        !Crypto::janusCheck(usedTxPub, janusBase, account.spendSecretKey)) {
+      continue;
+    }
 
     info.type = outType;
-    info.transactionPublicKey = txPubKey;
+    info.transactionPublicKey = usedTxPub;
     info.outputInTransaction = idx;
     info.globalOutputIndex = (blockInfo.height == WALLET_UNCONFIRMED_TRANSACTION_HEIGHT) ?
       UNCONFIRMED_TRANSACTION_GLOBAL_OUTPUT_INDEX : globalIdxs[idx];
@@ -433,7 +527,7 @@ std::error_code createTransfers(
       CryptoNote::KeyPair in_ephemeral;
       CryptoNote::generate_key_image_helper(
         account,
-        txPubKey,
+        usedTxPub,
         idx,
         in_ephemeral,
         info.keyImage);
@@ -458,7 +552,7 @@ std::error_code createTransfers(
       uint64_t amount;
       MultisignatureOutput out;
       tx.getOutput(idx, out, amount);
-	    
+
 		  for (const auto& key : out.keys) {
         std::unordered_set<Crypto::Hash>::iterator it = transactions_hash_seen.find(txHash);
         if (it == transactions_hash_seen.end()) {
@@ -477,8 +571,32 @@ std::error_code createTransfers(
       info.amount = amount;
       info.requiredSignatures = out.requiredSignatureCount;
       info.term = out.term;
+
+    } else if (outType == TransactionTypes::OutputType::Commitment) {
+      uint64_t amount;
+      TransactionOutputCommitment out;
+      tx.getOutput(idx, out, amount);
+
+      // keyImage is required for SpentOutputDescriptor tracking. An owner-bound
+      // key image needs the recipient's spend secret, which a view-only wallet
+      // does not have, so it stays zero there. Legacy key images are derivable
+      // from the view secret alone and are still recorded for view-only wallets,
+      // exactly as before the owner-bound form existed.
+      KeyDerivation derivation;
+      if (generate_key_derivation(usedTxPub, account.viewSecretKey, derivation)) {
+        const bool haveSpendSecret = account.spendSecretKey != NULL_SECRET_KEY;
+        Crypto::KeyImage recordedKeyImage;
+        if (CryptoNote::deriveRecordedCommitmentKeyImage(
+              derivation, idx, out.commitKey,
+              haveSpendSecret ? &account.spendSecretKey : nullptr, recordedKeyImage)) {
+          info.keyImage = recordedKeyImage;
+        }
+      }
+      info.amount = amount;
+      info.term = out.term;
+      info.commitmentKey = out.commitKey;
     }
-    
+
    transfers.push_back(info);
   }
 

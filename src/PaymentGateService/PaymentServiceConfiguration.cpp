@@ -1,32 +1,110 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
+// Copyright (c) 2017-2022 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it
+// Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You can redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "PaymentServiceConfiguration.h"
 
 #include <iostream>
 #include <algorithm>
+#include <cerrno>
+#include <fstream>
 #include <boost/program_options.hpp>
+#ifndef _WIN32
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 
 #include "Logging/ILogger.h"
 
 namespace po = boost::program_options;
 
 namespace PaymentService {
+
+namespace {
+
+std::string validateContainerPassword(std::string password) {
+  while (!password.empty() && (password.back() == '\n' || password.back() == '\r')) {
+    password.pop_back();
+  }
+  if (password.empty() || password.size() > 1024 ||
+      password.find('\0') != std::string::npos) {
+    throw ConfigurationError("container-password-file contains an invalid password");
+  }
+  return password;
+}
+
+std::string readContainerPasswordFile(const std::string& path) {
+#ifdef _WIN32
+  std::ifstream passwordStream(path, std::ios::binary);
+  if (!passwordStream) {
+    throw ConfigurationError("Cannot open container-password-file");
+  }
+  std::string password;
+  char buffer[1027];
+  passwordStream.read(buffer, sizeof(buffer));
+  password.assign(buffer, static_cast<size_t>(passwordStream.gcount()));
+  if (password.size() == sizeof(buffer) || (!passwordStream.eof() && passwordStream.fail())) {
+    throw ConfigurationError("container-password-file contains an invalid password");
+  }
+  return validateContainerPassword(std::move(password));
+#else
+  int descriptor = ::open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+  if (descriptor < 0) {
+    throw ConfigurationError("Cannot open container-password-file");
+  }
+
+  try {
+    struct stat fileInfo{};
+    if (::fstat(descriptor, &fileInfo) != 0 || !S_ISREG(fileInfo.st_mode) ||
+        fileInfo.st_uid != ::geteuid() || (fileInfo.st_mode & (S_IRWXG | S_IRWXO)) != 0) {
+      throw ConfigurationError("container-password-file must be a regular owner-only file");
+    }
+
+    char buffer[1027];
+    size_t total = 0;
+    while (total < sizeof(buffer)) {
+      const ssize_t count = ::read(descriptor, buffer + total, sizeof(buffer) - total);
+      if (count > 0) {
+        total += static_cast<size_t>(count);
+        continue;
+      }
+      if (count == 0) {
+        break;
+      }
+      if (errno != EINTR) {
+        throw ConfigurationError("Cannot read container-password-file");
+      }
+    }
+    ::close(descriptor);
+    descriptor = -1;
+    if (total == sizeof(buffer)) {
+      throw ConfigurationError("container-password-file contains an invalid password");
+    }
+    return validateContainerPassword(std::string(buffer, total));
+  } catch (...) {
+    if (descriptor >= 0) {
+      ::close(descriptor);
+    }
+    throw;
+  }
+#endif
+}
+
+} // namespace
 
 Configuration::Configuration() {
   generateNewContainer = false;
@@ -51,6 +129,7 @@ void Configuration::initOptions(boost::program_options::options_description& des
       ("rpc-password", po::value<std::string>()->default_value(""), "password to use the payment service. If authorization is not required, leave it empty")
       ("container-file,w", po::value<std::string>(), "container file")
       ("container-password,p", po::value<std::string>(), "container password")
+      ("container-password-file", po::value<std::string>(), "read container password from an owner-only file")
       ("generate-container,g", "generate new container file with one wallet and exit")
       ("view-key", po::value<std::string>(),"Generate a wallet container with this secret view <key>")
       ("spend-key", po::value<std::string>(),"Generate a wallet container with this secret spend <key>")
@@ -128,6 +207,14 @@ void Configuration::init(const boost::program_options::variables_map& options) {
 
   if (options.count("container-password") != 0) {
     containerPassword = options["container-password"].as<std::string>();
+  }
+
+  if (options.count("container-password-file") != 0) {
+    if (options.count("container-password") != 0) {
+      throw ConfigurationError("Use either container-password or container-password-file, not both");
+    }
+    containerPasswordFile = options["container-password-file"].as<std::string>();
+    containerPassword = readContainerPasswordFile(containerPasswordFile);
   }
 
   if (options.count("generate-container") != 0) {

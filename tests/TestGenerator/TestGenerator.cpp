@@ -5,7 +5,7 @@
 
 #include "TestGenerator.h"
 
-#include <Common/Math.h>
+#include <Common/MathUtils.h>
 #include "CryptoNoteCore/Account.h"
 #include "CryptoNoteCore/Miner.h"
 #include "CryptoNoteCore/TransactionExtra.h"

@@ -1,20 +1,19 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
+// Copyright (c) 2017-2022 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it
+// Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You can redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "NodeRpcProxy.h"
 #include "NodeErrors.h"
@@ -149,7 +148,10 @@ void NodeRpcProxy::workerThread(const INode::Callback& initialized_callback) {
       m_cv_initialized.notify_all();
     }
 
+    std::cout << "NodeRpcProxy initialized, calling callback" << std::endl;
+    std::cout << "About to call initialized_callback" << std::endl;
     initialized_callback(std::error_code());
+    std::cout << "Finished calling initialized_callback" << std::endl;
 
     contextGroup.spawn([this]() {
       Timer pullTimer(*m_dispatcher);
@@ -164,7 +166,10 @@ void NodeRpcProxy::workerThread(const INode::Callback& initialized_callback) {
     contextGroup.wait();
     // Make sure all remote spawns are executed
     m_dispatcher->yield();
-  } catch (std::exception&) {
+  } catch (const std::exception& e) {
+    try { std::cerr << "NodeRpcProxy::workerThread: " << e.what() << std::endl; } catch (...) {}
+  } catch (...) {
+    try { std::cerr << "NodeRpcProxy::workerThread: unknown exception" << std::endl; } catch (...) {}
   }
 
   m_dispatcher = nullptr;
@@ -496,6 +501,36 @@ std::error_code NodeRpcProxy::doGetRandomOutsByAmounts(std::vector<uint64_t>& am
   return ec;
 }
 
+void NodeRpcProxy::getRandomCommitmentOutsForAmount(uint64_t amount, uint64_t outsCount, uint32_t maxHeight,
+                                                     std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>& result,
+                                                     const Callback& callback) {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  if (m_state != STATE_INITIALIZED) {
+    callback(make_error_code(error::NOT_INITIALIZED));
+    return;
+  }
+
+  scheduleRequest([this, amount, outsCount, maxHeight, &result]() {
+    return doGetRandomCommitmentOutsForAmount(amount, outsCount, maxHeight, result);
+  }, callback);
+}
+
+std::error_code NodeRpcProxy::doGetRandomCommitmentOutsForAmount(uint64_t amount, uint64_t outsCount, uint32_t maxHeight,
+                                                                   std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>& result) {
+  COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::request req = AUTO_VAL_INIT(req);
+  COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::response rsp = AUTO_VAL_INIT(rsp);
+  req.amount = amount;
+  req.outs_count = outsCount;
+  req.max_height = maxHeight;
+
+  std::error_code ec = binaryCommand("/getrandom_commitment_outs.bin", req, rsp);
+  if (!ec) {
+    result = std::move(rsp.outs);
+  }
+
+  return ec;
+}
+
 std::error_code NodeRpcProxy::doGetNewBlocks(std::vector<Crypto::Hash>& knownBlockIds,
                                              std::vector<CryptoNote::block_complete_entry>& newBlocks,
                                              uint32_t& startHeight) {
@@ -750,5 +785,116 @@ std::error_code NodeRpcProxy::jsonRpcCommand(const std::string& method, const Re
 
   return ec;
 }
+
+std::error_code NodeRpcProxy::getCdInterest(uint64_t amount, uint32_t creationHeight,
+                                              uint32_t currentHeight, uint64_t& outInterest) {
+  COMMAND_RPC_ESTIMATE_CD_YIELD::request req;
+  COMMAND_RPC_ESTIMATE_CD_YIELD::response res;
+  req.amount = amount;
+  req.creation_height = creationHeight;
+  req.current_height = currentHeight;
+  std::error_code ec = jsonCommand("/estimate_cd_yield", req, res);
+  if (ec) return ec;
+  outInterest = res.estimated_interest;
+  return {};
+}
+
+std::error_code NodeRpcProxy::getCdClaimInfo(uint64_t amount, uint32_t creationHeight,
+                                             uint32_t currentHeight, CdClaimInfo& out,
+                                             uint32_t term) {
+  out = CdClaimInfo{};
+  COMMAND_RPC_ESTIMATE_CD_YIELD::request req;
+  COMMAND_RPC_ESTIMATE_CD_YIELD::response res;
+  req.amount = amount;
+  req.creation_height = creationHeight;
+  req.current_height = currentHeight;
+  req.term = term;
+  std::error_code ec = jsonCommand("/estimate_cd_yield", req, res);
+  if (ec) return ec;
+  out.formulaInterest = res.estimated_interest;
+  out.claimableInterest = res.pool_info_present
+      ? res.claimable_interest
+      : out.formulaInterest;
+  out.feePoolBalance = res.fee_pool_balance;
+  out.vaultBalance = res.cd_apy_vault_balance;
+  out.poolInfoPresent = res.pool_info_present;
+  out.baseInterest = res.base_interest;
+  out.bonusInterest = res.bonus_interest;
+  out.bonusVaultBalance = res.bonus_vault_balance;
+  out.claimableBonus = res.pool_info_present ? res.claimable_bonus : 0;
+  return {};
+}
+
+std::error_code NodeRpcProxy::getEpochFeeRate(uint32_t epoch, uint64_t& outFeeRate) {
+  // Remote daemon epoch fee rate query — not exposed via RPC yet.
+  // Falls back to zero; callers that need this (legacy bond validation)
+  // will get conservative estimates.
+  outFeeRate = 0;
+  return {};
+}
+
+std::error_code NodeRpcProxy::getAmmPoolInfo(INode::AmmPoolInfo& info) {
+  COMMAND_RPC_AMM_POOL_INFO::request req;
+  COMMAND_RPC_AMM_POOL_INFO::response res;
+  std::error_code ec = jsonCommand("/amm_pool_info", req, res);
+  if (ec) return ec;
+  info.reserveXfg = res.reserve_xfg;
+  info.reserveHeat = res.reserve_heat;
+  info.spotPrice = res.spot_price;
+  return {};
+}
+
+std::error_code NodeRpcProxy::getAmmPoolReserves(AmmPoolReserves& out) {
+  COMMAND_RPC_AMM_POOL_INFO::request req;
+  COMMAND_RPC_AMM_POOL_INFO::response res;
+  std::error_code ec = jsonCommand("/amm_pool_info", req, res);
+  if (ec) return ec;
+  out.reserveXfg = res.reserve_xfg;
+  out.reserveHeat = res.reserve_heat;
+  return {};
+}
+
+uint64_t NodeRpcProxy::getHearthTwap() {
+  COMMAND_RPC_AMM_POOL_INFO::request req;
+  COMMAND_RPC_AMM_POOL_INFO::response res;
+  std::error_code ec = jsonCommand("/amm_pool_info", req, res);
+  if (ec) return 0;
+  return res.hearth_twap;
+}
+
+std::error_code NodeRpcProxy::getLimitDeposits(std::vector<INode::LimitDepositRpcEntry>& deposits) {
+  COMMAND_RPC_GET_LIMIT_ORDERS::request req;
+  COMMAND_RPC_GET_LIMIT_ORDERS::response res;
+  std::error_code ec = jsonCommand("/get_limit_orders", req, res);
+  if (ec) return ec;
+  deposits.clear();
+  deposits.reserve(res.orders.size());
+  for (const auto& o : res.orders) {
+    LimitDepositRpcEntry entry;
+    entry.order_id = o.order_id;
+    entry.address_hash = o.address_hash;
+    entry.side = o.side;
+    entry.amount = o.amount;
+    entry.proceeds_xfg = o.proceeds_xfg;
+    entry.proceeds_heat = o.proceeds_heat;
+    entry.target_price = o.target_price;
+    entry.expiration = o.expiration;
+    entry.withdrawn = o.withdrawn;
+    entry.expired = false;
+    deposits.push_back(std::move(entry));
+  }
+  return {};
+}
+
+// Explicit template instantiation for orderbook CLI query
+template std::error_code NodeRpcProxy::jsonCommand<COMMAND_RPC_GET_ORDERBOOK_STATE::request, COMMAND_RPC_GET_ORDERBOOK_STATE::response>(
+  const std::string& url, const COMMAND_RPC_GET_ORDERBOOK_STATE::request& req, COMMAND_RPC_GET_ORDERBOOK_STATE::response& res);
+
+template std::error_code NodeRpcProxy::jsonCommand<COMMAND_RPC_GET_LIMIT_ORDERS::request, COMMAND_RPC_GET_LIMIT_ORDERS::response>(
+  const std::string& url, const COMMAND_RPC_GET_LIMIT_ORDERS::request& req, COMMAND_RPC_GET_LIMIT_ORDERS::response& res);
+
+// Explicit template instantiation for CD interest query
+template std::error_code NodeRpcProxy::jsonCommand<COMMAND_RPC_ESTIMATE_CD_YIELD::request, COMMAND_RPC_ESTIMATE_CD_YIELD::response>(
+  const std::string& url, const COMMAND_RPC_ESTIMATE_CD_YIELD::request& req, COMMAND_RPC_ESTIMATE_CD_YIELD::response& res);
 
 }

@@ -1,18 +1,18 @@
-Copyright (c) 2019-2021, Fango Developers
-Copyright (c) 2018-2021, Fandom Gold Society
+Copyright (c) 2017-2025, Fuego Developers
+Copyright (c) 2022-2025, Elderfire Privacy Group
 
-Fango is free & open software distributed in the hope that it
+Fuego is free & open software distributed in the hope that it
 will be useful, but WITHOUT ANY WARRANTY; without even the
 implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 PURPOSE. You are encouraged to redistribute it and/or modify it
 under the terms of the GNU General Public License v3 or later
 versions as published by the Free Software Foundation.
 You should have received a copy of the GNU General Public License
-along with Fango. If not, see <https://www.gnu.org/licenses/>.
+along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 ****************************************************************
 
-Fango also includes parts of third-party software in accordance 
+Fuego does include sections of third-party software in accordance
 with the following licenses:
 
 ****************************************************************
@@ -128,7 +128,34 @@ You should have received a copy of the GNU Lesser General Public License
 along with Bytecoin.  If not, see <http://www.gnu.org/licenses/>.
 
 ***************************************************************
+// Copyright (c) 2014-2018, uPlexa Team
+// All rights reserved.
+//
+// Redistribution and use in source and binary forms, with or without modification, are
+// permitted provided that the following conditions are met:
+//
+// 1. Redistributions of source code must retain the above copyright notice, this list of
+//    conditions and the following disclaimer.
+//
+// 2. Redistributions in binary form must reproduce the above copyright notice, this list
+//    of conditions and the following disclaimer in the documentation and/or other
+//    materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its contributors may be
+//    used to endorse or promote products derived from this software without specific
+//    prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
+// EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+// MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL
+// THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+// PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+// STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
+// THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+*******************************************************************
 
                     GNU GENERAL PUBLIC LICENSE
                        Version 3, 29 June 2007
@@ -804,4 +831,3 @@ may consider it more useful to permit linking proprietary applications with
 the library.  If this is what you want to do, use the GNU Lesser General
 Public License instead of this License.  But first, please read
 <https://www.gnu.org/licenses/why-not-lgpl.html>.
-

@@ -1,28 +1,46 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
+// Copyright (c) 2017-2026 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it
+// Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You can redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #pragma once
 
-#include "CryptoNote.h"
-#include "CryptoNoteConfig.h"
+#include "../../include/CryptoNote.h"
+#include "../CryptoNoteConfig.h"
 #include "P2pProtocolTypes.h"
 #include <list>
 #include <boost/uuid/uuid.hpp>
+
+#pragma once
+
+#include "../../include/CryptoNote.h"
+#include "../CryptoNoteConfig.h"
+#include "P2pProtocolTypes.h"
+#include <list>
+#include <boost/uuid/uuid.hpp>
+
+// #ifdef ENABLE_FUEGOMESH
+// #include "FuegoMeshtastic/MeshtasticIntegration.h"
+// #endif
+
+namespace CryptoNote {
+
+  // Forward declarations
+  class MeshPeerManager;
+
+} // namespace CryptoNote
 
 namespace CryptoNote {
 
@@ -30,6 +48,7 @@ namespace CryptoNote {
 
   struct IP2pEndpoint {
     virtual void relay_notify_to_all(int command, const BinaryArray& data_buff, const net_connection_id* excludeConnection) = 0;
+    virtual void relay_notify_stem(int command, const BinaryArray& data_buff, const net_connection_id* excludeConnection) = 0;
     virtual bool invoke_notify_to_peer(int command, const BinaryArray& req_buff, const CryptoNote::CryptoNoteConnectionContext& context) = 0;
     virtual uint64_t get_connections_count()=0;
     virtual bool ban_host(const uint32_t address_ip, time_t seconds = CryptoNote::P2P_IP_BLOCKTIME) = 0;
@@ -39,11 +58,18 @@ namespace CryptoNote {
     virtual void for_each_connection(std::function<void(CryptoNote::CryptoNoteConnectionContext&, PeerIdType)> f) = 0;
     // can be called from external threads
     virtual void externalRelayNotifyToAll(int command, const BinaryArray &data_buff, const net_connection_id *excludeConnection) = 0;
+    virtual void externalRelayNotifyToStem(int command, const BinaryArray &data_buff, const net_connection_id *excludeConnection) = 0;
     virtual void externalRelayNotifyToList(int command, const BinaryArray &data_buff, const std::list<boost::uuids::uuid> relayList) = 0;
+#ifdef ENABLE_FUEGOMESH
+    virtual bool relayTransactionViaMesh(const BinaryArray& txBlob) = 0;
+    virtual bool relayBlockSignalViaMesh(uint32_t height, const Crypto::Hash& blockHash) = 0;
+    virtual bool isMeshtasticEnabled() const = 0;
+#endif
   };
 
   struct p2p_endpoint_stub: public IP2pEndpoint {
     virtual void relay_notify_to_all(int command, const BinaryArray& data_buff, const net_connection_id* excludeConnection) override {}
+    virtual void relay_notify_stem(int command, const BinaryArray& data_buff, const net_connection_id* excludeConnection) override {}
     virtual bool invoke_notify_to_peer(int command, const BinaryArray& req_buff, const CryptoNote::CryptoNoteConnectionContext& context) override { return true; }
     virtual bool ban_host(const uint32_t address_ip, time_t seconds) override { return true; }
     virtual bool unban_host(const uint32_t address_ip) override { return true; }
@@ -52,6 +78,12 @@ namespace CryptoNote {
     virtual void for_each_connection(std::function<void(CryptoNote::CryptoNoteConnectionContext&, PeerIdType)> f) override {}
     virtual uint64_t get_connections_count() override { return 0; }
     virtual void externalRelayNotifyToAll(int command, const BinaryArray &data_buff, const net_connection_id *excludeConnection) override {}
+    virtual void externalRelayNotifyToStem(int command, const BinaryArray &data_buff, const net_connection_id *excludeConnection) override {}
     virtual void externalRelayNotifyToList(int command, const BinaryArray &data_buff, const std::list<boost::uuids::uuid> relayList) override {}
+#ifdef ENABLE_FUEGOMESH
+    virtual bool relayTransactionViaMesh(const BinaryArray& txBlob) override { return false; }
+    virtual bool relayBlockSignalViaMesh(uint32_t height, const Crypto::Hash& blockHash) override { return false; }
+    virtual bool isMeshtasticEnabled() const override { return false; }
+#endif
   };
 }

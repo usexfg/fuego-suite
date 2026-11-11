@@ -1,0 +1,132 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1680" height="1220" viewBox="0 0 1680 1220" role="img" aria-labelledby="title desc">
+  <title id="title">Fuego swap-chain architecture, 2026-10-03</title>
+  <desc id="desc">Diagram of 29 declared swap pair IDs, 25 conditional runtime client paths, four staged pairs, and differing dashboard, Valise, TUI, and node lists. No funded two-daemon end-to-end pair result was found.</desc>
+  <defs>
+    <style>
+      .bg{fill:#0b1017}.panel{fill:#151e2a;stroke:#33445a;stroke-width:1.5}
+      .panel-blue{fill:#172638;stroke:#4e82b5;stroke-width:2}
+      .panel-amber{fill:#2b241a;stroke:#a87b37;stroke-width:2}
+      .panel-red{fill:#2d1b22;stroke:#c46171;stroke-width:2}
+      .title{fill:#f4f7fb;font:700 40px system-ui,-apple-system,sans-serif}
+      .subtitle{fill:#9eb1c8;font:18px system-ui,-apple-system,sans-serif}
+      .eyebrow{fill:#91a8c2;font:700 15px system-ui,-apple-system,sans-serif;letter-spacing:2px}
+      .head{fill:#f1f6fb;font:700 24px system-ui,-apple-system,sans-serif}
+      .body{fill:#d6e2ee;font:17px system-ui,-apple-system,sans-serif}
+      .small{fill:#a8bbce;font:15px system-ui,-apple-system,sans-serif}
+      .code{fill:#b7d7f2;font:14px ui-monospace,SFMono-Regular,Menlo,monospace}
+      .metric{fill:#f6f9fc;font:700 41px system-ui,-apple-system,sans-serif}
+      .bad{fill:#ff9eae}.good{fill:#8bc5ef}.warn{fill:#f5c979}
+      .line{fill:none;stroke:#77a9d4;stroke-width:3}
+      .copy{fill:none;stroke:#8d9cad;stroke-width:2.5;stroke-dasharray:7 7}
+      .block{fill:none;stroke:#e79575;stroke-width:2.5;stroke-dasharray:7 7}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M1 1 L9 5 L1 9" fill="none" stroke="#77a9d4" stroke-width="2"/>
+    </marker>
+    <marker id="copy-arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M1 1 L9 5 L1 9" fill="none" stroke="#8d9cad" stroke-width="2"/>
+    </marker>
+    <marker id="block-arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M1 1 L9 5 L1 9" fill="none" stroke="#e79575" stroke-width="2"/>
+    </marker>
+  </defs>
+  <rect class="bg" width="1680" height="1220"/>
+  <text x="60" y="66" class="eyebrow">FUEGO / DEXFG · SOURCE SNAPSHOT · 03 OCT 2026</text>
+  <text x="60" y="119" class="title">One pair enum. Five different surfaces.</text>
+  <text x="60" y="153" class="subtitle">Catalog visibility ≠ configured client ≠ funded testnet settlement</text>
+
+  <rect x="60" y="186" width="370" height="104" rx="10" class="panel-blue"/>
+  <text x="82" y="244" class="metric">29</text><text x="166" y="231" class="body">pair IDs declared</text>
+  <text x="166" y="257" class="code">SwapTypes.h</text>
+  <rect x="457" y="186" width="370" height="104" rx="10" class="panel"/>
+  <text x="479" y="244" class="metric">25</text><text x="562" y="231" class="body">conditional client paths</text>
+  <text x="562" y="257" class="code">SwapDaemon.cpp</text>
+  <rect x="854" y="186" width="370" height="104" rx="10" class="panel-amber"/>
+  <text x="876" y="244" class="metric warn">4</text><text x="933" y="231" class="body">staged, never registered</text>
+  <text x="933" y="257" class="code">SIA · ZANO · TON · DOT</text>
+  <rect x="1251" y="186" width="370" height="104" rx="10" class="panel-red"/>
+  <text x="1273" y="244" class="metric bad">0</text><text x="1326" y="231" class="body">funded two-daemon</text>
+  <text x="1326" y="257" class="body">E2E results found</text>
+
+  <rect x="60" y="340" width="520" height="299" rx="13" class="panel-blue"/>
+  <text x="86" y="375" class="eyebrow">01 / DECLARATION</text>
+  <text x="86" y="413" class="head">C++ SwapPair enum · IDs 0–28</text>
+  <text x="86" y="448" class="small">15 EVM native-asset candidates</text>
+  <text x="86" y="472" class="code">ETH ARB BASE BNB POLYGON GLEEC ROBINHOOD</text>
+  <text x="86" y="494" class="code">AVAX CRO BOB UNICHAIN PLASMA PULSECHAIN</text>
+  <text x="86" y="516" class="code">MONAD OPTIMISM</text>
+  <text x="86" y="551" class="small">10 non-EVM client candidates</text>
+  <text x="86" y="575" class="code">SOL XMR BCH KMD_SPV DCR BTC LTC</text>
+  <text x="86" y="597" class="code">DOGE DASH ZEC</text>
+  <text x="86" y="622" class="small">Plus 4 staged IDs: SIA · ZANO · TON · DOT</text>
+
+  <rect x="630" y="340" width="480" height="299" rx="13" class="panel"/>
+  <text x="656" y="375" class="eyebrow">02 / RUNTIME FILTER</text>
+  <text x="656" y="413" class="head">ChainClientConfig → ChainRegistry</text>
+  <text x="656" y="449" class="body">Host/config gates client registration.</text>
+  <text x="656" y="479" class="body">Signer, chain RPC, contract/script and</text>
+  <text x="656" y="507" class="body">funding still gate real settlement.</text>
+  <text x="656" y="548" class="small">25 is a source-code ceiling, not the count</text>
+  <text x="656" y="573" class="small">active in any running daemon.</text>
+  <text x="656" y="611" class="code">swap_config.json is not a pair catalog</text>
+
+  <rect x="1160" y="340" width="460" height="299" rx="13" class="panel-red"/>
+  <text x="1186" y="375" class="eyebrow bad">03 / TESTNET GATE</text>
+  <text x="1186" y="413" class="head">No pair is proven ready</text>
+  <text x="1186" y="450" class="body">Need both funded daemons, both claims,</text>
+  <text x="1186" y="480" class="body">timeout refunds, restart and reorg.</text>
+  <text x="1186" y="526" class="small">--testnet selects only Fuego's RPC port;</text>
+  <text x="1186" y="552" class="small">counterparty networks and state identity</text>
+  <text x="1186" y="578" class="small">need their own verified configuration.</text>
+  <path d="M580 490 H615" class="line" marker-end="url(#arrow)"/>
+  <path d="M1110 490 H1145" class="block" marker-end="url(#block-arrow)"/>
+
+  <text x="60" y="702" class="eyebrow">DISPLAY / WALLET CATALOGS — DASHED LINES COPY OR FILTER NAMES; THEY DO NOT PROVE EXECUTION</text>
+  <path d="M320 639 V719 H245 V746" class="copy" marker-end="url(#copy-arrow)"/>
+  <path d="M320 639 V719 H640 V746" class="copy" marker-end="url(#copy-arrow)"/>
+  <path d="M320 639 V719 H1430 V746" class="copy" marker-end="url(#copy-arrow)"/>
+  <text x="915" y="739" class="code">independent chains.yaml ↓</text>
+
+  <rect x="60" y="748" width="370" height="287" rx="13" class="panel-amber"/>
+  <text x="82" y="782" class="eyebrow">WEB DASHBOARD</text>
+  <text x="82" y="820" class="head">29 options / 10 graphed</text>
+  <text x="82" y="853" class="small">swapxfg.html selector: all 29</text>
+  <text x="82" y="879" class="small">swapxfg.js graph metadata: 10</text>
+  <text x="82" y="905" class="small">IDs 25–27 displayed as wrong chains</text>
+  <text x="82" y="946" class="body bad">Button → wallet key material,</text>
+  <text x="82" y="973" class="body bad">not swap-daemon initiation.</text>
+  <text x="82" y="1008" class="code">offline offers and rates invented</text>
+
+  <rect x="455" y="748" width="370" height="287" rx="13" class="panel"/>
+  <text x="477" y="782" class="eyebrow">VALISE DEXFG</text>
+  <text x="477" y="820" class="head">22 app swap pairs</text>
+  <text x="477" y="853" class="small">SwapPairSdk: 15 EVM + 7 non-EVM</text>
+  <text x="477" y="879" class="small">Calls xfg-swapd RPC directly</text>
+  <text x="477" y="920" class="body bad">Direct peer form uses XFG</text>
+  <text x="477" y="947" class="body bad">atomic amount for CTR too.</text>
+  <text x="477" y="1008" class="code">peer_swap_screen.dart</text>
+
+  <rect x="850" y="748" width="370" height="287" rx="13" class="panel"/>
+  <text x="872" y="782" class="eyebrow">VALISE WALLET</text>
+  <text x="872" y="820" class="head">33 EVM networks</text>
+  <text x="872" y="853" class="small">chains.yaml → chain_registry.g.dart</text>
+  <text x="872" y="879" class="small">15 tagged swap / 18 wallet-only</text>
+  <text x="872" y="920" class="body">Built-in stablecoins on 21</text>
+  <text x="872" y="947" class="body">networks; ERC-20 swaps: 0.</text>
+  <text x="872" y="1008" class="code">Erc20Registry ≠ SwapPair</text>
+
+  <rect x="1245" y="748" width="375" height="287" rx="13" class="panel"/>
+  <text x="1267" y="782" class="eyebrow">OTHER LISTS</text>
+  <text x="1267" y="820" class="head">Go TUI: 7 active</text>
+  <text x="1267" y="853" class="code">SOL ETH XMR BCH ARB BASE BNB</text>
+  <text x="1267" y="902" class="head">fuegod offer RPC: 8</text>
+  <text x="1267" y="935" class="small">/placeorder accepts IDs 0–7 only</text>
+  <text x="1267" y="966" class="small">Separate from xfg-swapd RPC</text>
+  <text x="1267" y="1008" class="code">pairs.go · RpcServer.cpp</text>
+
+  <rect x="60" y="1084" width="1560" height="105" rx="11" class="panel-red"/>
+  <text x="84" y="1118" class="eyebrow bad">THE EXECUTION GAP</text>
+  <text x="84" y="1145" class="body">Valise's HTTPS URL becomes host:port for a plaintext EVM client; the dashboard's Hearth trade sends zero output; no funded pair matrix closes the loop.</text>
+  <text x="84" y="1173" class="small">Other catalog layers: 29 relay slots; in-progress 29→23 price-asset map. Neither registers settlement clients.</text>
+  <text x="60" y="1211" class="small">Source details and the exact 29-ID list: swap-chain-architecture-2026-10-03.md</text>
+</svg>

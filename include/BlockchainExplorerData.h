@@ -1,17 +1,17 @@
+// Copyright (c) 2017-2025 Fuego Developers
+// Copyright (c) 2020-2025 Elderfire Privacy Group
 // Copyright (c) 2011-2017 The Cryptonote developers
-// Copyright (c) 2018-2021 Fandom Gold Society
-// Copyright (c) 2019-2021 Fango Developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it 
+// Fuego is free software distributed in the hope that it
 // will be useful- but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You are encouraged to redistribute it and/or modify it
 // under the terms of the GNU General Public License v3 or later
 // versions as published by the Free Software Foundation.
 // You should receive a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>
 
 #pragma once
 
@@ -40,13 +40,20 @@ struct TransactionOutputMultisignatureDetails {
   uint32_t requiredSignatures;
 };
 
+struct TransactionOutputCommitmentDetails {
+  Crypto::PublicKey commitKey;
+  uint32_t term;
+};
+
 struct TransactionOutputDetails {
   uint64_t amount;
   uint32_t globalIndex;
+  uint32_t creationHeight; // used in decoy analysis | available from v10+ | 0 if unknown
 
   boost::variant<
     TransactionOutputToKeyDetails,
-    TransactionOutputMultisignatureDetails> output;
+    TransactionOutputMultisignatureDetails,
+    TransactionOutputCommitmentDetails> output;
 };
 
 struct TransactionOutputReferenceDetails {
@@ -70,13 +77,28 @@ struct TransactionInputMultisignatureDetails {
   TransactionOutputReferenceDetails output;
 };
 
+struct TransactionInputCommitmentSpendDetails {
+  std::vector<uint32_t> outputIndexes;
+  Crypto::KeyImage keyImage;
+  uint64_t ringSize;
+};
+
+struct TransactionInputCommitmentTransferDetails {
+  std::vector<uint32_t> outputIndexes;
+  Crypto::KeyImage keyImage;
+  uint32_t newTerm;
+  uint64_t ringSize;
+};
+
 struct TransactionInputDetails {
   uint64_t amount;
 
   boost::variant<
     TransactionInputGenerateDetails,
     TransactionInputToKeyDetails,
-    TransactionInputMultisignatureDetails> input;
+    TransactionInputMultisignatureDetails,
+    TransactionInputCommitmentSpendDetails,
+    TransactionInputCommitmentTransferDetails> input;
 };
 
 struct TransactionExtraDetails {

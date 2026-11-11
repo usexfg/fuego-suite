@@ -1,20 +1,19 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
+// Copyright (c) 2017-2026 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it
+// Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You can redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "Core.h"
 
@@ -23,19 +22,34 @@
 #include "../CryptoNoteConfig.h"
 #include "../Common/CommandLine.h"
 #include "../Common/Util.h"
-#include "../Common/Math.h"
+#include "../Common/MathUtils.h"
 #include "../Common/StringTools.h"
 #include "../crypto/crypto.h"
 #include "../CryptoNoteProtocol/CryptoNoteProtocolDefinitions.h"
 #include "../Logging/LoggerRef.h"
 #include "../Rpc/CoreRpcServerCommandsDefinitions.h"
 #include "CryptoNoteFormatUtils.h"
+#include "AmmPool.h"
 
 #include "CryptoNoteTools.h"
 #include "CryptoNoteStatInfo.h"
 #include "Miner.h"
 #include "TransactionExtra.h"
+#include "SubaddressTx.h"
 #include "IBlock.h"
+#include "Currency.h"
+#include <vector>
+#include <functional>
+#include <array>
+#include <list>
+#include <string>
+#include <memory>
+#include "../CryptoNoteProtocol/CryptoNoteProtocolDefinitions.h"
+#include "../Rpc/CoreRpcServerCommandsDefinitions.h"
+#include "../crypto/hash.h"
+#include "../CryptoNoteCore/CryptoNoteBasic.h"
+#include "../CryptoNoteCore/Difficulty.h"
+#include "../../include/CryptoNote.h"
 
 #undef ERROR
 
@@ -281,26 +295,65 @@ bool core::get_stat_info(core_stat_info& st_inf) {
   return true;
 }
 
-bool core::check_tx_mixin(const Transaction& tx) {
+bool core::check_tx_mixin(const Transaction& tx, uint8_t blockMajorVersion, bool keeped_by_block) {
   size_t inputIndex = 0;
   for (const auto& txin : tx.inputs) {
     assert(inputIndex < tx.signatures.size());
     if (txin.type() == typeid(KeyInput)) {
-      uint64_t txMixin = boost::get<KeyInput>(txin).outputIndexes.size();
-            if (txMixin > m_currency.maxMixin()) {
+      uint64_t ringSize = boost::get<KeyInput>(txin).outputIndexes.size();
+      if (!keeped_by_block && ringSize > m_currency.maxMixin() + 1) {
         logger(ERROR) << "Transaction " << getObjectHash(tx) << " has too large mixIn count, rejected";
         return false;
       }
-      if (getCurrentBlockMajorVersion() >= BLOCK_MAJOR_VERSION_7 && txMixin < m_currency.minMixin() && txMixin != 1) {
-        logger(ERROR) << "Transaction " << getObjectHash(tx) << " has mixIn count below the required minimum, rejected";
+      if (!keeped_by_block && blockMajorVersion >= BLOCK_MAJOR_VERSION_7 && ringSize < m_currency.minMixin(blockMajorVersion)) {
+        logger(ERROR) << "Transaction " << getObjectHash(tx) << " has mixIn count " << ringSize
+                      << " below the required minimum " << m_currency.minMixin(blockMajorVersion)
+                      << " for block version " << (int)blockMajorVersion << ", rejected";
+        return false;
+      }
+    } else if (txin.type() == typeid(TransactionInputCommitmentSpend)) {
+      uint64_t ringSize = boost::get<TransactionInputCommitmentSpend>(txin).outputIndexes.size();
+      if (!keeped_by_block && ringSize > m_currency.maxMixin() + 1) {
+        logger(ERROR) << "Transaction " << getObjectHash(tx) << " has too large commitment spend ring size, rejected";
+        return false;
+      }
+      if (!keeped_by_block && blockMajorVersion >= BLOCK_MAJOR_VERSION_10 && ringSize < m_currency.minMixin(blockMajorVersion)) {
+        logger(ERROR) << "Transaction " << getObjectHash(tx) << " has commitment spend ring size " << ringSize
+                      << " below the required minimum " << m_currency.minMixin(blockMajorVersion)
+                      << " for block version " << (int)blockMajorVersion << ", rejected";
+        return false;
+      }
+    } else if (txin.type() == typeid(TransactionInputCommitmentTransfer)) {
+      uint64_t ringSize = boost::get<TransactionInputCommitmentTransfer>(txin).outputIndexes.size();
+      if (!keeped_by_block && ringSize > m_currency.maxMixin() + 1) {
+        logger(ERROR) << "Transaction " << getObjectHash(tx) << " has too large CD transfer ring size, rejected";
+        return false;
+      }
+      if (!keeped_by_block && blockMajorVersion >= BLOCK_MAJOR_VERSION_11 && ringSize < m_currency.minMixin(blockMajorVersion)) {
+        logger(ERROR) << "Transaction " << getObjectHash(tx) << " has CD transfer ring size " << ringSize
+                      << " below the required minimum " << m_currency.minMixin(blockMajorVersion)
+                      << " for block version " << (int)blockMajorVersion << ", rejected";
+        return false;
+      }
+    } else if (txin.type() == typeid(TransactionInputUnified)) {
+      uint64_t ringSize = boost::get<TransactionInputUnified>(txin).outputIndexes.size();
+      if (!keeped_by_block && ringSize > m_currency.maxMixin() + 1) {
+        logger(ERROR) << "Transaction " << getObjectHash(tx) << " has too large unified input ring size, rejected";
+        return false;
+      }
+      if (!keeped_by_block && blockMajorVersion >= BLOCK_MAJOR_VERSION_12 && ringSize < m_currency.minMixin(blockMajorVersion)) {
+        logger(ERROR) << "Transaction " << getObjectHash(tx) << " has unified input ring size " << ringSize
+                      << " below the required minimum " << m_currency.minMixin(blockMajorVersion)
+                      << " for block version " << (int)blockMajorVersion << ", rejected";
         return false;
       }
     }
+    inputIndex++;
   }
   return true;
 }
 
-bool core::check_tx_fee(const Transaction& tx, size_t blobSize, tx_verification_context& tvc) {
+bool core::check_tx_fee(const Transaction& tx, size_t blobSize, uint8_t blockMajorVersion, tx_verification_context& tvc) {
 	uint64_t inputs_amount = 0;
 	if (!get_inputs_money_amount(tx, inputs_amount)) {
 		tvc.m_verification_failed = true;
@@ -320,9 +373,11 @@ bool core::check_tx_fee(const Transaction& tx, size_t blobSize, tx_verification_
 	getObjectHash(tx, h, blobSize);
 	const uint64_t fee = inputs_amount - outputs_amount;
 	bool isFusionTransaction = fee == 0 && m_currency.isFusionTransaction(tx, blobSize);
-	if (!isFusionTransaction && fee < m_currency.minimumFee()) {
+
+	// Use flat minimum fee (no dynamic calculation)
+	if (!isFusionTransaction && fee < m_currency.minimumFee(blockMajorVersion)) {
 		logger(DEBUGGING) << "transaction fee is not enough: " << m_currency.formatAmount(fee) <<
-			", minimum fee: " << m_currency.formatAmount(m_currency.minimumFee());
+			", minimum fee: " << m_currency.formatAmount(m_currency.minimumFee(blockMajorVersion));
 		tvc.m_verification_failed = true;
 		tvc.m_tx_fee_too_small = true;
 		return false;
@@ -352,13 +407,67 @@ bool core::check_tx_semantic(const Transaction& tx, bool keeped_by_block, uint32
     logger(ERROR) << "tx have money overflow, rejected for tx id= " << getObjectHash(tx);
     return false;
   }
-	
-  // uint64_t amount_in = 0;
-  // get_inputs_money_amount(tx, amount_in);
-  uint64_t amount_in = m_currency.getTransactionAllInputsAmount(tx, height);
+
+  uint64_t amount_in = 0;
+  if (!m_currency.getTransactionAllInputsAmountChecked(tx, height, amount_in)) {
+    logger(ERROR) << "tx input total overflow, rejected for tx id= " << getObjectHash(tx);
+    return false;
+  }
   uint64_t amount_out = get_outs_money_amount(tx);
 
-  if (amount_in < amount_out) {
+  // Parse extra tags for per-asset conservation check
+  bool hasAmmSwapAuth = false;
+  uint8_t ammSwapDirection = 0;
+  bool hasHeatMintAuth = false;
+  std::string subaddrErr;
+  const uint8_t extraMajorVersion = m_currency.blockMajorVersionAtHeight(height);
+  if (!validateSubaddressTxExtra(tx, extraMajorVersion, &subaddrErr)) {
+    logger(ERROR) << "tx subaddress extra rejected for tx id= " << getObjectHash(tx) << ": " << subaddrErr;
+    return false;
+  }
+
+  std::vector<TransactionExtraField> tx_extra_fields;
+  if (parseTransactionExtra(tx.extra, tx_extra_fields)) {
+    for (const auto& field : tx_extra_fields) {
+      if (field.type() == typeid(TransactionExtraAmmSwapAuth)) {
+        hasAmmSwapAuth = true;
+        ammSwapDirection = boost::get<TransactionExtraAmmSwapAuth>(field).direction;
+        break;
+      }
+      if (field.type() == typeid(TransactionExtraHeatMintAuth)) {
+        hasHeatMintAuth = true;
+        break;
+      }
+    }
+  }
+
+  if (hasAmmSwapAuth || hasHeatMintAuth) {
+    // AMM swap or HEAT mint: check per-asset conservation instead of aggregate.
+    // HEAT mint is equivalent to direction 0 (XFG→HEAT): XFG inputs cover XFG outputs + fee, HEAT is minted.
+    // AMM direction 0 (XFG→HEAT): XFG inputs must cover XFG outputs + fee.
+    // AMM direction 1 (HEAT→XFG): HEAT inputs must cover HEAT outputs.
+    AssetBalance inAssets = get_blockchain_storage().getTransactionInputAssetAmounts(tx, height);
+    AssetBalance outAssets = m_currency.getTransactionOutputAssetAmounts(tx);
+    uint64_t fee = amount_in < amount_out ? m_currency.minimumFee() : amount_in - amount_out;
+
+    if (hasHeatMintAuth || ammSwapDirection == 0) {
+      // XFG→HEAT: XFG conservation (HEAT is minted, no HEAT inputs expected)
+      if (inAssets.xfg < outAssets.xfg + fee) {
+        logger(ERROR) << "tx XFG conservation violated for " << (hasHeatMintAuth ? "HEAT mint" : "AMM swap")
+                      << ": xfg_in=" << inAssets.xfg << " xfg_out=" << outAssets.xfg << " fee=" << fee
+                      << " rejected for tx id= " << getObjectHash(tx);
+        return false;
+      }
+    } else {
+      // HEAT→XFG: HEAT conservation (XFG is minted, no XFG inputs expected)
+      if (inAssets.heat < outAssets.heat) {
+        logger(ERROR) << "tx HEAT conservation violated for AMM swap: heat_in=" << inAssets.heat
+                      << " heat_out=" << outAssets.heat
+                      << " rejected for tx id= " << getObjectHash(tx);
+        return false;
+      }
+    }
+  } else if (amount_in < amount_out) {
     logger(ERROR) << "tx with wrong amounts: ins " << amount_in << ", outs " << amount_out << ", rejected for tx id= " << getObjectHash(tx);
     return false;
   }
@@ -372,6 +481,49 @@ bool core::check_tx_semantic(const Transaction& tx, bool keeped_by_block, uint32
   if (!checkMultisignatureInputsDiff(tx)) {
     logger(ERROR) << "tx has a few multisignature inputs with identical output indexes";
     return false;
+  }
+
+  if (!checkSwapEscrowInputsDiff(tx)) {
+    logger(ERROR) << "tx has duplicate swap escrow inputs";
+    return false;
+  }
+
+  // Determine block major version from the given height
+  uint8_t blockMajorVersion = BLOCK_MAJOR_VERSION_1;
+  uint8_t versionsToCheck[] = {
+    BLOCK_MAJOR_VERSION_11, BLOCK_MAJOR_VERSION_10, BLOCK_MAJOR_VERSION_9,
+    BLOCK_MAJOR_VERSION_8, BLOCK_MAJOR_VERSION_7, BLOCK_MAJOR_VERSION_6,
+    BLOCK_MAJOR_VERSION_5, BLOCK_MAJOR_VERSION_4, BLOCK_MAJOR_VERSION_3,
+    BLOCK_MAJOR_VERSION_2
+  };
+  for (auto v : versionsToCheck) {
+    uint32_t uh = m_currency.upgradeHeight(v);
+    if (uh != UpgradeDetectorBase::UNDEF_HEIGHT && height >= uh) {
+      blockMajorVersion = v;
+      break;
+    }
+  }
+  if (!check_tx_mixin(tx, blockMajorVersion, keeped_by_block)) {
+    logger(ERROR) << "tx with invalid mixin, rejected for tx id= " << getObjectHash(tx);
+    return false;
+  }
+
+  // Swap-escrow inputs/outputs are a v11 (HEATWAVE) consensus feature.
+  // Reject them on pre-v11 blocks so old nodes and new nodes stay in sync
+  // during the upgrade window.
+  if (blockMajorVersion < BLOCK_MAJOR_VERSION_11) {
+    for (const auto& in : tx.inputs) {
+      if (in.type() == typeid(TransactionInputSwapEscrow)) {
+        logger(ERROR) << "Swap escrow input before v11 rejected";
+        return false;
+      }
+    }
+    for (const auto& out : tx.outputs) {
+      if (out.target.type() == typeid(TransactionOutputSwapEscrow)) {
+        logger(ERROR) << "Swap escrow output before v11 rejected";
+        return false;
+      }
+    }
   }
 
   return true;
@@ -410,6 +562,41 @@ bool core::check_tx_inputs_keyimages_diff(const Transaction& tx) {
       // so first can be zero, others can't
       if (std::find(++std::begin(in.outputIndexes), std::end(in.outputIndexes), 0) != std::end(in.outputIndexes)) {
         logger(ERROR) << "Transaction has identical output indexes";
+        return false;
+      }
+    } else if (input.type() == typeid(TransactionInputCommitmentSpend)) {
+      const auto& cin = boost::get<TransactionInputCommitmentSpend>(input);
+      if (!ki.insert(cin.keyImage).second) {
+        logger(ERROR) << "Transaction has identical commitment spend key images";
+        return false;
+      }
+      if (cin.outputIndexes.empty()) {
+        logger(ERROR) << "Transaction's commitment spend input uses empty output";
+        return false;
+      }
+    } else if (input.type() == typeid(TransactionInputCommitmentTransfer)) {
+      const auto& xfer = boost::get<TransactionInputCommitmentTransfer>(input);
+      if (!ki.insert(xfer.keyImage).second) {
+        logger(ERROR) << "Transaction has identical commitment transfer key images";
+        return false;
+      }
+      if (xfer.outputIndexes.empty()) {
+        logger(ERROR) << "Transaction's commitment transfer input uses empty output";
+        return false;
+      }
+    } else if (input.type() == typeid(TransactionInputSwapEscrow)) {
+      const auto& escrow = boost::get<TransactionInputSwapEscrow>(input);
+      if (!ki.insert(escrow.keyImage).second) {
+        logger(ERROR) << "Transaction has identical swap escrow key images";
+        return false;
+      }
+      static const Crypto::Hash ZERO_HASH{};
+      if (std::memcmp(&escrow.escrowTxId, &ZERO_HASH, sizeof(Crypto::Hash)) == 0) {
+        logger(ERROR) << "Swap escrow input with zero escrow tx id";
+        return false;
+      }
+      if (escrow.mode > 1) {
+        logger(ERROR) << "Swap escrow input with invalid mode";
         return false;
       }
     }
@@ -461,8 +648,12 @@ bool core::get_block_template(Block& b, const AccountPublicAddress& adr, difficu
 
         if (b.majorVersion == BLOCK_MAJOR_VERSION_1) {
       b.minorVersion = m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_2) == UpgradeDetectorBase::UNDEF_HEIGHT ? BLOCK_MINOR_VERSION_1 : BLOCK_MINOR_VERSION_0;
-    } else if (b.majorVersion >= BLOCK_MAJOR_VERSION_2) {
-      if (m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_8) == UpgradeDetectorBase::UNDEF_HEIGHT) {
+    } else if (b.majorVersion >= BLOCK_MAJOR_VERSION_2) { // upgradekit
+            if (m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_10) == UpgradeDetectorBase::UNDEF_HEIGHT) {
+          b.minorVersion = b.majorVersion == BLOCK_MAJOR_VERSION_9 ? BLOCK_MINOR_VERSION_1 : BLOCK_MINOR_VERSION_0;
+             if (m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_9) == UpgradeDetectorBase::UNDEF_HEIGHT) {
+        b.minorVersion = b.majorVersion == BLOCK_MAJOR_VERSION_8 ? BLOCK_MINOR_VERSION_1 : BLOCK_MINOR_VERSION_0;
+      } else if (m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_8) == UpgradeDetectorBase::UNDEF_HEIGHT) {
         b.minorVersion = b.majorVersion == BLOCK_MAJOR_VERSION_7 ? BLOCK_MINOR_VERSION_1 : BLOCK_MINOR_VERSION_0;
       } else if (m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_7) == UpgradeDetectorBase::UNDEF_HEIGHT) {
         b.minorVersion = b.majorVersion == BLOCK_MAJOR_VERSION_6 ? BLOCK_MINOR_VERSION_1 : BLOCK_MINOR_VERSION_0;
@@ -477,9 +668,10 @@ bool core::get_block_template(Block& b, const AccountPublicAddress& adr, difficu
       } else {
         b.minorVersion = BLOCK_MINOR_VERSION_0;
       }
+    }
 
-      b.parentBlock.majorVersion = BLOCK_MAJOR_VERSION_1;
-      b.parentBlock.majorVersion = BLOCK_MINOR_VERSION_0;
+    b.parentBlock.majorVersion = BLOCK_MAJOR_VERSION_1;
+      b.parentBlock.minorVersion = BLOCK_MINOR_VERSION_0;
       b.parentBlock.transactionCount = 1;
       TransactionExtraMergeMiningTag mm_tag = boost::value_initialized<decltype(mm_tag)>();
 
@@ -493,15 +685,15 @@ bool core::get_block_template(Block& b, const AccountPublicAddress& adr, difficu
     b.timestamp = time(NULL);
 
 
-    
+
     // Courtesy of Jagerman
     // https://github.com/graft-project/GraftNetwork/pull/118/commits
- 
+
     // If some other node has submitted enough blocks with forged future
     // timestamps, legitimate nodes end up providing their pools with a block
     // template that cannot be accepted -- it fails the requirement that a block
     // timestamp be greater than the median of the recent block window.
-    // 
+    //
     // This fix allows the node to increase the timestamp to the median (i.e. the
     // minimum required) if the timestamp would be rejected so that it doesn't
     // end up handing out impossible-to-accept block templates.
@@ -512,7 +704,7 @@ bool core::get_block_template(Block& b, const AccountPublicAddress& adr, difficu
 
     if(height >= m_currency.timestampCheckWindow(b.majorVersion)) {
       std::vector<uint64_t> timestamps;
-      for(size_t offset = height - m_currency.timestampCheckWindow(b.majorVersion); offset < height; ++offset) { 
+      for(size_t offset = height - m_currency.timestampCheckWindow(b.majorVersion); offset < height; ++offset) {
 
         timestamps.push_back(m_blockchain.getBlockTimestamp(offset));
       }
@@ -521,7 +713,7 @@ bool core::get_block_template(Block& b, const AccountPublicAddress& adr, difficu
           b.timestamp = median_ts;
       }
     }
-//	
+//
     median_size = m_blockchain.getCurrentCumulativeBlocksizeLimit() / 2;
     already_generated_coins = m_blockchain.getCoinsInCirculation();
   }
@@ -529,26 +721,60 @@ bool core::get_block_template(Block& b, const AccountPublicAddress& adr, difficu
   size_t txs_size;
   uint64_t fee;
   if (!m_mempool.fill_block_template(b, median_size, m_currency.maxBlockCumulativeSize(height), already_generated_coins, txs_size, fee, height)) {
+    logger(ERROR, BRIGHT_RED) << "fill_block_template failed - median_size=" << median_size
+      << ", max_block_size=" << m_currency.maxBlockCumulativeSize(height)
+      << ", already_generated_coins=" << already_generated_coins;
     return false;
   }
+    logger(DEBUGGING) << "Block template: height=" << height << ", majorVersion=" << (int)b.majorVersion
+      << ", difficulty=" << diffic << ", txs_size=" << txs_size << ", fee=" << fee;
 
   /*
      two-phase miner transaction generation: we don't know exact block size until we prepare block, but we don't know reward until we know
      block size, so first miner transaction generated with fake amount of money, and with phase we know think we know expected block size
      */
-  //make blocks coin-base tx looks close to real coinbase tx to get truthful blob size
-  bool r = m_currency.constructMinerTx(b.majorVersion, height, median_size, already_generated_coins, txs_size, fee, adr, b.baseTransaction, ex_nonce, 11);
-  if (!r) { 
-    logger(ERROR, BRIGHT_RED) << "Failed to construct miner tx, first chance"; 
-    return false; 
+  // Use deterministic height-indexed burn amount for reward calculation
+  // Burns through block N-1 determine the reward for block N
+  uint64_t burnedCoins = (height > 0) ? m_blockchain.getBurnedXfgAtHeight(height - 1) : 0;
+
+  // V10+: Compute banking fees from block template transactions for coinbase split
+  uint64_t bankingFeesInBlock = 0;
+  if (b.majorVersion >= BLOCK_MAJOR_VERSION_10) {
+    // Fetch transactions from mempool to compute banking fees
+    std::vector<Transaction> blockTxs;
+    std::vector<Crypto::Hash> missed;
+    m_mempool.getTransactions(b.transactionHashes, blockTxs, missed);
+    bankingFeesInBlock = Blockchain::computeBankingFeesFromTransactions(blockTxs);
+
+    if (bankingFeesInBlock > 0) {
+      logger(DEBUGGING) << "Block template banking fees: " << bankingFeesInBlock;
+    }
+  }
+
+  //make block's coinbase tx look more like real coinbase txs to get truthful blob size
+  size_t maxCoinbaseOuts = (b.majorVersion >= BLOCK_MAJOR_VERSION_11) ? 33 : 11;
+  bool r = m_currency.constructMinerTx(b.majorVersion, height, median_size, already_generated_coins, txs_size, fee, adr, b.baseTransaction, ex_nonce, maxCoinbaseOuts, burnedCoins, bankingFeesInBlock);
+  if (!r) {
+    logger(ERROR, BRIGHT_RED) << "Failed to construct miner tx, first chance";
+    return false;
   }
 
   size_t cumulative_size = txs_size + getObjectBinarySize(b.baseTransaction);
-  for (size_t try_count = 0; try_count != 10; ++try_count) {
-    r = m_currency.constructMinerTx(b.majorVersion, height, median_size, already_generated_coins, cumulative_size, fee, adr, b.baseTransaction, ex_nonce, 11);
+  size_t try_count = 0;
+  for (; try_count != 10; ++try_count) {
+    logger(TRACE) << "constructMinerTx attempt " << try_count << ": height=" << height << ", majorVersion=" << (int)b.majorVersion
+      << ", median_size=" << median_size << ", cumulative_size=" << cumulative_size
+      << ", already_generated_coins=" << already_generated_coins << ", fee=" << fee;
+    r = m_currency.constructMinerTx(b.majorVersion, height, median_size, already_generated_coins, cumulative_size, fee, adr, b.baseTransaction, ex_nonce, maxCoinbaseOuts, burnedCoins, bankingFeesInBlock);
 
-    if (!(r)) { logger(ERROR, BRIGHT_RED) << "Failed to construct miner tx, second chance"; return false; }
+    if (!(r)) {
+      logger(ERROR, BRIGHT_RED) << "Failed to construct miner tx, second chance. height=" << height
+        << ", majorVersion=" << (int)b.majorVersion << ", cumulative_size=" << cumulative_size
+        << ", fee=" << fee << ", already_generated_coins=" << already_generated_coins;
+      return false;
+    }
     size_t coinbase_blob_size = getObjectBinarySize(b.baseTransaction);
+    logger(TRACE) << "Try " << try_count << ": coinbase_blob_size=" << coinbase_blob_size << ", cumulative_size=" << cumulative_size << ", txs_size=" << txs_size;
     if (coinbase_blob_size > cumulative_size - txs_size) {
       cumulative_size = txs_size + coinbase_blob_size;
       continue;
@@ -556,10 +782,11 @@ bool core::get_block_template(Block& b, const AccountPublicAddress& adr, difficu
 
     if (coinbase_blob_size < cumulative_size - txs_size) {
       size_t delta = cumulative_size - txs_size - coinbase_blob_size;
+      logger(TRACE) << "Try " << try_count << ": coinbase_blob_size=" << coinbase_blob_size << " < expected=" << (cumulative_size - txs_size) << ", delta=" << delta;
       b.baseTransaction.extra.insert(b.baseTransaction.extra.end(), delta, 0);
       //here  could be 1 byte difference, because of extra field counter is varint, and it can become from 1-byte len to 2-bytes len.
       if (cumulative_size != txs_size + getObjectBinarySize(b.baseTransaction)) {
-        if (!(cumulative_size + 1 == txs_size + getObjectBinarySize(b.baseTransaction))) { logger(ERROR, BRIGHT_RED) << "unexpected case: cumulative_size=" << cumulative_size << " + 1 is not equal txs_cumulative_size=" << txs_size << " + get_object_blobsize(b.baseTransaction)=" << getObjectBinarySize(b.baseTransaction); return false; }
+        if (!(cumulative_size + 1 == txs_size + getObjectBinarySize(b.baseTransaction))) { logger(ERROR, BRIGHT_RED) << "unexpected case: cumulative_size=" << cumulative_size << " + 1 is not equal txs_cumulative_size=" << txs_size + 1 << " + get_object_blobsize(b.baseTransaction)=" << getObjectBinarySize(b.baseTransaction); return false; }
           b.baseTransaction.extra.resize(b.baseTransaction.extra.size() - 1);
           if (cumulative_size != txs_size + getObjectBinarySize(b.baseTransaction)) {
             //fuck, not lucky, -1 makes varint-counter size smaller, in that case we continue to grow with cumulative_size
@@ -574,22 +801,38 @@ bool core::get_block_template(Block& b, const AccountPublicAddress& adr, difficu
       }
     }
 
-    if (!(cumulative_size == txs_size + getObjectBinarySize(b.baseTransaction))) {
-      logger(ERROR, BRIGHT_RED) << "unexpected case: cumulative_size=" << cumulative_size << " is not equal txs_cumulative_size=" << txs_size << " + get_object_blobsize(b.baseTransaction)=" << getObjectBinarySize(b.baseTransaction);
-      return false;
+    if (cumulative_size == txs_size + getObjectBinarySize(b.baseTransaction)) {
+      // SUCCESS: Sizes match exactly, we're done
+      logger(TRACE) << "Mining transaction size adjustment successful for height=" << height;
+      break;
     }
 
-    return true;
+    // Unexpected case - sizes don't match after all adjustment attempts
+    logger(ERROR, BRIGHT_RED) << "unexpected case: cumulative_size=" << cumulative_size << " is not equal txs_cumulative_size=" << txs_size << " + get_object_blobsize(b.baseTransaction)=" << getObjectBinarySize(b.baseTransaction);
+    return false;
   }
 
-  logger(ERROR, BRIGHT_RED) <<
-    "Failed to create_block_template with " << 10 << " tries";
+  // After loop: check if we used all 10 attempts
+  if (try_count >= 10) {
+    size_t final_coinbase_size = getObjectBinarySize(b.baseTransaction);
+    logger(ERROR, BRIGHT_RED) << "Failed to create_block_template after 10 tries. Last error: cumulative_size=" << cumulative_size
+      << " vs txs_size + coinbase_blob=" << (txs_size + final_coinbase_size);
+    logger(ERROR, BRIGHT_RED) << "Block info: height=" << height << ", majorVersion=" << (int)b.majorVersion
+      << ", median_size=" << median_size << ", already_generated_coins=" << already_generated_coins;
+    logger(ERROR, BRIGHT_RED) << "Fee=" << fee << ", txs_size=" << txs_size;
+    return false;
+  }
 
-  return false;
+  return true;
 }
 
-std::vector<Crypto::Hash> core::findBlockchainSupplement(const std::vector<Crypto::Hash>& remoteBlockIds, size_t maxCount,
-  uint32_t& totalBlockCount, uint32_t& startBlockIndex) {
+
+
+std::vector<Crypto::Hash> core::findBlockchainSupplement(
+    const std::vector<Crypto::Hash>& remoteBlockIds,
+    size_t maxCount,
+    uint32_t& totalBlockCount,
+    uint32_t& startBlockIndex) {
 
   assert(!remoteBlockIds.empty());
   assert(remoteBlockIds.back() == m_blockchain.getBlockIdByHeight(0));
@@ -613,8 +856,22 @@ bool core::get_random_outs_for_amounts(const COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_
   return m_blockchain.getRandomOutsByAmount(req, res);
 }
 
+bool core::get_random_commitment_outs_for_amount(uint64_t amount, uint64_t count, uint32_t maxHeight, std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS_out_entry>& result) {
+  return m_blockchain.getRandomCommitmentOutputsForAmount(amount, count, result, maxHeight);
+}
+
+bool core::get_output_heights(const std::vector<std::pair<uint64_t, uint32_t>>& queries,
+                              std::vector<uint32_t>& heights) {
+  return m_blockchain.getOutputHeights(queries, heights);
+}
+
 bool core::get_tx_outputs_gindexs(const Crypto::Hash& tx_id, std::vector<uint32_t>& indexs) {
   return m_blockchain.getTransactionOutputGlobalIndexes(tx_id, indexs);
+}
+
+bool core::get_outs_for_amount(uint64_t amount, const std::vector<uint64_t>& indexes,
+                               std::vector<Crypto::PublicKey>& keys) {
+  return m_blockchain.getOutsByAmountAndIndexes(amount, indexes, keys);
 }
 
 bool core::getOutByMSigGIndex(uint64_t amount, uint64_t gindex, MultisignatureOutput& out) {
@@ -732,9 +989,10 @@ bool core::handle_incoming_block(const Block& b, block_verification_context& bvc
       bool r = toBinaryArray(b, blockBa);
       if (!(r)) { logger(ERROR, BRIGHT_RED) << "failed to serialize block"; return false; }
       arg.b.block = asString(blockBa);
-      for (auto& tx : txs) {
-        arg.b.txs.push_back(asString(toBinaryArray(tx)));
-      }
+
+              for (auto& tx : txs) {
+                arg.b.txs.push_back(asString(toBinaryArray(tx)));
+              }
 
       m_pprotocol->relay_block(arg);
     }
@@ -832,9 +1090,9 @@ bool core::on_idle() {
   if (!m_starter_message_showed) {
     logger(INFO, BRIGHT_YELLOW)
       << "**********************************************************************" << ENDL
-      << "The daemon will now begin synchronizing with the network's historical chain of data blocks. It may take some time." << ENDL
-      << "Fango blockchain can also be downloaded at https://github.com/FandomGold/XFG-data/releases "<< ENDL
-      << "You can use the \"set_log <level>\" command for a more detailed view of the process."<< ENDL
+      << "Your Fuego daemon will now begin synchronizing with the network's historical chain of data blocks. It may take some time." << ENDL
+      << "Bootstrap file of Fuego blockchain is available at https://github.com/usexfg/fuego-data/releases - though, full sync using network peers is best practice. "<< ENDL
+      << "You can use \"set_log <level>\" command for a more detailed view of the process."<< ENDL
       << "Using <level> option from 0 (no details) up to 4 (very verbose)." << ENDL
       << "Use \"help\" command to see a list of available commands." << ENDL
       << "Note: in case you need to interrupt the process, use \"exit\" command,"<<ENDL
@@ -1243,6 +1501,261 @@ bool core::addMessageQueue(MessageQueue<BlockchainMessage>& messageQueue) {
 
 bool core::removeMessageQueue(MessageQueue<BlockchainMessage>& messageQueue) {
   return m_blockchain.removeMessageQueue(messageQueue);
+}
+
+uint64_t core::getBurnedXfgAtHeight(size_t height) const {
+  return m_blockchain.getBurnedXfgAtHeight(height);
+}
+
+void core::addSwapFee(uint64_t amount) {
+  m_blockchain.addSwapFee(amount);
+}
+
+void core::setXfgMarketValue(uint64_t val) {
+  // PI controller removed — XFG price is unrestrained via Hearth AMM.
+  // Callers (SwapDaemon oracle, testnet sim) still invoke this but the value is ignored.
+}
+
+// --- Commitment Index Accessors ---
+
+std::optional<CommitmentEntry> core::getCommitmentByHash(const Crypto::Hash& commitment) const {
+  return m_blockchain.getCommitmentByHash(commitment);
+}
+
+bool core::hasCommitment(const Crypto::Hash& commitment) const {
+  return m_blockchain.hasCommitment(commitment);
+}
+
+const CommitmentIndex& core::getCommitmentIndex() const {
+  return m_blockchain.getCommitmentIndex();
+}
+
+std::error_code core::calculateCdInterest(uint64_t amount, uint32_t creationHeight,
+                                           uint32_t currentHeight, uint64_t& outInterest,
+                                           uint32_t term,
+                                           bool autoRolled) {
+  outInterest = m_currency.calculateCdInterest(amount, creationHeight, currentHeight,
+                                               m_blockchain.getCommitmentIndex(),
+                                               term, autoRolled);
+  return {};
+}
+
+std::error_code core::getCommitmentEpochFeeRate(uint32_t epoch, uint64_t& outFeeRate) {
+  outFeeRate = m_blockchain.getCommitmentIndex().getEpochFeeRate(epoch);
+  return {};
+}
+
+std::error_code core::getAmmPoolReserves(AmmPoolReserves& out) {
+  const auto& pool = m_blockchain.getAmmPool();
+  out.reserveXfg = pool.reserveXfg;
+  out.reserveHeat = pool.reserveHeat;
+  return {};
+}
+
+uint64_t core::getHearthTwap() {
+  return m_blockchain.getRollingTwap();
+}
+
+size_t core::getCommitmentCount() const {
+  return m_blockchain.getCommitmentCount();
+}
+
+size_t core::getHeatCommitmentCount() const {
+  return m_blockchain.getHeatCommitmentCount();
+}
+
+uint64_t core::getTotalCdLocked() const {
+  return m_blockchain.getTotalCdLocked();
+}
+
+uint64_t core::getHeatCdFeePool() const {
+  return m_blockchain.getHeatCdFeePool();
+}
+
+size_t core::getColdCommitmentCount() const {
+  return m_blockchain.getColdCommitmentCount();
+}
+
+Crypto::Hash core::getCommitmentMerkleRoot() const {
+  return m_blockchain.getCommitmentMerkleRoot();
+}
+
+std::vector<Crypto::Hash> core::getCommitmentMerkleProof(const Crypto::Hash& commitment) const {
+  return m_blockchain.getCommitmentMerkleProof(commitment);
+}
+
+Crypto::Hash core::getReleaseRegistryRoot() const {
+  return m_blockchain.getReleaseRegistryRoot();
+}
+
+size_t core::getReleaseRegistryCount() const {
+  return m_blockchain.getReleaseRegistryCount();
+}
+
+std::optional<ReleaseRecord> core::findRelease(const Crypto::Hash& contentHash) const {
+  return m_blockchain.findRelease(contentHash);
+}
+
+ReleaseProof core::getReleaseProof(const Crypto::Hash& contentHash) const {
+  return m_blockchain.getReleaseProof(contentHash);
+}
+
+int64_t core::getCommitmentLeafIndex(const Crypto::Hash& commitment) const {
+  return m_blockchain.getCommitmentLeafIndex(commitment);
+}
+
+uint64_t core::getCommitmentHighestBlock() const {
+  return m_blockchain.getCommitmentHighestBlock();
+}
+
+std::vector<Crypto::Hash> core::getCommitmentLeaves() const {
+  return m_blockchain.getCommitmentLeaves();
+}
+
+// @ Alias system proxies
+bool core::aliasExists(const std::string& alias) const {
+  return m_blockchain.aliasExists(alias);
+}
+
+std::optional<AliasEntry> core::getAliasByName(const std::string& alias) const {
+  return m_blockchain.getAliasByName(alias);
+}
+
+std::optional<AliasEntry> core::getAliasByAddress(const std::string& address) const {
+  return m_blockchain.getAliasByAddress(address);
+}
+
+std::vector<AliasEntry> core::getAllAliases() const {
+  return m_blockchain.getAllAliases();
+}
+
+bool core::removeAlias(const std::string& alias) {
+  return m_blockchain.removeAlias(alias);
+}
+
+bool core::replaceAliasOwnership(const std::string& alias,
+                                 const Crypto::Hash& newAddressHash,
+                                 const std::string& newOwnerAddress) {
+  return m_blockchain.replaceAliasOwnership(alias, newAddressHash, newOwnerAddress);
+}
+
+core::HeatMetrics core::getHeatMetrics() const {
+  HeatMetrics m;
+  m.heatSupply = m_blockchain.getHeatSupply();
+  m.heatOnDeposit = m_blockchain.getHeatOnDeposit();
+  m.digmSupply = m_blockchain.getDigmSupply();
+  m.burnedXfg = m_blockchain.getBurnedXfgAmount();
+  m.totalBurnedXfg = m_blockchain.getTotalBurnedXfg();
+  m.permanentlyBurnedXfg = m_blockchain.getPermanentlyBurnedXfg();
+  m.heatCdFeePool = m_blockchain.getHeatCdFeePool();
+  m.swfBurnedXfgPendingHeat = m_blockchain.getSwfBurnedXfgPendingHeat();
+  const auto& pool = m_blockchain.getAmmPool();
+  if (!pool.isEmpty() && pool.reserveHeat > 0) {
+    // Pool ratio × 10^6 for precision
+    m.redemptionPriceNum = (pool.reserveXfg * 1000000ULL) / pool.reserveHeat;
+    m.redemptionPriceDenom = 1000000;
+  } else {
+    m.redemptionPriceNum = 0;
+    m.redemptionPriceDenom = 1;
+  }
+  m.treasuryBalance = m_blockchain.getTreasuryBalance();
+  m.treasuryHeatReserve = m_blockchain.getTreasuryHeatReserve();
+  m.treasuryLpPendingXfg = m_blockchain.getTreasuryLpPendingXfg();
+  m.treasuryCounterXFG = m.treasuryLpPendingXfg;  // v12 alias — same source, both fields for compat
+  m.swfHeatBalance = m_blockchain.getSwfHeatBalance();
+  m.epochSwapFees = m_blockchain.getCurrentEpochSwapFees();
+  {
+    VaultBalance vb = m_blockchain.getVault().allBalances();
+    m.vaultHeatCdFeePool = vb.heatCdFeePool;
+    m.vaultHeatLpReserve = vb.heatLpReserve;
+    m.vaultHeatGeneral    = vb.heatGeneral;
+    m.vaultHeatSwf        = vb.heatSwf;
+    m.vaultXfgCdFeePool  = vb.xfgCdFeePool;
+    m.vaultXfgLpReserve   = vb.xfgLpReserve;
+    m.vaultXfgGeneral     = vb.xfgGeneral;
+  }
+  return m;
+}
+
+core::AmmQuote core::getAmmQuote(uint64_t inputAmount, uint8_t direction) const {
+  AmmQuote q;
+  if (inputAmount == 0 || direction > 1) return q;
+  // The alternative to selling XFG on Hearth: burning it mints HEAT at the
+  // TWAP, with no price impact — for a large sale, often far more HEAT.
+  if (direction == 0) {
+    q.mintOutput = static_cast<uint64_t>(
+        ((uint128_t)inputAmount * m_blockchain.getRollingTwap()) / parameters::COIN);
+  }
+  const auto& pool = m_blockchain.getAmmPool();
+  const uint64_t reserveIn = direction == 0 ? pool.reserveXfg : pool.reserveHeat;
+  const uint64_t reserveOut = direction == 0 ? pool.reserveHeat : pool.reserveXfg;
+  if (reserveIn == 0 || reserveOut == 0) return q;
+
+  // This endpoint quotes the same constant-product output that the AMM swap
+  // validator accepts. An orderbook estimate may be higher and must not be
+  // handed to the wallet as a fixed AMM transaction output.
+  const uint64_t gross = ammGetOutputAmount(inputAmount, reserveIn, reserveOut, 0);
+  q.expectedOutput = ammSwapNetOutput(inputAmount, reserveIn, reserveOut);
+  q.fee = gross - q.expectedOutput;  // denominated in the output asset
+  const uint128_t ideal = (uint128_t(inputAmount) * reserveOut) / reserveIn;
+  if (ideal > gross && ideal > 0) {
+    q.priceImpactBps = static_cast<uint64_t>(((ideal - gross) * 10000) / ideal);
+  }
+  return q;
+}
+
+core::AmmPoolInfo core::getAmmPoolInfo() const {
+  AmmPoolInfo info;
+  const auto& pool = m_blockchain.getAmmPool();
+  info.reserveXfg = pool.reserveXfg;
+  info.reserveHeat = pool.reserveHeat;
+  info.totalLpShares = pool.totalLpShares;
+  info.epochSwapFees = m_blockchain.getCurrentEpochSwapFees();
+  info.spotPrice = m_blockchain.getHearthSpotPrice();
+  return info;
+}
+
+uint64_t core::getPoolTwap() const {
+  return m_blockchain.getPoolTwap();
+}
+
+std::error_code core::getAmmPoolInfo(ICore::AmmPoolInfo& info) {
+  const auto& pool = m_blockchain.getAmmPool();
+  info.reserveXfg = pool.reserveXfg;
+  info.reserveHeat = pool.reserveHeat;
+   info.spotPrice = m_blockchain.getHearthSpotPrice();
+   return {};
+}
+
+core::OrderbookInfo core::getOrderbookInfo() const {
+  OrderbookInfo info;
+  info.clearingPrice = m_blockchain.getOrderbookClearingPrice();
+  info.inBootstrap = m_blockchain.isOrderbookInBootstrap();
+  info.hearthPoolRatio = m_blockchain.getHearthSpotPrice();
+  // Depth and numMatches read from the latest block header — populated in processOrderbookForBlock
+  return info;
+}
+
+core::OrderbookState core::getOrderbookState(uint32_t depth) const {
+  OrderbookState state;
+  state.clearingPrice = m_blockchain.getOrderbookClearingPrice();
+
+  auto bids = m_blockchain.getOrderbookBidCurve(depth);
+  for (const auto& b : bids) {
+    state.bids.push_back({b.price, b.depth});
+  }
+
+  auto asks = m_blockchain.getOrderbookAskCurve(depth);
+  for (const auto& a : asks) {
+    state.asks.push_back({a.price, a.depth});
+  }
+
+  return state;
+}
+
+core::OrderbookEstimate core::getOrderbookEstimate(uint8_t side, uint64_t amount) const {
+  auto est = m_blockchain.getOrderbookEstimate(side, amount);
+  return {est.estimatedFill, est.hearthFill, est.orderbookFill, est.worstCasePrice, est.levelsConsumed};
 }
 
 }

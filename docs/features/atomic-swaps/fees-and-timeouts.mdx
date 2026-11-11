@@ -1,0 +1,52 @@
+---
+title: "Fees and timeouts"
+description: "swapXFG 1% fee split 80/20, timelocks, refunds."
+keywords: ["swap fees", "timeout", "refund", "swapXFG", "fuego"]
+---
+
+## Protocol swap fee (1% + 1% = 2% per swap)
+
+Every completed atomic swap charges the protocol fee **twice**: **1% on initiation** and **1% on claim** (`SWAP_FEE_RATE_BPS = 100` each side) — a total of **2%** per cross-chain swap. Initiated from the SwapXFG TUI or the DeXFG tab in the Fuego-Wallet GUI.
+
+| Destination | v11+ share |
+|-------------|------------|
+| CD yield pool | **80%** |
+| Bonus Vault | **20%** |
+| Treasury | **0%** (retired at v11) |
+
+Example: swap **100 XFG** → **2 XFG** protocol fee (1 + 1) → **1.60** CD / **0.40** Bonus Vault (plus normal miner/tx fees).
+
+Blocks before v11 settled 69/11/20 and keep that split on replay.
+
+Not paid to the counterparty. Not the Hearth 1% fee (that is a separate protocol stream).
+
+> **Protocol earnings are exactly two streams:** Hearth swap fees (1% per trade) and atomic swap fees (2% per swap). The v11 mint premium (1% of each mint's burn) funds both AuntPoL legs — the withheld XFG is the XFG leg and the HEAT it buys is the HEAT leg — and is not revenue; the 0.1% CD creation fee is paid in XFG to the dev fund — also not protocol revenue.
+
+## Counterparty fees
+
+ETH gas, BTC/BCH miner fees, etc. are separate.
+
+## Stuck-swap monitoring
+
+| Phase | Typical warning threshold |
+|-------|---------------------------|
+| Key / setup stall | ~10 minutes |
+| Funded but incomplete | ~30 minutes |
+
+Warnings do not auto-refund.
+
+## Refund
+
+After timelock expiry:
+
+```bash
+curl -X POST http://127.0.0.1:28080/refund_swap \
+  -H 'Content-Type: application/json' \
+  -d '{"swap_id": "YOUR_SWAP_ID"}'
+```
+
+Refund before expiry fails. Check status with `getswapstatus` / `listswaps`.
+
+## Persistence
+
+Swap state is written after transitions. Restart the daemon and run `listswaps` before acting.

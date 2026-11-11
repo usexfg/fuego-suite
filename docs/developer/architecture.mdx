@@ -1,0 +1,47 @@
+---
+title: "Architecture overview"
+description: "Key components of the Fuego codebase and how they interact."
+keywords: ["architecture", "developer", "fuego", "CryptoNote", "blockchain"]
+---
+
+Fuego is a C++17 CryptoNote-based blockchain with significant extensions for commitment deposits, adaptor-signature atomic swaps, and zero-knowledge proofs.
+
+## Core components
+
+| Component | Path | Description |
+|-----------|------|-------------|
+| Blockchain | `src/CryptoNoteCore/Blockchain.cpp` | Consensus, fee pool, epoch accounting |
+| CommitmentIndex | `src/CryptoNoteCore/CommitmentIndex.*` | CD state tracking, epoch reports |
+| Currency | `src/CryptoNoteCore/Currency.*` | `calculateCdInterest()`, network parameters |
+| WalletGreen | `src/Wallet/WalletGreen.*` | Wallet operations, deposit management |
+| RpcServer | `src/Rpc/RpcServer.*` | HTTP JSON-RPC endpoints |
+| SwapDaemon | `src/SwapDaemon/` | Adaptor-signature swap state machine |
+| AliasIndex | `src/CryptoNoteCore/AliasIndex.*` | On-chain alias registry |
+
+## Transaction types
+
+Fuego extends CryptoNote with custom transaction inputs and outputs:
+
+| Type | Tag | Description |
+|------|-----|-------------|
+| `TransactionOutputCommitment` | — | Creates a CD or burn deposit |
+| `TransactionInputCommitmentSpend` | 0x7 | Spends a mature CD (with `claimedInterest`) |
+| `TransactionInputCommitmentTransfer` | 0x8 | Transfers a CD before maturity |
+
+See `include/CryptoNote.h` for full struct definitions.
+
+## Fee pool mechanics (live constants)
+
+1. XFG-side atomic swaps charge **1%** (`SWAP_FEE_RATE_BPS`); epoch split **80% CD / 20% Bonus Vault** at v11+ (pre-v11 replay: 69/11/20)
+2. Hearth trades charge **1%** (`HEARTH_FEE_BPS`); **100% → CD yield** (LPs earn the swap spread)
+3. At epoch boundaries (`EPOCH_DURATION_BLOCKS = 900` mainnet), fee accounting advances for HEAT CDs
+4. Product path: burn XFG → mint HEAT (`mintHeatV10`) → lock HEAT as CD — see [dual-asset architecture](/fuego-dual-asset-architecture)
+
+## Related public docs
+
+- [How CDs work](/features/commitment-deposits/how-cds-work)
+- [How Hearth works](/features/hearth/how-hearth-works)
+- [swapXFG](/features/atomic-swaps/how-swaps-work)
+- [Fee pool API](/api-reference/fee-pool)
+
+Internal design notes also exist under the monorepo `docs/` tree (implementation plans, zkLP research) but are not published as Mintlify pages.

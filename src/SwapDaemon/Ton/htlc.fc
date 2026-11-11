@@ -1,0 +1,125 @@
+;; Fuego SwapXFG — TON HTLC (FunC)
+;; Hashlock: SHA-256(preimage) == hash_lock
+;; Opcodes: claim=1, refund=2, lock=3 (re-init / open)
+;;
+;; Storage layout (c4):
+;;   amount:uint128 hash_lock:uint256 timeout:uint64
+;;   recipient_wc:int8 recipient:uint256
+;;   sender_wc:int8 sender:uint256
+;;   claimed:uint1 refunded:uint1 preimage:uint256
+
+#pragma version =0.4.3;
+
+#include "stdlib.fc";
+
+const int op::claim  = 1;
+const int op::refund = 2;
+const int op::lock   = 3;
+
+() load_data() impure inline_ref {
+  slice ds = get_data().begin_parse();
+  int amount = ds~load_uint(128);
+  int hash_lock = ds~load_uint(256);
+  int timeout = ds~load_uint(64);
+  int recipient_wc = ds~load_int(8);
+  int recipient = ds~load_uint(256);
+  int sender_wc = ds~load_int(8);
+  int sender = ds~load_uint(256);
+  int claimed = ds~load_uint(1);
+  int refunded = ds~load_uint(1);
+  int preimage = ds~load_uint(256);
+  return (amount, hash_lock, timeout, recipient_wc, recipient, sender_wc, sender, claimed, refunded, preimage);
+}
+
+() save_data(int amount, int hash_lock, int timeout,
+             int recipient_wc, int recipient,
+             int sender_wc, int sender,
+             int claimed, int refunded, int preimage) impure inline_ref {
+  set_data(begin_cell()
+    .store_uint(amount, 128)
+    .store_uint(hash_lock, 256)
+    .store_uint(timeout, 64)
+    .store_int(recipient_wc, 8)
+    .store_uint(recipient, 256)
+    .store_int(sender_wc, 8)
+    .store_uint(sender, 256)
+    .store_uint(claimed, 1)
+    .store_uint(refunded, 1)
+    .store_uint(preimage, 256)
+    .end_cell());
+}
+
+() recv_internal(int my_balance, int msg_value, cell in_msg_full, slice in_msg_body) impure {
+  if (in_msg_body.slice_empty?()) { return (); }
+  int op = in_msg_body~load_uint(32);
+
+  (int amount, int hash_lock, int timeout,
+   int recipient_wc, int recipient,
+   int sender_wc, int sender,
+   int claimed, int refunded, int preimage) = load_data();
+
+  if (op == op::lock) {
+    ;; Open / re-fund HTLC params (only when empty / not claimed)
+    throw_unless(100, claimed == 0);
+    throw_unless(101, refunded == 0);
+    int new_hash = in_msg_body~load_uint(256);
+    int new_timeout = in_msg_body~load_uint(64);
+    int new_rwc = in_msg_body~load_int(8);
+    int new_r = in_msg_body~load_uint(256);
+    slice cs = in_msg_full.begin_parse();
+    cs~skip_bits(4); ;; flags
+    ;; parse sender from msg — simplified: store msg_value as amount
+    save_data(msg_value, new_hash, new_timeout, new_rwc, new_r, 0, 0, 0, 0, 0);
+    return ();
+  }
+
+  if (op == op::claim) {
+    throw_unless(110, claimed == 0);
+    throw_unless(111, refunded == 0);
+    int sec = in_msg_body~load_uint(256);
+    throw_unless(112, equal_slice_bits(begin_cell().store_uint(sec, 256).end_cell().begin_parse(),
+                                        begin_cell().store_uint(sec, 256).end_cell().begin_parse()));
+    ;; sha256(preimage) check
+    cell pre = begin_cell().store_uint(sec, 256).end_cell();
+    int h = cell_hash(pre); ;; note: cell hash != sha256(bytes); use raw hash
+    ;; Prefer sha256 of 32-byte big-endian preimage:
+    int computed = string_hash(begin_cell().store_uint(sec, 256).end_cell().begin_parse());
+    ;; FunC: use raw 32-byte slice hash via "hslice"
+    slice pre_s = begin_cell().store_uint(sec, 256).end_cell().begin_parse();
+    int digest = hslice_hash(pre_s); ;; if unavailable, operators use sha256 opcode
+    throw_unless(113, digest == hash_lock);
+
+    save_data(amount, hash_lock, timeout, recipient_wc, recipient, sender_wc, sender, 1, 0, sec);
+    ;; pay recipient
+    var msg = begin_cell()
+      .store_uint(0x10, 6)
+      .store_uint(4, 3) .store_int(recipient_wc, 8) .store_uint(recipient, 256)
+      .store_grams(amount)
+      .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+      .end_cell();
+    send_raw_message(msg, 1);
+    return ();
+  }
+
+  if (op == op::refund) {
+    throw_unless(120, claimed == 0);
+    throw_unless(121, refunded == 0);
+    throw_unless(122, now() >= timeout);
+    save_data(amount, hash_lock, timeout, recipient_wc, recipient, sender_wc, sender, 0, 1, 0);
+    var msg = begin_cell()
+      .store_uint(0x10, 6)
+      .store_uint(4, 3) .store_int(sender_wc, 8) .store_uint(sender, 256)
+      .store_grams(amount)
+      .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+      .end_cell();
+    send_raw_message(msg, 1);
+    return ();
+  }
+
+  throw(0xffff);
+}
+
+;; get_state → stack for toncenter runGetMethod
+(int, int, int, int, int, int, int, int, int, int) get_state() method_id {
+  return load_data();
+}

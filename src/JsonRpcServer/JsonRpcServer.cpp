@@ -1,20 +1,19 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
+// Copyright (c) 2017-2026 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it
+// Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You can redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "JsonRpcServer.h"
 
@@ -39,7 +38,7 @@
 namespace CryptoNote {
 
 JsonRpcServer::JsonRpcServer(System::Dispatcher& sys, System::Event& stopEvent, Logging::ILogger& loggerGroup) :
-  HttpServer(sys, loggerGroup), 
+  HttpServer(sys, loggerGroup),
   system(sys),
   stopEvent(stopEvent),
   logger(loggerGroup, "JsonRpcServer")
@@ -60,6 +59,29 @@ void JsonRpcServer::processRequest(const CryptoNote::HttpRequest& req, CryptoNot
       std::istringstream jsonInputStream(req.getBody());
       Common::JsonValue jsonRpcRequest;
       Common::JsonValue jsonRpcResponse(Common::JsonValue::OBJECT);
+
+      // Reject deeply nested JSON to prevent stack-overflow DoS
+      {
+        int depth = 0, maxDepth = 0;
+        bool inString = false, escaped = false;
+        for (char c : req.getBody()) {
+          if (escaped) { escaped = false; continue; }
+          if (c == '\\') { escaped = true; continue; }
+          if (c == '"') { inString = !inString; continue; }
+          if (inString) continue;
+          if (c == '{' || c == '[') {
+            if (++depth > maxDepth) maxDepth = depth;
+          } else if (c == '}' || c == ']') {
+            if (depth > 0) depth--;
+          }
+        }
+        constexpr int MAX_JSON_NESTING_DEPTH = 32;
+        if (maxDepth > MAX_JSON_NESTING_DEPTH) {
+          logger(Logging::WARNING) << "Rejected JSON request: nesting depth " << maxDepth;
+          resp.setStatus(CryptoNote::HttpResponse::STATUS_400);
+          return;
+        }
+      }
 
       try {
         jsonInputStream >> jsonRpcRequest;
@@ -96,7 +118,7 @@ void JsonRpcServer::prepareJsonResponse(const Common::JsonValue& req, Common::Js
   if (req.contains("id")) {
     resp.insert("id", req("id"));
   }
-  
+
   resp.insert("jsonrpc", "2.0");
 }
 

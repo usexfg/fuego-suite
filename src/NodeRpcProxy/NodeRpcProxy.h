@@ -1,20 +1,19 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
+// Copyright (c) 2017-2022 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it
+// Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You can redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #pragma once
 
@@ -67,6 +66,15 @@ public:
 
   virtual void relayTransaction(const CryptoNote::Transaction& transaction, const Callback& callback) override;
   virtual void getRandomOutsByAmounts(std::vector<uint64_t>&& amounts, uint64_t outsCount, std::vector<COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount>& result, const Callback& callback) override;
+  virtual void getRandomCommitmentOutsForAmount(uint64_t amount, uint64_t outsCount, uint32_t maxHeight, std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>& result, const Callback& callback) override;
+  // virtual void getOutputsHeights(const std::vector<std::pair<uint64_t, uint32_t>>& queries, std::vector<uint32_t>& heights, const Callback& callback) override;
+  // DISABLED: getOutputsHeights is commented out and the daemon lacks the /get_outputs_heights
+  // RPC endpoint. The INode base class default clears heights and calls the callback
+  // synchronously, which causes infinite recursion in the OSPEAD chain (shouldChainOspeadHeights
+  // never sees populated heights → re-chains → 30k+ depth → coroutine stack overflow SIGBUS).
+  // Re-enable once getOutputsHeights is properly implemented via scheduleRequest and the daemon
+  // endpoint exists.
+  virtual bool supportsOutputsHeights() const override { return false; }
   virtual void getNewBlocks(std::vector<Crypto::Hash>&& knownBlockIds, std::vector<CryptoNote::block_complete_entry>& newBlocks, uint32_t& startHeight, const Callback& callback) override;
   virtual void getTransactionOutsGlobalIndices(const Crypto::Hash& transactionHash, std::vector<uint32_t>& outsGlobalIndices, const Callback& callback) override;
   virtual void queryBlocks(std::vector<Crypto::Hash>&& knownBlockIds, uint64_t timestamp, std::vector<BlockShortEntry>& newBlocks, uint32_t& startHeight, const Callback& callback) override;
@@ -81,8 +89,26 @@ public:
   virtual void getPoolTransactions(uint64_t timestampBegin, uint64_t timestampEnd, uint32_t transactionsNumberLimit, std::vector<TransactionDetails>& transactions, uint64_t& transactionsNumberWithinTimestamps, const Callback& callback) override;
   virtual void isSynchronized(bool& syncStatus, const Callback& callback) override;
 
+  virtual std::error_code getCdInterest(uint64_t amount, uint32_t creationHeight,
+                                        uint32_t currentHeight, uint64_t& outInterest) override;
+  virtual std::error_code getCdClaimInfo(uint64_t amount, uint32_t creationHeight,
+                                         uint32_t currentHeight, CdClaimInfo& out,
+                                         uint32_t term = 0) override;
+  virtual std::error_code getEpochFeeRate(uint32_t epoch, uint64_t& outFeeRate) override;
+  virtual std::error_code getAmmPoolInfo(AmmPoolInfo& info) override;
+  virtual std::error_code getAmmPoolReserves(AmmPoolReserves& out) override;
+  virtual uint64_t getHearthTwap() override;
+  virtual std::error_code getLimitDeposits(std::vector<LimitDepositRpcEntry>& deposits) override;
+
   unsigned int rpcTimeout() const { return m_rpcTimeout; }
   void rpcTimeout(unsigned int val) { m_rpcTimeout = val; }
+
+  template <typename Request, typename Response>
+  std::error_code binaryCommand(const std::string& url, const Request& req, Response& res);
+  template <typename Request, typename Response>
+  std::error_code jsonCommand(const std::string& url, const Request& req, Response& res);
+  template <typename Request, typename Response>
+  std::error_code jsonRpcCommand(const std::string& method, const Request& req, Response& res);
 
 private:
   void resetInternalState();
@@ -99,6 +125,8 @@ private:
   std::error_code doRelayTransaction(const CryptoNote::Transaction& transaction);
   std::error_code doGetRandomOutsByAmounts(std::vector<uint64_t>& amounts, uint64_t outsCount,
                                            std::vector<COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount>& result);
+  std::error_code doGetRandomCommitmentOutsForAmount(uint64_t amount, uint64_t outsCount, uint32_t maxHeight,
+                                                      std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>& result);
   std::error_code doGetNewBlocks(std::vector<Crypto::Hash>& knownBlockIds,
     std::vector<CryptoNote::block_complete_entry>& newBlocks, uint32_t& startHeight);
   std::error_code doGetTransactionOutsGlobalIndices(const Crypto::Hash& transactionHash,
@@ -111,12 +139,6 @@ private:
   std::error_code doGetTransaction(const Crypto::Hash &transactionHash, CryptoNote::Transaction &transaction);
 
   void scheduleRequest(std::function<std::error_code()>&& procedure, const Callback& callback);
-template <typename Request, typename Response>
-  std::error_code binaryCommand(const std::string& url, const Request& req, Response& res);
-  template <typename Request, typename Response>
-  std::error_code jsonCommand(const std::string& url, const Request& req, Response& res);
-  template <typename Request, typename Response>
-  std::error_code jsonRpcCommand(const std::string& method, const Request& req, Response& res);
 
   enum State {
     STATE_NOT_INITIALIZED,

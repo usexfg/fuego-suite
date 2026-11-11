@@ -1,29 +1,37 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
+// Copyright (c) 2017-2022 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it
+// Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You can redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "WalletRpcServer.h"
+#include "Common/Int128.h"
+#include "CryptoNoteCore/AmmPool.h"
+#include "Wallet/WalletGreen.h"
+#include "IWallet.h"
 
 #include <fstream>
+#include <ctime>
+#include <cstring>
 #include "Common/CommandLine.h"
 #include "Common/StringTools.h"
 #include "CryptoNoteCore/CryptoNoteFormatUtils.h"
 #include "CryptoNoteCore/Account.h"
 #include "crypto/hash.h"
+#include "crypto/crypto.h"
+#include "SwapDaemon/SwapTypes.h"
+#include "SwapDaemon/AdaptorSwap.h"
 #include "CryptoNoteCore/CryptoNoteBasic.h"
 #include "CryptoNoteCore/CryptoNoteBasicImpl.h"
 #include "WalletLegacy/WalletHelper.h"
@@ -54,8 +62,8 @@ namespace Tools {
 
 const command_line::arg_descriptor<uint16_t> wallet_rpc_server::arg_rpc_bind_port = { "rpc-bind-port", "Starts wallet as rpc server for wallet operations, sets bind port for server", 0, true };
 const command_line::arg_descriptor<std::string> wallet_rpc_server::arg_rpc_bind_ip = { "rpc-bind-ip", "Specify ip to bind rpc server", "127.0.0.1" };
-const command_line::arg_descriptor<std::string> wallet_rpc_server::arg_rpc_user = { "rpc-user", "Username to use the rpc server. If authorization is not required, leave it empty", "" };
-const command_line::arg_descriptor<std::string> wallet_rpc_server::arg_rpc_password = { "rpc-password", "Password to use the rpc server. If authorization is not required, leave it empty", "" };
+const command_line::arg_descriptor<std::string> wallet_rpc_server::arg_rpc_user = { "rpc-user", "Username to use the rpc server. REQUIRED for security — do NOT leave empty", "" };
+const command_line::arg_descriptor<std::string> wallet_rpc_server::arg_rpc_password = { "rpc-password", "Password to use the rpc server. REQUIRED for security — do NOT leave empty", "" };
 
 void wallet_rpc_server::init_options(boost::program_options::options_description& desc) {
   command_line::add_arg(desc, arg_rpc_bind_ip);
@@ -88,6 +96,13 @@ bool wallet_rpc_server::run() {
   return true;
 }
 
+void wallet_rpc_server::configure(const std::string& bindIp, uint16_t port, const std::string& rpcUser, const std::string& rpcPassword) {
+  m_bind_ip = bindIp;
+  m_port = port;
+  m_rpcUser = rpcUser;
+  m_rpcPassword = rpcPassword;
+}
+
 void wallet_rpc_server::send_stop_signal() {
   m_dispatcher.remoteSpawn([this] {
     std::cout << "wallet_rpc_server::send_stop_signal()" << std::endl;
@@ -111,6 +126,13 @@ bool wallet_rpc_server::init(const boost::program_options::variables_map& vm) {
     return false;
   }
 
+  if (m_rpcUser.empty() || m_rpcPassword.empty()) {
+    logger(ERROR, BRIGHT_RED) << "RPC credentials are REQUIRED for security."
+      << " Set --rpc-user and --rpc-password (strong, random values)."
+      << " Running with empty credentials is disabled.";
+    return false;
+  }
+
   return true;
 }
 
@@ -128,6 +150,15 @@ void wallet_rpc_server::processRequest(const CryptoNote::HttpRequest& request, C
     static std::unordered_map<std::string, JsonMemberMethod> s_methods = {
       { "create_integrated", makeMemberMethod(&wallet_rpc_server::on_create_integrated) },  
       { "getbalance", makeMemberMethod(&wallet_rpc_server::on_getbalance) },
+      { "get_address", makeMemberMethod(&wallet_rpc_server::on_get_address) },
+      { "sign_offer",    makeMemberMethod(&wallet_rpc_server::on_sign_offer)    },
+      { "sign_cancel",   makeMemberMethod(&wallet_rpc_server::on_sign_cancel)   },
+      { "sign_order",    makeMemberMethod(&wallet_rpc_server::on_sign_order)    },
+      { "initiate_swap", makeMemberMethod(&wallet_rpc_server::on_initiate_swap) },
+      { "complete_swap", makeMemberMethod(&wallet_rpc_server::on_complete_swap) },
+      { "refund_swap",   makeMemberMethod(&wallet_rpc_server::on_refund_swap)   },
+      { "create_afk_lock", makeMemberMethod(&wallet_rpc_server::on_create_afk_lock) },
+      { "claim_afk_swap",  makeMemberMethod(&wallet_rpc_server::on_claim_afk_swap)  },
       { "transfer", makeMemberMethod(&wallet_rpc_server::on_transfer) },
       { "store", makeMemberMethod(&wallet_rpc_server::on_store) },
       { "get_messages", makeMemberMethod(&wallet_rpc_server::on_get_messages) },
@@ -140,7 +171,29 @@ void wallet_rpc_server::processRequest(const CryptoNote::HttpRequest& request, C
       { "optimize", makeMemberMethod(&wallet_rpc_server::on_optimize) },
       { "estimate_fusion"  , makeMemberMethod(&wallet_rpc_server::on_estimate_fusion) },
       { "send_fusion"      , makeMemberMethod(&wallet_rpc_server::on_send_fusion) },
-      { "reset", makeMemberMethod(&wallet_rpc_server::on_reset) }
+      { "reset", makeMemberMethod(&wallet_rpc_server::on_reset) },
+      // Phase 7: CD / COLD wallet RPC bridges
+      { "list_cds",           makeMemberMethod(&wallet_rpc_server::on_list_cds) },
+      { "create_cd",          makeMemberMethod(&wallet_rpc_server::on_create_cd) },
+      { "withdraw_cd",        makeMemberMethod(&wallet_rpc_server::on_withdraw_cd) },
+      { "rollover_cd",        makeMemberMethod(&wallet_rpc_server::on_rollover_cd) },
+      { "estimate_cd_yield",  makeMemberMethod(&wallet_rpc_server::on_estimate_cd_yield) },
+      { "heat_mint",          makeMemberMethod(&wallet_rpc_server::on_heat_mint) },
+      { "send_heat",          makeMemberMethod(&wallet_rpc_server::on_send_heat) },
+      { "amm_swap",           makeMemberMethod(&wallet_rpc_server::on_amm_swap) },
+      // The CLI's names for the two Hearth directions; burning XFG is heat_mint.
+      { "sell_xfg",           makeMemberMethod(&wallet_rpc_server::on_sell_xfg) },
+      { "buy_xfg",            makeMemberMethod(&wallet_rpc_server::on_buy_xfg) },
+      { "amm_add_liquidity",  makeMemberMethod(&wallet_rpc_server::on_amm_add_liquidity) },
+      { "amm_remove_liquidity",  makeMemberMethod(&wallet_rpc_server::on_amm_remove_liquidity) },
+      { "amm_claim_lp_fees",  makeMemberMethod(&wallet_rpc_server::on_amm_claim_lp_fees) },
+      { "heat_deposit",       makeMemberMethod(&wallet_rpc_server::on_heat_deposit) },
+      // v11+ Hearth limit order commands
+      { "place_limit_order",  makeMemberMethod(&wallet_rpc_server::on_place_limit_order) },
+      { "donate",             makeMemberMethod(&wallet_rpc_server::on_donate) },
+      { "cancel_limit_order", makeMemberMethod(&wallet_rpc_server::on_cancel_limit_order) },
+      { "get_limit_orders",   makeMemberMethod(&wallet_rpc_server::on_get_limit_orders) },
+      { "get_cd_claim_preview", makeMemberMethod(&wallet_rpc_server::on_get_cd_claim_preview) }
     };
 
     auto it = s_methods.find(jsonRequest.getMethod());
@@ -153,7 +206,8 @@ void wallet_rpc_server::processRequest(const CryptoNote::HttpRequest& request, C
   } catch (const JsonRpcError& err) {
     jsonResponse.setError(err);
   } catch (const std::exception& e) {
-    jsonResponse.setError(JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, e.what()));
+    logger(WARNING) << "Wallet RPC internal error (not sent to client): " << e.what();
+    jsonResponse.setError(JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Internal wallet error"));
   }
 
   response.setBody(jsonResponse.getBody());
@@ -167,6 +221,256 @@ bool wallet_rpc_server::on_getbalance(const wallet_rpc::COMMAND_RPC_GET_BALANCE:
   res.unlocked_balance = res.available_balance;
   return true;
 }
+//------------------------------------------------------------------------------------------------------------------------------
+bool wallet_rpc_server::on_get_address(const wallet_rpc::COMMAND_RPC_GET_ADDRESS::request& req, wallet_rpc::COMMAND_RPC_GET_ADDRESS::response& res) {
+  res.address = m_wallet.getAddress();
+  res.status = WALLET_RPC_STATUS_OK;
+  return true;
+}
+//------------------------------------------------------------------------------------------------------------------------------
+bool wallet_rpc_server::on_sign_offer(const wallet_rpc::COMMAND_RPC_SIGN_OFFER::request& req, wallet_rpc::COMMAND_RPC_SIGN_OFFER::response& res) {
+  // Get wallet keys
+  CryptoNote::AccountKeys keys;
+  m_wallet.getAccountKeys(keys);
+
+  // Build offer ID: SHA-256 of (spendPubKey || pair || xfgAmount || rateNum || timestamp)
+  uint64_t ts = static_cast<uint64_t>(std::time(nullptr));
+
+  struct OfferIdInput {
+    uint8_t  spendPubKey[32];
+    uint8_t  pair;
+    uint8_t  isSell;
+    uint64_t xfgAmount;
+    uint64_t rateNum;
+    uint64_t timestamp;
+  } offerIdInput;
+
+  std::memcpy(offerIdInput.spendPubKey, &keys.address.spendPublicKey, 32);
+  offerIdInput.pair      = req.pair;
+  offerIdInput.isSell    = req.isSell ? 1 : 0;
+  offerIdInput.xfgAmount = req.xfgAmount;
+  offerIdInput.rateNum   = req.rateNum;
+  offerIdInput.timestamp = ts;
+
+  Crypto::Hash offerIdHash;
+  Crypto::cn_fast_hash(&offerIdInput, sizeof(offerIdInput), offerIdHash);
+  std::string offerId = Common::podToHex(offerIdHash);
+
+  // Signature must cover all economic fields (matches SwapOfferRelay::validateOffer).
+  // Wallet-RPC soft-order defaults: isSoftOrder=false, allowedSlippagePct=0.
+  const bool isSoftOrder = false;
+  const uint8_t allowedSlippagePct = 0;
+  const uint32_t ttlBlocks = req.ttlBlocks;
+  std::string sigData;
+  sigData.reserve(offerId.size() + 64);
+  sigData.append(offerId);
+  sigData.append(1, static_cast<char>(req.pair));
+  sigData.append(reinterpret_cast<const char*>(&req.xfgAmount), sizeof(req.xfgAmount));
+  sigData.append(reinterpret_cast<const char*>(&req.rateNum), sizeof(req.rateNum));
+  sigData.append(1, isSoftOrder ? '\x01' : '\x00');
+  sigData.append(reinterpret_cast<const char*>(&ttlBlocks), sizeof(ttlBlocks));
+  sigData.append(1, static_cast<char>(allowedSlippagePct));
+  sigData.append(reinterpret_cast<const char*>(&ts), sizeof(ts));
+
+  Crypto::Hash sigHash;
+  Crypto::cn_fast_hash(sigData.data(), sigData.size(), sigHash);
+  Crypto::Signature sig;
+  Crypto::generate_signature(sigHash, keys.address.spendPublicKey, keys.spendSecretKey, sig);
+
+  res.offerId     = offerId;
+  res.makerPubKey = Common::podToHex(keys.address.spendPublicKey);
+  res.signature   = Common::podToHex(sig);
+  res.timestamp   = ts;
+  res.status      = WALLET_RPC_STATUS_OK;
+  return true;
+}
+//------------------------------------------------------------------------------------------------------------------------------
+bool wallet_rpc_server::on_sign_cancel(const wallet_rpc::COMMAND_RPC_SIGN_CANCEL::request& req, wallet_rpc::COMMAND_RPC_SIGN_CANCEL::response& res) {
+  CryptoNote::AccountKeys keys;
+  m_wallet.getAccountKeys(keys);
+
+  // Bind the cancel signature to the offerId AND a timestamp so an old
+  // captured cancel signature cannot be replayed (anti-replay). Honor the
+  // client-supplied timestamp; fall back to server time when absent.
+  uint64_t ts = (req.timestamp != 0) ? req.timestamp
+                                     : static_cast<uint64_t>(std::time(nullptr));
+  std::string cancelData = "cancel:" + req.offerId + ":" + std::to_string(ts);
+  Crypto::Hash cancelHash;
+  Crypto::cn_fast_hash(cancelData.data(), cancelData.size(), cancelHash);
+
+  Crypto::Signature sig;
+  Crypto::generate_signature(cancelHash, keys.address.spendPublicKey, keys.spendSecretKey, sig);
+
+  res.offerId     = req.offerId;
+  res.makerPubKey = Common::podToHex(keys.address.spendPublicKey);
+  res.signature   = Common::podToHex(sig);
+  res.timestamp   = ts;
+  res.status      = WALLET_RPC_STATUS_OK;
+  return true;
+}
+//------------------------------------------------------------------------------------------------------------------------------
+bool wallet_rpc_server::on_sign_order(const wallet_rpc::COMMAND_RPC_SIGN_ORDER::request& req, wallet_rpc::COMMAND_RPC_SIGN_ORDER::response& res) {
+  CryptoNote::AccountKeys keys;
+  m_wallet.getAccountKeys(keys);
+
+  if (req.pair > 7 || req.side > 1) {
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_WRONG_ADDRESS, "Invalid pair or side");
+  }
+  if (req.price == 0 || req.amount == 0) {
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "price and amount must be > 0");
+  }
+
+  // Canonical encoding MUST match SwapOfferRelay::generateOrderId (no struct padding):
+  //   orderId = hex(cn_fast_hash(pubkey || side || pair || price || amount || nonce))
+  // Signature: generate_signature(orderIdHash, spendPub, spendSec)
+  uint64_t nonce = 0;
+  Crypto::generate_random_bytes(sizeof(nonce), reinterpret_cast<uint8_t*>(&nonce));
+
+  std::string data;
+  data.append(reinterpret_cast<const char*>(&keys.address.spendPublicKey), sizeof(keys.address.spendPublicKey));
+  uint8_t side = req.side;
+  uint8_t pair = req.pair;
+  data.append(reinterpret_cast<const char*>(&side), sizeof(side));
+  data.append(reinterpret_cast<const char*>(&pair), sizeof(pair));
+  data.append(reinterpret_cast<const char*>(&req.price), sizeof(req.price));
+  data.append(reinterpret_cast<const char*>(&req.amount), sizeof(req.amount));
+  data.append(reinterpret_cast<const char*>(&nonce), sizeof(nonce));
+
+  Crypto::Hash orderIdHash;
+  Crypto::cn_fast_hash(data.data(), data.size(), orderIdHash);
+
+  Crypto::Signature sig;
+  Crypto::generate_signature(orderIdHash, keys.address.spendPublicKey, keys.spendSecretKey, sig);
+
+  res.orderId     = Common::podToHex(orderIdHash);
+  res.makerPubKey = Common::podToHex(keys.address.spendPublicKey);
+  res.signature   = Common::podToHex(sig);
+  res.nonce       = nonce;
+  res.status      = WALLET_RPC_STATUS_OK;
+  return true;
+}
+//------------------------------------------------------------------------------------------------------------------------------
+bool wallet_rpc_server::on_initiate_swap(const wallet_rpc::COMMAND_RPC_INITIATE_SWAP::request& req, wallet_rpc::COMMAND_RPC_INITIATE_SWAP::response& res) {
+  try {
+    XfgSwap::SwapParams params;
+
+    // Parse pair
+    std::string pairUpper = req.pair;
+    std::transform(pairUpper.begin(), pairUpper.end(), pairUpper.begin(), ::toupper);
+    params.pair = XfgSwap::swapPairFromString(pairUpper);
+
+    // Parse role
+    std::string roleLower = req.role.empty() ? "alice" : req.role;
+    std::transform(roleLower.begin(), roleLower.end(), roleLower.begin(), ::tolower);
+    params.role = (roleLower == "bob") ? XfgSwap::SwapRole::BOB : XfgSwap::SwapRole::ALICE;
+
+    params.xfgAmount = req.xfgAmount;
+
+    // Parse peer pubkey
+    if (!Common::podFromHex(req.peerPubKey, params.peerSwapPubKey)) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Invalid peerPubKey hex");
+    }
+
+    // Step 1: Generate our swap keypair
+    XfgSwap::adaptor_generate_keys(params);
+
+    // Step 2: Musig2 key aggregation
+    if (!XfgSwap::adaptor_key_aggregate(params)) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Key aggregation failed (invalid peer pubkey?)");
+    }
+
+    // Step 3: Generate nonces
+    XfgSwap::adaptor_nonce_generate(params);
+
+    // Step 4 (Bob only): Generate adaptor secret + DLEQ proof
+    if (params.role == XfgSwap::SwapRole::BOB) {
+      Crypto::PublicKey dleqBase;
+      Crypto::hash_data_to_ec(reinterpret_cast<const uint8_t*>(&params.escrowPubKey), 32, dleqBase);
+      if (!XfgSwap::adaptor_generate_adaptor(params, dleqBase)) {
+        throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Failed to generate adaptor point");
+      }
+    }
+
+    // Derive swap ID from escrow key hash
+    Crypto::Hash swapIdHash;
+    Crypto::cn_fast_hash(&params.escrowPubKey, sizeof(params.escrowPubKey), swapIdHash);
+    params.swapId = Common::podToHex(swapIdHash).substr(0, 16);
+
+    res.swapId    = params.swapId;
+    res.ourPubKey = Common::podToHex(params.ourSwapPubKey);
+    res.nonce0    = Common::podToHex(params.musig2.ourPubNonce.R[0]);
+    res.nonce1    = Common::podToHex(params.musig2.ourPubNonce.R[1]);
+    res.escrowKey = Common::podToHex(params.escrowPubKey);
+    if (params.role == XfgSwap::SwapRole::BOB) {
+      res.adaptorPoint  = Common::podToHex(params.adaptorPoint);
+      res.dleqChallenge = Common::podToHex(params.adaptorDleqProof.challenge);
+      res.dleqResponse  = Common::podToHex(params.adaptorDleqProof.response);
+    }
+    res.status = WALLET_RPC_STATUS_OK;
+  } catch (const JsonRpc::JsonRpcError&) {
+    throw;
+  } catch (const std::exception& e) {
+    logger(WARNING) << "Wallet RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Internal wallet error");
+  }
+  return true;
+}
+//------------------------------------------------------------------------------------------------------------------------------
+bool wallet_rpc_server::on_complete_swap(const wallet_rpc::COMMAND_RPC_COMPLETE_SWAP::request& req, wallet_rpc::COMMAND_RPC_COMPLETE_SWAP::response& res) {
+  // TODO: requires SwapDaemon IPC channel
+  // complete_swap needs full MuSig2 session state that lives in SwapDaemon (M5).
+  // The wallet RPC layer does not have a wired IPC path to SwapDaemon yet.
+  // Use /processswap via fuegod RPC until the IPC channel is implemented.
+  (void)req;
+  res.txHash = "";
+  res.status = "not yet implemented — SwapDaemon IPC not wired";
+  return true;
+}
+//------------------------------------------------------------------------------------------------------------------------------
+bool wallet_rpc_server::on_refund_swap(const wallet_rpc::COMMAND_RPC_REFUND_SWAP::request& req, wallet_rpc::COMMAND_RPC_REFUND_SWAP::response& res) {
+  // TODO: requires SwapDaemon IPC channel
+  // refund_swap needs full MuSig2 session state that lives in SwapDaemon (M5).
+  // The wallet RPC layer does not have a wired IPC path to SwapDaemon yet.
+  // Use /refundswap via fuegod RPC until the IPC channel is implemented.
+  (void)req;
+  res.txHash = "";
+  res.status = "not yet implemented — SwapDaemon IPC not wired";
+  return true;
+}
+//------------------------------------------------------------------------------------------------------------------------------
+bool wallet_rpc_server::on_create_afk_lock(const wallet_rpc::COMMAND_RPC_CREATE_AFK_LOCK::request& req, wallet_rpc::COMMAND_RPC_CREATE_AFK_LOCK::response& res) {
+  std::string lockId, adaptorPoint, preSig, hashLock;
+  std::error_code ec = m_wallet.create_afk_lock(req.amount, req.timeout_hours, req.pair, lockId, adaptorPoint, preSig, hashLock);
+  if (ec) {
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, ec.message());
+  }
+  res.lockId = lockId;
+  res.adaptorPoint = adaptorPoint;
+  res.preSig = preSig;
+  res.hashLock = hashLock;
+  res.status = WALLET_RPC_STATUS_OK;
+  return true;
+}
+//------------------------------------------------------------------------------------------------------------------------------
+bool wallet_rpc_server::on_claim_afk_swap(const wallet_rpc::COMMAND_RPC_CLAIM_AFK_SWAP::request& req, wallet_rpc::COMMAND_RPC_CLAIM_AFK_SWAP::response& res) {
+  if (req.payout_address.empty()) {
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_WRONG_ADDRESS,
+      "payout_address is required (no placeholder destinations allowed)");
+  }
+  // Fee address optional — empty means no separate fee-pool transfer
+  std::string fee_address;
+
+  std::string txHash;
+  std::error_code ec = m_wallet.claim_afk_swap(req.swapId, req.secret_s, req.target_chain,
+                                               fee_address, req.payout_address, txHash);
+  if (ec) {
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, ec.message());
+  }
+  res.txHash = txHash;
+  res.status = WALLET_RPC_STATUS_OK;
+  return true;
+}
+
 //------------------------------------------------------------------------------------------------------------------------------
 bool wallet_rpc_server::on_transfer(const wallet_rpc::COMMAND_RPC_TRANSFER::request& req, wallet_rpc::COMMAND_RPC_TRANSFER::response& res) {
   std::vector<CryptoNote::WalletLegacyTransfer> transfers;
@@ -209,7 +513,7 @@ bool wallet_rpc_server::on_transfer(const wallet_rpc::COMMAND_RPC_TRANSFER::requ
     ttl = static_cast<uint64_t>(time(nullptr)) + req.ttl;
   }
 
-  uint64_t actualFee = CryptoNote::parameters::MINIMUM_FEE_V2;
+  uint64_t actualFee = m_currency.minimumFee();
 
   std::string extraString;
   std::copy(extra.begin(), extra.end(), std::back_inserter(extraString));
@@ -236,7 +540,8 @@ bool wallet_rpc_server::on_transfer(const wallet_rpc::COMMAND_RPC_TRANSFER::requ
     res.tx_secret_key = Common::podToHex(transactionSK);
 
   } catch (const std::exception& e) {
-    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, e.what());
+    logger(WARNING) << "Wallet RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "Internal wallet error");
   }
   return true;
 }
@@ -297,7 +602,8 @@ bool wallet_rpc_server::on_get_reserve_proof(const wallet_rpc::COMMAND_RPC_GET_B
 		res.signature = m_wallet.getReserveProof(req.amount != 0 ? req.amount : m_wallet.actualBalance(), !req.message.empty() ? req.message : "");
 	}
 	catch (const std::exception &e) {
-		throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, e.what());
+		logger(WARNING) << "Wallet RPC handler error: " << e.what();
+		throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Internal wallet error");
 	}
 
 	return true;
@@ -307,7 +613,7 @@ bool wallet_rpc_server::on_optimize(const wallet_rpc::COMMAND_RPC_OPTIMIZE::requ
   std::vector<CryptoNote::WalletLegacyTransfer> transfers;
   std::vector<CryptoNote::TransactionMessage> messages;
   std::string extraString;
-  uint64_t fee = CryptoNote::parameters::MINIMUM_FEE_V2;
+  uint64_t fee = m_currency.minimumFee();
   uint64_t mixIn = 0;
   uint64_t unlockTimestamp = 0;
   uint64_t ttl = 0;
@@ -335,7 +641,8 @@ bool wallet_rpc_server::on_optimize(const wallet_rpc::COMMAND_RPC_OPTIMIZE::requ
     res.tx_secret_key = Common::podToHex(transactionSK);
 
   } catch (const std::exception& e) {
-    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, e.what());
+    logger(WARNING) << "Wallet RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "Internal wallet error");
   }
   return true;
 }
@@ -350,7 +657,8 @@ bool wallet_rpc_server::on_estimate_fusion(const wallet_rpc::COMMAND_RPC_ESTIMAT
     res.fusion_ready_count = m_wallet.estimateFusion(req.threshold);
   }
   catch (std::exception &e) {
-    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, std::string("Failed to estimate fusion ready count: ") + e.what());
+    logger(WARNING) << "Wallet RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Internal wallet error");
   }
   return true;
 }
@@ -398,7 +706,8 @@ bool wallet_rpc_server::on_send_fusion(const wallet_rpc::COMMAND_RPC_SEND_FUSION
   }
   catch (const std::exception& e)
   {
-    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, e.what());
+    logger(WARNING) << "Wallet RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "Internal wallet error");
   }
   return true;
 }
@@ -407,7 +716,8 @@ bool wallet_rpc_server::on_store(const wallet_rpc::COMMAND_RPC_STORE::request& r
   try {
     WalletHelper::storeWallet(m_wallet, m_walletFilename);
   } catch (std::exception& e) {
-    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, std::string("Couldn't save wallet: ") + e.what());
+    logger(WARNING) << "Wallet RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Internal wallet error");
   }
 
   return true;
@@ -493,6 +803,13 @@ bool wallet_rpc_server::on_create_integrated(const wallet_rpc::COMMAND_RPC_CREAT
     const bool valid = CryptoNote::parseAccountAddressString(prefix, 
                                                             addr,
                                                             address_str);
+    if (!valid) {
+      return false;
+    }
+    if (prefix == CryptoNote::parameters::CRYPTONOTE_SUBADDRESS_BASE58_PREFIX ||
+        prefix == CryptoNote::CRYPTONOTE_SUBADDRESS_BASE58_PREFIX_TESTNET) {
+      return false;
+    }
 
     CryptoNote::BinaryArray ba;
     CryptoNote::toBinaryArray(addr, ba);
@@ -556,6 +873,7 @@ bool wallet_rpc_server::on_get_transfers(const wallet_rpc::COMMAND_RPC_GET_TRANS
 
 bool wallet_rpc_server::on_get_height(const wallet_rpc::COMMAND_RPC_GET_HEIGHT::request& req, wallet_rpc::COMMAND_RPC_GET_HEIGHT::response& res) {
   res.height = m_node.getLastLocalBlockHeight();
+  res.network = m_currency.isTestnet() ? "testnet" : "mainnet";
   return true;
 }
 
@@ -566,6 +884,721 @@ bool wallet_rpc_server::on_get_outputs(const wallet_rpc::COMMAND_RPC_GET_OUTPUTS
 
 bool wallet_rpc_server::on_reset(const wallet_rpc::COMMAND_RPC_RESET::request& req, wallet_rpc::COMMAND_RPC_RESET::response& res) {
   m_wallet.reset();
+  return true;
+}
+
+// ── Phase 7: CD / COLD wallet RPC bridges ────────────────────────────────────
+
+bool wallet_rpc_server::on_list_cds(const wallet_rpc::COMMAND_RPC_LIST_CDS::request& req, wallet_rpc::COMMAND_RPC_LIST_CDS::response& res) {
+  size_t count = m_wallet.getDepositCount();
+  for (size_t i = 0; i < count; ++i) {
+    CryptoNote::Deposit dep;
+    if (!m_wallet.getDeposit(static_cast<CryptoNote::DepositId>(i), dep)) continue;
+
+    wallet_rpc::COMMAND_RPC_LIST_CDS::deposit_entry entry;
+    entry.deposit_id     = static_cast<uint64_t>(i);
+    entry.amount         = dep.amount;
+    entry.term           = dep.term;
+    entry.unlock_height  = dep.unlockHeight;
+    entry.creation_height = dep.height;
+    entry.locked         = dep.locked;
+
+    switch (dep.depositType) {
+      case CryptoNote::Deposit::Type::HEAT:
+        entry.deposit_type = "HEAT"; break;
+      default:
+        // COLD deposit type (tag 0xCD) removed — should not reach here
+        entry.deposit_type = "UNKNOWN"; break;
+    }
+
+    res.deposits.push_back(std::move(entry));
+  }
+  res.status = WALLET_RPC_STATUS_OK;
+  return true;
+}
+
+bool wallet_rpc_server::on_create_cd(const wallet_rpc::COMMAND_RPC_CREATE_CD::request& req, wallet_rpc::COMMAND_RPC_CREATE_CD::response& res) {
+  try {
+    CryptoNote::WalletGreen* wg = dynamic_cast<CryptoNote::WalletGreen*>(&m_wallet);
+    if (!wg) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "create_cd requires WalletGreen");
+    }
+    if (req.amount == 0) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "amount must be > 0");
+    }
+    if (req.term == 0) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "term must be > 0");
+    }
+
+    // deposit_type is accepted but ignored: legacy 0x07 YIELD / 0x08 HEAT
+    // commitment extras are retired. Term-locked HEAT CDs are
+    // TransactionOutputCommitment outputs; HEAT burns use mintHeatV10.
+    (void)req.deposit_type;
+
+    std::string txHash;
+    CryptoNote::IWallet* iwallet = static_cast<CryptoNote::IWallet*>(wg);
+    std::string addr = iwallet->getAddress(0);
+    iwallet->createDeposit(req.amount, static_cast<uint64_t>(req.term), addr, addr, txHash);
+
+    // Deposit ID is the new last index after creation
+    size_t depositId = iwallet->getWalletDepositCount() - 1;
+    CryptoNote::Deposit dep = iwallet->getDeposit(depositId);
+
+    res.tx_hash       = txHash;
+    res.deposit_id    = static_cast<uint64_t>(depositId);
+    res.unlock_height = dep.unlockHeight;
+    res.status        = WALLET_RPC_STATUS_OK;
+  } catch (const JsonRpc::JsonRpcError&) {
+    throw;
+  } catch (const std::exception& e) {
+    logger(WARNING) << "Wallet RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "Internal wallet error");
+  }
+  return true;
+}
+
+bool wallet_rpc_server::on_withdraw_cd(const wallet_rpc::COMMAND_RPC_WITHDRAW_CD::request& req, wallet_rpc::COMMAND_RPC_WITHDRAW_CD::response& res) {
+  try {
+    CryptoNote::DepositId depId = static_cast<CryptoNote::DepositId>(req.deposit_id);
+    CryptoNote::Deposit dep;
+    if (!m_wallet.getDeposit(depId, dep)) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Deposit not found");
+    }
+    if (dep.locked) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Deposit is not yet mature");
+    }
+
+    CryptoNote::TransactionId txId = m_wallet.withdrawDeposits({depId}, 0);
+    CryptoNote::WalletLegacyTransaction txInfo;
+    m_wallet.getTransaction(txId, txInfo);
+    res.tx_hash = Common::podToHex(txInfo.hash);
+    res.status  = WALLET_RPC_STATUS_OK;
+  } catch (const JsonRpc::JsonRpcError&) {
+    throw;
+  } catch (const std::exception& e) {
+    logger(WARNING) << "Wallet RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "Internal wallet error");
+  }
+  return true;
+}
+
+bool wallet_rpc_server::on_rollover_cd(const wallet_rpc::COMMAND_RPC_ROLLOVER_CD::request& req, wallet_rpc::COMMAND_RPC_ROLLOVER_CD::response& res) {
+  try {
+    CryptoNote::WalletGreen* wg = dynamic_cast<CryptoNote::WalletGreen*>(&m_wallet);
+    if (!wg) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Rollover requires WalletGreen");
+    }
+
+    CryptoNote::DepositId depId = static_cast<CryptoNote::DepositId>(req.deposit_id);
+    CryptoNote::Deposit dep;
+    if (!m_wallet.getDeposit(depId, dep)) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Deposit not found");
+    }
+    if (dep.locked) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Deposit is not yet mature");
+    }
+
+    uint32_t newTerm = (req.new_term == 0) ? dep.term : req.new_term;
+    std::string txHash;
+
+    // Obtain accumulated CD interest via INode (delegates to CommitmentIndex in the Core).
+    uint32_t currentHeight = m_node.getLastLocalBlockHeight();
+    uint64_t interest = 0;
+    std::error_code ec = m_node.getCdInterest(dep.amount, dep.height, currentHeight, interest);
+    if (ec) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR,
+                                  "getCdInterest failed: " + ec.message());
+    }
+
+    if (!wg->rolloverDeposit(depId, newTerm, interest, txHash)) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR,
+                                  "rolloverDeposit failed");
+    }
+
+    // Get new deposit info (last created)
+    size_t newDepId = m_wallet.getDepositCount() - 1;
+    CryptoNote::Deposit newDep;
+    m_wallet.getDeposit(static_cast<CryptoNote::DepositId>(newDepId), newDep);
+
+    res.tx_hash    = txHash;
+    res.new_amount = newDep.amount;
+    res.status     = WALLET_RPC_STATUS_OK;
+  } catch (const JsonRpc::JsonRpcError&) {
+    throw;
+  } catch (const std::exception& e) {
+    logger(WARNING) << "Wallet RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "Internal wallet error");
+  }
+  return true;
+}
+
+bool wallet_rpc_server::on_heat_mint(const wallet_rpc::COMMAND_RPC_HEAT_MINT::request& req, wallet_rpc::COMMAND_RPC_HEAT_MINT::response& res) {
+  try {
+    if (req.xfg_burned == 0) throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "xfg_burned must be > 0");
+    if (req.heat_minted == 0) throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "heat_minted must be > 0");
+    uint64_t fee = (req.fee > 0) ? req.fee : m_currency.minimumFee();
+
+    CryptoNote::WalletHelper::SendCompleteResultObserver sent;
+    WalletHelper::IWalletRemoveObserverGuard removeGuard(m_wallet, sent);
+
+    CryptoNote::TransactionId txId = m_wallet.mintHeatV10(req.xfg_burned, req.heat_minted, fee, req.mixin);
+    if (txId == WALLET_INVALID_TRANSACTION_ID) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "HEAT mint failed");
+    }
+
+    std::error_code sendError = sent.wait(txId);
+    removeGuard.removeObserver();
+
+    if (sendError) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "HEAT mint relay failed: " + sendError.message());
+    }
+
+    CryptoNote::WalletLegacyTransaction txInfo;
+    m_wallet.getTransaction(txId, txInfo);
+    res.tx_hash = Common::podToHex(txInfo.hash);
+    res.status = WALLET_RPC_STATUS_OK;
+  } catch (const JsonRpc::JsonRpcError&) {
+    throw;
+  } catch (const std::exception& e) {
+    logger(WARNING) << "Wallet RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "Internal wallet error");
+  }
+  return true;
+}
+
+bool wallet_rpc_server::on_send_heat(const wallet_rpc::COMMAND_RPC_SEND_HEAT::request& req, wallet_rpc::COMMAND_RPC_SEND_HEAT::response& res) {
+  try {
+    CryptoNote::AccountPublicAddress addr;
+    bool isSubaddress = false;
+    if (!m_currency.parseAccountAddressString(req.address, addr, isSubaddress)) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Invalid address");
+    }
+    if (req.amount == 0) throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "amount must be > 0");
+    uint64_t fee = (req.fee > 0) ? req.fee : m_currency.minimumFee();
+
+    CryptoNote::WalletHelper::SendCompleteResultObserver sent;
+    WalletHelper::IWalletRemoveObserverGuard removeGuard(m_wallet, sent);
+
+    CryptoNote::TransactionId txId = m_wallet.sendHeatV10(addr, req.amount, fee, req.mixin, isSubaddress);
+    if (txId == WALLET_INVALID_TRANSACTION_ID) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "Send HEAT failed");
+    }
+
+    std::error_code sendError = sent.wait(txId);
+    removeGuard.removeObserver();
+
+    if (sendError) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "Send HEAT relay failed: " + sendError.message());
+    }
+
+    CryptoNote::WalletLegacyTransaction txInfo;
+    m_wallet.getTransaction(txId, txInfo);
+    res.tx_hash = Common::podToHex(txInfo.hash);
+    res.status = WALLET_RPC_STATUS_OK;
+  } catch (const JsonRpc::JsonRpcError&) {
+    throw;
+  } catch (const std::exception& e) {
+    logger(WARNING) << "Wallet RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "Internal wallet error");
+  }
+  return true;
+}
+
+bool wallet_rpc_server::on_sell_xfg(const wallet_rpc::COMMAND_RPC_AMM_SWAP::request& req, wallet_rpc::COMMAND_RPC_AMM_SWAP::response& res) {
+  wallet_rpc::COMMAND_RPC_AMM_SWAP::request sell = req;
+  sell.direction = 0;
+  return on_amm_swap(sell, res);
+}
+
+bool wallet_rpc_server::on_buy_xfg(const wallet_rpc::COMMAND_RPC_AMM_SWAP::request& req, wallet_rpc::COMMAND_RPC_AMM_SWAP::response& res) {
+  wallet_rpc::COMMAND_RPC_AMM_SWAP::request buy = req;
+  buy.direction = 1;
+  return on_amm_swap(buy, res);
+}
+
+bool wallet_rpc_server::on_amm_swap(const wallet_rpc::COMMAND_RPC_AMM_SWAP::request& req, wallet_rpc::COMMAND_RPC_AMM_SWAP::response& res) {
+  try {
+    if (req.direction > 1) throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "direction must be 0 (XFG→HEAT) or 1 (HEAT→XFG)");
+    if (req.input_amount == 0) throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "input_amount must be > 0");
+    // No expected_output: quote the curve, net of the 1% fee — the most
+    // consensus accepts — a little under it for price drift. A zero output
+    // was sent as is before, which consensus refuses.
+    uint64_t expectedOutput = req.expected_output;
+    if (expectedOutput == 0) {
+      CryptoNote::INode::AmmPoolReserves reserves;
+      if (m_node.getAmmPoolReserves(reserves) || reserves.reserveXfg == 0 || reserves.reserveHeat == 0) {
+        throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Hearth pool reserves unavailable");
+      }
+      const uint64_t net = req.direction == 0
+          ? CryptoNote::ammSwapNetOutput(req.input_amount, reserves.reserveXfg, reserves.reserveHeat)
+          : CryptoNote::ammSwapNetOutput(req.input_amount, reserves.reserveHeat, reserves.reserveXfg);
+      expectedOutput = static_cast<uint64_t>(
+          (static_cast<uint128_t>(net) * (10000 - CryptoNote::parameters::WALLET_SWAP_SLIPPAGE_BPS)) / 10000);
+    }
+    if (expectedOutput == 0 || expectedOutput < req.min_output) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "expected_output below min_output");
+    }
+    uint64_t fee = (req.fee > 0) ? req.fee : m_currency.minimumFee();
+
+    CryptoNote::WalletHelper::SendCompleteResultObserver sent;
+    WalletHelper::IWalletRemoveObserverGuard removeGuard(m_wallet, sent);
+
+    CryptoNote::TransactionId txId = m_wallet.ammSwapV10(req.direction, req.input_amount,
+        expectedOutput, req.min_output, fee, req.mixin);
+    if (txId == WALLET_INVALID_TRANSACTION_ID) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "AMM swap failed");
+    }
+
+    std::error_code sendError = sent.wait(txId);
+    removeGuard.removeObserver();
+
+    if (sendError) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "AMM swap relay failed: " + sendError.message());
+    }
+
+    CryptoNote::WalletLegacyTransaction txInfo;
+    m_wallet.getTransaction(txId, txInfo);
+    res.tx_hash = Common::podToHex(txInfo.hash);
+    res.status = WALLET_RPC_STATUS_OK;
+  } catch (const JsonRpc::JsonRpcError&) {
+    throw;
+  } catch (const std::exception& e) {
+    logger(WARNING) << "Wallet RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "Internal wallet error");
+  }
+  return true;
+}
+
+bool wallet_rpc_server::on_amm_add_liquidity(const wallet_rpc::COMMAND_RPC_AMM_ADD_LIQUIDITY::request& req, wallet_rpc::COMMAND_RPC_AMM_ADD_LIQUIDITY::response& res) {
+  try {
+    if (req.amount_xfg == 0 && req.amount_heat == 0) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "at least one of amount_xfg or amount_heat must be > 0");
+    }
+    uint64_t fee = (req.fee > 0) ? req.fee : m_currency.minimumFee();
+
+    CryptoNote::WalletHelper::SendCompleteResultObserver sent;
+    WalletHelper::IWalletRemoveObserverGuard removeGuard(m_wallet, sent);
+
+    CryptoNote::TransactionId txId = m_wallet.lpAddV10(req.amount_xfg, req.amount_heat, fee, req.mixin);
+    if (txId == WALLET_INVALID_TRANSACTION_ID) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "LP add failed");
+    }
+
+    std::error_code sendError = sent.wait(txId);
+    removeGuard.removeObserver();
+
+    if (sendError) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "LP add relay failed: " + sendError.message());
+    }
+
+    CryptoNote::WalletLegacyTransaction txInfo;
+    m_wallet.getTransaction(txId, txInfo);
+    res.tx_hash = Common::podToHex(txInfo.hash);
+    res.status = WALLET_RPC_STATUS_OK;
+  } catch (const JsonRpc::JsonRpcError&) {
+    throw;
+  } catch (const std::exception& e) {
+    logger(WARNING) << "Wallet RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "Internal wallet error");
+  }
+  return true;
+}
+
+bool wallet_rpc_server::on_amm_remove_liquidity(const wallet_rpc::COMMAND_RPC_AMM_REMOVE_LIQUIDITY::request& req, wallet_rpc::COMMAND_RPC_AMM_REMOVE_LIQUIDITY::response& res) {
+  try {
+    if (req.lp_shares == 0) throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "lp_shares must be > 0");
+    uint64_t fee = (req.fee > 0) ? req.fee : m_currency.minimumFee();
+
+    CryptoNote::WalletHelper::SendCompleteResultObserver sent;
+    WalletHelper::IWalletRemoveObserverGuard removeGuard(m_wallet, sent);
+
+    CryptoNote::TransactionId txId = m_wallet.lpRemoveV10(req.lp_shares, req.min_xfg, req.min_heat, fee, req.mixin);
+    if (txId == WALLET_INVALID_TRANSACTION_ID) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "LP remove failed");
+    }
+
+    std::error_code sendError = sent.wait(txId);
+    removeGuard.removeObserver();
+
+    if (sendError) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "LP remove relay failed: " + sendError.message());
+    }
+
+    CryptoNote::WalletLegacyTransaction txInfo;
+    m_wallet.getTransaction(txId, txInfo);
+    res.tx_hash = Common::podToHex(txInfo.hash);
+    res.status = WALLET_RPC_STATUS_OK;
+  } catch (const JsonRpc::JsonRpcError&) {
+    throw;
+  } catch (const std::exception& e) {
+    logger(WARNING) << "Wallet RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "Internal wallet error");
+  }
+  return true;
+}
+
+bool wallet_rpc_server::on_amm_claim_lp_fees(const wallet_rpc::COMMAND_RPC_AMM_CLAIM_LP_FEES::request& req, wallet_rpc::COMMAND_RPC_AMM_CLAIM_LP_FEES::response& res) {
+  try {
+    if (req.lp_shares == 0) throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "lp_shares must be > 0");
+    uint64_t fee = (req.fee > 0) ? req.fee : m_currency.minimumFee();
+
+    CryptoNote::WalletHelper::SendCompleteResultObserver sent;
+    WalletHelper::IWalletRemoveObserverGuard removeGuard(m_wallet, sent);
+
+    CryptoNote::TransactionId txId = m_wallet.lpClaimFeesV10(req.lp_shares, req.min_xfg, req.min_heat, fee, req.mixin);
+    if (txId == WALLET_INVALID_TRANSACTION_ID) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "LP fee claim failed");
+    }
+
+    std::error_code sendError = sent.wait(txId);
+    removeGuard.removeObserver();
+
+    if (sendError) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "LP fee claim relay failed: " + sendError.message());
+    }
+
+    CryptoNote::WalletLegacyTransaction txInfo;
+    m_wallet.getTransaction(txId, txInfo);
+    res.tx_hash = Common::podToHex(txInfo.hash);
+    res.status = WALLET_RPC_STATUS_OK;
+  } catch (const JsonRpc::JsonRpcError&) {
+    throw;
+  } catch (const std::exception& e) {
+    logger(WARNING) << "Wallet RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "Internal wallet error");
+  }
+  return true;
+}
+
+bool wallet_rpc_server::on_heat_deposit(const wallet_rpc::COMMAND_RPC_HEAT_DEPOSIT::request& req, wallet_rpc::COMMAND_RPC_HEAT_DEPOSIT::response& res) {
+  try {
+    if (req.amount == 0) throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "amount must be > 0");
+    if (req.term_epochs == 0) throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "term_epochs must be > 0");
+    uint64_t fee = (req.fee > 0) ? req.fee : m_currency.minimumFee();
+
+    CryptoNote::WalletHelper::SendCompleteResultObserver sent;
+    WalletHelper::IWalletRemoveObserverGuard removeGuard(m_wallet, sent);
+
+    CryptoNote::TransactionId txId = m_wallet.heatDepositV10(req.amount, req.term_epochs,
+        req.banking_fee, fee, req.mixin);
+    if (txId == WALLET_INVALID_TRANSACTION_ID) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "HEAT deposit failed");
+    }
+
+    std::error_code sendError = sent.wait(txId);
+    removeGuard.removeObserver();
+
+    if (sendError) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "HEAT deposit relay failed: " + sendError.message());
+    }
+
+    CryptoNote::WalletLegacyTransaction txInfo;
+    m_wallet.getTransaction(txId, txInfo);
+    res.tx_hash = Common::podToHex(txInfo.hash);
+    res.status = WALLET_RPC_STATUS_OK;
+  } catch (const JsonRpc::JsonRpcError&) {
+    throw;
+  } catch (const std::exception& e) {
+    logger(WARNING) << "Wallet RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "Internal wallet error");
+  }
+  return true;
+}
+
+bool wallet_rpc_server::on_estimate_cd_yield(const wallet_rpc::COMMAND_RPC_ESTIMATE_CD_YIELD::request& req, wallet_rpc::COMMAND_RPC_ESTIMATE_CD_YIELD::response& res) {
+  try {
+    if (req.amount == 0) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "amount must be > 0");
+    }
+
+    uint32_t currentHeight = (req.current_height == 0)
+      ? m_node.getLastLocalBlockHeight()
+      : req.current_height;
+
+    uint32_t heightDiff = (currentHeight > req.creation_height)
+      ? (currentHeight - req.creation_height) : 0;
+
+    // Epoch duration constants
+    const uint32_t epochDuration = m_currency.isTestnet()
+      ? static_cast<uint32_t>(CryptoNote::parameters::TESTNET_EPOCH_DURATION_BLOCKS)
+      : static_cast<uint32_t>(CryptoNote::parameters::EPOCH_DURATION_BLOCKS);
+
+    res.effective_epochs = heightDiff / epochDuration;
+
+    // Delegate to INode which in turn calls CommitmentIndex via Core.
+    uint64_t interest = 0;
+    std::error_code ec = m_node.getCdInterest(req.amount, req.creation_height,
+                                               currentHeight, interest);
+    if (ec) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR,
+                                  "getCdInterest failed: " + ec.message());
+    }
+    res.estimated_interest = interest;
+    res.status = WALLET_RPC_STATUS_OK;
+  } catch (const JsonRpc::JsonRpcError&) {
+    throw;
+  } catch (const std::exception& e) {
+    logger(WARNING) << "Wallet RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Internal wallet error");
+  }
+  return true;
+}
+
+// v11+ Hearth limit order wallet RPC handlers
+bool wallet_rpc_server::on_donate(const wallet_rpc::COMMAND_RPC_DONATE::request& req,
+                                   wallet_rpc::COMMAND_RPC_DONATE::response& res) {
+  try {
+    if (req.amount == 0) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "amount must be > 0");
+    }
+    uint64_t fee = m_currency.minimumFee();
+    uint64_t mixin = (req.mixin == 0) ? CryptoNote::parameters::MAX_TX_MIXIN_SIZE : req.mixin;
+
+    CryptoNote::WalletHelper::SendCompleteResultObserver sent;
+    WalletHelper::IWalletRemoveObserverGuard removeGuard(m_wallet, sent);
+
+    Crypto::SecretKey transactionSK;
+    CryptoNote::TransactionId tx = m_wallet.donateToTreasury(transactionSK, req.amount, fee, mixin);
+    if (tx == WALLET_LEGACY_INVALID_TRANSACTION_ID) {
+      throw std::runtime_error("Couldn't send donation transaction");
+    }
+
+    std::error_code sendError = sent.wait(tx);
+    removeGuard.removeObserver();
+
+    if (sendError) {
+      throw std::system_error(sendError);
+    }
+
+    CryptoNote::WalletLegacyTransaction txInfo;
+    m_wallet.getTransaction(tx, txInfo);
+    res.tx_hash = Common::podToHex(txInfo.hash);
+    res.status = CORE_RPC_STATUS_OK;
+  } catch (const std::exception& e) {
+    logger(WARNING) << "Wallet RPC donate error: " << e.what();
+    res.status = e.what();
+    return false;
+  }
+  return true;
+}
+
+bool wallet_rpc_server::on_place_limit_order(const wallet_rpc::COMMAND_RPC_PLACE_LIMIT_ORDER::request& req,
+                                              wallet_rpc::COMMAND_RPC_PLACE_LIMIT_ORDER::response& res) {
+  try {
+    if (req.amount == 0) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "amount must be > 0");
+    }
+    if (req.target_price == 0) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "target_price must be > 0");
+    }
+    if (req.side > 1) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "side must be 0 (BUY) or 1 (SELL)");
+    }
+
+    uint64_t fee = (req.fee == 0) ? m_currency.minimumFee() : req.fee;
+    // Dynamax: 0 or omitted → probe MAX_TX_MIXIN_SIZE (32), not min-only 8
+    uint64_t mixin = (req.mixin == 0) ? CryptoNote::parameters::MAX_TX_MIXIN_SIZE : req.mixin;
+
+    CryptoNote::WalletHelper::SendCompleteResultObserver sent;
+    WalletHelper::IWalletRemoveObserverGuard removeGuard(m_wallet, sent);
+
+    uint64_t roundedPrice = req.target_price;
+    {
+      const uint64_t tick = CryptoNote::parameters::ORDER_PRICE_TICK;
+      roundedPrice = ((req.target_price + tick / 2) / tick) * tick;
+      if (roundedPrice == 0) roundedPrice = tick;
+      if (roundedPrice != req.target_price) {
+        uint64_t drift = (roundedPrice > req.target_price)
+            ? (roundedPrice - req.target_price) : (req.target_price - roundedPrice);
+        if (drift > tick / 20) {
+          throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR,
+              "target_price must be a multiple of the order tick (0.01)");
+        }
+      }
+    }
+
+    CryptoNote::TransactionId txId = m_wallet.placeOrderV13(
+      req.side, req.amount, roundedPrice, req.expiration, fee, mixin);
+
+    if (txId == WALLET_INVALID_TRANSACTION_ID) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Failed to place limit order");
+    }
+
+    std::error_code sendError = sent.wait(txId);
+    removeGuard.removeObserver();
+
+    if (sendError) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Limit order relay failed: " + sendError.message());
+    }
+
+    CryptoNote::WalletLegacyTransaction txInfo;
+    m_wallet.getTransaction(txId, txInfo);
+    res.tx_hash = Common::podToHex(txInfo.hash);
+    res.status = WALLET_RPC_STATUS_OK;
+  } catch (const JsonRpc::JsonRpcError&) {
+    throw;
+  } catch (const std::exception& e) {
+    logger(WARNING) << "Wallet RPC place_limit_order error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Internal wallet error");
+  }
+  return true;
+}
+
+bool wallet_rpc_server::on_cancel_limit_order(const wallet_rpc::COMMAND_RPC_CANCEL_LIMIT_ORDER::request& req,
+                                               wallet_rpc::COMMAND_RPC_CANCEL_LIMIT_ORDER::response& res) {
+  try {
+    Crypto::Hash orderId;
+    if (!Common::podFromHex(req.order_id, orderId)) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Invalid order_id hex");
+    }
+
+    uint64_t fee = (req.fee == 0) ? m_currency.minimumFee() : req.fee;
+    uint64_t mixin = (req.mixin == 0) ? CryptoNote::parameters::MAX_TX_MIXIN_SIZE : req.mixin;
+
+    CryptoNote::WalletHelper::SendCompleteResultObserver sent;
+    WalletHelper::IWalletRemoveObserverGuard removeGuard(m_wallet, sent);
+
+    CryptoNote::TransactionId txId = m_wallet.cancelOrderV13(orderId, fee, mixin);
+
+    if (txId == WALLET_INVALID_TRANSACTION_ID) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Failed to cancel limit order");
+    }
+
+    std::error_code sendError = sent.wait(txId);
+    removeGuard.removeObserver();
+
+    if (sendError) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Cancel order relay failed: " + sendError.message());
+    }
+
+    CryptoNote::WalletLegacyTransaction txInfo;
+    m_wallet.getTransaction(txId, txInfo);
+    res.tx_hash = Common::podToHex(txInfo.hash);
+    res.status = WALLET_RPC_STATUS_OK;
+  } catch (const JsonRpc::JsonRpcError&) {
+    throw;
+  } catch (const std::exception& e) {
+    logger(WARNING) << "Wallet RPC cancel_limit_order error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Internal wallet error");
+  }
+  return true;
+}
+
+bool wallet_rpc_server::on_get_limit_orders(const wallet_rpc::COMMAND_RPC_GET_LIMIT_ORDERS::request& req,
+                                             wallet_rpc::COMMAND_RPC_GET_LIMIT_ORDERS::response& res) {
+  try {
+    // Query daemon for all limit deposits
+    std::vector<INode::LimitDepositRpcEntry> allDeposits;
+    std::error_code ec = m_node.getLimitDeposits(allDeposits);
+    if (ec) {
+      logger(WARNING) << "Wallet RPC get_limit_orders: daemon query failed: " << ec.message();
+      res.orders.clear();
+      res.status = WALLET_RPC_STATUS_OK;
+      return true;
+    }
+
+    // Compute wallet's own address_hash = cn_fast_hash(spendKey||viewKey)
+    AccountKeys accountKeys;
+    m_wallet.getAccountKeys(accountKeys);
+    std::vector<uint8_t> keyData(sizeof(accountKeys.address.spendPublicKey.data) + sizeof(accountKeys.address.viewPublicKey.data));
+    memcpy(keyData.data(), accountKeys.address.spendPublicKey.data, sizeof(accountKeys.address.spendPublicKey.data));
+    memcpy(keyData.data() + sizeof(accountKeys.address.spendPublicKey.data), accountKeys.address.viewPublicKey.data, sizeof(accountKeys.address.viewPublicKey.data));
+    Crypto::Hash myAddrHash = Crypto::cn_fast_hash(keyData.data(), keyData.size());
+    std::string myAddressHash = Common::podToHex(myAddrHash);
+
+    // Return only orders belonging to this wallet
+    for (const auto& dep : allDeposits) {
+      if (dep.address_hash != myAddressHash) continue;
+      wallet_rpc::COMMAND_RPC_GET_LIMIT_ORDERS::LimitOrderInfo info;
+      info.order_id = dep.order_id;
+      info.side = dep.side;
+      info.amount = dep.amount;
+      info.proceeds_xfg = dep.proceeds_xfg;
+      info.proceeds_heat = dep.proceeds_heat;
+      info.target_price = dep.target_price;
+      info.expiration = dep.expiration;
+      info.withdrawn = dep.withdrawn || dep.expired;
+      res.orders.push_back(std::move(info));
+    }
+    res.status = WALLET_RPC_STATUS_OK;
+  } catch (const JsonRpc::JsonRpcError&) {
+    throw;
+  } catch (const std::exception& e) {
+    logger(WARNING) << "Wallet RPC get_limit_orders error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Internal wallet error");
+  }
+  return true;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------
+bool wallet_rpc_server::on_get_cd_claim_preview(const wallet_rpc::COMMAND_RPC_GET_CD_CLAIM_PREVIEW::request& req, wallet_rpc::COMMAND_RPC_GET_CD_CLAIM_PREVIEW::response& res) {
+  try {
+    CryptoNote::DepositId depId = static_cast<CryptoNote::DepositId>(req.deposit_id);
+    CryptoNote::Deposit dep;
+    if (!m_wallet.getDeposit(depId, dep)) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Deposit not found");
+    }
+
+    // HEAT_TERM mints and LP markers earn no interest
+    const bool earnsInterest =
+        dep.term != CryptoNote::parameters::HEAT_TERM &&
+        dep.term != CryptoNote::parameters::DEPOSIT_TERM_LP &&
+        dep.term > 0;
+
+    // Query pool-aware claim info
+    CryptoNote::INode::CdClaimInfo claimInfo;
+    uint32_t currentHeight = m_node.getKnownBlockCount();
+    std::error_code ec = m_node.getCdClaimInfo(dep.amount, dep.height, currentHeight, claimInfo, dep.term);
+    if (ec) {
+      // Daemon predates pool-aware estimates — fallback to legacy formula (no caps)
+      res.earns_interest = earnsInterest;
+      if (earnsInterest) {
+        uint64_t interest = 0;
+        std::error_code fallbackEc = m_node.getCdInterest(dep.amount, dep.height, currentHeight, interest);
+        if (!fallbackEc) {
+          res.base_interest = interest;
+          res.bonus_interest = 0;
+          res.claimable_interest = interest;
+          res.claimable_bonus = 0;
+          res.fee_pool_balance = 0;
+          res.bonus_vault_balance = 0;
+          res.capped = false;
+        }
+      }
+    } else {
+      res.earns_interest = earnsInterest;
+      res.base_interest = claimInfo.baseInterest;
+      res.bonus_interest = claimInfo.bonusInterest;
+      res.claimable_interest = claimInfo.claimableInterest;
+      res.claimable_bonus = claimInfo.claimableBonus;
+      res.fee_pool_balance = claimInfo.feePoolBalance;
+      res.bonus_vault_balance = claimInfo.bonusVaultBalance;
+      res.capped = earnsInterest && (claimInfo.claimableInterest < claimInfo.baseInterest ||
+                                     claimInfo.claimableBonus < claimInfo.bonusInterest);
+    }
+
+    res.principal = dep.amount;
+    if (earnsInterest && res.base_interest > 0) {
+      res.note = "Estimate only — the protocol distributes realized fee revenue "
+                 "(real yield, no printed interest); based on accrued epoch fee rates, "
+                 "not a promise.";
+    }
+    if (res.capped) {
+      res.warning = "The CD yield pool or Bonus Vault cannot currently back your full accrued interest — "
+                    "a rare event (pool drained by claims or an epoch with no fee revenue). "
+                    "Withdrawing now would forfeit part of your accrued interest. "
+                    "If you wait for the pools to replenish from incoming swap fees, "
+                    "your CD will continue accruing and the remaining interest will become claimable. "
+                    "Principal is never at risk.";
+    }
+    res.status = WALLET_RPC_STATUS_OK;
+    return true;
+  } catch (const JsonRpc::JsonRpcError&) {
+    throw;
+  } catch (const std::exception& e) {
+    logger(WARNING) << "Wallet RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "Internal wallet error");
+  }
   return true;
 }
 

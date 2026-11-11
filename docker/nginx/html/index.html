@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fuego Docker Node</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .online { background-color: #d4edda; color: #155724; }
+        .offline { background-color: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔥 Fuego Docker Node</h1>
+        <p>Your Fuego cryptocurrency node is running successfully!</p>
+        
+        <h2>Services</h2>
+        <div class="status online">
+            <strong>Node Status:</strong> Online
+        </div>
+        <div class="status online">
+            <strong>Wallet Service:</strong> Available
+        </div>
+        
+        <h2>Endpoints</h2>
+        <ul>
+            <li><strong>Node RPC:</strong> <a href="/api/getinfo">http://localhost/api/</a></li>
+            <li><strong>Wallet RPC:</strong> <a href="/wallet/">http://localhost/wallet/</a></li>
+            <li><strong>Prometheus:</strong> <a href="http://localhost:9090">http://localhost:9090</a></li>
+            <li><strong>Grafana:</strong> <a href="http://localhost:3000">http://localhost:3000</a></li>
+        </ul>
+        
+        <h2>Documentation</h2>
+        <p>For more information, visit: <a href="https://github.com/usexfg/fuego">Fuego GitHub</a></pr>
+    </div>
+</body>
+</html>

@@ -1,0 +1,55 @@
+---
+title: "Understanding terms and epochs"
+description: "CD terms, epochs, and maturity heights for HEAT deposits."
+keywords: ["term", "epoch", "maturity", "HEAT", "CD"]
+---
+
+## Epoch
+
+An **epoch** is the CD accounting period. Fee accumulation and distribution are epoch-scoped.
+
+| Network | `EPOCH_DURATION_BLOCKS` | Approx. wall time |
+|---------|-------------------------|-------------------|
+| Mainnet | **900** | ~**5 days** (~480s blocks) |
+| Testnet | **10** | Minutes-scale testing |
+
+Older docs that said “900 blocks ≈ 1 day” are wrong for current config comments and block-time assumptions.
+
+## Available terms
+
+| Bound | Constant | Mainnet meaning |
+|-------|----------|-----------------|
+| Minimum | `CD_MIN_EPOCHS = 6` | ~1 month |
+| Maximum | `CD_MAX_EPOCHS = 72` | ~1 year |
+
+Wallet UIs may offer presets; protocol allows the full 6–72 range (testnet min can be 1).
+
+## Maturity height
+
+```
+maturity_height = creation_height + (term_epochs × blocks_per_epoch)
+```
+
+Example (mainnet, 6 epochs):
+
+- Created at height 100,000  
+- Term blocks = 6 × 900 = 5,400  
+- Maturity = 105,400  
+
+## Locked until maturity
+
+You cannot withdraw early. Liquidity options:
+
+1. [Transfer the CD](/features/commitment-deposits/transferring-deposits) off-chain negotiated price  
+2. Wait  
+
+## HEAT_TERM vs CD term
+
+| Term value | Meaning |
+|------------|---------|
+| `HEAT_TERM` (0xFFFFFFFF) | Mint/burn marker — **not** a yield CD |
+| 6–72 epochs (in blocks) | Yield-bearing **HEAT CD** |
+
+## Choosing a term
+
+Longer terms participate in more epochs of fee distribution and may receive loyalty-style bonus parameters where implemented. Shorter terms free capital sooner. [Rollover](/features/commitment-deposits/compound-interest) compounds at maturity.

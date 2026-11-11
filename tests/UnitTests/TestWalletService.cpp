@@ -256,7 +256,7 @@ TEST_F(WalletServiceTest_getSpendKeys, returnsKeysCorrectly) {
   auto ec = service->getSpendkeys("address", publicSpendKey, secretSpendKey);
   ASSERT_FALSE(ec);
   ASSERT_EQ(Common::podToHex(wallet.keyPair.publicKey), publicSpendKey);
-  ASSERT_EQ(Common::podToHex(wallet.keyPair.secretKey), secretSpendKey);
+  ASSERT_TRUE(secretSpendKey.empty());  // secret key no longer exposed via RPC
 }
 
 class WalletServiceTest_getBalance : public WalletServiceTest {
@@ -394,9 +394,9 @@ TEST_F(WalletServiceTest_getViewKey, returnsCorrectValue) {
   WalletGetViewKeyStub wallet(dispatcher);
   auto service = createWalletService(wallet);
 
-  std::string viewSecretKey;
-  ASSERT_FALSE(service->getViewKey(viewSecretKey));
-  ASSERT_EQ(Common::podToHex(wallet.keyPair.secretKey), viewSecretKey);
+  std::string viewPublicKey;
+  ASSERT_FALSE(service->getViewKey(viewPublicKey));
+  ASSERT_EQ(Common::podToHex(wallet.keyPair.publicKey), viewPublicKey);
 }
 
 class WalletTransactionBuilder {

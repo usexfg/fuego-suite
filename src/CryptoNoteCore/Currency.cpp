@@ -1,37 +1,42 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
+// Copyright (c) 2017-2026 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it
+// Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You can redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "Currency.h"
+#include "Common/Int128.h"
 #include <cctype>
+#include <numeric>
 #include <boost/algorithm/string/trim.hpp>
 #include <boost/math/special_functions/round.hpp>
 #include <boost/lexical_cast.hpp>
 #include "../Common/Base58.h"
 #include "../Common/int-util.h"
 #include "../Common/StringTools.h"
-
-#include "CryptoNoteConfig.h"
+#include "../CryptoNoteConfig.h"
 #include "Account.h"
 #include "CryptoNoteBasicImpl.h"
 #include "CryptoNoteFormatUtils.h"
 #include "CryptoNoteTools.h"
 #include "TransactionExtra.h"
 #include "UpgradeDetector.h"
+#include "CommitmentIndex.h"
+#include "../crypto/hash.h"
+#include "../crypto/keccak.h"
+#include <algorithm>
+
 
 #undef ERROR
 
@@ -79,11 +84,18 @@ namespace CryptoNote
 		if (isTestnet()) {
 			m_upgradeHeightV2 = 2;
 			m_upgradeHeightV3 = 3;
-			m_upgradeHeightV4 = 4;	
+			m_upgradeHeightV4 = 4;
 			m_upgradeHeightV5 = 5;
-			m_upgradeHeightV6 = 6;	
-			m_upgradeHeightV7 = 7;	
-			m_upgradeHeightV8 = 8;
+			m_upgradeHeightV6 = 6;
+			m_upgradeHeightV7 = 17;
+			m_upgradeHeightV8 = 18;
+		m_upgradeHeightV9 = 19;
+		m_upgradeHeightV10 = 25;
+		m_upgradeHeightV11 = 30;
+		m_upgradeHeightV12 = 180;
+		m_bootstrapBlocks = TESTNET_BOOTSTRAP_BLOCKS;
+		m_difficultyTarget = 10;  // 10-second target for testnet (fast mining)
+
       m_blocksFileName = "testnet_" + m_blocksFileName;
       m_blocksCacheFileName = "testnet_" + m_blocksCacheFileName;
       m_blockIndexesFileName = "testnet_" + m_blockIndexesFileName;
@@ -101,7 +113,7 @@ namespace CryptoNote
     m_genesisBlock = boost::value_initialized<Block>();
 
     // Hard code coinbase tx in genesis block, because "tru" generating tx use random, but genesis should be always the same
-    std::string genesisCoinbaseTxHex = GENESIS_COINBASE_TX_HEX;
+    std::string genesisCoinbaseTxHex = m_testnet ? GENESIS_COINBASE_TX_HEX_TESTNET : GENESIS_COINBASE_TX_HEX;
     BinaryArray minerTxBlob;
 
     bool r =
@@ -120,7 +132,7 @@ namespace CryptoNote
     m_genesisBlock.nonce = 70;
     if (m_testnet)
     {
-      ++m_genesisBlock.nonce;
+      m_genesisBlock.nonce = 80;
     }
 
     //miner::find_nonce_for_given_block(bl, 1, 0);
@@ -137,6 +149,18 @@ namespace CryptoNote
 		else {
 			return CryptoNote::parameters::CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V1;
 		}
+	}
+
+	uint32_t Currency::cdActivationHeight() const {
+		// DELIBERATE, and pinned by testCdActivationHeight(): CDs are a v12 feature
+		// on mainnet (CD_ACTIVATION_HEIGHT), but testnet opens them at its v11 height
+		// so they stay exercised there. Do not "align" this with the version -- doing
+		// so silently disables CD coverage on testnet.
+		return m_testnet ? m_upgradeHeightV11 : parameters::CD_ACTIVATION_HEIGHT;
+	}
+
+	uint32_t Currency::heatwaveTagCutoffHeight() const {
+		return m_testnet ? m_upgradeHeightV11 : parameters::HEATWAVE_TAG_CUTOFF_HEIGHT;
 	}
 
 	uint32_t Currency::upgradeHeight(uint8_t majorVersion) const {
@@ -161,32 +185,143 @@ namespace CryptoNote
 		else if (majorVersion == BLOCK_MAJOR_VERSION_8) {
 			return m_upgradeHeightV8;
 		}
+		else if (majorVersion == BLOCK_MAJOR_VERSION_9) {
+			return m_upgradeHeightV9;
+		}
+		else if (majorVersion == BLOCK_MAJOR_VERSION_10) {
+			return m_upgradeHeightV10;
+		}  // upgradekit
+		else if (majorVersion == BLOCK_MAJOR_VERSION_11) {
+			return m_upgradeHeightV11;
+		}  // HearthAMM+HEAT
+		else if (majorVersion == BLOCK_MAJOR_VERSION_12) {
+			return m_upgradeHeightV12;
+		}  // CDs + unified outputs
 		else {
 			return static_cast<uint32_t>(-1);
 		}
 	}
 
-	
+	uint8_t Currency::blockMajorVersionAtHeight(uint32_t height) const {
+		// STRICTLY greater than the upgrade height, matching the consensus authority
+		// Blockchain::getBlockMajorVersionForHeight (`height > m_upgradeDetector*.upgradeHeight()`),
+		// which checkBlockVersion enforces. UpgradeDetector::upgradeHeight() returns the raw
+		// configured height, so the upgrade height itself is still the OLD version.
+		//
+		// This function used to use `>=`, which disagreed with consensus at exactly every
+		// upgrade height: consensus versions such a block as the previous version while this
+		// returned the new one. Consumers included getTransactionFee (:645, a consensus fee
+		// path) and Blockchain.cpp:7699. Benign only because minimumFee() is currently flat
+		// across v10/v11/v12 -- that is the sole reason the divergence had no effect.
+		//
+		// NOTE: tests/UnitTests/V10Upgrade/TestV10UpgradeDetector.cpp asserts the old `>=`
+		// behaviour, but that file is in no CMakeLists.txt and is not built.
+		//
+		// Check from highest version to lowest.
+		if (height > upgradeHeight(BLOCK_MAJOR_VERSION_12)) {
+			return BLOCK_MAJOR_VERSION_12;
+		}
+		else if (height > upgradeHeight(BLOCK_MAJOR_VERSION_11)) {
+			return BLOCK_MAJOR_VERSION_11;
+		}
+		else if (height > upgradeHeight(BLOCK_MAJOR_VERSION_10)) {
+			return BLOCK_MAJOR_VERSION_10;
+		}
+		else if (height > upgradeHeight(BLOCK_MAJOR_VERSION_9)) {
+			return BLOCK_MAJOR_VERSION_9;
+		}
+		else if (height > upgradeHeight(BLOCK_MAJOR_VERSION_8)) {
+			return BLOCK_MAJOR_VERSION_8;
+		}
+		else if (height > upgradeHeight(BLOCK_MAJOR_VERSION_7)) {
+			return BLOCK_MAJOR_VERSION_7;
+		}
+		else if (height > upgradeHeight(BLOCK_MAJOR_VERSION_6)) {
+			return BLOCK_MAJOR_VERSION_6;
+		}
+		else if (height > upgradeHeight(BLOCK_MAJOR_VERSION_5)) {
+			return BLOCK_MAJOR_VERSION_5;
+		}
+		else if (height > upgradeHeight(BLOCK_MAJOR_VERSION_4)) {
+			return BLOCK_MAJOR_VERSION_4;
+		}
+		else if (height > upgradeHeight(BLOCK_MAJOR_VERSION_3)) {
+			return BLOCK_MAJOR_VERSION_3;
+		}
+		else if (height > upgradeHeight(BLOCK_MAJOR_VERSION_2)) {
+			return BLOCK_MAJOR_VERSION_2;
+		}
+		else {
+			return BLOCK_MAJOR_VERSION_1;
+		}
+	}
+
+	uint64_t Currency::minimumFee(uint8_t blockMajorVersion) const {
+		if (blockMajorVersion >= BLOCK_MAJOR_VERSION_10) {
+			return parameters::MINIMUM_FEE_8KH;  // 0.0008 XFG for BMV10 and above
+		} else if (blockMajorVersion >= BLOCK_MAJOR_VERSION_8) {
+			return parameters::MINIMUM_FEE_V2;   // 0.008 XFG for BMV8 and above
+		} else if (blockMajorVersion <= BLOCK_MAJOR_VERSION_7) {
+			return parameters::MINIMUM_FEE_V1;   // 0.08 XFG for BMV7 and below
+		} else {
+			return m_minimumFee;  // Use the default minimum fee for edge cases
+		}
+	}
+
+void Currency::syncEternalFlame(uint64_t authoritativeTotal) {
+  m_ethereal_xfg = std::min(authoritativeTotal, m_moneySupply);
+}
+double Currency::getBurnPercentage() const {
+  if (m_moneySupply == 0) {
+    return 0.0;
+  }
+  return static_cast<double>(m_ethereal_xfg) / static_cast<double>(m_moneySupply) * 100.0;
+}
+
 	bool Currency::getBlockReward(uint8_t blockMajorVersion, size_t medianSize, size_t currentBlockSize, uint64_t alreadyGeneratedCoins,
-		uint64_t fee, uint32_t height, uint64_t& reward, int64_t& emissionChange) const {
-		unsigned int m_emissionSpeedFactor = emissionSpeedFactor(blockMajorVersion);
+		uint64_t fee, uint32_t height, uint64_t& reward, int64_t& emissionChange, uint64_t burnedCoinsOverride) const {
+		unsigned int selectedEmissionSpeedFactor = emissionSpeedFactor(blockMajorVersion);
 
-    assert(alreadyGeneratedCoins <= m_moneySupply);
-    assert(m_emissionSpeedFactor > 0 && m_emissionSpeedFactor <= 8 * sizeof(uint64_t));
-
-    uint64_t baseReward = (m_moneySupply - alreadyGeneratedCoins) >> m_emissionSpeedFactor;
-    size_t blockGrantedFullRewardZone = blockGrantedFullRewardZoneByBlockVersion(blockMajorVersion);
-    medianSize = std::max(medianSize, blockGrantedFullRewardZone);
-    if (currentBlockSize > UINT64_C(2) * medianSize)
-    {
-      logger(TRACE) << "Block cumulative size is too big: " << currentBlockSize << ", expected less than " << 2 * medianSize;
+    if (selectedEmissionSpeedFactor == 0 || selectedEmissionSpeedFactor > 8 * sizeof(uint64_t)) {
+      logger(ERROR, BRIGHT_RED) << "Invalid emission speed factor: " << selectedEmissionSpeedFactor;
       return false;
     }
 
-		uint64_t penalizedBaseReward = getPenalizedAmount(baseReward, medianSize, currentBlockSize);
-		uint64_t penalizedFee = blockMajorVersion >= BLOCK_MAJOR_VERSION_2 ? getPenalizedAmount(fee, medianSize, currentBlockSize) : fee;
+    // Only use burn-adjusted reward formula for v10+ blocks (when burns were introduced)
+    // burnedCoinsOverride: when != UINT64_MAX, use deterministic height-indexed value
+    //                      instead of live mutable getEternalFlame()
+    uint64_t baseReward;
+    uint64_t eternalFlame = (burnedCoinsOverride != UINT64_MAX) ? burnedCoinsOverride : getEternalFlame();
+    if (blockMajorVersion >= BLOCK_MAJOR_VERSION_10 && eternalFlame > 0) {
+        // Osavvirsak = coins in circulation (minted minus burned)
+        // This makes burned coins available for re-emission
+        uint64_t Osavvirsak = (alreadyGeneratedCoins > eternalFlame) ?
+                              (alreadyGeneratedCoins - eternalFlame) : 0;
+        if (Osavvirsak > m_moneySupply) {
+          logger(ERROR, BRIGHT_RED) << "Osavvirsak exceeds money supply at height " << height;
+          return false;
+        }
+        baseReward = (m_moneySupply - Osavvirsak) >> selectedEmissionSpeedFactor;
+    } else {
+        if (alreadyGeneratedCoins > m_moneySupply) {
+          logger(ERROR, BRIGHT_RED) << "alreadyGeneratedCoins exceeds money supply at height " << height;
+          return false;
+        }
+        baseReward = (m_moneySupply - alreadyGeneratedCoins) >> selectedEmissionSpeedFactor;
+    }
+
+    size_t blockGrantedFullRewardZone = blockGrantedFullRewardZoneByBlockVersion(blockMajorVersion);
+    medianSize = std::max(medianSize, blockGrantedFullRewardZone);
+
+    if (currentBlockSize > UINT64_C(2) * medianSize) {
+      logger(DEBUGGING) << "Block cumulative size is too big: " << currentBlockSize << ", expected less than " << 2 * medianSize;
+      return false;
+    }
+
+		uint64_t penalizedBaseReward = getPenalizedAmount(baseReward, medianSize, currentBlockSize, blockMajorVersion);
+		uint64_t penalizedFee = blockMajorVersion >= BLOCK_MAJOR_VERSION_2 ? getPenalizedAmount(fee, medianSize, currentBlockSize, blockMajorVersion) : fee;
 		if (cryptonoteCoinVersion() == 1) {
-			penalizedFee = getPenalizedAmount(fee, medianSize, currentBlockSize);
+			penalizedFee = getPenalizedAmount(fee, medianSize, currentBlockSize, blockMajorVersion);
 		}
 
     emissionChange = penalizedBaseReward - (fee - penalizedFee);
@@ -199,171 +334,135 @@ namespace CryptoNote
 
   uint64_t Currency::calculateInterest(uint64_t amount, uint32_t term, uint32_t height) const
   {
-
-    /* deposits 3.0 and investments 1.0 
-    if (term % 21900 == 0)
-    {
-      return calculateInterestV3(amount, term);
-    }
-
-    // deposits 2.0 and investments 1.0 
-    if (term % 64800 == 0)
-    {
-      return calculateInterestV2(amount, term);
-    }
-
-    if (term % 5040 == 0)
-    {
-      return calculateInterestV2(amount, term);
-    }
-*/
-    uint64_t a = static_cast<uint64_t>(term) * m_depositMaxTotalRate - m_depositMinTotalRateFactor;
-    uint64_t bHi;
-    uint64_t bLo = mul128(amount, a, &bHi);
-    uint64_t cHi;
-    uint64_t cLo;
-    uint64_t offchaininterest = 0 + 0;
-    assert(std::numeric_limits<uint32_t>::max() / 100 > m_depositMaxTerm);
-    div128_32(bHi, bLo, static_cast<uint32_t>(100 * m_depositMaxTerm), &cHi, &cLo);
-    assert(cHi == 0);
-
-    // early deposit multiplier 
-    uint64_t interestHi;
-    uint64_t interestLo;
-    if (height <= CryptoNote::parameters::END_MULTIPLIER_BLOCK)
-    {
-      interestLo = mul128(cLo, CryptoNote::parameters::MULTIPLIER_FACTOR, &interestHi);
-      assert(interestHi == 0);
-    }
-    else
-    {
-      interestHi = cHi;
-      interestLo = cLo;
-    }
-    return offchaininterest;
+    // Legacy XFG term deposits (MultisignatureOutput / MultisignatureInput) earn
+    // NO on-chain interest. All yield is via HEAT CDs (see calculateCdInterest);
+    // there is no legacy-bond migration path.
+    //
+    // Returning 0 is intentional and does not block withdrawals:
+    //   - getTransactionInputAmount() values a matured legacy input at
+    //     `amount + 0`, so a principal-minus-fee withdrawal passes the
+    //     money-conservation check;
+    //   - maturity (deposit height + term) and double-spend are enforced
+    //     independently in Blockchain::validateInput().
+    // A depositor withdraws principal and can then lock it into a HEAT CD.
+    (void)amount; (void)term; (void)height;
+    return 0;
   }
 
   /* ---------------------------------------------------------------------------------------------------- */
-/*
-  uint64_t Currency::calculateInterestV2(uint64_t amount, uint32_t term) const
-  {
 
-    uint64_t returnVal = 0;
+  uint64_t Currency::cdLastCreditedEpoch(uint32_t creationHeight, uint32_t term) const {
+    const uint64_t epochDuration = m_testnet
+        ? parameters::TESTNET_EPOCH_DURATION_BLOCKS
+        : parameters::EPOCH_DURATION_BLOCKS;
+    return (uint64_t(creationHeight) + term) / epochDuration;
+  }
 
-    // investments 
-    if (term % 64800 == 0)
-    {
+  uint64_t Currency::calculateCdBonus(uint64_t amount, uint32_t creationHeight,
+                                       uint32_t currentHeight,
+                                       const CommitmentIndex& commitmentIndex,
+                                       uint32_t term) const {
+    if (currentHeight <= creationHeight) return 0;
 
-      // minimum 50000 for investments 
-      uint64_t amount4Humans = amount / 1000000;
-      // assert(amount4Humans >= 50000); //fails at block 166342
+    uint64_t epochDuration = m_testnet
+        ? parameters::TESTNET_EPOCH_DURATION_BLOCKS
+        : parameters::EPOCH_DURATION_BLOCKS;
+    uint64_t startEpoch = creationHeight / epochDuration;
+    uint64_t endEpoch = currentHeight / epochDuration;
+    if (term > 0) {
+      uint64_t expiryEpoch = cdLastCreditedEpoch(creationHeight, term);
+      if (expiryEpoch < endEpoch) endEpoch = expiryEpoch;
+    }
+    uint64_t epochCount = commitmentIndex.getEpochCount();
 
-     //  quantity tiers 
-      float qTier = 1;
-      if (amount4Humans > 110000 && amount4Humans < 180000)
-        qTier = static_cast<float>(1.01);
+    // YIELD FLOOR (replaces the pro-rata tier bonus).
+    //
+    // The vault now tops a CD up to CD_YIELD_FLOOR_RATE in any epoch whose
+    // fee-derived rate fell below it, rather than splitting realized inflow
+    // pro-rata by tier weight. Three reasons:
+    //
+    //  * The pro-rata form was zero-sum. A depositor's weight sat in both the
+    //    numerator and everyone's shared denominator, so if every CD picked the
+    //    top tier each one received exactly what it would have at the bottom
+    //    tier. "2.5x" bought share, never yield.
+    //  * That shared denominator was stateful and had to be maintained across
+    //    creation, withdrawal, maturity and reorg. It was maintained in none of
+    //    those: never decremented on withdrawal, windowed at 72 epochs
+    //    regardless of the CD's own term, and never reversed on pop. The floor
+    //    reads only this CD's principal and a global per-epoch rate, so there is
+    //    no shared state to drift.
+    //  * A floor is what a reserve is actually for — it smooths lean epochs
+    //    rather than redistributing fat ones.
+    //
+    // Flat in term by design: base interest compounds, so duration is already
+    // rewarded once. Payouts remain capped by the vault at settlement, so this
+    // is a ceiling ("up to"), never a promise the vault cannot honour.
+    uint64_t bonus = 0;
+    for (uint64_t e = startEpoch; e <= endEpoch && e < epochCount; ++e) {
+      uint64_t epochRate = commitmentIndex.getEpochFeeRate(e);
+      if (epochRate >= parameters::CD_YIELD_FLOOR_RATE) continue;  // not a lean epoch
+      uint64_t shortfall = parameters::CD_YIELD_FLOOR_RATE - epochRate;
+      uint64_t topUp = static_cast<uint64_t>(
+          ((uint128_t)amount * shortfall) / parameters::FEE_POOL_RATE_PRECISION);
+      if (bonus > UINT64_MAX - topUp) return UINT64_MAX;
+      bonus += topUp;
+    }
+    return bonus;
+  }
 
-      if (amount4Humans >= 180000 && amount4Humans < 260000)
-        qTier = static_cast<float>(1.02);
+/* ---------------------------------------------------------------------------------------------------- */
 
-      if (amount4Humans >= 260000 && amount4Humans < 350000)
-        qTier = static_cast<float>(1.03);
+  uint64_t Currency::calculateCdInterest(uint64_t amount, uint32_t creationHeight,
+                                          uint32_t currentHeight,
+                                          const CommitmentIndex& commitmentIndex,
+                                          uint32_t term,
+                                          bool autoRolled) const {
+    if (currentHeight <= creationHeight) return 0;
 
-      if (amount4Humans >= 350000 && amount4Humans < 450000)
-        qTier = static_cast<float>(1.04);
+    uint64_t epochDuration = m_testnet
+        ? parameters::TESTNET_EPOCH_DURATION_BLOCKS
+        : parameters::EPOCH_DURATION_BLOCKS;
+    uint64_t startEpoch = creationHeight / epochDuration;
+    uint64_t endEpoch = currentHeight / epochDuration;
 
-      if (amount4Humans >= 450000 && amount4Humans < 560000)
-        qTier = static_cast<float>(1.05);
-
-      if (amount4Humans >= 560000 && amount4Humans < 680000)
-        qTier = static_cast<float>(1.06);
-
-      if (amount4Humans >= 680000 && amount4Humans < 810000)
-        qTier = static_cast<float>(1.07);
-
-      if (amount4Humans >= 810000 && amount4Humans < 950000)
-        qTier = static_cast<float>(1.08);
-
-      if (amount4Humans >= 950000 && amount4Humans < 1100000)
-        qTier = static_cast<float>(1.09);
-
-      if (amount4Humans >= 1100000 && amount4Humans < 1260000)
-        qTier = static_cast<float>(1.1);
-
-      if (amount4Humans >= 1260000 && amount4Humans < 1430000)
-        qTier = static_cast<float>(1.11);
-
-      if (amount4Humans >= 1430000 && amount4Humans < 1610000)
-        qTier = static_cast<float>(1.12);
-
-      if (amount4Humans >= 1610000 && amount4Humans < 1800000)
-        qTier = static_cast<float>(1.13);
-
-      if (amount4Humans >= 1800000 && amount4Humans < 2000000)
-        qTier = static_cast<float>(1.14);
-
-      if (amount4Humans > 2000000)
-        qTier = static_cast<float>(1.15);
-
-      float mq = static_cast<float>(1.4473);
-      float termQuarters = term / 64800;
-      float m8 = 100.0 * pow(1.0 + (mq / 100.0), termQuarters) - 100.0;
-      float m5 = termQuarters * 0.5;
-      float m7 = m8 * (1 + (m5 / 100));
-      float rate = m7 * qTier;
-      float interest = amount * (rate / 100);
-      returnVal = static_cast<uint64_t>(interest);
-      return returnVal;
+    // Base interest stops accruing at maturity. Without this a CD kept earning
+    // the full per-epoch rate forever, and `term` had no effect on the payout
+    // at all: it appears only in rolloverEpoch below, which collapses to
+    // endEpoch while auto-roll is disabled. A term=1 commitment therefore
+    // earned the same yield as a DEPOSIT_MAX_TERM one after a single block,
+    // defeating DEPOSIT_MIN_TERM. calculateCdBonus already clamps this way;
+    // the two paths now agree.
+    if (term > 0) {
+      uint64_t expiryEpoch = cdLastCreditedEpoch(creationHeight, term);
+      if (expiryEpoch < endEpoch) endEpoch = expiryEpoch;
     }
 
-    // weekly deposits 
-    if (term % 5040 == 0)
-    {
-      uint64_t actualAmount = amount;
-      float weeks = term / 5040;
-      float baseInterest = static_cast<float>(0.0696);
-      float interestPerWeek = static_cast<float>(0.0002);
-      float interestRate = baseInterest + (weeks * interestPerWeek);
-      float interest = actualAmount * ((weeks * interestRate) / 100);
-      returnVal = static_cast<uint64_t>(interest);
-      return returnVal;
+    uint64_t epochCount = commitmentIndex.getEpochCount();
+
+    // Auto-roll boundary: compound point (only for auto-rolled CDs)
+    uint64_t rolloverEpoch = autoRolled
+        ? (creationHeight + term) / epochDuration
+        : endEpoch;
+
+    uint64_t baseInterest = 0;
+    uint64_t currentBase = amount;
+
+    for (uint64_t e = startEpoch; e <= endEpoch && e < epochCount; ++e) {
+      uint64_t epochRate = commitmentIndex.getEpochFeeRate(e);
+      uint64_t epochInterest = (uint64_t)(((uint128_t)currentBase * epochRate)
+                                          / parameters::FEE_POOL_RATE_PRECISION);
+      baseInterest += epochInterest;
+
+      // Compound for next epoch (only up to rollover for auto-rolled CDs)
+      if (e < rolloverEpoch) {
+        currentBase += epochInterest;
+      }
     }
 
-    return returnVal;
+    return baseInterest;
+  }
 
-  }  Currency::calculateInterestV2 
-
-  uint64_t Currency::calculateInterestV3(uint64_t amount, uint32_t term) const
-  {
-
-    uint64_t returnVal = 0;
-    uint64_t amount4Humans = amount / 1000000;
-
-    float baseInterest = static_cast<float>(0.029);
-
-    if (amount4Humans >= 10000 && amount4Humans < 20000)
-      baseInterest = static_cast<float>(0.039);
-
-    if (amount4Humans >= 20000)
-      baseInterest = static_cast<float>(0.049);
-
-    // Consensus 2019 - Monthly deposits 
-
-    float months = term / 21900;
-    if (months > 12)
-    {
-      months = 12;
-    }
-    float ear = baseInterest + (months - 1) * 0.001;
-    float eir = (ear / 12) * months;
-    returnVal = static_cast<uint64_t>(eir);
-
-    float interest = amount * eir;
-    returnVal = static_cast<uint64_t>(interest);
-    return returnVal;
-  }  Currency::calculateInterestV3 
-*/
-  /* ---------------------------------------------------------------------------------------------------- */
+/* ---------------------------------------------------------------------------------------------------- */
 
   uint64_t Currency::calculateTotalTransactionInterest(const Transaction &tx, uint32_t height) const
   {
@@ -400,10 +499,35 @@ namespace CryptoNote
       }
       else
       {
-        return multisignatureInput.amount + calculateInterest(multisignatureInput.amount, multisignatureInput.term, height);
+        uint64_t interest = calculateInterest(multisignatureInput.amount, multisignatureInput.term, height);
+        if (std::numeric_limits<uint64_t>::max() - multisignatureInput.amount < interest) {
+          logger(ERROR, BRIGHT_RED) << "MultisignatureInput amount + interest overflow";
+          return 0; // Or throw, but 0 makes validation fail
+        }
+        return multisignatureInput.amount + interest;
       }
     }
-      else if (in.type() == typeid(BaseInput))
+      else if (in.type() == typeid(TransactionInputCommitmentSpend))
+    {
+      const auto& spend = boost::get<TransactionInputCommitmentSpend>(in);
+      if (std::numeric_limits<uint64_t>::max() - spend.amount < spend.claimedInterest) {
+        logger(ERROR, BRIGHT_RED) << "CommitmentSpend amount + interest overflow";
+        return 0;
+      }
+      return spend.amount + spend.claimedInterest;
+    }
+    else if (in.type() == typeid(TransactionInputCommitmentTransfer))
+    {
+      return boost::get<TransactionInputCommitmentTransfer>(in).amount;
+    }
+    else if (in.type() == typeid(TransactionInputSwapEscrow))
+    {
+      // Swap escrow is a v11+ spendable input type. It must be valued by its
+      // own amount, otherwise the aggregate input total (and the fee /
+      // conservation checks built on it) treat the escrow as 0.
+      return boost::get<TransactionInputSwapEscrow>(in).amount;
+    }
+    else if (in.type() == typeid(BaseInput))
     {
       return 0;
     }
@@ -429,6 +553,98 @@ namespace CryptoNote
 
   /* ---------------------------------------------------------------------------------------------------- */
 
+  bool Currency::getTransactionAllInputsAmountChecked(const Transaction &tx, uint32_t height, uint64_t &total) const
+  {
+    total = 0;
+    for (const auto &in : tx.inputs)
+    {
+      uint64_t amount = getTransactionInputAmount(in, height);
+      if (amount > std::numeric_limits<uint64_t>::max() - total)
+      {
+        logger(ERROR, BRIGHT_RED) << "Transaction all-inputs total overflow";
+        return false;
+      }
+      total += amount;
+    }
+
+    return true;
+  }
+
+  /* ---------------------------------------------------------------------------------------------------- */
+
+  bool Currency::sumCommitmentClaimedInterest(const Transaction &tx, uint64_t &total) const
+  {
+    total = 0;
+    for (const auto &in : tx.inputs)
+    {
+      if (in.type() == typeid(TransactionInputCommitmentSpend))
+      {
+        uint64_t ci = boost::get<TransactionInputCommitmentSpend>(in).claimedInterest;
+        if (ci > std::numeric_limits<uint64_t>::max() - total)
+        {
+          return false; // aggregate overflow
+        }
+        total += ci;
+      }
+    }
+    return true;
+  }
+
+  /* ---------------------------------------------------------------------------------------------------- */
+
+  AssetType Currency::classifyCommitmentTermAsset(uint32_t term) {
+    return CryptoNote::classifyCommitmentTermAsset(term);
+  }
+
+  AssetType Currency::classifyOutputAsset(const TransactionOutputTarget& target, uint32_t term) {
+    if (target.type() == typeid(KeyOutput)) {
+      return AssetType::XFG;
+    }
+    if (target.type() == typeid(MultisignatureOutput)) {
+      return AssetType::XFG;
+    }
+    if (target.type() == typeid(TransactionOutputCommitment)) {
+      return classifyCommitmentTermAsset(term);
+    }
+    if (target.type() == typeid(TransactionOutputUnified)) {
+      auto& unified = boost::get<TransactionOutputUnified>(target);
+      // Delegate to the shared table rather than re-deriving it here. This branch
+      // used to carry its own copy that mapped term 0 to XFG while
+      // classifyCommitmentTermAsset maps term 0 to HEAT ("plain HEAT", see
+      // check_tx_outputs and AssetType.cpp). The two disagreed on the same value.
+      //
+      // TransactionOutputUnified is deserialization-reachable (tag 0x5) and
+      // check_tx_outputs does not reject it, so a hand-built output could pick
+      // either classification depending on which branch ran — the input side
+      // (classifyInputAsset -> classifyCommitmentTermAsset) is the shared table,
+      // so the unified output branch was the outlier. Delegating also picks up
+      // DIGM_TERM and every CD term for free.
+      return classifyCommitmentTermAsset(unified.term);
+    }
+    return AssetType::XFG;
+  }
+
+  AssetBalance Currency::getTransactionOutputAssetAmounts(const Transaction& tx) const {
+    AssetBalance bal;
+    for (const auto& out : tx.outputs) {
+      AssetType asset = AssetType::XFG;
+      uint32_t term = 0;
+      if (out.target.type() == typeid(TransactionOutputCommitment)) {
+        const auto& co = boost::get<TransactionOutputCommitment>(out.target);
+        term = co.term;
+      }
+      asset = classifyOutputAsset(out.target, term);
+      switch (asset) {
+        case AssetType::HEAT: bal.heat += out.amount; break;
+        case AssetType::LP:   bal.lp   += out.amount; break;
+        default:              bal.xfg  += out.amount; break;
+      }
+    }
+    return bal;
+  }
+
+  /* ---------------------------------------------------------------------------------------------------- */
+
   bool Currency::getTransactionFee(const Transaction &tx, uint64_t &fee, uint32_t height) const
   {
     uint64_t amount_in = 0;
@@ -450,10 +666,13 @@ namespace CryptoNote
     if (amount_out > amount_in)
     {
       // interest shows up in the output of the W/D transactions and W/Ds always have min fee
-      if (tx.inputs.size() > 0 && tx.outputs.size() > 0 && amount_out > amount_in + parameters::MINIMUM_FEE)
+      // Use versioned minimum fee based on block height
+      uint8_t blockVersion = blockMajorVersionAtHeight(height);
+      uint64_t versionedMinFee = minimumFee(blockVersion);
+      if (tx.inputs.size() > 0 && tx.outputs.size() > 0 && amount_out > amount_in + versionedMinFee)
       {
-        fee = parameters::MINIMUM_FEE;
-        logger(INFO) << "TRIGGERED: Currency.cpp getTransactionFee";
+        fee = versionedMinFee;
+        logger(INFO) << "TRIGGERED: Currency.cpp getTransactionFee with versioned fee: " << versionedMinFee;
       }
       else
       {
@@ -494,7 +713,8 @@ namespace CryptoNote
   }
 
 	bool Currency::constructMinerTx(uint8_t blockMajorVersion, uint32_t height, size_t medianSize, uint64_t alreadyGeneratedCoins, size_t currentBlockSize,
-		uint64_t fee, const AccountPublicAddress& minerAddress, Transaction& tx, const BinaryArray& extraNonce/* = BinaryArray()*/, size_t maxOuts/* = 1*/) const {
+		uint64_t fee, const AccountPublicAddress& minerAddress, Transaction& tx, const BinaryArray& extraNonce/* = BinaryArray()*/, size_t maxOuts/* = 1*/, uint64_t burnedCoinsOverride/* = UINT64_MAX*/,
+		uint64_t bankingFeesInBlock/* = 0*/) const {
 
 		tx.inputs.clear();
 		tx.outputs.clear();
@@ -515,17 +735,27 @@ namespace CryptoNote
 
     uint64_t blockReward;
     int64_t emissionChange;
-    if (!getBlockReward(blockMajorVersion, medianSize, currentBlockSize, alreadyGeneratedCoins, fee, height, blockReward, emissionChange))
+    if (!getBlockReward(blockMajorVersion, medianSize, currentBlockSize, alreadyGeneratedCoins, fee, height, blockReward, emissionChange, burnedCoinsOverride))
     {
       logger(INFO) << "Block is too big";
       return false;
     }
 
+    uint64_t minerReward = blockReward;
+
+    // Decompose miner reward into outputs
     std::vector<uint64_t> outAmounts;
-    decompose_amount_into_digits(
-        blockReward, m_defaultDustThreshold,
-        [&outAmounts](uint64_t a_chunk) { outAmounts.push_back(a_chunk); },
-        [&outAmounts](uint64_t a_dust) { outAmounts.push_back(a_dust); });
+    if (blockMajorVersion >= BLOCK_MAJOR_VERSION_11) {
+      // V11+: Uniform denomination decomposition for coinbase privacy.
+      // Produces multiple outputs at standard power-of-10 tiers so all coinbase
+      // outputs are indistinguishable across blocks regardless of reward amount.
+      decompose_amount_uniform(minerReward, m_defaultDustThreshold, outAmounts);
+    } else {
+      decompose_amount_into_digits(
+          minerReward, m_defaultDustThreshold,
+          [&outAmounts](uint64_t a_chunk) { outAmounts.push_back(a_chunk); },
+          [&outAmounts](uint64_t a_dust) { outAmounts.push_back(a_dust); });
+    }
 
     if (!(1 <= maxOuts))
     {
@@ -540,6 +770,7 @@ namespace CryptoNote
     }
 
     uint64_t summaryAmounts = 0;
+    size_t outputIndex = 0;
     for (size_t no = 0; no < outAmounts.size(); no++)
     {
       Crypto::KeyDerivation derivation = boost::value_initialized<Crypto::KeyDerivation>();
@@ -551,18 +782,18 @@ namespace CryptoNote
       {
         logger(ERROR, BRIGHT_RED)
             << "while creating outs: failed to generate_key_derivation("
-            << minerAddress.viewPublicKey << ", " << txkey.secretKey << ")";
+            << minerAddress.viewPublicKey << ", <secret_key>)";
 
         return false;
       }
 
-      r = Crypto::derive_public_key(derivation, no, minerAddress.spendPublicKey, outEphemeralPubKey);
+      r = Crypto::derive_public_key(derivation, outputIndex, minerAddress.spendPublicKey, outEphemeralPubKey);
 
       if (!(r))
       {
         logger(ERROR, BRIGHT_RED)
             << "while creating outs: failed to derive_public_key("
-            << derivation << ", " << no << ", "
+            << derivation << ", " << outputIndex << ", "
             << minerAddress.spendPublicKey << ")";
 
         return false;
@@ -575,11 +806,14 @@ namespace CryptoNote
       summaryAmounts += out.amount = outAmounts[no];
       out.target = tk;
       tx.outputs.push_back(out);
+      outputIndex++;
     }
 
-    if (!(summaryAmounts == blockReward))
+    // Validate: miner outputs sum to the miner reward.
+    if (summaryAmounts != minerReward)
     {
-      logger(ERROR, BRIGHT_RED) << "Failed to construct miner tx, summaryAmounts = " << summaryAmounts << " not equal blockReward = " << blockReward;
+      logger(ERROR, BRIGHT_RED) << "Failed to construct miner tx, summaryAmounts = " << summaryAmounts
+        << " not equal expected = " << minerReward;
       return false;
     }
 
@@ -695,9 +929,20 @@ namespace CryptoNote
     return getAccountAddressAsStr(m_publicAddressBase58Prefix, accountPublicAddress);
   }
 
+  std::string Currency::subAddressAsString(const AccountPublicAddress &subAddressPublicAddress) const
+  {
+    return getAccountAddressAsStr(m_subAddressBase58Prefix, subAddressPublicAddress);
+  }
+
   /* ---------------------------------------------------------------------------------------------------- */
 
   bool Currency::parseAccountAddressString(const std::string &str, AccountPublicAddress &addr) const
+  {
+    bool isSubaddress = false;
+    return parseAccountAddressString(str, addr, isSubaddress);
+  }
+
+  bool Currency::parseAccountAddressString(const std::string &str, AccountPublicAddress &addr, bool &isSubaddress) const
   {
     uint64_t prefix;
     if (!CryptoNote::parseAccountAddressString(prefix, addr, str))
@@ -705,13 +950,27 @@ namespace CryptoNote
       return false;
     }
 
-    if (prefix != m_publicAddressBase58Prefix)
+    if (prefix == m_subAddressBase58Prefix)
     {
-      logger(DEBUGGING) << "Wrong address prefix: " << prefix << ", expected " << m_publicAddressBase58Prefix;
-      return false;
+      isSubaddress = true;
+      return true;
     }
 
-    return true;
+    if (prefix == m_publicAddressBase58Prefix)
+    {
+      isSubaddress = false;
+      return true;
+    }
+
+    logger(DEBUGGING) << "Wrong address prefix: " << prefix
+                      << ", expected " << m_publicAddressBase58Prefix
+                      << " or " << m_subAddressBase58Prefix;
+    return false;
+  }
+
+  bool Currency::isSubAddressStr(const std::string& str) const
+  {
+    return CryptoNote::isSubAddressStr(str, m_subAddressBase58Prefix);
   }
 
   /* ---------------------------------------------------------------------------------------------------- */
@@ -740,6 +999,15 @@ namespace CryptoNote
     }
 
     return s;
+  }
+
+  /* ---------------------------------------------------------------------------------------------------- */
+
+  std::string Currency::toEuroDisplay(uint64_t usdCents) const
+  {
+    // EUR/CPI display mode removed — HEAT is now hard-pegged at $1.58 USD.
+    // All display is in USD cents.
+    return formatAmount(usdCents);
   }
 
   /* ---------------------------------------------------------------------------------------------------- */
@@ -792,9 +1060,12 @@ namespace CryptoNote
   }
 
 	difficulty_type Currency::nextDifficulty(uint32_t height, uint8_t blockMajorVersion, std::vector<uint64_t> timestamps,
-		std::vector<difficulty_type> cumulativeDifficulties) const {
-
-		if (blockMajorVersion >= BLOCK_MAJOR_VERSION_7) {
+		// upgradekit
+	    std::vector<difficulty_type> cumulativeDifficulties) const {
+			if (blockMajorVersion >= BLOCK_MAJOR_VERSION_10) {
+			return nextDifficultyV6(height, blockMajorVersion, timestamps, cumulativeDifficulties);
+		}
+		else if (blockMajorVersion >= BLOCK_MAJOR_VERSION_7) {
 			return nextDifficultyV5(height, blockMajorVersion, timestamps, cumulativeDifficulties);
 		}
 		else if (blockMajorVersion >= BLOCK_MAJOR_VERSION_4) {
@@ -899,7 +1170,7 @@ namespace CryptoNote
 		difficulty_type totalWork = cumulativeDifficulties.back() - cumulativeDifficulties.front();
 		assert(totalWork > 0);
 
-		// uint64_t nextDiffZ = totalWork * m_difficultyTarget / timeSpan; 
+		// uint64_t nextDiffZ = totalWork * m_difficultyTarget / timeSpan;
 
 		uint64_t low, high;
 		low = mul128(totalWork, m_difficultyTarget_DRGL, &high);
@@ -910,10 +1181,10 @@ namespace CryptoNote
 
 		uint64_t nextDiffZ = low / timeSpan;
 
-		// minimum limit				//TESTNET DISABLED
-		//if (!isTestnet() && nextDiffZ < 10000) {
-	        //		nextDiffZ = 10000;
-		//}
+		// minimum limit
+ 		if (!isTestnet() && nextDiffZ < 10000) {
+ 			nextDiffZ = 10000;
+ 		}
 
 		return nextDiffZ;
 	}
@@ -924,7 +1195,7 @@ namespace CryptoNote
 		// LWMA difficulty algorithm
 		// Copyright (c) 2017-2018 Zawy
 		// MIT license http://www.opensource.org/licenses/mit-license.php.
-		// This is an improved version of Tom Harding's (Deger8) "WT-144"  
+		// This is an improved version of Tom Harding's (Deger8) "WT-144"
 		// Karbowanec, Masari, Bitcoin Gold, and Bitcoin Cash have contributed.
 		// See https://github.com/zawy12/difficulty-algorithms/issues/1 for other algos.
 		// Do not use "if solvetime < 0 then solvetime = 1" which allows a catastrophic exploit.
@@ -972,80 +1243,79 @@ namespace CryptoNote
 		harmonic_mean_D = N / sum_inverse_D * adjust;
 		nextDifficulty = harmonic_mean_D * T / LWMA;
 		next_difficulty = static_cast<uint64_t>(nextDifficulty);
-		
+
 		// minimum limit
-		//if (!isTestnet() && next_difficulty < 10000) { //REMOVED THROUGH TESTNET
-		//	next_difficulty = 10000;
-		//} 
+ 		if (!isTestnet() && next_difficulty < 10000) {
+ 			next_difficulty = 10000;
+ 		}
 
 		return next_difficulty;
-	}	
-	
-	
+	}
+
+
 
 	difficulty_type Currency::nextDifficultyV4(uint32_t height, uint8_t blockMajorVersion,
 		std::vector<std::uint64_t> timestamps, std::vector<difficulty_type> cumulativeDifficulties) const {
-			
-			// LWMA-1 difficulty algorithm 
+
+			// LWMA-1 difficulty algorithm
 			// Copyright (c) 2017-2018 Zawy, MIT License
 			// https://github.com/zawy12/difficulty-algorithms/issues/3
 			// See commented version for explanations & required config file changes. Fix FTL and MTP!
 
-			   const uint64_t T = CryptoNote::parameters::DIFFICULTY_TARGET_DRGL;
+			   const uint64_t T = isTestnet() ? CryptoNote::parameters::DIFFICULTY_TARGET_TESTNET : CryptoNote::parameters::DIFFICULTY_TARGET_DRGL;
 			   uint64_t N = CryptoNote::parameters::DIFFICULTY_WINDOW_V3; // N=60, 90, and 120 for T=600, 120, 60.
 			   uint64_t  L(0), next_D, i, this_timestamp(0), previous_timestamp(0), avg_D;
 			   uint32_t Dracarys = CryptoNote::parameters::UPGRADE_HEIGHT_V4;
-	   		   //uint64_t difficulty_plate = 10000;
-	   		     uint64_t difficulty_plate = 777; //TESTNET
+	   		   uint64_t difficulty_plate = isTestnet() ? 1 : 10000;
 
-			   //assert(timestamps.size() == cumulativeDifficulties.size() && timestamps.size() <= static_cast<uint64_t>(N + 1));
+
+			   assert(timestamps.size() == cumulativeDifficulties.size() && timestamps.size() <= static_cast<uint64_t>(N + 1));
 
 			   // If it's a new coin, do startup code. Do not remove in case other coins copy your code.
 			   // uint64_t difficulty_guess = 10000;
 			   // if (timestamps.size() <= 12 ) {   return difficulty_guess;   }
 			   // if ( timestamps.size()  < N +1 ) { N = timestamps.size()-1;  }
-			   // If hashrate/difficulty ratio after a fork is < 1/3 prior ratio, hardcode D for N+1 blocks after fork. 
+			   // If hashrate/difficulty ratio after a fork is < 1/3 prior ratio, hardcode D for N+1 blocks after fork.
 			   // This will also cover up a very common type of backwards-incompatible fork.
 			   // difficulty_guess = 10000; //  Dev may change.  Guess lower than anything expected.
-			   
+
 	  		   if ( height <= Dracarys + 1 + N ) { return difficulty_plate;  }
- 
+
 			   previous_timestamp = timestamps[0];
-			   for ( i = 1; i <= N; i++) {        
+			   for ( i = 1; i <= N; i++) {
 			      // Safely prevent out-of-sequence timestamps
-			      if ( timestamps[i]  > previous_timestamp ) {   this_timestamp = timestamps[i];  } 
+			      if ( timestamps[i]  > previous_timestamp ) {   this_timestamp = timestamps[i];  }
 			      else {  this_timestamp = previous_timestamp;   }
 			      L +=  i*std::min(6*T , this_timestamp - previous_timestamp);
-			      previous_timestamp = this_timestamp; 
+			      previous_timestamp = this_timestamp;
 			   }
 			   if (L < N*N*T/20 ) { L =  N*N*T/20; }
 			   avg_D = ( cumulativeDifficulties[N] - cumulativeDifficulties[0] )/ N;
-   
+
 			   // Prevent round off error for small D and overflow for large D.
-			   if (avg_D > 2000000*N*N*T) { 
-			       next_D = (avg_D/(200*L))*(N*(N+1)*T*97);   
-			   }   
+			   if (avg_D > 2000000*N*N*T) {
+			       next_D = (avg_D/(200*L))*(N*(N+1)*T*97);
+			   }
 			   else {    next_D = (avg_D*N*(N+1)*T*97)/(200*L);    }
-	
+
 			   // Optional. Make all insignificant digits zero for easy reading.
 			   i = 1000000000;
-			   while (i > 1) { 
+			   while (i > 1) {
 			     if ( next_D > i*100 ) { next_D = ((next_D+i/2)/i)*i; break; }
 			     else { i /= 10; }
 			   }
 			   // Make least 2 digits = size of hash rate change last 11 blocks if it's statistically significant.
-			   // D=2540035 => hash rate 3.5x higher than D expectde. Blocks coming 3.5x too fast.
-			   if ( next_D > 10000 ) { 
+			   // D=2540035 => hash rate 3.5x higher than D expected. Blocks coming 3.5x too fast.
+			   if ( next_D > 10000 ) {
 			     uint64_t est_HR = (10*(11*T+(timestamps[N]-timestamps[N-11])/2))/(timestamps[N]-timestamps[N-11]+1);
 			     if (  est_HR > 5 && est_HR < 22 )  {  est_HR=0;   }
 			     est_HR = std::min(static_cast<uint64_t>(99), est_HR);
-			     next_D = ((next_D+50)/100)*100 + est_HR;  
+			     next_D = ((next_D+50)/100)*100 + est_HR;
 			   }
 	         	   // mini-lim
-	   		   //if (!isTestnet() && next_D < 10000) {
-	  		   //	next_D = 10000;
-			   if (!isTestnet() && next_D < 100) {  //TESTNET
-				  next_D = 100; 		//TESTNET
+	   		   if (!isTestnet() && next_D < 10000) {
+	  		   	next_D = 10000;
+
 			   }
 
 			   return  next_D;
@@ -1053,72 +1323,216 @@ namespace CryptoNote
 
 		difficulty_type Currency::nextDifficultyV5(uint32_t height, uint8_t blockMajorVersion,
 		std::vector<std::uint64_t> timestamps, std::vector<difficulty_type> cumulativeDifficulties) const {
-			
-			// LWMA-1 difficulty algorithm 
+
+			// LWMA-1 difficulty algorithm
 			// Copyright (c) 2017-2018 Zawy, MIT License
 			// https://github.com/zawy12/difficulty-algorithms/issues/3
 			// See commented version for explanations & required config file changes. Fix FTL and MTP!
-			   
-			   const uint64_t T = CryptoNote::parameters::DIFFICULTY_TARGET;
+
+			   const uint64_t T = isTestnet() ? CryptoNote::parameters::DIFFICULTY_TARGET_TESTNET : CryptoNote::parameters::DIFFICULTY_TARGET;
 			   uint64_t N = CryptoNote::parameters::DIFFICULTY_WINDOW_V4; // N=60, 90, and 120 for T=600, 120, 60.
 			   uint64_t  L(0), next_D, i, this_timestamp(0), previous_timestamp(0), avg_D;
-			   //uint32_t FanG = CryptoNote::parameters::UPGRADE_HEIGHT_V7;
-	   		   //uint64_t difficulty_plate = 100000;
-	   		   uint32_t Fangold = CryptoNote::parameters::UPGRADE_HEIGHT_V7; //TESTNET
-			   uint64_t difficulty_plate = 888; // TESTNET
+			   uint32_t FanG = CryptoNote::parameters::UPGRADE_HEIGHT_V7;
+	   		   uint64_t difficulty_plate = isTestnet() ? 1 : 100000;
 
-			   //assert(timestamps.size() == cumulativeDifficulties.size() && timestamps.size() <= static_cast<uint64_t>(N + 1));
+
+			   assert(timestamps.size() == cumulativeDifficulties.size());
 
 			   // If it's a new coin, do startup code. Do not remove in case other coins copy your code.
 			   // uint64_t difficulty_guess = 10000;
 			   // if (timestamps.size() <= 12 ) {   return difficulty_guess;   }
 			   // if ( timestamps.size()  < N +1 ) { N = timestamps.size()-1;  }
-			   // If hashrate/difficulty ratio after a fork is < 1/3 prior ratio, hardcode D for N+1 blocks after fork. 
+			   // If hashrate/difficulty ratio after a fork is < 1/3 prior ratio, hardcode D for N+1 blocks after fork.
 			   // This will also cover up a very common type of backwards-incompatible fork.
 			   // difficulty_guess = 10000; //  Dev may change.  Guess lower than anything expected.
-			  
-	  		   //if ( height <= FanG + 1 + N ) { return difficulty_plate;  }
- 			   if ( height <= Fangold + 1 + N ) { return difficulty_plate; } //TESTNET
+
+	  		   if ( height <= FanG + 1 + N ) { return difficulty_plate;  }
 
 			   previous_timestamp = timestamps[0];
-			   for ( i = 1; i <= N; i++) {        
-			      // Safely prevent out-of-sequence timestamps
-			      if ( timestamps[i]  > previous_timestamp ) {   this_timestamp = timestamps[i];  } 
-			      else {  this_timestamp = previous_timestamp;   }
-			      L +=  i*std::min(6*T , this_timestamp - previous_timestamp);
-			      previous_timestamp = this_timestamp; 
+			   for ( i = 1; i <= N; i++) {
+ 			      // Safely prevent out-of-sequence timestamps
+ 			      if ( timestamps[i]  > previous_timestamp ) {   this_timestamp = timestamps[i];  }
+ 			      else {  this_timestamp = previous_timestamp;   }
+ 			      L +=  i*std::min(6*T , this_timestamp - previous_timestamp);
+ 			      previous_timestamp = this_timestamp;
 			   }
 			   if (L < N*N*T/20 ) { L =  N*N*T/20; }
-			   avg_D = ( cumulativeDifficulties[N] - cumulativeDifficulties[0] )/ N;
-   
+
+			   // Fix array bounds issue - prevent accessing beyond array bounds
+			   if (cumulativeDifficulties.size() > N) {
+			       avg_D = ( cumulativeDifficulties[N] - cumulativeDifficulties[0] )/ N;
+			   } else if (cumulativeDifficulties.size() > 0) {
+			       // Fallback to last available difficulty if not enough data
+			       avg_D = cumulativeDifficulties.back();
+			   } else {
+			       avg_D = 10000; // Minimum difficulty fallback
+			   }
+
 			   // Prevent round off error for small D and overflow for large D.
-			   if (avg_D > 2000000*N*N*T) { 
-			       next_D = (avg_D/(200*L))*(N*(N+1)*T*97);   
-			   }   
+			   if (avg_D > 2000000*N*N*T) {
+			       next_D = (avg_D/(200*L))*(N*(N+1)*T*97);
+			   }
 			   else {    next_D = (avg_D*N*(N+1)*T*97)/(200*L);    }
-	
+
+			   // DEBUG: Log difficulty calculation details
+			   logger(DEBUGGING) << "LWMA V5 Calculation - Height: " << height
+			                     << ", N: " << N << ", T: " << T
+			                     << ", L: " << L << ", avg_D: " << avg_D
+			                     << ", next_D: " << next_D;
+
+
+
+			   // Add overflow protection for extreme hash rate changes
+			   // If solve times are extremely fast, limit difficulty adjustment
+			   if (L < N * T / 100) { // If average solve time is < 1% of target
+			       // Cap the difficulty increase to prevent overflow
+			       uint64_t maxDifficulty = avg_D * 1000; // Maximum 1000x increase
+			       if (next_D > maxDifficulty) {
+			           next_D = maxDifficulty;
+			       }
+			   }
+
 			   // Optional. Make all insignificant digits zero for easy reading.
 			   i = 1000000000;
-			   while (i > 1) { 
+			   while (i > 1) {
 			     if ( next_D > i*100 ) { next_D = ((next_D+i/2)/i)*i; break; }
 			     else { i /= 10; }
 			   }
 			   // Make least 2 digits = size of hash rate change last 11 blocks if it's statistically significant.
-			   // D=2540035 => hash rate 3.5x higher than D expectde. Blocks coming 3.5x too fast.
-			   if ( next_D > 10000 ) { 
+			   // D=2540035 => hash rate 3.5x higher than D expected. Blocks coming 3.5x too fast.
+			   if ( next_D > 10000 ) {
 			     uint64_t est_HR = (10*(11*T+(timestamps[N]-timestamps[N-11])/2))/(timestamps[N]-timestamps[N-11]+1);
 			     if (  est_HR > 5 && est_HR < 22 )  {  est_HR=0;   }
 			     est_HR = std::min(static_cast<uint64_t>(99), est_HR);
-			     next_D = ((next_D+50)/100)*100 + est_HR;  
+			     next_D = ((next_D+50)/100)*100 + est_HR;
 			   }
 	         	   // mini-lim
-	   		   //if (!isTestnet() && next_D < 10000) {
-	  		   //	next_D = 10000;
-			   if (!isTestnet() && next_D < 100) {  //TESTNET
-				next_D = 100;   		//TESTNET
+	   		   if (!isTestnet() && next_D < 10000) {
+	  		   	next_D = 10000;
+
 			   }
 
 			   return  next_D;
+	}
+
+
+	// Helper: Calculate LWMA-1 difficulty for a specific window size
+	// Returns the calculated difficulty using Zawy's LWMA-1 formula
+	static uint64_t calculateLWMA(
+		const std::vector<uint64_t>& timestamps,
+		const std::vector<difficulty_type>& cumulativeDifficulties,
+		uint64_t N,            // window size
+		uint64_t T,            // target time
+		uint64_t minDifficulty,
+		uint64_t minSolveTime = 0) {  // lower clamp: 0 = disabled; use T/8 for testnet
+
+		if (timestamps.size() < 2) return minDifficulty;
+
+		uint64_t effectiveN = std::min(N, static_cast<uint64_t>(timestamps.size() - 1));
+		if (effectiveN < 2) return minDifficulty;
+
+		// LWMA-1: L = sum(i * solveTime[i]) for i = 1 to N
+		uint64_t L = 0;
+		uint64_t previous_timestamp = timestamps[0];
+
+		for (uint64_t i = 1; i <= effectiveN; i++) {
+			uint64_t this_timestamp = timestamps[i];
+
+			// Prevent out-of-sequence timestamps
+			if (this_timestamp <= previous_timestamp) {
+				this_timestamp = previous_timestamp + 1;
+			}
+
+			uint64_t solveTime = this_timestamp - previous_timestamp;
+
+			// Clamp solve time: upper bound 6*T (original LWMA-1), lower bound minSolveTime.
+			// The lower clamp (T/8 on testnet) prevents burst-mined 1-6s blocks from
+			// spiking the short window and creating unnecessary difficulty oscillation.
+			if (solveTime > 6 * T) solveTime = 6 * T;
+			if (minSolveTime > 0 && solveTime < minSolveTime) solveTime = minSolveTime;
+
+			L += i * solveTime;
+			previous_timestamp = this_timestamp;
+		}
+
+		// Prevent L from being too small
+		uint64_t minL = effectiveN * effectiveN * T / 20;
+		if (L < minL) L = minL;
+
+		// Calculate average difficulty
+		uint64_t avgD = minDifficulty;
+		if (cumulativeDifficulties.size() > effectiveN && effectiveN > 0) {
+			avgD = (cumulativeDifficulties[effectiveN] - cumulativeDifficulties[0]) / effectiveN;
+		}
+		if (avgD < minDifficulty) avgD = minDifficulty;
+
+		// LWMA-1 formula: next_D = avg_D * N * (N+1) * T * 0.99 / (2 * L)
+		uint64_t next_D;
+		if (avgD > 2000000 * effectiveN * effectiveN * T) {
+			next_D = (avgD / (200 * L)) * (effectiveN * (effectiveN + 1) * T * 99);
+		} else {
+			next_D = (avgD * effectiveN * (effectiveN + 1) * T * 99) / (200 * L);
+		}
+
+		return std::max(minDifficulty, next_D);
+	}
+
+	difficulty_type Currency::nextDifficultyV6(uint32_t height, uint8_t blockMajorVersion,
+		std::vector<std::uint64_t> timestamps, std::vector<difficulty_type> cumulativeDifficulties) const {
+
+		// LWMA-1 for v10+ — same proven Zawy algorithm as v5, with N=39.
+		// Copyright (c) 2017-2018 Zawy, MIT License
+		// https://github.com/zawy12/difficulty-algorithms/issues/3
+
+		const uint64_t T = isTestnet() ? CryptoNote::parameters::DIFFICULTY_TARGET_TESTNET : CryptoNote::parameters::DIFFICULTY_TARGET;
+		const uint64_t N = 39;
+		const uint64_t minDifficulty = isTestnet() ? 1 : 1000000;
+
+		if (timestamps.size() != cumulativeDifficulties.size() || timestamps.size() <= N) {
+			return minDifficulty;
+		}
+
+		uint64_t L(0), next_D, i, this_timestamp(0), previous_timestamp(0), avg_D;
+
+		previous_timestamp = timestamps[0];
+		for (i = 1; i <= N; i++) {
+			// Safely prevent out-of-sequence timestamps
+			if (timestamps[i] > previous_timestamp) { this_timestamp = timestamps[i]; }
+			else { this_timestamp = previous_timestamp; }
+			// Symmetric solve time clamp: T/3 floor, 6*T ceiling.
+			// T/3 prevents fast blocks from biasing LWMA downward (Poisson fast-block bias).
+			uint64_t solveTime = this_timestamp - previous_timestamp;
+			solveTime = std::max(T / 3, std::min(6 * T, solveTime));
+			L += i * solveTime;
+			previous_timestamp = this_timestamp;
+		}
+		if (L < N * N * T / 20) { L = N * N * T / 20; }
+
+		avg_D = (cumulativeDifficulties[N] - cumulativeDifficulties[0]) / N;
+		if (avg_D < minDifficulty) { avg_D = minDifficulty; }
+
+		// Zawy LWMA-1 formula: next_D = avg_D * N * (N+1) * T * 97 / (200 * L)
+		// The 97/200 factor adjusts for the LWMA weighting bias.
+		if (avg_D > 2000000 * N * N * T) {
+			next_D = (avg_D / (200 * L)) * (N * (N + 1) * T * 97);
+		} else {
+			next_D = (avg_D * N * (N + 1) * T * 97) / (200 * L);
+		}
+
+		// Overflow protection for extreme hash rate changes
+		if (L < N * T / 100) {
+			uint64_t maxDifficulty = avg_D * 1000;
+			if (next_D > maxDifficulty) { next_D = maxDifficulty; }
+		}
+
+		// Round to clean numbers for readability
+		i = 1000000000;
+		while (i > 1) {
+			if (next_D > i * 100) { next_D = ((next_D + i / 2) / i) * i; break; }
+			else { i /= 10; }
+		}
+
+		return std::max(minDifficulty, next_D);
 	}
 
 
@@ -1188,6 +1602,10 @@ namespace CryptoNote
 		case BLOCK_MAJOR_VERSION_6:
 		case BLOCK_MAJOR_VERSION_7:
 		case BLOCK_MAJOR_VERSION_8:
+		case BLOCK_MAJOR_VERSION_9:
+		case BLOCK_MAJOR_VERSION_10:  // upgradekit
+		case BLOCK_MAJOR_VERSION_11:  // HearthAMM + HEAT
+		case BLOCK_MAJOR_VERSION_12:  // CDs + unified outputs
 
 			return checkProofOfWorkV2(context, block, currentDiffic, proofOfWork);
 		}
@@ -1226,6 +1644,7 @@ namespace CryptoNote
     maxBlockBlobSize(parameters::CRYPTONOTE_MAX_BLOCK_BLOB_SIZE);
     maxTxSize(parameters::CRYPTONOTE_MAX_TX_SIZE);
     publicAddressBase58Prefix(parameters::CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX);
+    subAddressBase58Prefix(parameters::CRYPTONOTE_SUBADDRESS_BASE58_PREFIX);
     minedMoneyUnlockWindow(parameters::CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW);
 
     timestampCheckWindow(parameters::BLOCKCHAIN_TIMESTAMP_CHECK_WINDOW);
@@ -1237,22 +1656,23 @@ namespace CryptoNote
 		moneySupply(parameters::MONEY_SUPPLY);
 		emissionSpeedFactor(parameters::EMISSION_SPEED_FACTOR);
 		emissionSpeedFactor_FANGO(parameters::EMISSION_SPEED_FACTOR_FANGO);
+                emissionSpeedFactor_FUEGO(parameters::EMISSION_SPEED_FACTOR_FUEGO);
+
 
 		cryptonoteCoinVersion(parameters::CRYPTONOTE_COIN_VERSION);
 
 		rewardBlocksWindow(parameters::CRYPTONOTE_REWARD_BLOCKS_WINDOW);
 		blockGrantedFullRewardZone(parameters::CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE);
 		minerTxBlobReservedSize(parameters::CRYPTONOTE_COINBASE_BLOB_RESERVED_SIZE);
-	
+
 		minMixin(parameters::MIN_TX_MIXIN_SIZE);
 		maxMixin(parameters::MAX_TX_MIXIN_SIZE);
 
     numberOfDecimalPlaces(parameters::CRYPTONOTE_DISPLAY_DECIMAL_POINT);
 
-    minimumFee(parameters::MINIMUM_FEE);
+    minimumFee(parameters::MINIMUM_FEE); // Use the configured default
     minimumFeeV1(parameters::MINIMUM_FEE_V1);
     minimumFeeV2(parameters::MINIMUM_FEE_V2);
-    minimumFeeBanking(parameters::MINIMUM_FEE_BANKING);
     defaultDustThreshold(parameters::DEFAULT_DUST_THRESHOLD);
 
     difficultyTarget(parameters::DIFFICULTY_TARGET);
@@ -1262,8 +1682,44 @@ namespace CryptoNote
     difficultyCut(parameters::DIFFICULTY_CUT);
 
     depositMinAmount(parameters::DEPOSIT_MIN_AMOUNT);
-    depositMinTerm(parameters::DEPOSIT_MIN_TERM);
-    depositMaxTerm(parameters::DEPOSIT_MAX_TERM);
+    // CD term in blocks = epochs * epoch_duration
+    depositMinTerm(parameters::CD_MIN_EPOCHS * parameters::EPOCH_DURATION_BLOCKS);
+    depositMaxTerm(parameters::CD_MAX_EPOCHS * parameters::EPOCH_DURATION_BLOCKS);
+
+    // Override deposit terms for testnet (shorter epochs for testing)
+    if (m_currency.m_testnet) {
+      depositMinTerm(parameters::TESTNET_CD_MIN_EPOCHS * parameters::TESTNET_EPOCH_DURATION_BLOCKS);
+      depositMaxTerm(parameters::TESTNET_CD_MAX_EPOCHS * parameters::TESTNET_EPOCH_DURATION_BLOCKS);
+      // Fresh testnet chains have few outputs; allow mixIn=0 until the ring pool grows.
+      // (minMixin(blockMajorVersion) already returns 0 on testnet for V10+.)
+      minMixin(0);
+    }
+
+    // Burn deposit configuration
+    burnDepositMinAmount(parameters::BURN_DEPOSIT_MIN_AMOUNT);
+
+    depositTermForever(parameters::HEAT_TERM);
+
+    // Dynamic money supply initialization
+    baseMoneySupply(parameters::MONEY_SUPPLY);
+
+
+    // Fuego network ID - using hash of the full network ID for uint64_t compatibility
+    std::string networkIdStr;
+    if (m_currency.m_testnet) {
+      // Testnet network ID based on P2P network ID "TEST FUEGO NET  "
+      fuegoNetworkIdString("740838354326331649518908687400750781456");
+      networkIdStr = "740838354326331649518908687400750781456";
+    } else {
+      // Mainnet network ID
+      fuegoNetworkIdString("93385046440755750514194170694064996624");
+      networkIdStr = "93385046440755750514194170694064996624";
+    }
+    Crypto::Hash networkIdHash;
+    keccak(reinterpret_cast<const uint8_t*>(networkIdStr.data()), networkIdStr.size(), networkIdHash.data, sizeof(networkIdHash.data));
+    // Use first 8 bytes of hash as uint64_t
+    uint64_t networkIdUint64 = *reinterpret_cast<uint64_t*>(networkIdHash.data);
+    fuegoNetworkId(networkIdUint64);
 
     maxBlockSizeInitial(parameters::MAX_BLOCK_SIZE_INITIAL);
     maxBlockSizeGrowthSpeedNumerator(parameters::MAX_BLOCK_SIZE_GROWTH_SPEED_NUMERATOR);
@@ -1284,6 +1740,13 @@ namespace CryptoNote
     upgradeHeightV6(parameters::UPGRADE_HEIGHT_V6);
     upgradeHeightV7(parameters::UPGRADE_HEIGHT_V7);
     upgradeHeightV8(parameters::UPGRADE_HEIGHT_V8);
+    upgradeHeightV9(parameters::UPGRADE_HEIGHT_V9);
+    upgradeHeightV10(parameters::UPGRADE_HEIGHT_V10); // upgradekit
+    upgradeHeightV11(parameters::UPGRADE_HEIGHT_V11); // HearthAMM+HEAT
+    upgradeHeightV12(parameters::UPGRADE_HEIGHT_V12); // CDs + unified outputs
+
+    bootstrapBlocks(BOOTSTRAP_BLOCKS);
+
     upgradeVotingThreshold(parameters::UPGRADE_VOTING_THRESHOLD);
     upgradeVotingWindow(parameters::UPGRADE_VOTING_WINDOW);
     upgradeWindow(parameters::UPGRADE_WINDOW);
@@ -1305,7 +1768,13 @@ namespace CryptoNote
 	Transaction CurrencyBuilder::generateGenesisTransaction() {
 		CryptoNote::Transaction tx;
 		CryptoNote::AccountPublicAddress ac = boost::value_initialized<CryptoNote::AccountPublicAddress>();
-		m_currency.constructMinerTx(1, 0, 0, 0, 0, 0, ac, tx); // zero fee in genesis
+		BinaryArray extraNonce;
+		if (m_currency.m_testnet) {
+			uint32_t nonce = m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_10);
+			extraNonce.resize(4);
+			memcpy(extraNonce.data(), &nonce, 4);
+		}
+		m_currency.constructMinerTx(1, 0, 0, 0, 0, 0, ac, tx, extraNonce);
 		return tx;
 	}
 	CurrencyBuilder& CurrencyBuilder::emissionSpeedFactor(unsigned int val) {
@@ -1324,6 +1793,14 @@ namespace CryptoNote
 		m_currency.m_emissionSpeedFactor_FANGO = val;
 		return *this;
 	}
+        CurrencyBuilder& CurrencyBuilder::emissionSpeedFactor_FUEGO(unsigned int val) {
+                if (val <= 0 || val > 8 * sizeof(uint64_t)) {
+                        throw std::invalid_argument("val at emissionSpeedFactor_FUEGO()");
+                }
+
+                m_currency.m_emissionSpeedFactor_FUEGO = val;
+                return *this;
+        }
 
 	CurrencyBuilder& CurrencyBuilder::numberOfDecimalPlaces(size_t val) {
 		m_currency.m_numberOfDecimalPlaces = val;
@@ -1366,6 +1843,90 @@ namespace CryptoNote
 
 		m_currency.m_upgradeWindow = static_cast<uint32_t>(val);
 		return *this;
+	}
+
+	/* ---------------------------------------------------------------------------------------------------- */
+	/* Burn Deposit Methods */
+	/* ---------------------------------------------------------------------------------------------------- */
+
+	bool Currency::isValidBurnDepositAmount(uint64_t amount) const {
+               // Valid burn amounts: 0.8 XFG (8,000,000) or 800 XFG (8,000,000,000)
+		return (amount == m_burnDepositMinAmount ||
+				amount == m_burnDepositStandardAmount ||
+				amount == m_burnDepositLargeAmount);
+	}
+
+	bool Currency::isValidBurnDepositTerm(uint32_t term) const {
+		// Valid burn terms: HEAT_TERM (4294967295) or DIGM_TERM (0x44494D47)
+		return (term == m_depositTermForever || term == parameters::DIGM_TERM);
+	}
+
+	bool Currency::isBurnDeposit(uint32_t term) const {
+		// Check if this is a burn
+		return isValidBurnDepositTerm(term);
+	}
+
+	bool Currency::validateNetworkId(uint64_t networkId) const {
+		// Validate against hashed Fuego network ID
+		return (networkId == m_fuegoNetworkId);
+	}
+
+	bool Currency::validateNetworkIdString(const std::string& networkId) const {
+		// Validate against full Fuego network ID string
+		return (networkId == m_fuegoNetworkIdString);
+	}
+
+	Crypto::Hash Currency::calculateBurnNullifier(const Crypto::SecretKey& secret) const {
+		// Calculate nullifier using Keccak256: hash(secret + "nullifier")
+		std::vector<uint8_t> data;
+		data.insert(data.end(), secret.data, secret.data + sizeof(secret.data));
+		data.insert(data.end(), (uint8_t*)"nullifier", (uint8_t*)"nullifier" + 9);
+
+		Crypto::Hash nullifier;
+		keccak(data.data(), data.size(), nullifier.data, sizeof(nullifier.data));
+		return nullifier;
+	}
+
+	Crypto::Hash Currency::calculateBurnCommitment(const Crypto::SecretKey& secret, uint64_t amount) const {
+		// Calculate commitment using Keccak256: hash(secret + "commitment")
+		std::vector<uint8_t> data;
+		data.insert(data.end(), secret.data, secret.data + sizeof(secret.data));
+		data.insert(data.end(), (uint8_t*)"commitment", (uint8_t*)"commitment" + 10);
+
+		Crypto::Hash commitment;
+		keccak(data.data(), data.size(), commitment.data, sizeof(commitment.data));
+		return commitment;
+	}
+
+	Crypto::Hash Currency::calculateBurnRecipientHash(const std::string& recipientAddress) const {
+		// Calculate recipient hash using Keccak256
+		Crypto::Hash recipientHash;
+		keccak(reinterpret_cast<const uint8_t*>(recipientAddress.data()), recipientAddress.size(), recipientHash.data, sizeof(recipientHash.data));
+		return recipientHash;
+	}
+
+	bool Currency::validateBurnProofData(const std::string& secret, uint64_t amount, const std::string& commitment, const std::string& nullifier) const {
+		// Validate secret format (hex encoded)
+		if (secret.empty() || secret.length() != 64) {
+			return false;
+		}
+
+		// Validate amount
+		if (!isValidBurnDepositAmount(amount)) {
+			return false;
+		}
+
+		// Validate commitment and nullifier format (hex encoded)
+		if (commitment.empty() || commitment.length() != 64) {
+			return false;
+		}
+
+		if (nullifier.empty() || nullifier.length() != 64) {
+			return false;
+		}
+
+
+		return true;
 	}
 
 } // namespace CryptoNote

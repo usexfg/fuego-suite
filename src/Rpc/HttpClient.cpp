@@ -1,20 +1,18 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
-// Copyright (c) 2018-2019 Conceal Network & Conceal Devs
+// Copyright (c) 2017-2025 Fuego Developers
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it
+// Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You can redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "HttpClient.h"
 
@@ -22,11 +20,13 @@
 #include <System/Ipv4Resolver.h>
 #include <System/Ipv4Address.h>
 #include <System/TcpConnector.h>
+#include <System/ContextGroup.h>
+#include <System/ContextGroupTimeout.h>
 
 namespace CryptoNote {
 
-HttpClient::HttpClient(System::Dispatcher& dispatcher, const std::string& address, uint16_t port) :
-  m_dispatcher(dispatcher), m_address(address), m_port(port) {
+HttpClient::HttpClient(System::Dispatcher& dispatcher, const std::string& address, uint16_t port, uint32_t timeout) :
+  m_dispatcher(dispatcher), m_address(address), m_port(port), m_timeout(timeout) {
 }
 
 HttpClient::~HttpClient() {
@@ -55,7 +55,20 @@ void HttpClient::request(const HttpRequest &req, HttpResponse &res) {
 void HttpClient::connect() {
   try {
     auto ipAddr = System::Ipv4Resolver(m_dispatcher).resolve(m_address);
-    m_connection = System::TcpConnector(m_dispatcher).connect(ipAddr, m_port);
+    System::TcpConnector connector(m_dispatcher);
+    
+    // If timeout is specified, use it
+    if (m_timeout > 0) {
+      System::ContextGroup cg(m_dispatcher);
+      System::ContextGroupTimeout cgTimeout(m_dispatcher, cg, std::chrono::nanoseconds(m_timeout * 1000000));
+      
+      m_connection = connector.connect(ipAddr, m_port);
+      cg.interrupt();
+    } else {
+      // No timeout, connect directly
+      m_connection = connector.connect(ipAddr, m_port);
+    }
+    
     m_streamBuf.reset(new System::TcpStreambuf(m_connection));
     m_connected = true;
   } catch (const std::exception& e) {

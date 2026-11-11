@@ -1,24 +1,23 @@
+// Copyright (c) 2017-2026 Fuego Developers
 // Copyright (c) 2012-2018 The CryptoNote developers
-// Copyright (c) 2018-2021 Fandom Gold Society
-// Copyright (c) 2019-2021 Fango Developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it 
+// Fuego is free software distributed in the hope that it
 // will be useful- but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You are encouraged to redistribute it and/or modify it
 // under the terms of the GNU General Public License v3 or later
 // versions as published by the Free Software Foundation.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #pragma once
 
 #include <cstdint>
 #include <limits>
 #include <vector>
-#include "crypto/hash.h"
+#include "../src/crypto/hash.h"
 #include "ITransaction.h"
 #include "IObservable.h"
 #include "IStreamSerializable.h"
@@ -66,6 +65,11 @@ namespace CryptoNote
         uint32_t term;
       };
     };
+
+    // Type: Commitment. The published commit key P. Needed by the signer to
+    // decide between the owner-bound and legacy derivations: an owner-bound
+    // output reproduces P only with the recipient's spend secret.
+    Crypto::PublicKey commitmentKey;
   };
 
   struct TransactionSpentOutputInformation : public TransactionOutputInformation
@@ -86,7 +90,7 @@ namespace CryptoNote
       IncludeStateUnlocked = 0x01,
       IncludeStateLocked = 0x02,
       IncludeStateSoftLocked = 0x04,
-      IncludeStateSpent = 0x08,
+      IncludeStateSpent = 0x24,
       // output type
       IncludeTypeKey = 0x100,
       IncludeTypeMultisignature = 0x200,

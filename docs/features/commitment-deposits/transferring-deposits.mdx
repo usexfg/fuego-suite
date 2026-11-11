@@ -1,0 +1,45 @@
+---
+title: "Transferring deposits"
+description: "Transfer a locked HEAT CD before maturity."
+keywords: ["transfer", "secondary market", "HEAT CD", "fuego"]
+---
+
+A Fuego HEAT CD can be transferred before maturity. The recipient inherits the original maturity height.
+
+## On-chain
+
+Transfer uses a commitment transfer input/output path that does **not** require maturity and does **not** claim interest. Interest accrues to the holder at maturity.
+
+## Process
+
+<Steps>
+  <Step title="Agree price off-chain">
+    Negotiate HEAT/XFG (or other) consideration. No protocol order book is required for the transfer itself.
+  </Step>
+  <Step title="Settle payment">
+    Buyer pays the agreed consideration. Confirm receipt before transferring the commitment.
+  </Step>
+  <Step title="Transfer the CD">
+    ```bash
+    curl -X POST http://127.0.0.1:28080/transfer_deposit \
+      -H 'Content-Type: application/json' \
+      -d '{
+        "deposit_id": "0",
+        "recipient_address": "fire..."
+      }'
+    ```
+  </Step>
+  <Step title="Buyer verifies">
+    Buyer confirms the HEAT CD appears in their wallet deposit list.
+  </Step>
+</Steps>
+
+## Privacy
+
+Transfer reassigns the commitment. Amounts stay hidden; off-chain price is not forced on-chain.
+
+## Buyer risk
+
+<Warning>
+  Verify the deposit appears under your control before finalizing payment. Confirm maturity height and that you are receiving a **HEAT CD**, not a mint-marker output.
+</Warning>

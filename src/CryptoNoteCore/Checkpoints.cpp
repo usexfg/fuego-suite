@@ -1,20 +1,19 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
+// Copyright (c) 2017-2026 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it
+// Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You can redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include <cstdlib>
 #include <fstream>
@@ -26,18 +25,18 @@
 #include <string.h>
 #include <sstream>
 #include <vector>
-#include <iterator>
+// #include <iterator>
 
 #include "Checkpoints.h"
 #include "../CryptoNoteConfig.h"
-#include "Common/StringTools.h"
-#include "Common/DnsTools.h"
+#include "../Common/StringTools.h"
+#include "../Common/DnsTools.h"
 
 using namespace Logging;
 
 namespace CryptoNote {
 //---------------------------------------------------------------------------
-Checkpoints::Checkpoints(Logging::ILogger &log) : logger(log, "checkpoints") {}
+Checkpoints::Checkpoints(Logging::ILogger &log, const Currency* currency) : logger(log, "checkpoints"), m_currency(currency) {}
 //---------------------------------------------------------------------------
 bool Checkpoints::add_checkpoint(uint32_t height, const std::string &hash_str) {
   Crypto::Hash h = NULL_HASH;
@@ -61,12 +60,18 @@ bool Checkpoints::is_in_checkpoint_zone(uint32_t  height) const {
 }
 //---------------------------------------------------------------------------
 bool Checkpoints::check_block(uint32_t  height, const Crypto::Hash &h, bool &is_a_checkpoint) const {
-  auto it = m_points.find(height);
+    // Bypass checkpoints in testnet mode
+     if (m_currency && m_currency->isTestnet()) {
+       is_a_checkpoint = false;
+       return true;
+     }
+
+    auto it = m_points.find(height);
   is_a_checkpoint = it != m_points.end();
   if (!is_a_checkpoint)
     return true;
 
-  if (it->second == h) {    
+  if (it->second == h) {
     return true;
   } else {
     logger(Logging::ERROR) << "<< Checkpoints.cpp << " << "Checkpoint failed for height " << height
@@ -97,7 +102,17 @@ bool Checkpoints::is_alternative_block_allowed(uint32_t  blockchain_height, uint
 
   --it;
   uint32_t  checkpoint_height = it->first;
-  return checkpoint_height < block_height;
+  if (!(checkpoint_height < block_height))
+    return false;
+
+  uint32_t depth = blockchain_height - block_height;
+  if (depth > 500) {
+    logger(Logging::DEBUGGING, Logging::WHITE)
+      << "<< Checkpoints.cpp << " << "Reorganization depth above checkpoint too deep: " << depth << ". Block Rejected";
+    return false;
+  }
+
+  return true;
 }
 
 //---------------------------------------------------------------------------
@@ -114,7 +129,7 @@ std::vector<uint32_t> Checkpoints::getCheckpointHeights() const {
 
 bool Checkpoints::load_checkpoints_from_dns()
 {
-  std::string domain("checkpoints.fango.money");
+  std::string domain("checkpoints.fuego.money");
   std::vector<std::string>records;
 
   logger(Logging::DEBUGGING) << "<< Checkpoints.cpp << " << "Fetching DNS checkpoint records from " << domain;
@@ -151,9 +166,9 @@ bool Checkpoints::load_checkpoints_from_dns()
 
 bool Checkpoints::load_checkpoints()
 {
-  for (const auto& cp : CryptoNote::CHECKPOINTS) 
+  for (const auto& cp : CryptoNote::CHECKPOINTS)
   {
-    add_checkpoint(cp.height, cp.blockId);    
+    add_checkpoint(cp.height, cp.blockId);
   }
   return true;
 }

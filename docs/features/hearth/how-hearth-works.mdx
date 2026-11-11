@@ -1,0 +1,64 @@
+---
+title: "How Hearth works"
+description: "On-chain XFG/HEAT market: one pool inventory quoted as depth-band makers in a call auction and as a constant-product curve for swaps/backstop."
+keywords: ["Hearth", "AMM", "orderbook", "XFG", "HEAT", "fuego"]
+---
+
+**Hearth** is Fuego’s native **XFG/HEAT** exchange. One pool inventory, two uses: the constant-product AMM is the balance sheet; the depth band is that inventory quoted as makers in the per-block call auction. It is the price surface for minting HEAT and for on-chain XFG↔HEAT trades.
+
+## What Hearth is not
+
+- Not a centralized order book hosted by a company
+- Not the same as **swapXFG** (cross-chain atomic swaps)
+- Not DIGM
+
+## Orderbook model (v11+)
+
+The original gossiped in-band CLOB (unbacked orders) is **retired**. The live model uses **one pool inventory** two ways — not AMM *or* depth band:
+
+1. **User limits are transactions.** A limit order is a `TransactionExtraLimitDeposit` (SELL_XFG deposits XFG, BUY_XFG deposits HEAT into pending buckets). No gossip mempool of unbacked quotes.
+2. **Call auction first.** Each block, resting user deposits plus **pool depth-band makers** (`generatePoolOrders()`, 0xF0 ids, sized from `HEARTH_DEPTH_BAND_PCT` of reserves, spread 30–300 bps) cross at a max-volume clearing price. User-vs-user fills move escrow/proceeds. Pool-maker fills move `reserveXfg`/`reserveHeat`. User orders win same-price ties.
+3. **AMM backstop second.** Unfilled user deposits whose limit is crossed by live spot (`ammGetSpotPrice` = HEAT/XFG × COIN) fill on the constant-product curve, volume-capped (`HEARTH_BACKSTOP_MAX_BPS`). Direct `ammSwap` txs also use this curve.
+4. **Partial fills and proceeds.** Fills consume part of a user deposit; proceeds (`proceedsXfg` / `proceedsHeat`) plus remainder are claimable via `TransactionExtraLimitWithdraw` (also the expiry return path).
+5. **Expiry is height-based.** Expired orders keep deposit + proceeds claimable and skip that block's auction/backstop.
+6. **Taker pays the 1% fee.** On auction fills the rationed side is the taker and makers get the 30% rebate. On backstop/AMM fills the pool is the maker, so 30% stays with LPs.
+
+`P_clear` is the auction clearing price (header metric), seeded from the pool ratio in the 144-block bootstrap. The depth-band spread's volatility feed is the pool spot price.
+
+## Fee (live code)
+
+| Constant | Value |
+|----------|-------|
+| `HEARTH_FEE_BPS` | **100** = **1.0%** of trade notional, paid by the taker |
+| `HEARTH_CD_SHARE_PCT_V11` | **30** — 30% of the fee → CD yield at v11 |
+| `HEARTH_CD_SHARE_PCT_V12` | **70** — 70% of the fee → CD yield from v12 |
+| `HEARTH_BACKSTOP_MAX_BPS` | **500** — backstop fills ≤ 5× the block's auction volume |
+
+```
+gross = user_notional
+paid  = gross × (10000 − 100) / 10000      // taker receives fee-adjusted output
+fee   = gross − paid                        // v11: 30% → CD accumulator, 70% → maker rebate
+```
+
+On auction fills the taker is the rationed side; the maker side receives the rebate pool pro-rata. On pool-intermediated fills (backstop/AMM) the pool is the maker, so the maker share stays in LP reserves. The CD share accrues in a HEAT-denominated accumulator (`cdHearthFeeAccumulator`) and is minted into the CD yield vault (`CD_APY_POOL`) at each epoch boundary; the consumed XFG side is burned 50/50 (Eternal Flame / SWF).
+
+## Roles
+
+| Role | Action |
+|------|--------|
+| Trader | Swaps XFG↔HEAT (AMM) or places a limit order; pays the 1% flat fee |
+| LP | Provides a **balanced** XFG+HEAT deposit (single-sided deposits are rejected); earns the pool’s trading P&L and appreciation, realized on withdrawal via share redemption — not the flat fee |
+| Minter | Uses Hearth TWAP when burning XFG to mint HEAT (canonical price = HEAT/XFG × COIN) |
+| CD holder | Receives the CD share of the 1% Hearth flat fee (30% at v11, 70% at v12) via the CD yield vault |
+| Protocol / Treasury | The **Treasury LP Manager (AuntPoL)** maintains the protocol's own ratio-paired LP position. **Both legs are funded by the 1% mint premium**: the withheld premium XFG is the XFG leg and the HEAT it buys is the HEAT leg (plus HEAT donations). It compounds and drives bootstrap repayment |
+
+## Privacy
+
+LP and commitment-style positions use the chain’s commitment / privacy primitives. Exact share sizes are not meant to be public account balances like a CEX.
+
+## Related
+
+- [Provide liquidity](/features/hearth/providing-liquidity)
+- [Fee earning](/features/hearth/fee-earning)
+- [Mint HEAT](/features/heat/mint-heat)
+- [swapXFG](/features/atomic-swaps/how-swaps-work)

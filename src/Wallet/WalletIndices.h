@@ -1,29 +1,28 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
+// Copyright (c) 2017-2026 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it
+// Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You can redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #pragma once
 
 #include <map>
 #include <unordered_map>
 
-#include "ITransfersContainer.h"
-#include "IWallet.h"
-#include "IWalletLegacy.h" //TODO: make common types for all of our APIs (such as PublicKey, KeyPair, etc)
+#include "../../include/ITransfersContainer.h"
+#include "../../include/IWallet.h"
+#include "../../include/IWalletLegacy.h" //TODO: make common types for all of our APIs (such as PublicKey, KeyPair, etc)
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -32,8 +31,8 @@
 #include <boost/multi_index/composite_key.hpp>
 #include <boost/multi_index/member.hpp>
 
-#include "Common/FileMappedVector.h"
-#include "crypto/chacha8.h"
+#include "../Common/FileMappedVector.h"
+#include "../crypto/chacha8.h"
 
 namespace CryptoNote
 {
@@ -50,6 +49,12 @@ namespace CryptoNote
         uint64_t lockedDepositBalance = 0;
         uint64_t unlockedDepositBalance = 0;
         time_t creationTimestamp;
+
+        // Sub-address fields. (0,0) = master address (primary).
+        uint32_t subaddrMajor = 0;
+        uint32_t subaddrMinor = 0;
+        bool isSubAddress = false;
+        uint8_t subaddrVersion = 0;
     };
 
 #pragma pack(push, 1)
@@ -57,6 +62,7 @@ struct EncryptedWalletRecord {
   Crypto::chacha8_iv iv;
   // Secret key, public key and creation timestamp
   uint8_t data[sizeof(Crypto::PublicKey) + sizeof(Crypto::SecretKey) + sizeof(uint64_t)];
+  uint8_t tag[32]; // Added for HMAC-SHA256 integrity check
 };
 #pragma pack(pop)
 
@@ -135,7 +141,7 @@ struct EncryptedWalletRecord {
             boost::multi_index::ordered_non_unique<boost::multi_index::tag<BlockHeightIndex>,
                                                    boost::multi_index::member<CryptoNote::WalletTransaction, uint32_t, &CryptoNote::WalletTransaction::blockHeight>>>>
         WalletTransactions;
-        
+
     typedef Common::FileMappedVector<EncryptedWalletRecord> ContainerStorage;
     typedef std::pair<size_t, CryptoNote::WalletTransfer> TransactionTransferPair;
     typedef std::vector<TransactionTransferPair> WalletTransfers;

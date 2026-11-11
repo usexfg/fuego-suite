@@ -1,20 +1,19 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
+// Copyright (c) 2017-2022 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it
+// Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You can redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #pragma once
 
@@ -27,6 +26,8 @@ namespace error {
 // custom error conditions enum type:
 enum WalletErrorCodes {
   NOT_INITIALIZED = 1,
+  INVALID_ARGUMENT,
+  NOT_FOUND,
   ALREADY_INITIALIZED,
   WRONG_STATE,
   WRONG_PASSWORD,
@@ -66,8 +67,12 @@ enum WalletErrorCodes {
   DEPOSIT_WRONG_TERM,
   DESTINATION_ADDRESS_REQUIRED,
   DESTINATION_ADDRESS_NOT_FOUND,
-  DAEMON_NOT_SYNCED
+  DAEMON_NOT_SYNCED,
+  INSUFFICIENT_OUTPUTS_FOR_RING_SIZE,
+  INVALID_DEPOSIT_TYPE
 };
+
+
 
 // custom category:
 class WalletErrorCategory : public std::error_category {
@@ -124,6 +129,8 @@ public:
     case DEPOSIT_LOCKED:           return "Deposit is locked";
     case DEPOSIT_WRONG_TERM:       return "Incorrect term";
     case DAEMON_NOT_SYNCED:        return "Daemon is not synchronized";
+    case INSUFFICIENT_OUTPUTS_FOR_RING_SIZE: return "Insufficient outputs for transaction amount. Please run wallet optimizer to consolidate outputs.";
+    case INVALID_DEPOSIT_TYPE:     return "Invalid deposit type for this operation";
         default:
       return "Unknown error";
     }
@@ -144,6 +151,6 @@ inline std::error_code make_error_code(CryptoNote::error::WalletErrorCodes e) {
 namespace std {
 
 template <>
-struct is_error_code_enum<CryptoNote::error::WalletErrorCodes>: public true_type {};
+struct is_error_code_enum<CryptoNote::error::WalletErrorCodes>: public ::std::true_type {};
 
 }

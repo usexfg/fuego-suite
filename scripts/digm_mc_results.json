@@ -1,0 +1,20 @@
+{
+  "params": {
+    "runs": 1000,
+    "days": 365,
+    "seed": 42
+  },
+  "scenario_a": {
+    "heat_pool_drained_pct": 100.0,
+    "avg_heat_pool_final": 0.0,
+    "avg_heat_paid": 500.0,
+    "avg_digm_burned": 9992.638944767561,
+    "avg_digm_supply_final": 7.361055232439732
+  },
+  "scenario_b": {
+    "avg_platform_fees": 29194.7953,
+    "avg_yield_paid": 15094.779576894176,
+    "avg_apy": 532.2859600017681,
+    "sustainable": true
+  }
+}

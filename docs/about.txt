@@ -1,13 +1,13 @@
-[ Fango.Money ]
+[ usexfg.org ]
 
 PRIVATE TRANSACTIONS, DECENTRALIZED BANKING, & SECURE MESSAGING
 
-Fango is a decentralized blockchain bank with on-ledger deposits paying interest, without involvement of financial institutions, powered by 100% open source code.
+Fuego is a decentralized blockchain bank with ledger deposits paying interest, without involvement of legacy financial institutions, powered by 100% open source code.
 
-Fango network enables secure untraceable transfer of funds and anonymous messaging using a distributed public ledger, the sender and receiver are kept anonymous, a key concern in a post Snowden world.
-Hackers cannot trace money or messages when the messages are sent across public networks.
+Fuego network enables secure untraceable transfer of funds and anonymous messaging using a distributed public ledger. Both sender and receiver are kept anonymous, a key concern in a post Snowden world.
+Hackers cannot trace money or messages though they are sent across public networks.
 
-Fango (XFG) is based on the Cryptonote protocol and runs on a secure peer-to-peer network technology to operate with no central authority. You control the private keys to your funds.
+Fuego ($XFG) is based on the Cryptonote protocol and operates as a secure peer-to-peer network with no central authority. Only you control the private keys to your funds.
 
-No one owns Fango network and everyone can take part.  Fango is open-source, community driven and truly decentralized - accessible by anyone in the world regardless of their geographic location or status.
-Fango blockchain is resistant to any kind of analysis.  All your transactions and messages are anonymous. 
+No one owns the Fuego network and everyone can take part.  Fuego is open-source, community driven and truly decentralized - accessible by anyone in the world regardless of their geographic location or status.
+Fuego blockchain is resistant to any kind of analysis.  All your transactions and messages are fully anonymous.

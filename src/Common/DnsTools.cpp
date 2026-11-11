@@ -1,18 +1,16 @@
 // Copyright (c) 2016-2019 The Karbowanec developers
-// Copyright (c) 2018-2019 Conceal Network & Conceal Devs
-// Copyright (c) 2018-2021 Fandom Gold Society
-// Copyright (c) 2019-2021 Fango Developers
+// Copyright (c) 2017-2026 Fuego Developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it 
+// Fuego is free software distributed in the hope that it
 // will be useful- but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You are encouraged to redistribute it and/or modify it
 // under the terms of the GNU General Public License v3 or later
 // versions as published by the Free Software Foundation.
 // You should receive a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>
 
 #include <condition_variable>
 #include <future>
@@ -20,7 +18,6 @@
 #include <mutex>
 #include <sstream>
 #include <functional>
-#include <iostream>
 #include <cstring>
 #include <string>
 #include <map>
@@ -61,7 +58,7 @@ namespace Common {
 		{
 			WORD type = DNS_TYPE_TEXT;
 
-			if (0 != DnsQuery_A(domain.c_str(), type, DNS_QUERY_BYPASS_CACHE, NULL, &pDnsRecord, NULL))
+                        if (0 != DnsQuery_A(domain.c_str(), type, DNS_QUERY_BYPASS_CACHE, NULL, &pDnsRecord, NULL) )
 			{
 				//cerr << "<< Dnstools.cpp << Error connecting to '" << domain << "'" << endl;
 				return false;
@@ -96,13 +93,16 @@ namespace Common {
 			ns_type type = ns_t_txt;
 
 			const char * c_domain = (domain).c_str();
-			response = res_query(c_domain, 1, type, query_buffer, sizeof(query_buffer));
+                        response = res_query(c_domain, 1, type, query_buffer, sizeof(query_buffer) );
 
 			if (response < 0)
 				return false;
 		}
 
-		ns_initparse(query_buffer, response, &nsMsg);
+		// DISABLED: ns_initparse not available on macOS
+	// ns_initparse(query_buffer, response, &nsMsg);
+	// Returning false - DNS TXT resolution not supported on this platform
+	return false;
 
 		map<ns_type, function<void(const ns_rr &rr)>> callbacks;
 

@@ -1,0 +1,41 @@
+---
+title: "Hearth fee earning"
+description: "The 1% Hearth taker fee goes to CD yield; LP income is pool trading P&L."
+keywords: ["Hearth fees", "LP", "CD", "1%", "taker"]
+---
+
+## Protocol flat fee
+
+Every Hearth fill applies a **1% flat fee** (`HEARTH_FEE_BPS = 100`) on trade notional, paid by the **taker**. The split is versioned (`hearthCdSharePct`): **v11 pays 30% CD / 70% maker**, **v12 flips to 70% CD / 30% maker**.
+
+```
+gross = user_notional
+paid  = gross × (10000 − 100) / 10000   // taker receives the fee-adjusted output
+fee   = gross − paid                     // v11: 30% → CD yield, 70% → maker rebate
+```
+
+The CD share is debited from the pool reserves into the HEAT-denominated `cdHearthFeeAccumulator` and minted into the CD yield vault (`CD_APY_POOL`) at the epoch boundary. The maker share is the rebate and goes to the auction maker (or stays with LPs when the pool is the counterparty). The consumed XFG side of conversions is burned 50/50 (Eternal Flame / SWF).
+
+## What LPs should expect
+
+| Item | Reality |
+|------|---------|
+| Income source | Pool trading P&L on the shared inventory (direct swaps, auction depth-band fills, backstop) plus the **70%** maker rebate at v11 when the pool is maker (30% at v12). No separate spread-reward formula. |
+| Flat fee | LPs earn the **maker share** of the 1% flat fee, not all of it — the CD share goes to the CD yield pool |
+| Share | Proportional to your LP share of the pool, realized on withdrawal |
+| Independence | Separate from **atomic swap** fee routing (80/20 at v11+; pre-v11 replay 69/11/20) |
+
+## What CD holders get from Hearth
+
+The Hearth flat fee accrues toward **CD yield** plumbing (`cdHearthFeeAccumulator` → epoch mint → `CD_APY_POOL`). Holding HEAT CDs participates in that stream together with the CD share of **atomic swap** fees. The LP income is LP-only; CD holders do not share it.
+
+## Wrong numbers to ignore
+
+Older docs and strategy notes sometimes say:
+
+- “0.3% to LPs” as the Hearth fee — **incorrect for live `HEARTH_FEE_BPS`**
+- “LPs earn the whole Hearth flat fee” — **incorrect**; they earn the maker share (70% at v11, 30% at v12), the CD share goes to CD yield
+- “LPs earn a spread reward `|fill.price − P_clear| × amount`” — **outdated**; that belonged to the retired in-band matcher
+- “69/11/20 is the atomic swap split” — **outdated as current fact**; v11+ is **80/20** with no treasury leg, 69/11/20 is pre-v11 replay only
+
+Always prefer `src/CryptoNoteConfig.h` and the consensus fee split code.

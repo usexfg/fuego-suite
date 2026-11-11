@@ -1,20 +1,19 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
-// Copyright (c) 2018-2019 Conceal Network & Conceal Devs
+// Copyright (c) 2017-2022 Fuego Developers
 // Copyright (c) 2016-2019 The Karbowanec developers
+// Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free & open source software distributed in the hope 
-// that it will be useful, but WITHOUT ANY WARRANTY; without even
+// Fuego is free & open source software distributed in the hope
+// it will be useful, but WITHOUT ANY WARRANTY; without even an
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You may redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "StringTools.h"
 #include <fstream>
@@ -366,5 +365,28 @@ std::string timeIntervalToString(uint64_t intervalInSeconds) {
     ".s" + std::to_string(seconds);
 }
 
+
+std::string makeCenteredString(size_t width, const std::string& text) {
+  if (text.size() >= width) {
+    return text;
+  }
+
+  size_t offset = (width - text.size() + 1) / 2;
+  return std::string(offset, ' ') + text + std::string(width - text.size() - offset, ' ');
+}
+
+std::string formatTimestamp(time_t timestamp)
+{
+  std::string buffer(32, '\0');
+  struct tm time_info;
+#ifdef _WIN32
+  gmtime_s(&time_info, &timestamp);
+#else
+  gmtime_r(&timestamp, &time_info);
+#endif
+  std::strftime(&buffer[0], buffer.size(), "%c", &time_info);
+  buffer += " UTC";
+  return buffer;
+}
 
 }

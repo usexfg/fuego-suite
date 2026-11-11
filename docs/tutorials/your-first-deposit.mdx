@@ -1,0 +1,56 @@
+---
+title: "Tutorial: mint HEAT and open a CD"
+description: "Two-step path: mint HEAT from XFG, then lock HEAT as a CD."
+keywords: ["tutorial", "HEAT", "CD", "mint", "fuego"]
+---
+
+This tutorial is the **current** product path on testnet: mint HEAT, open a HEAT CD, wait for maturity, withdraw or rollover.
+
+## What you need
+
+- `fuegod --testnet` synced
+- Wallet with **XFG** (testnet)
+- Understanding: **CDs lock HEAT**, not XFG
+
+## Step 1: Check XFG balance
+
+```
+balance
+```
+
+## Step 2: Mint HEAT
+
+Use the wallet **HEAT mint / Burn2Mint** path that calls `mintHeatV10` (TUI: Burn2Mint / HEAT mint). Confirm HEAT balance after the mint confirms.
+
+Do **not** treat legacy `cold` / “lock XFG” commands as the CD path.
+
+## Step 3: Open a HEAT CD
+
+```
+deposit <heat_amount> <term_epochs>
+```
+
+Mainnet terms are 6–72 epochs; testnet allows shorter testing terms. Note deposit ID and maturity height.
+
+## Step 4: Verify
+
+List deposits in the wallet and confirm type **HEAT** / term-locked (not mint-only).
+
+## Step 5: Wait for maturity
+
+Testnet epochs are **10 blocks**. Watch height until maturity.
+
+## Step 6: Withdraw or rollover
+
+- Withdraw: receive HEAT + interest  
+- Rollover: new CD for principal + interest  
+
+```bash
+curl -X POST http://127.0.0.1:28280/rollover_deposit \
+  -H 'Content-Type: application/json' \
+  -d '{"deposit_id": "0", "new_term": 6}'
+```
+
+## Yield funding (for expectations)
+
+CD yield is funded by protocol fees: atomic swap **1%** (80% to CD share at v11+) and Hearth **1%** (30% to CD share at v11, 70% at v12). Low volume → low yield.

@@ -44,6 +44,7 @@
 #include <unordered_map>
 #include <boost/algorithm/string.hpp>
 #include "crypto/crypto.h"  // for declaration of crypto::secret_key
+#include "crypto/keccak.h"
 #include <fstream>
 #include "Mnemonics/electrum-words.h"
 #include <stdexcept>
@@ -192,9 +193,11 @@ namespace
         trimmed_words += *it;
       }
     }
-    boost::crc_32_type result;
-    result.process_bytes(trimmed_words.data(), trimmed_words.length());
-    return result.checksum() % crypto::ElectrumWords::seed_length;
+    Crypto::Hash chk;
+    keccak(reinterpret_cast<const uint8_t*>(trimmed_words.data()), static_cast<int>(trimmed_words.length()), chk.data, sizeof(chk.data));
+    uint32_t idx = 0;
+    memcpy(&idx, chk.data, sizeof(idx));
+    return idx % crypto::ElectrumWords::seed_length;
   }
 
   /*!
@@ -311,7 +314,9 @@ namespace crypto
         std::string wlist_copy = words;
         if (seed.size() == expected/2)
         {
-          dst.append(dst);                    // if electrum 12-word seed, duplicate
+          Crypto::Hash h;
+          keccak(reinterpret_cast<const uint8_t*>(dst.data()), static_cast<int>(dst.size()), h.data, sizeof(h.data));
+          dst.append(reinterpret_cast<const char*>(h.data), sizeof(h.data));  // expand 16→32 bytes via keccak
           wlist_copy += ' ';
           wlist_copy += words;
         }

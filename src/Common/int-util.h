@@ -1,20 +1,19 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
+// Copyright (c) 2017-2022 Fuego Developers
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free & open source software distributed in the hope 
+// Fuego is free & open source software distributed in the hope
 // it will be useful, but WITHOUT ANY WARRANTY; without even an
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You may redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #pragma once
 
@@ -22,7 +21,9 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
+#ifndef _WIN32
 #include <sys/param.h>
+#endif
 
 #if defined(_MSC_VER)
 #include <stdlib.h>
@@ -180,8 +181,24 @@ static inline void memcpy_swap64(void *dst, const void *src, size_t n) {
 
 
 
+// Define byte order for Windows/MSVC which doesn't have BYTE_ORDER
+#if defined(_WIN32) || defined(_WIN64) || defined(WIN32) || defined(_MSC_VER)
+#define LITTLE_ENDIAN 1234
+#define BIG_ENDIAN 4321
+#define BYTE_ORDER LITTLE_ENDIAN
+#endif
+
 #if !defined(BYTE_ORDER) || !defined(LITTLE_ENDIAN) || !defined(BIG_ENDIAN)
-static_assert(false, "BYTE_ORDER is undefined. Perhaps, GNU extensions are not enabled");
+#if defined(__BYTE_ORDER__) && defined(__LITTLE_ENDIAN__) && defined(__BIG_ENDIAN__)
+#define BYTE_ORDER __BYTE_ORDER__
+#define LITTLE_ENDIAN __LITTLE_ENDIAN__
+#define BIG_ENDIAN __BIG_ENDIAN__
+#else
+// Assume little endian as default for most modern systems
+#define LITTLE_ENDIAN 1234
+#define BIG_ENDIAN 4321
+#define BYTE_ORDER LITTLE_ENDIAN
+#endif
 #endif
 
 #if BYTE_ORDER == LITTLE_ENDIAN

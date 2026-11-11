@@ -1,20 +1,19 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
+// Copyright (c) 2017-2022 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it
+// Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You can redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "LevinProtocol.h"
 #include <System/TcpConnection.h>
@@ -26,7 +25,7 @@ namespace {
 const uint64_t LEVIN_SIGNATURE = 0x0101010101012101LL;  //Bender's nightmare
 const uint32_t LEVIN_PACKET_REQUEST = 0x00000001;
 const uint32_t LEVIN_PACKET_RESPONSE = 0x00000002;
-const uint32_t LEVIN_DEFAULT_MAX_PACKET_SIZE = 100000000;      //100MB by default
+const uint32_t LEVIN_DEFAULT_MAX_PACKET_SIZE = 20971520;    // 20 MB (matches P2P_DEFAULT_PACKET_MAX_SIZE in CryptoNoteConfig.h)
 const uint32_t LEVIN_PROTOCOL_VER_1 = 1;
 
 #pragma pack(push)

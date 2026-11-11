@@ -1,0 +1,28 @@
+---
+title: "API overview"
+description: "Daemon and wallet RPC surfaces for Fuego, HEAT, Hearth, and swapXFG."
+keywords: ["API", "RPC", "fuego", "swapxfg"]
+---
+
+Fuego exposes JSON-RPC and HTTP endpoints on the node and wallet processes. Ports differ by network and config (examples often use `28080` mainnet wallet/daemon RPC — check your config).
+
+## Product areas
+
+| Area | Docs |
+|------|------|
+| Fee pool / treasury | [Fee pool](/api-reference/fee-pool) |
+| HEAT CDs | [Deposits](/api-reference/deposits) |
+| Atomic swaps | [Swaps](/api-reference/swaps) |
+| Aliases | [Aliases](/api-reference/aliases) |
+
+## Open HTTP (examples)
+
+| Path | Purpose |
+|------|---------|
+| `/heat_metrics` | HEAT supply / pool-related metrics (when enabled) |
+| `/amm_quote` | Hearth quote helper (when enabled) |
+| `/amm_pool_info` | Pool reserves / spot (when enabled) |
+
+## Units
+
+`COIN = 10_000_000` atomic units per whole XFG/HEAT coin.

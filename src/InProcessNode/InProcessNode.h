@@ -1,20 +1,19 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
+// Copyright (c) 2017-2022 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it
+// Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You can redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #pragma once
 
@@ -29,6 +28,7 @@
 
 #include <thread>
 #include <boost/asio.hpp>
+#include <boost/optional.hpp>
 
 namespace CryptoNote {
 
@@ -63,6 +63,8 @@ public:
   virtual void getTransactionOutsGlobalIndices(const Crypto::Hash& transactionHash, std::vector<uint32_t>& outsGlobalIndices, const Callback& callback) override;
   virtual void getRandomOutsByAmounts(std::vector<uint64_t>&& amounts, uint64_t outsCount,
       std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount>& result, const Callback& callback) override;
+  virtual void getRandomCommitmentOutsForAmount(uint64_t amount, uint64_t outsCount, uint32_t maxHeight,
+      std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>& result, const Callback& callback) override;
   virtual void relayTransaction(const CryptoNote::Transaction& transaction, const Callback& callback) override;
   virtual void queryBlocks(std::vector<Crypto::Hash>&& knownBlockIds, uint64_t timestamp, std::vector<BlockShortEntry>& newBlocks,
     uint32_t& startHeight, const Callback& callback) override;
@@ -79,6 +81,16 @@ public:
   virtual void getTransactionsByPaymentId(const Crypto::Hash& paymentId, std::vector<TransactionDetails>& transactions, const Callback& callback) override;
   virtual void getPoolTransactions(uint64_t timestampBegin, uint64_t timestampEnd, uint32_t transactionsNumberLimit, std::vector<TransactionDetails>& transactions, uint64_t& transactionsNumberWithinTimestamps, const Callback& callback) override;
   virtual void isSynchronized(bool& syncStatus, const Callback& callback) override;
+
+  virtual std::error_code getCdInterest(uint64_t amount, uint32_t creationHeight,
+                                        uint32_t currentHeight, uint64_t& outInterest) override;
+  virtual std::error_code getCdClaimInfo(uint64_t amount, uint32_t creationHeight,
+                                         uint32_t currentHeight, CdClaimInfo& out,
+                                         uint32_t term = 0) override;
+  virtual std::error_code getEpochFeeRate(uint32_t epoch, uint64_t& outFeeRate) override;
+  virtual std::error_code getAmmPoolReserves(AmmPoolReserves& out) override;
+  virtual uint64_t getHearthTwap() override;
+  virtual std::error_code getAmmPoolInfo(AmmPoolInfo& info) override;
 
 private:
   virtual void peerCountUpdated(size_t count) override;
@@ -97,6 +109,11 @@ private:
       std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount>& result, const Callback& callback);
   std::error_code doGetRandomOutsByAmounts(std::vector<uint64_t>&& amounts, uint64_t outsCount,
       std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount>& result);
+
+  void getRandomCommitmentOutsForAmountAsync(uint64_t amount, uint64_t outsCount, uint32_t maxHeight,
+      std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>& result, const Callback& callback);
+  std::error_code doGetRandomCommitmentOutsForAmount(uint64_t amount, uint64_t outsCount, uint32_t maxHeight,
+      std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>& result);
 
   void relayTransactionAsync(const CryptoNote::Transaction& transaction, const Callback& callback);
   std::error_code doRelayTransaction(const CryptoNote::Transaction& transaction);
@@ -146,9 +163,10 @@ private:
   CryptoNote::ICryptoNoteProtocolQuery& protocol;
   Tools::ObserverManager<INodeObserver> observerManager;
 
-  boost::asio::io_service ioService;
+  boost::asio::io_context ioService;
   std::unique_ptr<std::thread> workerThread;
-  std::unique_ptr<boost::asio::io_service::work> work;
+  using WorkGuard = boost::asio::executor_work_guard<boost::asio::io_context::executor_type>;
+  boost::optional<WorkGuard> workGuard;
 
   BlockchainExplorerDataBuilder blockchainExplorerDataBuilder;
 

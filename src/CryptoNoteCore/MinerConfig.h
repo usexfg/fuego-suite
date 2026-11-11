@@ -1,20 +1,19 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
+// Copyright (c) 2017-2026 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it
+// Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You can redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #pragma once
 
@@ -32,9 +31,54 @@ public:
   static void initOptions(boost::program_options::options_description& desc);
   void init(const boost::program_options::variables_map& options);
 
+  // ── Core miner settings ──────────────────────────────────────────────────
   std::string extraMessages;
   std::string startMining;
-  uint32_t miningThreads;
+  uint32_t    miningThreads;
+
+  // ── Fuego Cost Index (FCI) basket prices ─────────────────────────────────
+  // Stored as integers on the vote grid. Five categories are cents per natural
+  // retail unit (399 = $3.99); power is milli-USD per kWh (788 = $0.788),
+  // because electricity is quoted to three decimals. The miner enters a decimal
+  // amount in its local currency and init() scales it, so consensus only ever
+  // sees integers — no floats cross into the daemon.
+  //
+  // present_mask bits:
+  //   bit 0 = power   bit 1 = milk   bit 2 = bread
+  //   bit 3 = eggs    bit 4 = gas    bit 5 = rice
+  //
+  // A value of 0 in present_mask means no FCI vote is included in coinbase.
+  // Phase 1: votes are stored on-chain but no DIGM payout is issued.
+  //          Block height + spend-key-hash recorded for auditable back-pay.
+  uint8_t  fciPresentMask;   // bitmask of which commodities are configured
+  uint32_t fciPower;         // milli-USD per kWh (e.g. $0.788 → 788)
+  uint32_t fciMilk;          // cents per gallon whole milk
+  uint32_t fciGas;           // cents per gallon petrol
+  uint32_t fciBread;         // cents per kg loaf
+  uint32_t fciEggs;          // cents per dozen large eggs
+  uint32_t fciRice;          // cents per kg uncooked white rice
+
+  // ── Currency helpers ─────────────────────────────────────────────────────
+  // Miner may supply prices in any supported fiat; init() multiplies by
+  // fciUsdRate to produce the integer stored above.
+  std::string fciCurrency;   // ISO-4217 code (default: "USD")
+  double      fciUsdRate;    // local-currency → USD rate (default: 1.0)
+
+  // ── Auto-fetch config ────────────────────────────────────────────────────
+  // Path to optional fci_oracle.json produced by the auto-fetch script.
+  // Daemon hot-reloads this file at each epoch boundary.
+  // If empty, only CLI args are used.
+  std::string fciOraclePath;
+
+  // ── Staleness warning ────────────────────────────────────────────────────
+  // Daemon logs a YELLOW warning if fciOraclePath mtime > fciStaleWarnDays old.
+  uint32_t    fciStaleWarnDays;  // default: 30
+
+  // ── Future DIGM Paradio vote ─────────────────────────────────────────────
+  // Miner-supplied UTF-8 song title (max 128 bytes on wire).
+  // Tag 0x39 — independent of FCI; both can coexist in one coinbase.
+  // Empty string means no Paradio vote included this block.
+  std::string paradioVote;
 };
 
-} //namespace CryptoNote
+} // namespace CryptoNote

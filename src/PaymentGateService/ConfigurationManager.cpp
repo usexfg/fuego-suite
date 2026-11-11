@@ -1,20 +1,19 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
+// Copyright (c) 2017-2022 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it
+// Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You can redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "ConfigurationManager.h"
 
@@ -93,9 +92,22 @@ bool ConfigurationManager::init(int argc, char** argv) {
 
     netNodeConfig.setTestnet(confOptions["testnet"].as<bool>());
     startInprocess = confOptions["local"].as<bool>();
+
+    // Update data directory for testnet if data-dir was defaulted
+    if (confOptions["testnet"].as<bool>() && coreConfig.configFolderDefaulted) {
+      std::string testnetDataDir = Tools::getDefaultDataDirectory() + "-testnet";
+      coreConfig.configFolder = testnetDataDir;
+      netNodeConfig.setConfigFolder(testnetDataDir);
+      
+      // Update container file if it's a simple name (no path)
+      if (!gateConfiguration.containerFile.empty() && 
+          gateConfiguration.containerFile.find('/') == std::string::npos) {
+        gateConfiguration.containerFile = testnetDataDir + "/" + gateConfiguration.containerFile;
+      }
+    }
   }
 
-  //command line options should override options from config file
+  // Command line options should override options from config file
   gateConfiguration.init(cmdOptions);
   netNodeConfig.init(cmdOptions);
   coreConfig.init(cmdOptions);
@@ -103,6 +115,19 @@ bool ConfigurationManager::init(int argc, char** argv) {
 
   if (cmdOptions["testnet"].as<bool>()) {
     netNodeConfig.setTestnet(true);
+    
+    // Update data directory for testnet if data-dir was defaulted
+    if (coreConfig.configFolderDefaulted) {
+      std::string testnetDataDir = Tools::getDefaultDataDirectory() + "-testnet";
+      coreConfig.configFolder = testnetDataDir;
+      netNodeConfig.setConfigFolder(testnetDataDir);
+      
+      // Update container file if it's a simple name (no path)
+      if (!gateConfiguration.containerFile.empty() && 
+          gateConfiguration.containerFile.find('/') == std::string::npos) {
+        gateConfiguration.containerFile = testnetDataDir + "/" + gateConfiguration.containerFile;
+      }
+    }
   }
 
   if (cmdOptions["local"].as<bool>()) {

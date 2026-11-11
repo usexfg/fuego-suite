@@ -1,0 +1,122 @@
+---
+title: Fuego Cost Index (FCI)
+description: How miners vote consumer prices into the basket that re-bases HEAT's hearthstone quarterly, and how to participate.
+---
+
+# Fuego Cost Index (FCI)
+
+The FCI is the basket that re-bases HEAT's hearthstone quarterly. Miners vote six consumer prices; the daemon aggregates them into a single index and the chain re-bases the hearthstone from it. This page explains how to participate as a miner.
+
+## Who this is for
+
+- **Miners** running `fuegod` — see "How to vote".
+- **Node operators** feeding prices via an oracle — see "Oracle mode".
+- **Integrators** reading the on-chain index — see "How the vote is used".
+
+## Unit cheat sheet (read this first)
+
+The vote carries integers. The unit differs by category:
+
+| Category | Unit you type (per natural unit) | What the vote stores | Example |
+|---|---|---|---|
+| Power | USD per kWh | milli-USD per kWh (3 decimals) | `$0.196/kWh` → `196` |
+| Gas | USD per gallon | cents per gallon | `$4.631/gal` → `463` |
+| Milk | USD per gallon | cents per gallon | `$4.106/gal` → `411` |
+| Bread | USD per kg | cents per kg | `$4.034/kg` → `403` |
+| Eggs | USD per dozen | cents per dozen | `$2.272/doz` → `227` |
+| Rice | USD per kg | cents per kg | `$2.465/kg` → `246` |
+
+Power is the only category on a milli-USD grid. Electricity is quoted to three decimals everywhere (`$0.788/kWh`), and one cent is a 5% step at US prices — too coarse for a component that carries 30% of the index. Every other category is quoted to two decimals, so cents are exact. The index math is a ratio (price ÷ baseline), so the mixed grids cancel out and never distort the result.
+
+## How to vote
+
+### Option A — pass prices on the command line
+
+```
+fuegod ... \
+  --fci-power 0.196 \
+  --fci-gas 4.631 \
+  --fci-milk 4.106 \
+  --fci-bread 4.034 \
+  --fci-eggs 2.272 \
+  --fci-rice 2.465
+```
+
+Prices are in your local currency's USD equivalent. If your prices are in another currency, set `--fci-currency EUR --fci-usd-rate 1.08` and type the local amounts; the daemon converts.
+
+### Option B — feed an oracle JSON file
+
+```
+fuegod ... --fci-oracle /path/to/fci_oracle.json
+```
+
+The daemon reads the file once at startup. CLI flags take priority over the oracle for any category you set explicitly; the oracle fills the rest.
+
+The oracle file is plain JSON with one key per category, value in USD per natural unit:
+
+```json
+{
+  "power": 0.196,
+  "gas": 4.631,
+  "milk": 4.106,
+  "bread": 4.0345,
+  "eggs": 2.272,
+  "rice": 2.4648
+}
+```
+
+Keys starting with `_` (metadata, provenance) are ignored. Missing categories are left out of the vote; a category that rounds to zero on its grid is dropped.
+
+### Verify your vote landed
+
+At startup the daemon logs one line:
+
+```
+[FCI] Basket vote active: mask=0x3f power=196 milk=411 bread=403 eggs=227 gas=463 rice=246 (power in milli-USD/kWh, rest in cents)
+```
+
+`mask=0x3f` means all six categories are present. A missing category clears its bit (e.g. `0x3e` means power is absent). If you see `No basket prices configured`, none of the inputs resolved to a non-zero value — check your units and currency rate.
+
+### Keep the oracle fresh
+
+With `--fci-oracle`, the daemon checks the file's mtime at startup. If it is older than `--fci-stale-warn-days` (default 30), it prints a warning:
+
+```
+[FCI WARNING] /path/to/fci_oracle.json was last modified 45 days ago. Update the file or revise the miner's configured prices.
+```
+
+The oracle is not re-read while running; restart the daemon after updating the file.
+
+## Producing an oracle file
+
+A reference producer ships in `tools/fci-oracle/` (Go, BLS-only, no Truflation averaging):
+
+```
+cd tools/fci-oracle
+go build -o fci-oracle .
+./fci-oracle -out /path/to/fci_oracle.json
+```
+
+It fetches the BLS headline series for all six commodities plus the headline CPI, and writes USD-per-natural-unit values with a `_provenance` block naming the series and period used. Run it on a cron (weekly is plenty — BLS publishes monthly) and point your miners at the output.
+
+## How the vote is used
+
+- Each block, miners with a configured basket include their vote in the coinbase transaction.
+- Per epoch (900 blocks mainnet, 10 testnet), votes are aggregated: per category a trimmed median (25% tail trimmed), requiring at least 351 miners.
+- A category counts as "fresh" for the quarter only if at least 3 of the 6 categories cleared their quorum that epoch.
+- Quarterly (18 epochs), the index re-bases HEAT's hearthstone, but only if at least 3 of the 6 categories were fresh in the quarter. The drift per quarter is capped at 5.04%.
+- The hearthstone is anchored to the Day-0 basket, not compounded: `hearthstone = 158¢ × index ÷ 100`.
+
+## Common mistakes
+
+| Mistake | What happens | Fix |
+|---|---|---|
+| Typing power as cents (`--fci-power 19.6`) | Vote stores `1960` milli-USD → reads as $1.96/kWh, ten times reality | Type the decimal dollars: `0.196` |
+| Typing groceries as dollars (`--fci-milk 4.1`) | Vote stores `410` cents → $4.10, close but truncated | Type the full decimal; the daemon rounds |
+| Mixing currencies without `--fci-usd-rate` | Foreign price treated as USD | Set `--fci-currency` and `--fci-usd-rate` |
+| Expecting the oracle to hot-reload | Vote stays stale until restart | Restart `fuegod` after updating the file |
+| Editing only 5 of 6 categories | Vote carries `mask=0x3e`; index still computes from 5 | Either accept partial votes or supply all 6 |
+
+## Where the numbers live
+
+The baselines, weights, and limits are constants in `src/CryptoNoteConfig.h` (`FCI_BASELINE_*`, `FCI_WEIGHT_*`, `FCI_MIN_*`). The consensus logic is in `src/CryptoNoteCore/FuegoCostIndex.{h,cpp}`. If a value in this document ever disagrees with the code, the code wins.

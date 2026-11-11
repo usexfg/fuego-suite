@@ -19,7 +19,7 @@ cmake-release:
 build-release: cmake-release
 	cd build/release && $(MAKE)
 
-build-static: 
+build-static:
 	mkdir -p build/static
 	cd build/static && cmake ../..
 	cd build/static && $(MAKE) SHARED=0 CC='gcc -static'
@@ -27,13 +27,65 @@ build-static:
 test-release: build-release
 	cd build/release && $(MAKE) test
 
-all-release: build-release
+all-release: build-release build-tui build-swapxfg build-dashboard
+
+# Build TUI separately if Go is available
+build-tui:
+	@if command -v go >/dev/null 2>&1; then \
+		echo "Building Fuego TUI"; \
+		cd tui && go mod tidy && go build -o fuego-tui && \
+		mkdir -p ../build/release/src && \
+		cp fuego-tui ../build/release/src/ && \
+		chmod +x ../build/release/src/fuego-tui && \
+		echo "Fuego TUI built successfully"; \
+	else \
+		echo "Go is not installed. Skipping TUI build."; \
+	fi
+
+# Build swapxfg separately if Go is available
+build-swapxfg:
+	@if command -v go >/dev/null 2>&1; then \
+		echo "Building swapxfg"; \
+		cd swapxfg && go mod tidy && go build -o swapxfg . && \
+		mkdir -p ../build/release/bin && \
+		cp swapxfg ../build/release/bin/ && \
+		chmod +x ../build/release/bin/swapxfg && \
+		echo "swapxfg built successfully"; \
+	else \
+		echo "Go is not installed. Skipping swapxfg build."; \
+	fi
+
+# Build dashboard
+build-dashboard:
+	@if command -v go >/dev/null 2>&1; then \
+		echo "Building Fuego Dashboard"; \
+		cd dashboard && go mod tidy && go build -o fuego-dashboard . && \
+		mkdir -p ../build/release/bin && \
+		cp fuego-dashboard ../build/release/bin/ && \
+		rm -rf ../build/release/bin/static && \
+		cp -r static ../build/release/bin/static && \
+		chmod +x ../build/release/bin/fuego-dashboard && \
+		echo "Fuego Dashboard built successfully"; \
+	else \
+		echo "Go is not installed. Skipping dashboard build."; \
+	fi
+
+test-dynamic-supply:
+	g++ -std=c++17 -o simple_dynamic_supply_test simple_dynamic_supply_test.cpp
+	./simple_dynamic_supply_test
+
+build-with-tests:
+	mkdir -p build/test
+	cd build/test && cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DCMAKE_POLICY_DEFAULT_CMP0167=OLD ../..
+	cd build/test && $(MAKE)
 
 clean:
 	rm -rf build
+	rm -f simple_dynamic_supply_test
+	rm -f tui/build/fuego-tui
+	rm -f dashboard/fuego-dashboard
 
 tags:
 	ctags -R --sort=1 --c++-kinds=+p --fields=+iaS --extra=+q --language-force=C++ src contrib tests/gtest
 
-.PHONY: all cmake-debug build-debug test-debug all-debug cmake-release build-release test-release all-release clean tags
-
+.PHONY: all cmake-debug build-debug test-debug all-debug cmake-release build-release test-release all-release build-tui build-swapxfg build-dashboard clean tags

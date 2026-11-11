@@ -1,0 +1,83 @@
+# swapxfg — Fuego Cross-Chain Swap Terminal
+
+> **Maintenance status: frozen compatibility UI.** Do not add new chain
+> definitions or swap protocol behavior here. `xfg-swapd` owns execution and
+> the dashboard consumes its `list_chains`/status catalog for the human-facing
+> workflow. Keep this TUI buildable until dashboard parity is proven, then
+> remove it in a separate migration.
+
+Unified TUI for atomic swaps using adaptor signatures on the XFG side.
+
+## Features
+
+- **Multi-chain support**: SOL, ETH, XMR, BCH
+- **Adaptor signatures**: Privacy-preserving atomic swaps
+- **CD market**: Confidential Deposits trading
+- **Orderbook & charts**: Real-time market data
+- **Browser bridges**: MetaMask (ETH), Phantom (SOL)
+- **Interactive setup**: Wizard prompts for all settings when run without flags
+
+## Usage
+
+```bash
+# Interactive setup — prompts for daemon, wallet, pair, etc.
+./swapxfg
+
+# Skip wizard with any flag
+./swapxfg --daemon http://127.0.0.1:18180
+
+# Testnet
+./swapxfg --testnet
+
+# With wallet (enables swap signing)
+./swapxfg -d http://127.0.0.1:18180 -w http://127.0.0.1:18282
+
+# With ETH bridge (MetaMask)
+./swapxfg --bridge-port 8545
+
+# Force skip interactive even with no flags
+./swapxfg -y
+```
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `pair <name>` | Switch pair (sol, eth, xmr, bch, cd) |
+| `c` | Jump to CD market |
+| `connect metamask` | Open ETH bridge |
+| `connect phantom` | Open SOL bridge |
+| `connect bch` | Connect Electron Cash |
+| `swap initiate <amt> <peer_key> <pair>` | Start atomic swap |
+| `initiate <alias> <amt> <pair>` | Initiate via alias |
+| `help` | Show all commands |
+
+## Architecture
+
+```
+swapxfg/
+├── main.go         # CLI entry (interactive by default)
+└── app/
+    ├── app.go      # Main run loop
+    ├── interactive.go  # Interactive config wizard (bubbletea)
+    ├── tui.go      # Bubble Tea UI
+    ├── rpc.go      # Fuego RPC client
+    ├── wallet.go   # Wallet RPC client
+    ├── bridge.go   # MetaMask/Phantom bridge
+    ├── pairs.go    # Pair definitions
+    └── cd_*.go     # CD market components
+```
+
+## Protocol
+
+Swaps use adaptor signatures on the XFG side:
+- **Musig2** for 2-of-2 escrow
+- **DLEQ proofs** for adaptor point verification
+- **HTLC** on counterparty chains (ETH Solidity, BCH script, SOL program)
+
+## Build
+
+```bash
+cd swapxfg
+go build -o swapxfg .
+```

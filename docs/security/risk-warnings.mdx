@@ -1,0 +1,74 @@
+---
+title: "Risk warnings"
+description: "Risks of HEAT CDs, swapXFG, Hearth LP, and HEAT minting."
+keywords: ["risk", "warning", "HEAT CD", "swap risk", "impermanent loss", "mint risk", "fuego"]
+---
+
+## HEAT Certificates of Deposit (CDs)
+
+CDs lock **HEAT**, not XFG. You must [mint HEAT](/features/heat/mint-heat) first (`mintHeatV10`), then open a term-locked HEAT CD.
+
+<Warning>
+  CD yield is variable and not guaranteed. Interest depends on protocol fee volume (swapXFG atomic swaps and Hearth trades). Low activity periods can mean very low or zero yield.
+</Warning>
+
+**Lock-up risk.** Your **HEAT** is inaccessible until the maturity height. You cannot withdraw early. Liquidity before maturity requires [transferring the CD](/features/commitment-deposits/transferring-deposits), typically at a negotiated discount.
+
+**Interest rate risk.** You lock a term, not a fixed APY. If fee volume falls after you lock, you earn less than expected.
+
+**Consensus risk.** CD rules are enforced by Fuego consensus. A consensus bug could affect deposits. Rules are open source — review them before locking significant amounts.
+
+**Wrong model.** There is no current product path that locks **XFG** as a CD. COLD / Ember_Heat / “XFG deposit” models are removed.
+
+---
+
+## swapXFG (atomic swaps)
+
+**Counterparty stall.** If the counterparty goes offline mid-swap, wait for the timelock, then refund. Funds are delayed, not forfeited, if you follow the refund path.
+
+**Timelock duration.** Depends on the counterparty chain and daemon config. Check your pair’s docs before large swaps.
+
+**No on-protocol price protection.** You and the counterparty agree amount/rate off-chain (or via offers). Market moves between agreement and completion do not auto-adjust the deal.
+
+**Fee.** Completed XFG-side swaps charge **1%**, routed **80% CD yield / 20% Bonus Vault** from v11 (`CryptoNoteConfig.h`); pre-v11 blocks replay their 69/11/20 split.
+
+---
+
+## Hearth liquidity
+
+Hearth is the on-chain **XFG/HEAT** market: one pool inventory quoted as depth-band makers in the call auction and as a constant-product curve for swaps and the backstop. Protocol trade fee is **1%** (`HEARTH_FEE_BPS = 100`), **30% CD yield / 70% maker rebate** at v11 (flipping to 70/30 at v12). LPs earn pool P&L plus the maker share when the pool is the maker.
+
+<Warning>
+  Providing Hearth liquidity carries impermanent loss risk. If the XFG/HEAT pool price moves sharply while you are an LP, you may withdraw less value than you deposited, even after LP fee income.
+</Warning>
+
+**Impermanent loss.** Inherent to AMM-style inventory. Large adverse moves can dominate spread income. Do not treat the old “0.3% LP fee” figure as Hearth’s protocol trade fee — that number is **not** `HEARTH_FEE_BPS`.
+
+**Consensus risk.** Pool mechanics are on-chain. Review [How Hearth works](/features/hearth/how-hearth-works) before large LP deposits.
+
+---
+
+## HEAT mint (burn XFG)
+
+<Danger>
+  Minting HEAT **burns XFG permanently**. Burned XFG is not withdrawable as XFG. There is no recovery of the burned principal.
+</Danger>
+
+**Permanent reduction of XFG.** You exchange XFG for HEAT at Hearth TWAP pricing via **`mintHeatV10`**. HEAT value and future CD yield are not a guaranteed recovery of burned XFG market value.
+
+**Wallet backup.** Keep seed + wallet file backups before minting and before opening CDs. Deposit secrets and keys live in the wallet.
+
+**Historical note (not the primary path).** Older STARK / off-chain claim flows and COLDAO-era language are **deprecated product narrative**. Do not treat “generate a STARK proof to claim HEAT elsewhere” as the current default mint path.
+
+---
+
+## General
+
+**No reversals.** Confirmed sends, mints, CD ops, Hearth trades, and swaps are irreversible.
+
+**Privacy is probabilistic.** Ring signatures and commitments provide strong privacy, not absolute anonymity under all behavioral analysis.
+
+
+## Known issue — block-serving RPC hang
+
+Every daemon binary tested — including the month-old Jul-10 daemon on port 18180, while idle and fully synced — hangs on `queryblockslite.bin`, `queryblocks.bin`, and `getblocks.bin`. This blocks live sync/send end-to-end testing only. All protocol verification is performed against the C++ production code directly (unit and integration harnesses), not live RPC.

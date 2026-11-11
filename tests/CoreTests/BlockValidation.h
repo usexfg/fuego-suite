@@ -14,7 +14,7 @@ public:
   CheckBlockPurged(size_t invalidBlockIdx, uint8_t blockMajorVersion) :
     m_invalidBlockIdx(invalidBlockIdx),
     m_blockMajorVersion(blockMajorVersion) {
-    assert(blockMajorVersion == CryptoNote::BLOCK_MAJOR_VERSION_1 || blockMajorVersion == CryptoNote::BLOCK_MAJOR_VERSION_2);
+    assert(blockMajorVersion == CryptoNote::BLOCK_MAJOR_VERSION_1 || blockMajorVersion == CryptoNote::BLOCK_MAJOR_VERSION_2 || blockMajorVersion == CryptoNote::BLOCK_MAJOR_VERSION_3 || blockMajorVersion == CryptoNote::BLOCK_MAJOR_VERSION_4 || blockMajorVersion == CryptoNote::BLOCK_MAJOR_VERSION_5 || blockMajorVersion == CryptoNote::BLOCK_MAJOR_VERSION_6 || blockMajorVersion == CryptoNote::BLOCK_MAJOR_VERSION_7 || blockMajorVersion == CryptoNote::BLOCK_MAJOR_VERSION_8 || blockMajorVersion == CryptoNote::BLOCK_MAJOR_VERSION_9 || blockMajorVersion == CryptoNote::BLOCK_MAJOR_VERSION_10);
 
     CryptoNote::CurrencyBuilder currencyBuilder(m_logger);
     currencyBuilder.upgradeHeightV2(blockMajorVersion == CryptoNote::BLOCK_MAJOR_VERSION_1 ? UNDEF_HEIGHT : UINT64_C(0));
@@ -57,7 +57,7 @@ struct CheckBlockAccepted : public test_chain_unit_base {
   CheckBlockAccepted(size_t expectedBlockchainHeight, uint8_t blockMajorVersion) :
     m_expectedBlockchainHeight(expectedBlockchainHeight),
     m_blockMajorVersion(blockMajorVersion) {
-    assert(blockMajorVersion == CryptoNote::BLOCK_MAJOR_VERSION_1 || blockMajorVersion == CryptoNote::BLOCK_MAJOR_VERSION_2);
+    assert(blockMajorVersion == CryptoNote::BLOCK_MAJOR_VERSION_1 || blockMajorVersion == CryptoNote::BLOCK_MAJOR_VERSION_2 || blockMajorVersion == CryptoNote::BLOCK_MAJOR_VERSION_3 || blockMajorVersion == CryptoNote::BLOCK_MAJOR_VERSION_4 || blockMajorVersion == CryptoNote::BLOCK_MAJOR_VERSION_5 || blockMajorVersion == CryptoNote::BLOCK_MAJOR_VERSION_6 || blockMajorVersion == CryptoNote::BLOCK_MAJOR_VERSION_7 || blockMajorVersion == CryptoNote::BLOCK_MAJOR_VERSION_8 || blockMajorVersion == CryptoNote::BLOCK_MAJOR_VERSION_9 || blockMajorVersion == CryptoNote::BLOCK_MAJOR_VERSION_10);
 
     CryptoNote::CurrencyBuilder currencyBuilder(m_logger);
     currencyBuilder.upgradeHeightV2(blockMajorVersion == CryptoNote::BLOCK_MAJOR_VERSION_1 ? UNDEF_HEIGHT : UINT64_C(0));

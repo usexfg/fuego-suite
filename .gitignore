@@ -1,8 +1,114 @@
+# Rust build artifacts
+target/
+**/*.rs.bk
+
+# Cargo
+Cargo.lock
+
+# IDEs and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+# Claude Code: ignore local noise, keep shared automations committable
+.claude/*
+!.claude/settings.json
+!.claude/skills/
+!.claude/skills/**
+!.claude/agents/
+!.claude/agents/**
+!.claude/hooks/
+!.claude/hooks/**
+.claude/settings.local.json
+.opencode/
+.zed/
+.serena/
+/usexfg-website
+/digm-platform
+/CMakeFiles
+/monerotestnet
+/testnet-data
+/testnet-data2
+
+# OS files
 .DS_Store
+Thumbs.db
+
+# Fuego clutter
+graphify-out/
+full_diff.txt
+changed_files.txt
+
+
+.ori/
+src_changed.txt
+test_specialist_report.txt
+*.log
+
+# Backup files
+*.bak
+*.backup
+*.tmp
+.dsp
+
+__pycache__
+fuego_blockchain_specialist.py
+fuego_specialist_config.json
+rag_system.py
+payment_gate.log
+mcp_server.py
+codebase_mapper.py
+analyze_fuego_code.py
+AGENTS.md
+contrib/
+
+contracts/*
+!contracts/point-timelock/
+mcp/
+sim_out/
+fuego_rag/
+
+/CMakeFiles/
+/src/CMakeFiles/*
 /build
-/tags
-.idea
-.ycm_extra_conf.py
-.ycm_extra_conf.pyc
-Release
-Debug
+/build-check/
+/build_swap_daemon/
+/xfg-stark-v3
+__pycache__/
+*.pyc
+build-test/
+.worktrees/
+
+# Built binaries / local compile outputs (rebuild from source)
+dashboard/fuego-dashboard
+dashboard/fuego-dashboard.exe
+swapxfg/swapxfg
+swapxfg/swapxfg.exe
+swapxfg/build/
+tui/fuego-tui
+tui/fuego-tui.exe
+tui-testnet/fuego-tui
+tui-testnet/fuego-tui.exe
+**/fuego-dashboard
+**/fuego-dashboard.exe
+# Common CMake/Make install bins at repo root
+/fuego
+/fuegod
+/fire_wallet
+/simplewallet
+/xfg-swapd
+/connectivity_tool
+/miner
+*.o
+*.a
+*.dylib
+*.so
+*.dll
+# Local agent / brainstorm noise
+.superpowers/
+
+# Local build dirs
+/build_check/
+/build_presig/
+dashboard/dashboard

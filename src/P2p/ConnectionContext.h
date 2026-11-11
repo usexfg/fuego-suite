@@ -15,6 +15,7 @@
 #include <boost/uuid/uuid.hpp>
 #include "Common/StringTools.h"
 #include "P2p/PendingLiteBlock.h"
+#include "P2p/NetworkAddressTypes.h"
 #include "crypto/hash.h"
 
 namespace CryptoNote {
@@ -26,6 +27,8 @@ struct CryptoNoteConnectionContext {
   uint32_t m_remote_port = 0;
   bool m_is_income = false;
   time_t m_started = 0;
+  NetworkZone m_zone = NetworkZone::Public;
+  network_address m_remote_address;
 
   enum state {
     state_befor_handshake = 0, //default state

@@ -1,27 +1,26 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
+// Copyright (c) 2017-2026 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it
+// Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You can redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #pragma once
 
-#include "Common/StringTools.h"
-#include "crypto/crypto.h"
-#include "crypto/hash.h"
-#include "CryptoNoteCore/CryptoNoteBasic.h"
+#include "../Common/StringTools.h"
+#include "../crypto/crypto.h"
+#include "../crypto/hash.h"
+#include "CryptoNoteBasic.h"
 
 
 namespace CryptoNote {
@@ -29,7 +28,7 @@ namespace CryptoNote {
   /*                                                                      */
   /************************************************************************/
   template<class t_array>
-  struct array_hasher: std::unary_function<t_array&, size_t>
+  struct array_hasher
   {
     size_t operator()(const t_array& val) const
     {
@@ -40,9 +39,10 @@ namespace CryptoNote {
   /************************************************************************/
   /* CryptoNote helper functions                                          */
   /************************************************************************/
-  uint64_t getPenalizedAmount(uint64_t amount, size_t medianSize, size_t currentBlockSize);
+  uint64_t getPenalizedAmount(uint64_t amount, size_t medianSize, size_t currentBlockSize, uint8_t blockMajorVersion = 0);
   std::string getAccountAddressAsStr(uint64_t prefix, const AccountPublicAddress& adr);
   bool parseAccountAddressString(uint64_t& prefix, AccountPublicAddress& adr, const std::string& str);
+  bool isSubAddressStr(const std::string& str, uint64_t subaddrPrefix);
   bool is_coinbase(const Transaction& tx);
 
   bool operator ==(const CryptoNote::Transaction& a, const CryptoNote::Transaction& b);

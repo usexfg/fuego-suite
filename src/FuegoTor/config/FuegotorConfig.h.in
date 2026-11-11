@@ -1,0 +1,41 @@
+#ifndef FUEGOTOR_CONFIG_H
+#define FUEGOTOR_CONFIG_H
+
+/* FuegoTor Configuration Options */
+
+/* FuegoTor integration enabled */
+#cmakedefine ENABLE_FUEGOTOR @ENABLE_FUEGOTOR@
+
+/* libtor integration enabled */
+#cmakedefine ENABLE_TOR_LIB @ENABLE_TOR_LIB@
+
+/* Tor hidden service support enabled */
+#cmakedefine ENABLE_HIDDEN_SERVICE @ENABLE_HIDDEN_SERVICE@
+
+/* Tor control protocol enabled */
+#cmakedefine ENABLE_TOR_CONTROL @ENABLE_TOR_CONTROL@
+
+/* libtor library found */
+#cmakedefine HAVE_TOR_LIB @HAVE_TOR_LIB@
+
+/* OpenSSL library found */
+#cmakedefine HAVE_OPENSSL
+
+/* libevent library found */
+#cmakedefine HAVE_EVENT
+
+/* Platform-specific defines */
+#ifdef _WIN32
+#define FUEGOTOR_PLATFORM_WINDOWS
+#elif defined(__APPLE__)
+#define FUEGOTOR_PLATFORM_MACOS
+#else
+#define FUEGOTOR_PLATFORM_LINUX
+#endif
+
+/* Version information */
+#define FUEGOTOR_VERSION_MAJOR @PROJECT_VERSION_MAJOR@
+#define FUEGOTOR_VERSION_MINOR @PROJECT_VERSION_MINOR@
+#define FUEGOTOR_VERSION_PATCH @PROJECT_VERSION_PATCH@
+
+#endif /* FUEGOTOR_CONFIG_H */

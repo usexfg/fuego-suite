@@ -1,20 +1,19 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
-// Copyright (c) 2018-2019 Conceal Network & Conceal Devs
+// Copyright (c) 2017-2026 Fuego Developers
 // Copyright (c) 2016-2019 The Karbowanec developers
+// Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free & open source software distributed in the hope 
-// that it will be useful, but WITHOUT ANY WARRANTY; without even
+// Fuego is free & open source software distributed in the hope
+// it will be useful, but WITHOUT ANY WARRANTY; without even an
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You may redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #pragma once
 
@@ -24,12 +23,23 @@
 #include <type_traits>
 #include <vector>
 
-#include <CryptoTypes.h>
+#include "../../include/CryptoTypes.h"
 
 #include "generic-ops.h"
 #include "hash.h"
+#include "Common/StringTools.h"
 
 namespace Crypto {
+
+template<typename T>
+std::string pointToString(const T& point) {
+  return Common::podToHex(point);
+}
+
+template<typename T>
+std::string signatureToString(const T& signature) {
+  return Common::podToHex(signature);
+}
 
   extern "C" {
 #include "random.h"
@@ -86,7 +96,7 @@ namespace Crypto {
 	  static void generate_tx_proof(const Hash &, const PublicKey &, const PublicKey &, const PublicKey &, const SecretKey &, Signature &);
 	friend void generate_tx_proof(const Hash &, const PublicKey &, const PublicKey &, const PublicKey &, const SecretKey &, Signature &);
 	static bool check_tx_proof(const Hash &, const PublicKey &, const PublicKey &, const PublicKey &, const Signature &);
-	friend bool check_tx_proof(const Hash &, const PublicKey &, const PublicKey &, const PublicKey &, const Signature &);      
+	friend bool check_tx_proof(const Hash &, const PublicKey &, const PublicKey &, const PublicKey &, const Signature &);
 
     friend void generate_ring_signature(const Hash &, const KeyImage &,
       const PublicKey *const *, size_t, const SecretKey &, size_t, Signature *);
@@ -124,11 +134,11 @@ namespace Crypto {
       return (std::numeric_limits<T>::max)();
     }
 #else
-    static T(min)() {
+    constexpr static T(min)() {
       return (std::numeric_limits<T>::min)();
     }
 
-    static T(max)() {
+    constexpr static T(max)() {
       return (std::numeric_limits<T>::max)();
     }
 #endif
@@ -229,7 +239,7 @@ namespace Crypto {
   }
   inline bool check_tx_proof(const Hash &prefix_hash, const PublicKey &R, const PublicKey &A, const PublicKey &D, const Signature &sig) {
     return crypto_ops::check_tx_proof(prefix_hash, R, A, D, sig);
-  }	
+  }
 
   /* To send money to a key:
    * * The sender generates an ephemeral key and includes it in transaction output.

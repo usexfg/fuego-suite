@@ -5,7 +5,7 @@
 
 #include "gtest/gtest.h"
 
-#include "Common/Math.h"
+#include "Common/MathUtils.h"
 #include "CryptoNoteCore/CryptoNoteBasicImpl.h"
 #include "CryptoNoteCore/Currency.h"
 #include "Logging/ConsoleLogger.h"

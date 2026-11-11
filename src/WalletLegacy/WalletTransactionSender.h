@@ -1,22 +1,24 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
+// Copyright (c) 2017-2022 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it
+// Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You can redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #pragma once
+
+#include <array>
+#include <map>
 
 #include "CryptoNoteCore/Account.h"
 #include "CryptoNoteCore/Currency.h"
@@ -40,6 +42,10 @@ public:
 
   void stop();
 
+  // Register a sub-address so its outputs are eligible as transaction inputs
+  // AccountKeys MUST contain sub spend secret key (b_ij = b + m)
+  void addSubAddress(const AccountKeys& subKeys, ITransfersContainer& subContainer);
+
   std::unique_ptr<WalletRequest> makeSendRequest(Crypto::SecretKey& transactionSK,
                                                  bool optimize,
                                                  TransactionId& transactionId,
@@ -57,31 +63,211 @@ public:
                                                     uint64_t term,
                                                     uint64_t amount,
                                                     uint64_t fee,
-                                                    uint64_t mixIn = 0);
+                                                    uint64_t mixIn);
+  std::unique_ptr<WalletRequest> makeDepositRequest(TransactionId& transactionId,
+                                                    std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                    uint64_t term,
+                                                    uint64_t amount,
+                                                    uint64_t fee,
+                                                    const std::string& extra,
+                                                    uint64_t mixIn);
+
+  std::unique_ptr<WalletRequest> makeHeatMintV10Request(TransactionId& transactionId,
+                                                         std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                         uint64_t xfgBurned,
+                                                         uint64_t heatMinted,
+                                                         uint64_t fee,
+                                                         uint64_t mixIn);
+
+  std::unique_ptr<WalletRequest> makeLpAddV10Request(TransactionId& transactionId,
+                                                       std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                       uint64_t amountXfg,
+                                                       uint64_t amountHeat,
+                                                       uint64_t fee,
+                                                       uint64_t mixIn);
+
+  std::unique_ptr<WalletRequest> makeLpRemoveV10Request(TransactionId& transactionId,
+                                                         std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                         uint64_t lpShares,
+                                                         uint64_t minXfg,
+                                                         uint64_t minHeat,
+                                                         uint64_t fee,
+                                                          uint64_t mixIn);
+
+  std::unique_ptr<WalletRequest> makeLpClaimFeesRequest(TransactionId& transactionId,
+                                                         std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                         uint64_t lpShares,
+                                                         uint64_t minXfg,
+                                                         uint64_t minHeat,
+                                                         uint64_t fee,
+                                                         uint64_t mixIn);
+
+  std::unique_ptr<WalletRequest> makeAmmSwapV10Request(TransactionId& transactionId,
+                                                        std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                        uint8_t direction,
+                                                        uint64_t inputAmount,
+                                                        uint64_t outputAmount,
+                                                        uint64_t minOutput,
+                                                        uint64_t fee,
+                                                        uint64_t mixIn);
+
+  std::unique_ptr<WalletRequest> makeHeatDepositV10Request(TransactionId& transactionId,
+                                                            std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                            uint64_t amount,
+                                                            uint32_t termEpochs,
+                                                            uint64_t bankingFee,
+                                                            uint64_t fee,
+                                                             uint64_t mixIn);
+
+  std::unique_ptr<WalletRequest> makeHeatTransferV10Request(TransactionId& transactionId,
+                                                              std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                              const AccountPublicAddress& recipient,
+                                                              uint64_t amount,
+                                                              uint64_t fee,
+                                                              uint64_t mixIn,
+                                                              bool isSubaddress = false);
+
+  // v11 Orderbook
+  std::unique_ptr<WalletRequest> makePlaceOrderV13Request(TransactionId& transactionId,
+                                                           std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                           uint8_t side, uint64_t amount, uint64_t price,
+                                                           uint32_t expiration, uint64_t fee, uint64_t mixIn);
+  std::unique_ptr<WalletRequest> makeCancelOrderV13Request(TransactionId& transactionId,
+                                                            std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                            const Crypto::Hash& orderId, uint64_t fee, uint64_t mixIn);
+  std::unique_ptr<WalletRequest> makeMarketBuyV13Request(TransactionId& transactionId,
+                                                          std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                          uint64_t xfgWanted, uint64_t maxHeatCost,
+                                                          uint64_t fee, uint64_t mixIn);
+  std::unique_ptr<WalletRequest> makeMarketSellV13Request(TransactionId& transactionId,
+                                                           std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                           uint64_t xfgToSell, uint64_t minHeatReceive,
+                                                           uint64_t fee, uint64_t mixIn);
 
   std::unique_ptr<WalletRequest> makeWithdrawDepositRequest(TransactionId& transactionId,
-                                                            std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
-                                                            const std::vector<DepositId>& depositIds,
-                                                            uint64_t fee);
-                                                            
+                                                             std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                             const std::vector<DepositId>& depositIds,
+                                                             uint64_t fee);
+  std::unique_ptr<WalletRequest> makeDonateToTreasuryRequest(
+      TransactionId &transactionId,
+      std::deque<std::unique_ptr<WalletLegacyEvent>> &events,
+      uint64_t amount,
+      uint64_t fee,
+      uint64_t mixIn,
+      Crypto::SecretKey &transactionSK);
+
+  // REMOVED: makeWithdrawLegacyBondRequest — no bond claims exist.
+
 std::shared_ptr<WalletRequest> makeSendFusionRequest(TransactionId& transactionId, std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
                                                      const std::vector<WalletLegacyTransfer>& transfers, const std::list<TransactionOutputInformation>& fusionInputs,
                                                      uint64_t fee, const std::string& extra = "", uint64_t mixIn = 0, uint64_t unlockTimestamp = 0);
 
 private:
+  // Single creation entry point for commitment outputs, mirroring
+  // deriveSelfCommitmentKey / deriveRecipientCommitmentKey in WalletGreen.
+  Crypto::PublicKey deriveSelfCommitmentKey(const ITransaction& tx, size_t outputIndex);
+  Crypto::PublicKey deriveRecipientCommitmentKey(const ITransaction& tx, size_t outputIndex,
+                                                  const AccountPublicAddress& recipient);
+  Crypto::PublicKey deriveCommitmentOutputKeyFor(const ITransaction& tx, size_t outputIndex,
+                                                  const Crypto::PublicKey& recipientViewPublicKey,
+                                                  const Crypto::PublicKey& recipientSpendPublicKey);
+  // Signing side: owner-bound first, legacy fallback for pre-v11 outputs,
+  // rejection if neither reproduces the published key.
+  void resolveCommitmentSpendKey(const Crypto::KeyDerivation& ecdh, size_t outputIndex,
+                                 const Crypto::PublicKey& commitKey,
+                                 const Crypto::SecretKey& recipientSpendSecret,
+                                 KeyPair& outKeyPair, Crypto::KeyImage& outKeyImage);
   std::unique_ptr<WalletRequest> makeGetRandomOutsRequest(std::shared_ptr<SendTransactionContext>&& context, bool isMultisigTransaction, Crypto::SecretKey& transactionSK);
+  std::unique_ptr<WalletRequest> makeGetRandomCommitmentOutsRequest(std::shared_ptr<SendTransactionContext>&& context,
+                                                                     uint64_t amount,
+                                                                     const std::vector<DepositId>& depositIds);
   std::unique_ptr<WalletRequest> doSendTransaction(std::shared_ptr<SendTransactionContext>&& context, std::deque<std::unique_ptr<WalletLegacyEvent>>& events, Crypto::SecretKey& transactionSK);
   std::unique_ptr<WalletRequest> doSendMultisigTransaction(std::shared_ptr<SendTransactionContext>&& context, std::deque<std::unique_ptr<WalletLegacyEvent>>& events);
   std::unique_ptr<WalletRequest> doSendDepositWithdrawTransaction(std::shared_ptr<SendTransactionContext>&& context,
                                                                   std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
                                                                   const std::vector<DepositId>& depositIds);
-
+  // REMOVED: doSendLegacyBondWithdrawTransaction — no bond claims exist.
+  std::unique_ptr<WalletRequest> doSendCommitmentWithdrawTransaction(std::shared_ptr<SendTransactionContext>&& context,
+                                                                     std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                                     const std::vector<DepositId>& depositIds);
+  std::unique_ptr<WalletRequest> doSendHeatMintV10Transaction(std::shared_ptr<SendTransactionContext>&& context,
+                                                               std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                               uint64_t xfgBurned,
+                                                               uint64_t heatMinted);
+  std::unique_ptr<WalletRequest> doSendAmmSwapV10Transaction(std::shared_ptr<SendTransactionContext>&& context,
+                                                              std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                              uint8_t direction,
+                                                              uint64_t inputAmount,
+                                                              uint64_t outputAmount,
+                                                               uint64_t minOutput);
+  std::unique_ptr<WalletRequest> doSendAmmSwapV10CommitmentTransaction(std::shared_ptr<SendTransactionContext>&& context,
+                                                                        std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                                        uint8_t direction,
+                                                                        uint64_t inputAmount,
+                                                                        uint64_t outputAmount,
+                                                                        uint64_t minOutput);
+  std::unique_ptr<WalletRequest> doSendLpAddV10Transaction(std::shared_ptr<SendTransactionContext>&& context,
+                                                            std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                            uint64_t amountXfg,
+                                                            uint64_t amountHeat);
+  std::unique_ptr<WalletRequest> doSendLpRemoveV10Transaction(std::shared_ptr<SendTransactionContext>&& context,
+                                                               std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                               uint64_t lpShares,
+                                                               uint64_t minXfg,
+                                                               uint64_t minHeat);
+  std::unique_ptr<WalletRequest> doSendLpClaimFeesTransaction(std::shared_ptr<SendTransactionContext>&& context,
+                                                               std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                               uint64_t lpShares,
+                                                               uint64_t minXfg,
+                                                               uint64_t minHeat);
+  std::unique_ptr<WalletRequest> doSendHeatDepositV10Transaction(std::shared_ptr<SendTransactionContext>&& context,
+                                                                  std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                                  uint64_t cdAmount,
+                                                                  uint64_t bankingFee,
+                                                                                                                                     uint32_t termEpochs);
+  std::unique_ptr<WalletRequest> doSendHeatTransferV10Transaction(std::shared_ptr<SendTransactionContext>&& context,
+                                                                   std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                                   const AccountPublicAddress& recipient,
+                                                                   uint64_t amount);
+  std::unique_ptr<WalletRequest> doSendPlaceOrderV13Transaction(std::shared_ptr<SendTransactionContext>&& context,
+                                                                  std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                                  uint8_t side, uint64_t amount, uint64_t targetPrice,
+                                                                  uint32_t expiration, const Crypto::Hash& orderId,
+                                                                  const Crypto::Hash& addressHash);
+  std::unique_ptr<WalletRequest> doSendCancelOrderV13Transaction(std::shared_ptr<SendTransactionContext>&& context,
+                                                                  std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                                  const Crypto::Hash& orderId);
+  void sendLpAddCommitmentOutsByAmount(std::shared_ptr<SendTransactionContext> context,
+                                        const std::vector<DepositId> heatIds,
+                                        std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                        std::unique_ptr<WalletRequest>& nextRequest,
+                                        std::error_code ec);
+  void sendLpRemoveCommitmentOutsByAmount(std::shared_ptr<SendTransactionContext> context,
+                                           std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                           std::unique_ptr<WalletRequest>& nextRequest,
+                                           std::error_code ec);
   void sendTransactionRandomOutsByAmount(bool isMultisigTransaction,
                                          std::shared_ptr<SendTransactionContext> context,
                                          Crypto::SecretKey& transactionSK,
                                          std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
                                          std::unique_ptr<WalletRequest>& nextRequest,
                                          std::error_code ec);
+
+  void sendCommitmentWithdrawRandomOutsByAmount(std::shared_ptr<SendTransactionContext> context,
+                                                const std::vector<DepositId> depositIds,
+                                                std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                std::unique_ptr<WalletRequest>& nextRequest,
+                                                std::error_code ec);
+
+  // OSPEAD async pipeline. shouldChainOspeadHeights populates
+  // context->ospeadHeightQueries and returns true when the caller should
+  // dispatch a WalletGetOutputsHeightsRequest. applyOspeadMaskFromHeights
+  // consumes context->ospeadHeights (populated by that request) and compacts
+  // context->outs in place. See WalletTransactionSender.cpp for the rationale
+  // behind the two-stage split (avoids deadlock from blocking on the same
+  // event loop the RPC reply dispatches on).
+  bool shouldChainOspeadHeights(std::shared_ptr<SendTransactionContext> context);
+  void applyOspeadMaskFromHeights(std::shared_ptr<SendTransactionContext> context);
 
   void prepareKeyInputs(const std::vector<TransactionOutputInformation>& selectedTransfers,
                         std::vector<COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount>& outs,
@@ -123,6 +309,17 @@ private:
 
   bool m_isStoping;
   ITransfersContainer& m_transferDetails;
+
+  // more sub-address containers for input selection
+  struct SubAddressSource {
+    AccountKeys keys;
+    ITransfersContainer* container;
+  };
+  std::vector<SubAddressSource> m_subAddressSources;
+
+  // Maps (transactionHash || outputInTransaction_LE32) → AccountKeys for sub-address outputs
+  // Used so prepareKeyInputs can attach correct signing keys to each source entry
+  std::map<std::array<uint8_t, 36>, AccountKeys> m_subAddressOutputKeys;
 
   INode& m_node; //used solely to get last known block height for calculateInterest
 };

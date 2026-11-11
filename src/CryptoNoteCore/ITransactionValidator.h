@@ -1,24 +1,23 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
+// Copyright (c) 2017-2026 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it
+// Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You can redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #pragma once
 
-#include "CryptoNoteCore/CryptoNoteBasic.h"
+#include "CryptoNoteBasic.h"
 
 namespace CryptoNote {
 
@@ -43,11 +42,16 @@ namespace CryptoNote {
   class ITransactionValidator {
   public:
     virtual ~ITransactionValidator() {}
-    
+
     virtual bool checkTransactionInputs(const CryptoNote::Transaction& tx, BlockInfo& maxUsedBlock) = 0;
     virtual bool checkTransactionInputs(const CryptoNote::Transaction& tx, BlockInfo& maxUsedBlock, BlockInfo& lastFailed) = 0;
     virtual bool haveSpentKeyImages(const CryptoNote::Transaction& tx) = 0;
     virtual bool checkTransactionSize(size_t blobSize) = 0;
+    // Checks tx against the rules of the next block and returns the fee it
+    // adds to the coinbase. v11+: the settlement rule — HEAT and LP balance
+    // exactly and the fee is the XFG surplus. Earlier: inputs minus outputs,
+    // false when outputs exceed inputs.
+    virtual bool checkTransactionSettlement(const CryptoNote::Transaction& tx, uint64_t& fee) = 0;
   };
 
 }

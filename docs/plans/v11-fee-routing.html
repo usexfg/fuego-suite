@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>v11 fee routing — current vs recommended</title>
+<style>
+  :root {
+    --ink: #1a1814;
+    --muted: #6b645c;
+    --line: #d9d2c8;
+    --paper: #f6f3ee;
+    --card: #fff;
+    --cd: #1f4d3a;
+    --maker: #8a4b12;
+    --lp: #1e3a5f;
+    --burn: #6b2d2d;
+    --warn: #8a3b12;
+    --ok: #1f4d3a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font: 15px/1.45 "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif;
+  }
+  main { max-width: 1100px; margin: 0 auto; padding: 36px 28px 64px; }
+  h1 { font-weight: 500; font-size: 28px; letter-spacing: -0.02em; margin: 0 0 6px; }
+  h2 { font-weight: 500; font-size: 18px; margin: 32px 0 10px; }
+  p { margin: 0 0 10px; }
+  .lede { color: var(--muted); max-width: 72ch; }
+  .verdict {
+    border-left: 3px solid var(--warn);
+    background: #fff;
+    padding: 12px 16px;
+    margin: 18px 0 8px;
+  }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--card);
+    border: 1px solid var(--line);
+    padding: 16px 16px 8px;
+  }
+  .panel h3 { margin: 0 0 12px; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; }
+  .flow { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+  .src {
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .bars { display: flex; height: 28px; width: 100%; overflow: hidden; }
+  .bars span { display: flex; align-items: center; justify-content: center; color: #fff; font: 11px/1 ui-monospace, Menlo, monospace; min-width: 0; }
+  .cd { background: var(--cd); }
+  .maker { background: var(--maker); }
+  .lp { background: var(--lp); }
+  .burn { background: var(--burn); }
+  .miner { background: #3d3a36; }
+  .idle { background: #b7aea3; color: #1a1814 !important; }
+  .note { font-size: 13px; color: var(--muted); margin: 4px 0 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; background: #fff; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  .no { color: var(--warn); font-weight: 600; }
+  .yes { color: var(--ok); font-weight: 600; }
+  .math {
+    font: 13px/1.5 ui-monospace, Menlo, monospace;
+    background: #fff;
+    border: 1px solid var(--line);
+    padding: 14px 16px;
+    white-space: pre-wrap;
+  }
+  footer { margin-top: 28px; font-size: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>v11 fee routing</h1>
+  <p class="lede">Live constants in <code>src/CryptoNoteConfig.h</code> and the epoch path in <code>Blockchain.cpp</code>. Treasury LP only deposits when both legs match the pool ratio. A one-sided skim that cannot pair does not become liquidity.</p>
+
+  <div class="verdict">
+    <strong>Do not ship the full package.</strong> Reverse the Hearth split. Leave mint burns 50/50. Leave the mint premium at 0. Do not raise the CD entry fee. Fund protocol LP from balanced LP deposits, not from burns plus a 0.1% HEAT skim — those legs cannot meet.
+  </div>
+
+  <h2>Where 100 units of each stream go</h2>
+  <div class="grid">
+    <section class="panel">
+      <h3>Now</h3>
+      <div class="flow">
+        <div class="src">Hearth taker fee · 1%</div>
+        <div class="bars"><span class="cd" style="width:70%">70 CD</span><span class="maker" style="width:30%">30 maker</span></div>
+        <p class="note">70% lands in <code>cdHearthFeeAccumulator</code> and is minted into CD_APY_POOL. 30% is the maker rebate; LPs get it when the pool is the counterparty.</p>
+      </div>
+      <div class="flow">
+        <div class="src">Atomic swap fee · 2% (1% + 1%)</div>
+        <div class="bars"><span class="cd" style="width:69%">69 CD</span><span class="maker" style="width:11%">11 bonus</span><span class="lp" style="width:20%">20 LP XFG</span></div>
+        <p class="note">The 20% is the only automatic XFG leg (<code>m_treasuryLpPendingXfg</code>). The 11% funds the bonus-vault floor (~0.8%/yr).</p>
+      </div>
+      <div class="flow">
+        <div class="src">HEAT mint burn</div>
+        <div class="bars"><span class="burn" style="width:50%">50 EF</span><span class="burn" style="width:50%">50 SWF</span></div>
+        <p class="note"><code>MINT_BURN_TREASURY_PCT</code> is misnamed. It credits SWF, not the LP. EF is subtracted from circulation and re-emitted in the block reward.</p>
+      </div>
+      <div class="flow">
+        <div class="src">HEAT commitment · 0.1%</div>
+        <div class="bars"><span class="miner" style="width:100%">100 miners (banking fee)</span></div>
+        <p class="note"><code>heat.amount / 1000</code> in <code>computeBankingFeesFromTransactions</code>. Not the treasury LP. Docs that send this to TreasuryFund are wrong.</p>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h3>Recommended</h3>
+      <div class="flow">
+        <div class="src">Hearth taker fee · 1% · reverse</div>
+        <div class="bars"><span class="cd" style="width:30%">30 CD</span><span class="maker" style="width:70%">70 maker / LP</span></div>
+        <p class="note">Takers pay for depth. User makers get the rebate. When the pool is the counterparty, LPs — including protocol shares — keep it inside reserves.</p>
+      </div>
+      <div class="flow">
+        <div class="src">Atomic swap fee · keep 69 / 11 / 20</div>
+        <div class="bars"><span class="cd" style="width:69%">69 CD</span><span class="maker" style="width:11%">11 bonus</span><span class="lp" style="width:20%">20 LP XFG</span></div>
+        <p class="note">Move to 80 CD / 20 bonus only after protocol LP shares exist from LP deposits. Doing it now deletes the XFG leg.</p>
+      </div>
+      <div class="flow">
+        <div class="src">HEAT mint burn · leave it</div>
+        <div class="bars"><span class="burn" style="width:50%">50 EF</span><span class="burn" style="width:50%">50 SWF</span></div>
+        <p class="note">Skimming 20% into the LP puts destroyed XFG back into circulation and cuts the emission offset. Mint premium stays 0.</p>
+      </div>
+      <div class="flow">
+        <div class="src">Protocol LP · new, on balanced deposits</div>
+        <div class="bars"><span class="lp" style="width:100%">1% of new LP shares → protocol, both legs</span></div>
+        <p class="note">The depositor already brought both assets at the pool ratio. A share skim cannot unbalance. This is the HEAT leg the 20% swap slice is waiting for.</p>
+      </div>
+    </section>
+  </div>
+
+  <h2>Why 40 / 40 / 20 burns plus a 0.1% CD fee does not make an LP</h2>
+  <div class="math">Launch ratio: 10 XFG = 1 HEAT. Treasury LP deposits only if
+  depositXfg / depositHeat = reserveXfg / reserveHeat.
+
+  Mint 1,000 HEAT → burn 10,000 XFG.
+  20% of that burn = 2,000 XFG for the LP.
+  HEAT required to pair = 2,000 / 10 = 200 HEAT.
+
+  0.1% of a 1,000 HEAT CD = 1 HEAT.
+  To pair that one mint you need 200,000 HEAT locked as CDs.
+  That is 200× the HEAT just minted. It will not happen.
+
+  Unpaired XFG sits in m_treasuryLpPendingXfg. v11 forbids cross-conversion.
+  The excess never enters the pool.</div>
+
+  <h2>Decision</h2>
+  <table>
+    <thead><tr><th>Change</th><th>Call</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td>Hearth 70 maker / 30 CD</td><td class="yes">Yes</td><td>Depth is scarce. CD yield stays on the swap stream.</td></tr>
+      <tr><td>Mint premium</td><td class="yes">Stay 0</td><td>Taxing minting shrinks the asset the rest of the system needs.</td></tr>
+      <tr><td>Burns 40 EF / 40 SWF / 20 LP</td><td class="no">No</td><td>Emission change plus an XFG leg nothing can pair.</td></tr>
+      <tr><td>Raise CD creation fee</td><td class="no">No</td><td>0.1% already goes to miners. A second cut taxes savers to fund traders. No unlock fee is correct.</td></tr>
+      <tr><td>Swaps back to 80/20</td><td class="no">Not yet</td><td>80 CD / 20 bonus deletes the only automatic XFG leg. Do it after protocol shares exist. Old 80/20 was CD/treasury, not CD/bonus.</td></tr>
+      <tr><td>1% of LP-deposit shares to protocol</td><td class="yes">Yes</td><td>Both legs arrive together. Protocol then earns the 70% maker share pro-rata when the pool fills.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Already collected — do not invent a second take</h2>
+  <table>
+    <thead><tr><th>Surface</th><th>Rate</th><th>Goes to</th></tr></thead>
+    <tbody>
+      <tr><td>Transaction fee</td><td>0.0008 XFG min</td><td>Miner coinbase</td></tr>
+      <tr><td>HEAT commitment banking fee</td><td>0.1% (<code>amount/1000</code>)</td><td>Miner coinbase</td></tr>
+      <tr><td>Alias registration</td><td>1 XFG</td><td>Dev-fund address</td></tr>
+      <tr><td>Hearth fill</td><td>1% taker</td><td>CD accumulator + maker rebate</td></tr>
+      <tr><td>Atomic swap</td><td>1% initiate + 1% claim</td><td>69 / 11 / 20</td></tr>
+      <tr><td>DIGM swap</td><td>0.3%</td><td>Separate book. Not Hearth.</td></tr>
+      <tr><td>Mint premium</td><td>0</td><td>Nowhere</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Not collected — and whether it should be</h2>
+  <table>
+    <thead><tr><th>Surface</th><th>Call</th></tr></thead>
+    <tbody>
+      <tr><td>LP add / remove</td><td class="yes">Take a share skim here. Only matched-leg source.</td></tr>
+      <tr><td>Limit place / cancel</td><td class="no">Leave free. A placement tax fights the maker rebate.</td></tr>
+      <tr><td>CD unlock / claim</td><td class="no">Leave as a normal transaction. Do not add an exit fee.</td></tr>
+      <tr><td>HEAT transfer</td><td class="no">Normal transaction fee only.</td></tr>
+      <tr><td>Direct AMM swap</td><td>Already pays the 1%. Not a gap.</td></tr>
+      <tr><td>XFG <code>TreasuryFund</code> tag</td><td>Credits SWF, not the LP XFG counter. HEAT tag credits <code>m_treasuryHeatReserve</code>. Do not document XFG donations as LP fuel.</td></tr>
+      <tr><td>69/11/20 integer dust</td><td>Open (R2-3). Dust, not a revenue stream.</td></tr>
+    </tbody>
+  </table>
+
+  <footer>Sources: CryptoNoteConfig.h HEARTH_FEE_BPS / HEARTH_CD_SHARE_PCT / SWAP_FEE_*_PCT / MINT_BURN_*_PCT; Blockchain.cpp processBlockEpochWork, bankedBurn, computeBankingFeesFromTransactions; Currency.cpp emission uses Eternal Flame as re-emittable supply. No code changed.</footer>
+</main>
+</body>
+</html>

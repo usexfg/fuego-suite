@@ -1,24 +1,25 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
+// Copyright (c) 2017-2025 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it
+// Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You can redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "P2pNode.h"
 
 #include <boost/uuid/uuid_io.hpp>
+#include <algorithm>
+#include <random>
 
 #include <System/ContextGroupTimeout.h>
 #include <System/InterruptedException.h>
@@ -202,11 +203,17 @@ void P2pNode::acceptLoop() {
   while (!m_stopRequested) {
     try {
       auto connection = m_listener.accept();
+      if (m_incomingCount >= CryptoNote::P2P_MAX_INCOMING_CONNECTIONS) {
+        logger(DEBUGGING) << "Max incoming connections (" << CryptoNote::P2P_MAX_INCOMING_CONNECTIONS << ") reached, rejecting";
+        continue;
+      }
+      ++m_incomingCount;
       auto ctx = new P2pContext(m_dispatcher, std::move(connection), true, 
         getRemoteAddress(connection), m_cfg.getTimedSyncInterval(), getGenesisPayload());
       logger(INFO) << "Incoming connection from " << ctx->getRemoteAddress();
       workingContextGroup.spawn([this, ctx] {
         preprocessIncomingConnection(ContextPtr(ctx));
+        --m_incomingCount;
       });
     } catch (InterruptedException&) {
       break;
@@ -240,7 +247,9 @@ void P2pNode::connectPeers() {
   // if white peer list is empty, get peers from seeds
   if (m_peerlist.get_white_peers_count() == 0 && !m_cfg.getSeedNodes().empty()) {
     auto seedNodes = m_cfg.getSeedNodes();
-    std::random_shuffle(seedNodes.begin(), seedNodes.end());
+    std::random_device rd;
+    std::mt19937 g(rd());
+    std::shuffle(seedNodes.begin(), seedNodes.end(), g);
     for (const auto& seed : seedNodes) {
       auto conn = tryToConnectPeer(seed);
       if (conn != nullptr && fetchPeerList(std::move(conn))) {
@@ -405,7 +414,7 @@ bool P2pNode::fetchPeerList(ContextPtr connection) {
     }
 
     if (response.node_data.network_id != request.node_data.network_id) {
-      logger(ERROR) << *connection << "COMMAND_HANDSHAKE failed, wrong network: " << response.node_data.network_id;
+      logger(Logging::ERROR) << *connection << "COMMAND_HANDSHAKE failed, wrong network: " << response.node_data.network_id;
       return false;
     }
 

@@ -1,20 +1,19 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
+// Copyright (c) 2017-2022 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it
+// Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You can redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 #pragma once
 
 #include <atomic>
@@ -28,6 +27,7 @@
 #include "CryptoNoteCore/IMinerHandler.h"
 #include "CryptoNoteCore/MinerConfig.h"
 #include "CryptoNoteCore/OnceInInterval.h"
+#include "CryptoNoteCore/TransactionExtra.h"
 
 #include <Logging/LoggerRef.h>
 
@@ -92,6 +92,11 @@ namespace CryptoNote {
     std::vector<BinaryArray> m_extra_messages;
     miner_config m_config;
     std::string m_config_folder_path;
+    // FCI basket vote — populated from MinerConfig at init(), injected into
+    // every coinbase.  present_mask == 0 means no vote is emitted.
+    TransactionExtraMinerBasketVote m_fci_basket;
+    // Paradio future-feature vote (tag 0x39); empty string means skip.
+    std::string m_paradio_vote;
     std::atomic<uint64_t> m_last_hr_merge_time;
     std::atomic<uint64_t> m_hashes;
     std::atomic<uint64_t> m_current_hash_rate;

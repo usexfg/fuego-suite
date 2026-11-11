@@ -1,0 +1,56 @@
+---
+title: "Mint HEAT"
+description: "Burn XFG to mint HEAT via mintHeatV10 and Hearth TWAP pricing."
+keywords: ["mint HEAT", "mintHeatV10", "burn XFG", "TWAP", "fuego"]
+---
+
+Minting HEAT is **step 1** of the deposit architecture. Step 2 (optional) is locking HEAT as a CD.
+
+## Prerequisites
+
+- Synced `fuegod` (or testnet daemon)
+- Wallet with spendable **XFG**
+- Hearth pool available for pricing (TWAP / spot)
+
+## Wallet path
+
+Use the wallet mint path (`mintHeatV10`), **not** `createDeposit` with a normal CD term for minting.
+
+`createDeposit(term = HEAT_TERM)` is the burn/mint term marker (`0xFFFFFFFF`). Term-locked CDs use **real epoch/block terms** and require **already-minted HEAT**.
+
+### Conceptual flow
+
+```
+Wallet: mintHeatV10(xfg_amount)
+    → burns XFG
+    → prices HEAT from Hearth TWAP
+    → credits HEAT commitment outputs to your wallet
+```
+
+CLI / TUI surfaces expose this as **Burn2Mint** / **HEAT mint** (names vary by tool). Prefer the wallet method that calls `mintHeatV10` rather than legacy `cold` commands.
+
+## Pricing
+
+| Source | Role |
+|--------|------|
+| Hearth TWAP | Preferred mint rate (XFG per HEAT, fixed-point) |
+| Hearth spot | Fallback if TWAP unavailable |
+| Legacy 10M:1 | **Display/legacy only** — not mint pricing |
+
+## After minting
+
+1. Confirm HEAT balance in the wallet.
+2. Optionally open a [HEAT CD](/features/commitment-deposits/creating-deposits).
+3. Or trade on [Hearth](/features/hearth/how-hearth-works).
+
+## Deprecated paths (do not use as primary docs)
+
+- STARK-only “burn on Fuego → claim HEAT on Ethereum” as the **only** mint story
+- COLD / Ember_Heat forever-deposits
+- Treating `convertXfgToHeat()` as mint
+
+Historical burn notes may live under deprecated folders; they are **not** the default product path.
+
+## RPC / metrics
+
+Nodes may expose HEAT metrics (e.g. `/heat_metrics`) for supply and pool-related stats. Exact RPC names depend on your build — prefer wallet mint methods over raw crafting unless you are a protocol developer.

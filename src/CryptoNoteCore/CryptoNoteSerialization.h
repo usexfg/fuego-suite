@@ -1,27 +1,26 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
+// Copyright (c) 2017-2026 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it
+// Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You can redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #pragma once
 
 #include "CryptoNoteBasic.h"
-#include "crypto/chacha8.h"
-#include "Serialization/ISerializer.h"
-#include "crypto/crypto.h"
+#include "../crypto/chacha8.h"
+#include "../Serialization/ISerializer.h"
+#include "../crypto/crypto.h"
 
 namespace Crypto {
 
@@ -33,6 +32,7 @@ bool serialize(KeyImage &keyImage, Common::StringView name, CryptoNote::ISeriali
 bool serialize(Signature& sig, Common::StringView name, CryptoNote::ISerializer& serializer);
 bool serialize(EllipticCurveScalar& ecScalar, Common::StringView name, CryptoNote::ISerializer& serializer);
 bool serialize(EllipticCurvePoint& ecPoint, Common::StringView name, CryptoNote::ISerializer& serializer);
+bool serialize(MembershipProof& proof, Common::StringView name, CryptoNote::ISerializer& serializer);
 
 }
 
@@ -49,11 +49,17 @@ void serialize(TransactionOutput& in, ISerializer& serializer);
 void serialize(BaseInput& gen, ISerializer& serializer);
 void serialize(KeyInput& key, ISerializer& serializer);
 void serialize(MultisignatureInput& multisignature, ISerializer& serializer);
-
+void serialize(TransactionInputCommitmentSpend& in, ISerializer& serializer);
+void serialize(TransactionInputUnified& in, ISerializer& serializer);
+void serialize(TransactionInputSwapEscrow& in, ISerializer& serializer);
 void serialize(TransactionOutput& output, ISerializer& serializer);
 void serialize(TransactionOutputTarget& output, ISerializer& serializer);
 void serialize(KeyOutput& key, ISerializer& serializer);
 void serialize(MultisignatureOutput& multisignature, ISerializer& serializer);
+void serialize(TransactionOutputCommitment& out, ISerializer& serializer);
+void serialize(TransactionOutputUnified& out, ISerializer& serializer);
+void serialize(TransactionOutputOrder& out, ISerializer& serializer);
+void serialize(TransactionOutputSwapEscrow& out, ISerializer& serializer);
 
 void serialize(BlockHeader& header, ISerializer& serializer);
 void serialize(Block& block, ISerializer& serializer);

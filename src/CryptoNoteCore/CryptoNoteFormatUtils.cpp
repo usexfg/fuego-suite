@@ -1,23 +1,23 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
+// Copyright (c) 2017-2025 Los Guardianes del Fuego
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it
+// Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You can redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written 
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "CryptoNoteFormatUtils.h"
 
+#include <cstdio>
 #include <set>
 #include <Logging/LoggerRef.h>
 #include <Common/BinaryArray.hpp>
@@ -36,6 +36,7 @@
 #include "Currency.h"
 
 #include "CryptoNoteConfig.h"
+#include "SubaddressTx.h"
 
 using namespace Logging;
 using namespace Crypto;
@@ -126,7 +127,8 @@ bool constructTransaction(
     in_contexts.push_back(input_generation_context_data());
     KeyPair& in_ephemeral = in_contexts.back().in_ephemeral;
     KeyImage img;
-    if (!generate_key_image_helper(sender_account_keys, src_entr.realTransactionPublicKey, src_entr.realOutputIndexInTransaction, in_ephemeral, img))
+    const AccountKeys& inputKeys = src_entr.hasCustomKeys ? src_entr.customKeys : sender_account_keys;
+    if (!generate_key_image_helper(inputKeys, src_entr.realTransactionPublicKey, src_entr.realOutputIndexInTransaction, in_ephemeral, img))
       return false;
 
     //check that derived key is equal with real output key
@@ -167,6 +169,22 @@ bool constructTransaction(
   std::vector<TransactionDestinationEntry> shuffled_dsts(destinations);
   std::sort(shuffled_dsts.begin(), shuffled_dsts.end(), [](const TransactionDestinationEntry& de1, const TransactionDestinationEntry& de2) { return de1.amount < de2.amount; });
 
+  SubaddressOutputPlan subPlan;
+  if (!planSubaddressOutputs(
+        txkey.secretKey,
+        txkey.publicKey,
+        sender_account_keys.viewSecretKey,
+        sender_account_keys.address.spendPublicKey,
+        shuffled_dsts,
+        subPlan)) {
+    logger(ERROR, BRIGHT_RED) << "Failed to plan subaddress transaction keys";
+    return false;
+  }
+  if (!applySubaddressTxExtra(tx.extra, subPlan)) {
+    logger(ERROR, BRIGHT_RED) << "Failed to write subaddress extra";
+    return false;
+  }
+
   uint64_t summary_outs_money = 0;
   //fill outputs
   size_t output_index = 0;
@@ -175,25 +193,17 @@ bool constructTransaction(
       logger(ERROR, BRIGHT_RED) << "Destination with wrong amount: " << dst_entr.amount;
       return false;
     }
-    KeyDerivation derivation;
     PublicKey out_eph_public_key;
-    bool r = generate_key_derivation(dst_entr.addr.viewPublicKey, txkey.secretKey, derivation);
-
+    bool r = derivePlannedOutputKey(
+        dst_entr,
+        subPlan,
+        sender_account_keys.viewSecretKey,
+        output_index,
+        out_eph_public_key);
     if (!(r)) {
       logger(ERROR, BRIGHT_RED)
-        << "at creation outs: failed to generate_key_derivation("
-        << dst_entr.addr.viewPublicKey << ", " << txkey.secretKey << ")";
-      return false;
-    }
-
-    r = derive_public_key(derivation, output_index,
-      dst_entr.addr.spendPublicKey,
-      out_eph_public_key);
-    if (!(r)) {
-      logger(ERROR, BRIGHT_RED)
-        << "at creation outs: failed to derive_public_key(" << derivation
-        << ", " << output_index << ", " << dst_entr.addr.spendPublicKey
-        << ")";
+        << "at creation outs: failed to derive subaddress output key at index "
+        << output_index;
       return false;
     }
 
@@ -277,7 +287,16 @@ bool get_inputs_money_amount(const Transaction& tx, uint64_t& money) {
       amount = boost::get<KeyInput>(in).amount;
     } else if (in.type() == typeid(MultisignatureInput)) {
       amount = boost::get<MultisignatureInput>(in).amount;
+    } else if (in.type() == typeid(TransactionInputCommitmentSpend)) {
+      amount = boost::get<TransactionInputCommitmentSpend>(in).amount;
+    } else if (in.type() == typeid(TransactionInputCommitmentTransfer)) {
+      amount = boost::get<TransactionInputCommitmentTransfer>(in).amount;
+    } else if (in.type() == typeid(TransactionInputSwapEscrow)) {
+      amount = boost::get<TransactionInputSwapEscrow>(in).amount;
     }
+
+    if (amount > UINT64_MAX - money)
+      return false;
 
     money += amount;
   }
@@ -298,11 +317,23 @@ uint32_t get_block_height(const Block& b) {
 bool check_inputs_types_supported(const TransactionPrefix& tx) {
   for (const auto& in : tx.inputs) {
     const auto& inputType = in.type();
-    if (inputType == typeid(MultisignatureInput)) {
+    if (inputType == typeid(MultisignatureInput) || inputType == typeid(TransactionInputCommitmentSpend)) {
       if (tx.version < TRANSACTION_VERSION_2) {
         return false;
       }
-    } else if (in.type() != typeid(KeyInput) && in.type() != typeid(MultisignatureInput)) {
+    } else if (inputType == typeid(TransactionInputCommitmentTransfer)) {
+      if (tx.version < TRANSACTION_VERSION_2) {
+        return false;
+      }
+    } else if (inputType == typeid(TransactionInputUnified)) {
+      if (tx.version < TRANSACTION_VERSION_2) {
+        return false;
+      }
+    } else if (inputType == typeid(TransactionInputSwapEscrow)) {
+      if (tx.version < TRANSACTION_VERSION_2) {
+        return false;
+      }
+    } else if (inputType != typeid(KeyInput) && inputType != typeid(BaseInput)) {
       return false;
     }
   }
@@ -347,6 +378,68 @@ bool check_outs_valid(const TransactionPrefix& tx, std::string* error) {
           return false;
         }
       }
+    } else if (out.target.type() == typeid(TransactionOutputCommitment)) {
+      if (tx.version < TRANSACTION_VERSION_2) {
+        if (error) {
+          *error = "Transaction contains commitment output but its version is less than 2";
+        }
+        return false;
+      }
+      const TransactionOutputCommitment& commitment = ::boost::get<TransactionOutputCommitment>(out.target);
+      if (!check_key(commitment.commitKey)) {
+        if (error) {
+          *error = "Commitment output with invalid commit key";
+        }
+        return false;
+      }
+      if (out.amount == 0) {
+        if (error) {
+          *error = "Commitment output amount is zero";
+        }
+        return false;
+      }
+      if (commitment.term != parameters::HEAT_TERM &&
+          commitment.term != parameters::DEPOSIT_TERM_LP &&
+          commitment.term != parameters::DEPOSIT_TERM_POOL_XFG &&
+          commitment.term != parameters::DEPOSIT_TERM_POOL_HEAT &&
+          commitment.term != parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG &&
+          (commitment.term < parameters::DEPOSIT_MIN_TERM ||
+           commitment.term > parameters::DEPOSIT_MAX_TERM)) {
+        if (error) {
+          *error = "Commitment output has invalid term";
+        }
+        return false;
+      }
+    } else if (out.target.type() == typeid(TransactionOutputSwapEscrow)) {
+      if (tx.version < TRANSACTION_VERSION_2) {
+        *error = "Swap escrow output in a version-1 transaction";
+        return false;
+      }
+      const TransactionOutputSwapEscrow& escrow = ::boost::get<TransactionOutputSwapEscrow>(out.target);
+      if (!check_key(escrow.claimKey)) {
+        if (error) *error = "Swap escrow output with invalid claim key";
+        return false;
+      }
+      if (!check_key(escrow.refundKey)) {
+        if (error) *error = "Swap escrow output with invalid refund key";
+        return false;
+      }
+      if (!check_key(escrow.adaptorPoint)) {
+        if (error) *error = "Swap escrow output with invalid adaptor point";
+        return false;
+      }
+      if (std::memcmp(&escrow.claimKey, &escrow.refundKey, sizeof(Crypto::PublicKey)) == 0) {
+        if (error) *error = "Swap escrow output: claim and refund keys must differ";
+        return false;
+      }
+      if (escrow.refundTimeout == 0) {
+        if (error) *error = "Swap escrow output with zero refund timeout";
+        return false;
+      }
+      if (out.amount == 0) {
+        if (error) *error = "Swap escrow output with zero amount";
+        return false;
+      }
     } else {
       if (error) {
         *error = "Output with invalid type";
@@ -371,6 +464,51 @@ bool checkMultisignatureInputsDiff(const TransactionPrefix& tx) {
   return true;
 }
 
+bool checkSwapEscrowInputsDiff(const TransactionPrefix& tx) {
+  std::set<std::string> inputsUsage;
+  for (const auto& inv : tx.inputs) {
+    if (inv.type() == typeid(TransactionInputSwapEscrow)) {
+      const TransactionInputSwapEscrow& in = ::boost::get<TransactionInputSwapEscrow>(inv);
+      std::string key = Common::podToHex(in.escrowTxId);
+      key += ':';
+      key += std::to_string(in.escrowOutputIndex);
+      if (!inputsUsage.insert(key).second) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+// H-1: a transaction must not spend the same key image twice. Key-image uniqueness
+// was only ever checked against *chain* state, so an intra-transaction duplicate
+// passed validation and then failed the connect-path rollback, which erased earlier
+// inputs by type-blind boost::get and threw an uncaught boost::bad_get on the first
+// non-KeyInput element -- a remote daemon crash. Sibling of
+// checkMultisignatureInputsDiff / checkSwapEscrowInputsDiff, and deliberately
+// spans every key-image-carrying input type rather than one of them.
+bool checkKeyImagesUnique(const TransactionPrefix& tx) {
+  std::set<std::string> seen;
+  for (const auto& inv : tx.inputs) {
+    const Crypto::KeyImage* keyImage = nullptr;
+    if (const auto* in = ::boost::get<KeyInput>(&inv)) {
+      keyImage = &in->keyImage;
+    } else if (const auto* in = ::boost::get<TransactionInputCommitmentSpend>(&inv)) {
+      keyImage = &in->keyImage;
+    } else if (const auto* in = ::boost::get<TransactionInputCommitmentTransfer>(&inv)) {
+      keyImage = &in->keyImage;
+    } else if (const auto* in = ::boost::get<TransactionInputSwapEscrow>(&inv)) {
+      keyImage = &in->keyImage;
+    } else if (const auto* in = ::boost::get<TransactionInputUnified>(&inv)) {
+      keyImage = &in->keyImage;
+    }
+    if (keyImage && !seen.insert(Common::podToHex(*keyImage)).second) {
+      return false;
+    }
+  }
+  return true;
+}
+
 bool check_money_overflow(const TransactionPrefix &tx) {
   return check_inputs_overflow(tx) && check_outs_overflow(tx);
 }
@@ -385,6 +523,12 @@ bool check_inputs_overflow(const TransactionPrefix &tx) {
       amount = boost::get<KeyInput>(in).amount;
     } else if (in.type() == typeid(MultisignatureInput)) {
       amount = boost::get<MultisignatureInput>(in).amount;
+    } else if (in.type() == typeid(TransactionInputCommitmentSpend)) {
+      amount = boost::get<TransactionInputCommitmentSpend>(in).amount;
+    } else if (in.type() == typeid(TransactionInputCommitmentTransfer)) {
+      amount = boost::get<TransactionInputCommitmentTransfer>(in).amount;
+    } else if (in.type() == typeid(TransactionInputSwapEscrow)) {
+      amount = boost::get<TransactionInputSwapEscrow>(in).amount;
     }
 
     if (money > amount + money)
@@ -531,9 +675,10 @@ bool get_block_longhash(cn_context &context, const Block& b, Hash& res) {
     }
   } else {
     return false;
-  }
+  }     // original CryptoNight (0) until v5, anti-ASIC CNv7 var(1), CNv8(2) from v6 thru CNupx/2
   const int cn_variant = b.majorVersion < 5 ? 0 : b.majorVersion >= BLOCK_MAJOR_VERSION_6 ? 2 : 1;
-  cn_slow_hash(context, bd.data(), bd.size(), res, cn_variant);
+  const int light = (b.majorVersion >= BLOCK_MAJOR_VERSION_9) ? 1 : 0;
+  cn_slow_hash(context, bd.data(), bd.size(), res, light, cn_variant);
   return true;
 }
 

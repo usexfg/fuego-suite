@@ -1,20 +1,19 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
+// Copyright (c) 2017-2026 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it
+// Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You can redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "PaymentServiceJsonRpcServer.h"
 
@@ -30,12 +29,14 @@
 #include "CryptoNoteCore/CryptoNoteBasic.h"
 #include "CryptoNoteCore/CryptoNoteBasicImpl.h"
 #include "WalletLegacy/WalletHelper.h"
+#include "Wallet/WalletErrors.h"
 #include "Common/Base58.h"
 #include "Common/CommandLine.h"
 #include "Common/SignalHandler.h"
 #include "Common/StringTools.h"
 #include "Common/PathTools.h"
 #include "Common/Util.h"
+#include "Common/FileSystem.h"
 #include "CryptoNoteCore/CryptoNoteFormatUtils.h"
 #include "CryptoNoteCore/CryptoNoteTools.h"
 #include "CryptoNoteProtocol/CryptoNoteProtocolHandler.h"
@@ -44,7 +45,7 @@
 
 namespace PaymentService {
 
-PaymentServiceJsonRpcServer::PaymentServiceJsonRpcServer(System::Dispatcher& sys, System::Event& stopEvent, WalletService& service, Logging::ILogger& loggerGroup) 
+PaymentServiceJsonRpcServer::PaymentServiceJsonRpcServer(System::Dispatcher& sys, System::Event& stopEvent, WalletService& service, Logging::ILogger& loggerGroup)
   : JsonRpcServer(sys, stopEvent, loggerGroup)
   , service(service)
   , logger(loggerGroup, "PaymentServiceJsonRpcServer")
@@ -74,12 +75,26 @@ PaymentServiceJsonRpcServer::PaymentServiceJsonRpcServer(System::Dispatcher& sys
   handlers.emplace("getStatus", jsonHandler<GetStatus::Request, GetStatus::Response>(std::bind(&PaymentServiceJsonRpcServer::handleGetStatus, this, std::placeholders::_1, std::placeholders::_2)));
   handlers.emplace("getAddresses", jsonHandler<GetAddresses::Request, GetAddresses::Response>(std::bind(&PaymentServiceJsonRpcServer::handleGetAddresses, this, std::placeholders::_1, std::placeholders::_2)));
   handlers.emplace("createDeposit", jsonHandler<CreateDeposit::Request, CreateDeposit::Response>(std::bind(&PaymentServiceJsonRpcServer::handleCreateDeposit, this, std::placeholders::_1, std::placeholders::_2)));
-  handlers.emplace("sendDeposit", jsonHandler<SendDeposit::Request, SendDeposit::Response>(std::bind(&PaymentServiceJsonRpcServer::handleSendDeposit, this, std::placeholders::_1, std::placeholders::_2)));
+  handlers.emplace("giftDeposit", jsonHandler<GiftDeposit::Request, GiftDeposit::Response>(std::bind(&PaymentServiceJsonRpcServer::handleGiftDeposit, this, std::placeholders::_1, std::placeholders::_2)));
   handlers.emplace("withdrawDeposit", jsonHandler<WithdrawDeposit::Request, WithdrawDeposit::Response>(std::bind(&PaymentServiceJsonRpcServer::handleWithdrawDeposit, this, std::placeholders::_1, std::placeholders::_2)));
   handlers.emplace("getMessagesFromExtra", jsonHandler<GetMessagesFromExtra::Request, GetMessagesFromExtra::Response>(std::bind(&PaymentServiceJsonRpcServer::handleGetMessagesFromExtra, this, std::placeholders::_1, std::placeholders::_2)));
   handlers.emplace("getDeposit", jsonHandler<GetDeposit::Request, GetDeposit::Response>(std::bind(&PaymentServiceJsonRpcServer::handleGetDeposit, this, std::placeholders::_1, std::placeholders::_2)));
+  handlers.emplace("getEternalFlame", jsonHandler<GetEthernalXFG::Request, GetEthernalXFG::Response>(std::bind(&PaymentServiceJsonRpcServer::handleGetEthernalXFG, this, std::placeholders::_1, std::placeholders::_2)));
   handlers.emplace("estimateFusion", jsonHandler<EstimateFusion::Request, EstimateFusion::Response>(std::bind(&PaymentServiceJsonRpcServer::handleEstimateFusion, this, std::placeholders::_1, std::placeholders::_2)));
   handlers.emplace("sendFusionTransaction", jsonHandler<SendFusionTransaction::Request, SendFusionTransaction::Response>(std::bind(&PaymentServiceJsonRpcServer::handleSendFusionTransaction, this, std::placeholders::_1, std::placeholders::_2)));
+  handlers.emplace("getHealth", jsonHandler<GetHealth::Request, GetHealth::Response>(std::bind(&PaymentServiceJsonRpcServer::handleGetHealth, this, std::placeholders::_1, std::placeholders::_2)));
+  handlers.emplace("heat_mint", jsonHandler<HeatMint::Request, HeatMint::Response>(std::bind(&PaymentServiceJsonRpcServer::handleHeatMint, this, std::placeholders::_1, std::placeholders::_2)));
+  handlers.emplace("send_heat", jsonHandler<SendHeat::Request, SendHeat::Response>(std::bind(&PaymentServiceJsonRpcServer::handleSendHeat, this, std::placeholders::_1, std::placeholders::_2)));
+  // Unified TUI surface: same method names as fire_wallet WalletRpcServer where possible
+  handlers.emplace("heat_deposit", jsonHandler<HeatDeposit::Request, HeatDeposit::Response>(std::bind(&PaymentServiceJsonRpcServer::handleHeatDeposit, this, std::placeholders::_1, std::placeholders::_2)));
+  handlers.emplace("amm_swap", jsonHandler<AmmSwap::Request, AmmSwap::Response>(std::bind(&PaymentServiceJsonRpcServer::handleAmmSwap, this, std::placeholders::_1, std::placeholders::_2)));
+  // The CLI's names for the two Hearth directions; burning XFG is heat_mint.
+  handlers.emplace("sell_xfg", jsonHandler<AmmSwap::Request, AmmSwap::Response>(std::bind(&PaymentServiceJsonRpcServer::handleSellXfg, this, std::placeholders::_1, std::placeholders::_2)));
+  handlers.emplace("buy_xfg", jsonHandler<AmmSwap::Request, AmmSwap::Response>(std::bind(&PaymentServiceJsonRpcServer::handleBuyXfg, this, std::placeholders::_1, std::placeholders::_2)));
+  handlers.emplace("place_limit_order", jsonHandler<PlaceLimitOrder::Request, PlaceLimitOrder::Response>(std::bind(&PaymentServiceJsonRpcServer::handlePlaceLimitOrder, this, std::placeholders::_1, std::placeholders::_2)));
+  handlers.emplace("cancel_limit_order", jsonHandler<CancelLimitOrder::Request, CancelLimitOrder::Response>(std::bind(&PaymentServiceJsonRpcServer::handleCancelLimitOrder, this, std::placeholders::_1, std::placeholders::_2)));
+  handlers.emplace("get_limit_orders", jsonHandler<GetLimitOrders::Request, GetLimitOrders::Response>(std::bind(&PaymentServiceJsonRpcServer::handleGetLimitOrders, this, std::placeholders::_1, std::placeholders::_2)));
+  handlers.emplace("register_alias", jsonHandler<RegisterAlias::Request, RegisterAlias::Response>(std::bind(&PaymentServiceJsonRpcServer::handleRegisterAlias, this, std::placeholders::_1, std::placeholders::_2)));
 }
 
 void PaymentServiceJsonRpcServer::processJsonRpcRequest(const Common::JsonValue& req, Common::JsonValue& resp) {
@@ -161,18 +176,18 @@ std::error_code PaymentServiceJsonRpcServer::handleCreateAddressList(const Creat
   return service.createAddressList(request.spendSecretKeys, request.reset, response.addresses);
 }
 
-std::error_code PaymentServiceJsonRpcServer::handleSave(const Save::Request& /*request*/, Save::Response& /*response*/) 
+std::error_code PaymentServiceJsonRpcServer::handleSave(const Save::Request& /*request*/, Save::Response& /*response*/)
 {
   return service.saveWalletNoThrow();
 }
 
 
-std::error_code PaymentServiceJsonRpcServer::handleCreateIntegrated(const CreateIntegrated::Request& request, CreateIntegrated::Response& response) 
+std::error_code PaymentServiceJsonRpcServer::handleCreateIntegrated(const CreateIntegrated::Request& request, CreateIntegrated::Response& response)
 {
   return service.createIntegratedAddress(request, response.integrated_address);
 }
 
-std::error_code PaymentServiceJsonRpcServer::handleSplitIntegrated(const SplitIntegrated::Request& request, SplitIntegrated::Response& response) 
+std::error_code PaymentServiceJsonRpcServer::handleSplitIntegrated(const SplitIntegrated::Request& request, SplitIntegrated::Response& response)
 {
   return service.splitIntegratedAddress(request, response.address, response.payment_id);
 }
@@ -181,14 +196,15 @@ std::error_code PaymentServiceJsonRpcServer::handleDeleteAddress(const DeleteAdd
 }
 
 std::error_code PaymentServiceJsonRpcServer::handleGetSpendKeys(const GetSpendKeys::Request& request, GetSpendKeys::Response& response) {
-  return service.getSpendkeys(request.address, response.spendPublicKey, response.spendSecretKey);
+  std::string dummy;
+  return service.getSpendkeys(request.address, response.spendPublicKey, dummy);
 }
 
 std::error_code PaymentServiceJsonRpcServer::handleGetBalance(const GetBalance::Request& request, GetBalance::Response& response) {
   if (!request.address.empty()) {
-    return service.getBalance(request.address, response.availableBalance, response.lockedAmount, response.lockedDepositBalance, response.unlockedDepositBalance);
+    return service.getBalance(request.address, response.availableBalance, response.lockedAmount, response.lockedDepositBalance, response.unlockedDepositBalance, response.lockedHeatBalance, response.unlockedHeatBalance);
   } else {
-    return service.getBalance(response.availableBalance, response.lockedAmount, response.lockedDepositBalance, response.unlockedDepositBalance);
+    return service.getBalance(response.availableBalance, response.lockedAmount, response.lockedDepositBalance, response.unlockedDepositBalance, response.lockedHeatBalance, response.unlockedHeatBalance);
   }
 }
 
@@ -241,7 +257,7 @@ std::error_code PaymentServiceJsonRpcServer::handleSendDelayedTransaction(const 
 }
 
 std::error_code PaymentServiceJsonRpcServer::handleGetViewKey(const GetViewKey::Request& request, GetViewKey::Response& response) {
-  return service.getViewKey(response.viewSecretKey);
+  return service.getViewKey(response.viewPublicKey);
 }
 
 std::error_code PaymentServiceJsonRpcServer::handleGetStatus(const GetStatus::Request& request, GetStatus::Response& response) {
@@ -249,6 +265,25 @@ std::error_code PaymentServiceJsonRpcServer::handleGetStatus(const GetStatus::Re
 }
 
 std::error_code PaymentServiceJsonRpcServer::handleCreateDeposit(const CreateDeposit::Request& request, CreateDeposit::Response& response) {
+  // No commitment extras: term-locked HEAT CDs are TransactionOutputCommitment
+  // outputs (term field); HEAT burns must use mintHeatV10, not this endpoint
+  // with HEAT_TERM (WalletGreen::createDeposit rejects HEAT_TERM).
+  if (!request.metadata.empty()) {
+    std::vector<uint8_t> metadata;
+    if (!Common::fromHex(request.metadata, metadata)) {
+      return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
+    }
+  }
+
+  // Check if this is a burn deposit (FOREVER term)
+  bool isBurnDeposit = (request.term == CryptoNote::parameters::HEAT_TERM);
+  response.isBurnDeposit = isBurnDeposit;
+
+  // Calculate transaction fees
+  uint64_t baseFee = 800000; // 0.008 XFG base transaction fee
+  response.transactionFee = baseFee;
+  response.totalFees = baseFee;
+
   return service.createDeposit(request.amount, request.term, request.sourceAddress, response.transactionHash);
 }
 
@@ -257,12 +292,21 @@ std::error_code PaymentServiceJsonRpcServer::handleWithdrawDeposit(const Withdra
   return service.withdrawDeposit(request.depositId, response.transactionHash);
 }
 
-std::error_code PaymentServiceJsonRpcServer::handleSendDeposit(const SendDeposit::Request& request, SendDeposit::Response& response) {
-  return service.sendDeposit(request.amount, request.term, request.sourceAddress, request.destinationAddress, response.transactionHash);
+std::error_code PaymentServiceJsonRpcServer::handleGiftDeposit(const GiftDeposit::Request& request, GiftDeposit::Response& response) {
+  return service.giftDeposit(request.amount, request.term, request.sourceAddress, request.destinationAddress, response.transactionHash);
 }
 
 std::error_code PaymentServiceJsonRpcServer::handleGetDeposit(const GetDeposit::Request& request, GetDeposit::Response& response) {
-  return service.getDeposit(request.depositId, response.amount, response.term, response.interest, response.creatingTransactionHash, response.spendingTransactionHash, response.locked, response.height, response.unlockHeight, response.address);
+  std::error_code result = service.getDeposit(request.depositId, response.amount, response.term, response.interest, response.creatingTransactionHash, response.spendingTransactionHash, response.locked, response.height, response.unlockHeight, response.address);
+
+  if (!result) {
+    // Calculate transaction fees
+    uint64_t baseFee = CryptoNote::parameters::MINIMUM_FEE_8KH; // 0.0008 XFG base transaction fee
+    response.transactionFee = baseFee;
+    // (staged unlock removed)
+  }
+
+  return result;
 }
 
 std::error_code PaymentServiceJsonRpcServer::handleGetAddresses(const GetAddresses::Request& request, GetAddresses::Response& response) {
@@ -280,6 +324,120 @@ std::error_code PaymentServiceJsonRpcServer::handleEstimateFusion(const Estimate
 
 std::error_code PaymentServiceJsonRpcServer::handleSendFusionTransaction(const SendFusionTransaction::Request& request, SendFusionTransaction::Response& response) {
   return service.sendFusionTransaction(request.threshold, request.anonymity, request.addresses, request.destinationAddress, response.transactionHash);
+}
+
+
+
+std::error_code PaymentServiceJsonRpcServer::handleGetEthernalXFG(const GetEthernalXFG::Request& request, GetEthernalXFG::Response& response)
+{
+  uint64_t eternal;
+  service.getEternalFlame(eternal);
+  response.ethereal_xfg = eternal;
+  return std::error_code();
+}
+
+std::error_code PaymentServiceJsonRpcServer::handleGetHealth(const GetHealth::Request& request, GetHealth::Response& response)
+{
+  // Daemon (fuegod) is always running when we're in --local mode
+  response.daemon = true;
+
+  // Wallet is always running if we can reach this handler
+  response.wallet = true;
+
+  // SwapDaemon is always running when we're in --local mode
+  response.swap = true;
+
+  // Get wallet status
+  std::error_code ec = service.getStatus(response.height, response.targetHeight, response.lastBlockHash, response.peerCount, response.depositCount, response.transactionCount, response.addressCount);
+  if (ec) {
+    // If we can't get status, report degraded
+    response.daemon = false;
+    response.wallet = false;
+    return ec;
+  }
+
+  return std::error_code();
+}
+
+std::error_code PaymentServiceJsonRpcServer::handleHeatMint(const HeatMint::Request& request, HeatMint::Response& response)
+{
+  return service.mintHeatV10(request.xfg_burned, request.heat_minted, request.mixin, response.tx_hash);
+}
+
+std::error_code PaymentServiceJsonRpcServer::handleSendHeat(const SendHeat::Request& request, SendHeat::Response& response)
+{
+  return service.sendHeatV10(request.address, request.amount, request.mixin, response.tx_hash);
+}
+
+std::error_code PaymentServiceJsonRpcServer::handleHeatDeposit(const HeatDeposit::Request& request, HeatDeposit::Response& response)
+{
+  auto ec = service.heatDeposit(request.amount, request.term_epochs, request.banking_fee, request.mixin,
+                                request.sourceAddress, response.tx_hash);
+  if (!ec) {
+    response.status = "OK";
+  }
+  return ec;
+}
+
+std::error_code PaymentServiceJsonRpcServer::handleSellXfg(const AmmSwap::Request& request, AmmSwap::Response& response)
+{
+  AmmSwap::Request sell = request;
+  sell.direction = 0;
+  return handleAmmSwap(sell, response);
+}
+
+std::error_code PaymentServiceJsonRpcServer::handleBuyXfg(const AmmSwap::Request& request, AmmSwap::Response& response)
+{
+  AmmSwap::Request buy = request;
+  buy.direction = 1;
+  return handleAmmSwap(buy, response);
+}
+
+std::error_code PaymentServiceJsonRpcServer::handleAmmSwap(const AmmSwap::Request& request, AmmSwap::Response& response)
+{
+  auto ec = service.ammSwap(request.direction, request.input_amount, request.expected_output,
+                            request.min_output, request.mixin, response.tx_hash);
+  if (!ec) {
+    response.status = "OK";
+  }
+  return ec;
+}
+
+std::error_code PaymentServiceJsonRpcServer::handlePlaceLimitOrder(const PlaceLimitOrder::Request& request, PlaceLimitOrder::Response& response)
+{
+  auto ec = service.placeLimitOrder(request.side, request.amount, request.target_price,
+                                    request.expiration, request.mixin, response.tx_hash);
+  if (!ec) {
+    response.status = "OK";
+  }
+  return ec;
+}
+
+std::error_code PaymentServiceJsonRpcServer::handleCancelLimitOrder(const CancelLimitOrder::Request& request, CancelLimitOrder::Response& response)
+{
+  auto ec = service.cancelLimitOrder(request.order_id, request.mixin, response.tx_hash);
+  if (!ec) {
+    response.status = "OK";
+  }
+  return ec;
+}
+
+std::error_code PaymentServiceJsonRpcServer::handleGetLimitOrders(const GetLimitOrders::Request& request, GetLimitOrders::Response& response)
+{
+  auto ec = service.getLimitOrders(response.orders);
+  if (!ec) {
+    response.status = "OK";
+  }
+  return ec;
+}
+
+std::error_code PaymentServiceJsonRpcServer::handleRegisterAlias(const RegisterAlias::Request& request, RegisterAlias::Response& response)
+{
+  auto ec = service.registerAlias(request.alias, request.address, response.tx_hash);
+  if (!ec) {
+    response.status = "OK";
+  }
+  return ec;
 }
 
 }

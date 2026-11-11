@@ -1,24 +1,24 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
+// Copyright (c) 2017-2022 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it
+// Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You can redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "IWalletLegacy.h"
 
 #include "crypto/hash.h"
+#include "CryptoNoteConfig.h"
 #include "CryptoNoteCore/TransactionExtra.h"
 #include "Wallet/WalletErrors.h"
 #include "WalletLegacy/WalletUserTransactionsCache.h"
@@ -38,7 +38,6 @@ struct LegacyDeposit {
   TransactionId spendingTransactionId;
   uint32_t term;
   uint64_t amount;
-  uint64_t interest;
 };
 
 struct LegacyDepositInfo {
@@ -57,7 +56,6 @@ void serialize(LegacyDeposit& deposit, ISerializer& serializer) {
 
   serializer(deposit.term, "term");
   serializer(deposit.amount, "amount");
-  serializer(deposit.interest, "interest");
 }
 
 void serialize(LegacyDepositInfo& depositInfo, ISerializer& serializer) {
@@ -107,7 +105,6 @@ void convertLegacyDeposits(const std::vector<LegacyDepositInfo>& legacyDeposits,
     DepositInfo info;
     info.deposit.amount = legacyDepositInfo.deposit.amount;
     info.deposit.creatingTransactionId = legacyDepositInfo.deposit.creatingTransactionId;
-    info.deposit.interest = legacyDepositInfo.deposit.interest;
     info.deposit.spendingTransactionId = legacyDepositInfo.deposit.spendingTransactionId;
     info.deposit.term = legacyDepositInfo.deposit.term;
     info.deposit.locked = true;
@@ -131,7 +128,7 @@ bool WalletUserTransactionsCache::serialize(CryptoNote::ISerializer& s) {
   if (s.type() == CryptoNote::ISerializer::INPUT) {
     updateUnconfirmedTransactions();
     deleteOutdatedTransactions();
-    restoreTransactionOutputToDepositIndex();
+    restoreTransactionOutputToBankingIndex();
     rebuildPaymentsIndex();
   }
 
@@ -147,7 +144,7 @@ void WalletUserTransactionsCache::deserializeLegacyV1(CryptoNote::ISerializer& s
   s(legacyDeposits, "deposits");
 
   convertLegacyDeposits(legacyDeposits, m_deposits);
-  restoreTransactionOutputToDepositIndex();
+  restoreTransactionOutputToBankingIndex();
 }
 
 bool paymentIdIsSet(const PaymentId& paymentId) {
@@ -337,6 +334,9 @@ std::deque<std::unique_ptr<WalletLegacyEvent>> WalletUserTransactionsCache::onTr
     tr.blockHeight = txInfo.blockHeight;
     tr.timestamp = txInfo.timestamp;
     tr.state = WalletLegacyTransactionState::Active;
+    // Update totalAmount — cross-container transactions (e.g. subaddress spend)
+    // may arrive with a more complete aggregate balance on subsequent calls.
+    tr.totalAmount = txBalance;
     // notification event
     events.push_back(std::unique_ptr<WalletLegacyEvent>(new WalletTransactionUpdatedEvent(id)));
 
@@ -425,14 +425,19 @@ std::vector<DepositId> WalletUserTransactionsCache::unlockDeposits(const std::ve
   std::vector<DepositId> unlockedDeposits;
 
   for (const auto& transfer: transfers) {
-    auto it = m_transactionOutputToDepositIndex.find(std::tie(transfer.transactionHash, transfer.outputInTransaction));
-    if (it == m_transactionOutputToDepositIndex.end()) {
+    auto it = m_transactionOutputToBankingIndex.find(std::tie(transfer.transactionHash, transfer.outputInTransaction));
+    if (it == m_transactionOutputToBankingIndex.end()) {
       continue;
     }
 
     auto id = it->second;
-    unlockedDeposits.push_back(id);
 
+    // FOREVER (burn) deposits are permanently locked — never unlock them
+    if (m_deposits[id].deposit.term == CryptoNote::parameters::HEAT_TERM) {
+      continue;
+    }
+
+    unlockedDeposits.push_back(id);
     m_deposits[id].deposit.locked = false;
   }
 
@@ -442,8 +447,8 @@ std::vector<DepositId> WalletUserTransactionsCache::unlockDeposits(const std::ve
 std::vector<DepositId> WalletUserTransactionsCache::lockDeposits(const std::vector<TransactionOutputInformation>& transfers) {
   std::vector<DepositId> lockedDeposits;
   for (const auto& transfer: transfers) {
-    auto it = m_transactionOutputToDepositIndex.find(std::tie(transfer.transactionHash, transfer.outputInTransaction));
-    if (it == m_transactionOutputToDepositIndex.end()) {
+    auto it = m_transactionOutputToBankingIndex.find(std::tie(transfer.transactionHash, transfer.outputInTransaction));
+    if (it == m_transactionOutputToBankingIndex.end()) {
       continue;
     }
 
@@ -501,6 +506,24 @@ bool WalletUserTransactionsCache::getDeposit(DepositId depositId, Deposit& depos
   }
 
   deposit = m_deposits[depositId].deposit;
+
+  // Populate transactionHash, height, and extra from the creating transaction
+  // (these fields aren't serialized to maintain backward compat with old wallet caches)
+  if (deposit.creatingTransactionId < m_transactions.size()) {
+    const auto& tx = m_transactions[deposit.creatingTransactionId];
+    deposit.transactionHash = tx.hash;
+    deposit.height = static_cast<uint64_t>(tx.blockHeight);
+    // FOREVER burns have no unlock height; unconfirmed txs use sentinel height (UINT32_MAX)
+    bool isForever = (deposit.term == CryptoNote::parameters::HEAT_TERM);
+    bool isPending = (tx.blockHeight == static_cast<int32_t>(WALLET_LEGACY_UNCONFIRMED_TRANSACTION_HEIGHT));
+    deposit.unlockHeight = (isForever || isPending) ? 0 : deposit.height + deposit.term;
+    // Recover deposit extra from the transaction extra (Deposit::extra is not serialized
+    // so it's lost on wallet reload; the transaction extra IS serialized).
+    if (deposit.extra.empty() && !tx.extra.empty()) {
+      deposit.extra = tx.extra;
+    }
+  }
+
   return true;
 }
 
@@ -566,26 +589,26 @@ std::vector<TransactionId> WalletUserTransactionsCache::deleteOutdatedTransactio
   return deletedTransactions;
 }
 
-void WalletUserTransactionsCache::restoreTransactionOutputToDepositIndex() {
-  m_transactionOutputToDepositIndex.clear();
+void WalletUserTransactionsCache::restoreTransactionOutputToBankingIndex() {
+  m_transactionOutputToBankingIndex.clear();
 
   DepositId id = 0;
   for (const auto& d: m_deposits) {
     WalletLegacyTransaction transaction = m_transactions[d.deposit.creatingTransactionId];
-    m_transactionOutputToDepositIndex[std::tie(transaction.hash, d.outputInTransaction)] = id;
+    m_transactionOutputToBankingIndex[std::tie(transaction.hash, d.outputInTransaction)] = id;
     ++id;
   }
 }
 
-DepositId WalletUserTransactionsCache::insertDeposit(const Deposit& deposit, size_t depositIndexInTransaction, const Hash& transactionHash) {
+DepositId WalletUserTransactionsCache::insertDeposit(const Deposit& deposit, size_t bankingIndexInTransaction, const Hash& transactionHash) {
   DepositInfo info;
   info.deposit = deposit;
-  info.outputInTransaction = static_cast<uint32_t>(depositIndexInTransaction);
+  info.outputInTransaction = static_cast<uint32_t>(bankingIndexInTransaction);
 
   DepositId id = m_deposits.size();
   m_deposits.push_back(std::move(info));
 
-  m_transactionOutputToDepositIndex.emplace(std::piecewise_construct, std::forward_as_tuple(transactionHash, static_cast<uint32_t>(depositIndexInTransaction)),
+  m_transactionOutputToBankingIndex.emplace(std::piecewise_construct, std::forward_as_tuple(transactionHash, static_cast<uint32_t>(bankingIndexInTransaction)),
     std::forward_as_tuple(id));
 
   return id;
@@ -617,17 +640,29 @@ std::vector<DepositId> WalletUserTransactionsCache::createNewDeposits(Transactio
 
 DepositId WalletUserTransactionsCache::insertNewDeposit(const TransactionOutputInformation& depositOutput, TransactionId creatingTransactionId,
   const Currency& currency, uint32_t height) {
-  assert(depositOutput.type == TransactionTypes::OutputType::Multisignature);
+  assert(depositOutput.type == TransactionTypes::OutputType::Multisignature ||
+         depositOutput.type == TransactionTypes::OutputType::Commitment);
   assert(depositOutput.term != 0);
-  assert(m_transactionOutputToDepositIndex.find(std::tie(depositOutput.transactionHash, depositOutput.outputInTransaction)) == m_transactionOutputToDepositIndex.end());
+  // Guard against duplicate insertion (can happen when wallet re-syncs after daemon restart).
+  // Return the existing deposit id rather than crashing.
+  {
+    auto existing = m_transactionOutputToBankingIndex.find(std::tie(depositOutput.transactionHash, depositOutput.outputInTransaction));
+    if (existing != m_transactionOutputToBankingIndex.end()) {
+      return existing->second;
+    }
+  }
 
   Deposit deposit;
   deposit.amount = depositOutput.amount;
   deposit.creatingTransactionId = creatingTransactionId;
   deposit.term = depositOutput.term;
   deposit.spendingTransactionId = WALLET_LEGACY_INVALID_TRANSACTION_ID;
-  deposit.interest = currency.calculateInterest(deposit.amount, deposit.term, height);
+  deposit.interest = 0;
+  deposit.height = height;
+  deposit.unlockHeight = (depositOutput.term == parameters::HEAT_TERM) ? 0 : height + depositOutput.term;
   deposit.locked = true;
+  deposit.outputInTransaction = depositOutput.outputInTransaction;
+  deposit.transactionHash = depositOutput.transactionHash;
 
   return insertDeposit(deposit, depositOutput.outputInTransaction, depositOutput.transactionHash);
 }
@@ -651,8 +686,8 @@ std::vector<DepositId> WalletUserTransactionsCache::processSpentDeposits(Transac
 }
 
 DepositId WalletUserTransactionsCache::getDepositId(const Hash& creatingTransactionHash, uint32_t outputInTransaction) {
-  auto it = m_transactionOutputToDepositIndex.find(std::tie(creatingTransactionHash, outputInTransaction));
-  if (it == m_transactionOutputToDepositIndex.end()) {
+  auto it = m_transactionOutputToBankingIndex.find(std::tie(creatingTransactionHash, outputInTransaction));
+  if (it == m_transactionOutputToBankingIndex.end()) {
     return WALLET_LEGACY_INVALID_DEPOSIT_ID;
   }
 

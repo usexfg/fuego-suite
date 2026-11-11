@@ -1,18 +1,17 @@
-// Copyright (c) 2019-2021, Fango Developers
-// Copyright (c) 2018-2021, Fandom Gold Society
+// Copyright (c) 2017-2022, Fuego Developers
 // Copyright (c) 2012-2016, CryptoNote Developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free & open source software distributed in the hope that
+// Fuego is free & open source software distributed in the hope that
 // it will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You may redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 
 #include "BlockchainExplorerDataBuilder.h"
@@ -300,6 +299,14 @@ bool BlockchainExplorerDataBuilder::fillTransactionDetails(const Transaction& tr
       txInMultisigDetails.output.number = outputReference.second;
       txInMultisigDetails.output.transactionHash = outputReference.first;
       txInDetails.input = txInMultisigDetails;
+    } else if (txIn.type() == typeid(TransactionInputCommitmentSpend)) {
+      const auto& csIn = boost::get<TransactionInputCommitmentSpend>(txIn);
+      txInDetails.amount = csIn.amount;
+      TransactionInputCommitmentSpendDetails csDetails;
+      csDetails.outputIndexes = csIn.outputIndexes;
+      csDetails.keyImage = csIn.keyImage;
+      csDetails.ringSize = csIn.outputIndexes.size();
+      txInDetails.input = csDetails;
     } else {
       return false;
     }
@@ -335,6 +342,12 @@ bool BlockchainExplorerDataBuilder::fillTransactionDetails(const Transaction& tr
       }
       txOutMultisigDetails.requiredSignatures = txOutMultisig.requiredSignatureCount;
       txOutDetails.output = txOutMultisigDetails;
+    } else if (txOutput.get<0>().target.type() == typeid(TransactionOutputCommitment)) {
+      TransactionOutputCommitmentDetails txOutCommitDetails;
+      const auto& commitment = boost::get<TransactionOutputCommitment>(txOutput.get<0>().target);
+      txOutCommitDetails.commitKey = commitment.commitKey;
+      txOutCommitDetails.term = commitment.term;
+      txOutDetails.output = txOutCommitDetails;
     } else {
       return false;
     }

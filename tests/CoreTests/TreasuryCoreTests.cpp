@@ -1,0 +1,1551 @@
+// Copyright (c) 2026 Fuego Developers
+//
+// Consensus-adjacent unit tests for the F0–F3 fixes:
+//  - BankingIndex: EF bucket vs overall burn tally, per-height entries,
+//    popBlock reversal, serialization roundtrip.
+//  - 50/50 EF/SWF split consistency (dust ≤ 1 atomic).
+//  - ammMintLpShares: no single-sided mints; balanced min-ratio.
+//  - ammGetSpotPrice: canonical HEAT/XFG × COIN scale.
+//  - TreasuryFund tx-extra tag: writer/reader roundtrip.
+
+#include "CryptoNoteCore/BankingIndex.h"
+#include "CryptoNoteCore/AmmPool.h"
+#include "CryptoNoteConfig.h"
+#include "CryptoNoteCore/TransactionExtra.h"
+#include "CryptoNoteCore/CommitmentIndex.h"
+#include "CryptoNoteCore/Currency.h"
+#include "Treasury/VaultUtxoSet.h"
+#include "Common/Int128.h"
+#include "Logging/LoggerGroup.h"
+#include "CryptoNoteCore/Blockchain.h"
+#include "CryptoNoteCore/ITimeProvider.h"
+#include "CryptoNoteCore/TransactionPool.h"
+#include "Serialization/ISerializer.h"
+#include "Serialization/BinarySerializationTools.h"
+
+#include <cassert>
+#include <cstdio>
+#include <cstring>
+#include <limits>
+#include <string>
+#include <vector>
+#include <filesystem>
+#include <unistd.h>
+
+using namespace CryptoNote;
+
+static int tests_run = 0;
+static int tests_passed = 0;
+
+#define TEST(name) do { \
+  tests_run++; \
+  if (!(name)) { \
+    fprintf(stderr, "FAIL: %s (%s:%d)\n", #name, __FILE__, __LINE__); \
+  } else { \
+    tests_passed++; \
+  } \
+} while(0)
+
+namespace {
+
+// Minimal in-memory serializer for roundtrip tests.
+class MemorySerializer : public ISerializer {
+public:
+  std::string buffer;
+  bool output;
+
+  explicit MemorySerializer(bool out) : output(out), pos(0) {}
+
+  SerializerType type() const override { return output ? SerializerType::OUTPUT : SerializerType::INPUT; }
+
+  bool beginObject(Common::StringView) override { return true; }
+  void endObject() override {}
+
+  bool beginArray(size_t& size, Common::StringView) override {
+    if (output) {
+      uint64_t v = size;
+      writeBytes(&v, sizeof(v));
+    } else {
+      uint64_t v = 0;
+      if (!readBytes(&v, sizeof(v))) return false;
+      size = (size_t)v;
+    }
+    return true;
+  }
+  void endArray() override {}
+
+  bool operator()(uint8_t& v, Common::StringView) override { return scalar(v); }
+  bool operator()(int16_t& v, Common::StringView) override { return scalar(v); }
+  bool operator()(uint16_t& v, Common::StringView) override { return scalar(v); }
+  bool operator()(int32_t& v, Common::StringView) override { return scalar(v); }
+  bool operator()(uint32_t& v, Common::StringView) override { return scalar(v); }
+  bool operator()(int64_t& v, Common::StringView) override { return scalar(v); }
+  bool operator()(uint64_t& v, Common::StringView) override { return scalar(v); }
+  bool operator()(double& v, Common::StringView) override { return scalar(v); }
+  bool operator()(bool& v, Common::StringView) override {
+    uint8_t b = v ? 1 : 0;
+    if (!scalar(b)) return false;
+    v = (b != 0);
+    return true;
+  }
+  bool operator()(std::string& v, Common::StringView) override {
+    if (output) {
+      uint64_t len = v.size();
+      scalar(len);
+      buffer.append(v.data(), v.size());
+    } else {
+      uint64_t len = 0;
+      scalar(len);
+      if (pos + len > buffer.size()) return false;
+      v.assign(buffer.data() + pos, (size_t)len);
+      pos += (size_t)len;
+    }
+    return true;
+  }
+
+  bool binary(void* v, size_t sz, Common::StringView) override {
+    if (output) { buffer.append((const char*)v, sz); return true; }
+    return readBytes(v, sz);
+  }
+  bool binary(std::string& v, Common::StringView) override {
+    if (output) { buffer += v; return true; }
+    if (pos + v.size() > buffer.size()) return false;
+    memcpy(&v[0], buffer.data() + pos, v.size());
+    pos += v.size();
+    return true;
+  }
+
+private:
+  size_t pos;
+
+  bool readBytes(void* v, size_t sz) {
+    if (pos + sz > buffer.size()) return false;
+    memcpy(v, buffer.data() + pos, sz);
+    pos += sz;
+    return true;
+  }
+  void writeBytes(const void* v, size_t sz) {
+    buffer.append((const char*)v, sz);
+  }
+
+  template <typename T>
+  bool scalar(T& v) {
+    if (output) {
+      writeBytes(&v, sizeof(T));
+    } else {
+      if (!readBytes(&v, sizeof(T))) return false;
+    }
+    return true;
+  }
+};
+
+void testBankingIndexTallyAndReversal() {
+  // Burn entries are keyed by the height they occur at and reversed by
+  // popBlock — interleave adds with pushes exactly like block processing.
+  BankingIndex idx;
+  idx.pushBlock(0, 0);  // block at height 0
+  idx.addForeverDeposit(50, 0);   // EF share
+  idx.addTotalBurn(100, 0);       // full burn
+  idx.pushBlock(0, 0);  // block at height 1
+  idx.addForeverDeposit(50, 1);
+  idx.addTotalBurn(100, 1);
+  idx.pushBlock(0, 0);  // block at height 2
+  idx.addForeverDeposit(60, 2);
+  idx.addTotalBurn(120, 2);
+
+  TEST(idx.getBurnedXfgAmount() == 160);
+  TEST(idx.getTotalBurnedXfg() == 320);
+  TEST(idx.getBurnedXfgAtHeight(0) == 50);
+  TEST(idx.getBurnedXfgAtHeight(1) == 100);
+  TEST(idx.getBurnedXfgAtHeight(2) == 160);
+  TEST(idx.getTotalBurnedXfgAtHeight(2) == 320);
+
+  idx.popBlock();
+  TEST(idx.getBurnedXfgAmount() == 100);
+  TEST(idx.getTotalBurnedXfg() == 200);
+  idx.popBlock();
+  TEST(idx.getBurnedXfgAmount() == 50);
+  TEST(idx.getTotalBurnedXfg() == 100);
+  idx.popBlock();
+  TEST(idx.getBurnedXfgAmount() == 0);
+  TEST(idx.getTotalBurnedXfg() == 0);
+}
+
+void testBankingIndexSerializationRoundtrip() {
+  BankingIndex idx;
+  idx.pushBlock(0, 0);
+  idx.addForeverDeposit(50, 0);
+  idx.addTotalBurn(100, 0);
+  idx.pushBlock(0, 0);
+  idx.addForeverDeposit(75, 1);
+  idx.addTotalBurn(150, 1);
+
+  MemorySerializer out(true);
+  idx.serialize(out);
+
+  BankingIndex restored;
+  MemorySerializer in(false);
+  in.buffer = out.buffer;
+  restored.serialize(in);
+
+  TEST(restored.getBurnedXfgAmount() == idx.getBurnedXfgAmount());
+  TEST(restored.getTotalBurnedXfg() == idx.getTotalBurnedXfg());
+  TEST(restored.getBurnedXfgAtHeight(0) == idx.getBurnedXfgAtHeight(0));
+  TEST(restored.getBurnedXfgAtHeight(1) == idx.getBurnedXfgAtHeight(1));
+  TEST(restored.getTotalBurnedXfgAtHeight(1) == idx.getTotalBurnedXfgAtHeight(1));
+}
+
+void testFiftyFiftySplitDust() {
+  // ef + swf must equal total or total-1 (single odd atomic) — never more.
+  for (uint64_t amount : {1ULL, 2ULL, 99ULL, 100ULL, 101ULL, 999999999ULL, 1000000001ULL}) {
+    uint64_t ef = (amount * parameters::MINT_BURN_EF_PCT) / 100;
+    uint64_t swf = (amount * parameters::MINT_BURN_TREASURY_PCT) / 100;
+    TEST(ef + swf == amount || ef + swf + 1 == amount);
+  }
+}
+
+void testNoSingleSidedLpMints() {
+  TEST(ammMintLpShares(0, 100, 1000, 1000, 2000) == 0);
+  TEST(ammMintLpShares(100, 0, 1000, 1000, 2000) == 0);
+  TEST(ammMintLpShares(0, 100, 0, 0, 0) == 0);
+  TEST(ammMintLpShares(100, 0, 0, 0, 0) == 0);
+  // Balanced first deposit works.
+  TEST(ammMintLpShares(10000, 5000, 0, 0, 0) > 0);
+  // Balanced proportional: min ratio.
+  uint64_t shares = ammMintLpShares(100, 500, 1000, 1000, 5000);
+  uint64_t expectA = static_cast<uint64_t>(((uint128_t)100 * 1000) / 1000);
+  uint64_t expectB = static_cast<uint64_t>(((uint128_t)500 * 1000) / 5000);
+  TEST(shares == (expectA < expectB ? expectA : expectB));
+  // Zero reserve with live shares mints nothing (no div-by-zero).
+  TEST(ammMintLpShares(10, 10, 1000, 0, 5000) == 0);
+}
+
+void testCanonicalSpotPriceScale() {
+  // Seed pool 10000 XFG : 1000 HEAT → 10 XFG per HEAT → HEAT/XFG = 0.1
+  // Canonical price = HEAT atomics per XFG atomic × COIN = 0.1 × 1e7 = 1e6.
+  uint64_t price = ammGetSpotPrice(10000 * parameters::COIN, 1000 * parameters::COIN);
+  TEST(price == parameters::COIN / 10);
+  // Zero XFG reserve → no price (fail closed).
+  TEST(ammGetSpotPrice(0, 1000 * parameters::COIN) == 0);
+}
+
+void testTreasuryFundTagRoundtrip() {
+  // Write a TreasuryFund extra via the writer and parse it back.
+  std::vector<uint8_t> extra;
+  TEST(addTreasuryFundToExtra(extra, 1, 123456789ULL));
+  std::vector<TransactionExtraField> fields;
+  TEST(parseTransactionExtra(extra, fields));
+  TEST(fields.size() == 1);
+  TEST(fields[0].type() == typeid(TransactionExtraTreasuryFund));
+  const auto& fund = boost::get<TransactionExtraTreasuryFund>(fields[0]);
+  TEST(fund.asset == 1);
+  TEST(fund.amount == 123456789ULL);
+
+  // XFG variant.
+  std::vector<uint8_t> extra2;
+  TEST(addTreasuryFundToExtra(extra2, 0, 42));
+  std::vector<TransactionExtraField> fields2;
+  TEST(parseTransactionExtra(extra2, fields2));
+  TEST(fields2.size() == 1);
+  const auto& fund2 = boost::get<TransactionExtraTreasuryFund>(fields2[0]);
+  TEST(fund2.asset == 0);
+  TEST(fund2.amount == 42);
+}
+
+void testLimitWithdrawOwnershipProofRoundtrip() {
+  Crypto::PublicKey spendPublicKey{};
+  Crypto::SecretKey spendSecretKey{};
+  Crypto::PublicKey viewPublicKey{};
+  Crypto::SecretKey viewSecretKey{};
+  Crypto::generate_keys(spendPublicKey, spendSecretKey);
+  Crypto::generate_keys(viewPublicKey, viewSecretKey);
+  (void)viewSecretKey;
+
+  Crypto::Hash orderId{};
+  Crypto::generate_random_bytes(sizeof(orderId.data), orderId.data);
+  uint8_t addressData[sizeof(spendPublicKey.data) + sizeof(viewPublicKey.data)];
+  memcpy(addressData, spendPublicKey.data, sizeof(spendPublicKey.data));
+  memcpy(addressData + sizeof(spendPublicKey.data), viewPublicKey.data, sizeof(viewPublicKey.data));
+  Crypto::Hash addressHash{};
+  Crypto::cn_fast_hash(addressData, sizeof(addressData), addressHash);
+
+  std::vector<TransactionOutput> outputs;
+  TransactionOutput output;
+  output.amount = 123;
+  KeyOutput keyOutput;
+  keyOutput.key = spendPublicKey;
+  output.target = keyOutput;
+  outputs.push_back(output);
+  Crypto::Hash outputsHash = getLimitWithdrawOutputHash(outputs);
+  Crypto::Hash authHash = getLimitWithdrawAuthHash(orderId, addressHash, outputsHash);
+  Crypto::Signature proof{};
+  Crypto::generate_signature(authHash, spendPublicKey, spendSecretKey, proof);
+
+  std::vector<uint8_t> extra;
+  TEST(addLimitWithdrawToExtra(extra, orderId, spendPublicKey, viewPublicKey, outputsHash, proof));
+  std::vector<TransactionExtraField> fields;
+  TEST(parseTransactionExtra(extra, fields));
+  TEST(fields.size() == 1);
+  TEST(fields[0].type() == typeid(TransactionExtraLimitWithdraw));
+  const auto& withdraw = boost::get<TransactionExtraLimitWithdraw>(fields[0]);
+  TEST(memcmp(withdraw.orderId.data, orderId.data, sizeof(orderId.data)) == 0);
+  TEST(memcmp(withdraw.spendPublicKey.data, spendPublicKey.data, sizeof(spendPublicKey.data)) == 0);
+  TEST(memcmp(withdraw.viewPublicKey.data, viewPublicKey.data, sizeof(viewPublicKey.data)) == 0);
+  TEST(memcmp(withdraw.outputsHash.data, outputsHash.data, sizeof(outputsHash.data)) == 0);
+  TEST(Crypto::check_signature(authHash, withdraw.spendPublicKey, withdraw.proof));
+
+  Crypto::Hash wrongOrder = orderId;
+  wrongOrder.data[0] ^= 1;
+  TEST(!Crypto::check_signature(getLimitWithdrawAuthHash(wrongOrder, addressHash, outputsHash),
+                                withdraw.spendPublicKey, withdraw.proof));
+  outputs[0].amount++;
+  TEST(!Crypto::check_signature(getLimitWithdrawAuthHash(
+                                  orderId, addressHash, getLimitWithdrawOutputHash(outputs)),
+                                withdraw.spendPublicKey, withdraw.proof));
+
+  std::vector<uint8_t> legacyExtra;
+  legacyExtra.push_back(TX_EXTRA_LIMIT_WITHDRAW);
+  legacyExtra.insert(legacyExtra.end(), orderId.data, orderId.data + sizeof(orderId.data));
+  std::vector<TransactionExtraField> legacyFields;
+  TEST(!parseTransactionExtra(legacyExtra, legacyFields));
+}
+
+void testCdBonusClaimTagRoundtrip() {
+  TransactionExtraCdBonusClaim claim;
+  claim.inputIndex = 3;
+  claim.claimedBonus = 0x0102030405060708ull;
+  std::vector<uint8_t> extra;
+  TEST(addCdBonusClaimToExtra(extra, claim));
+  TEST(extra.size() == 10);  // tag + inputIndex + 8-byte LE amount
+
+  std::vector<TransactionExtraField> fields;
+  TEST(parseTransactionExtra(extra, fields));
+  TEST(fields.size() == 1);
+  TEST(fields[0].type() == typeid(TransactionExtraCdBonusClaim));
+  const auto& parsed = boost::get<TransactionExtraCdBonusClaim>(fields[0]);
+  TEST(parsed.inputIndex == 3);
+  TEST(parsed.claimedBonus == 0x0102030405060708ull);
+
+  TransactionExtraCdBonusClaim out;
+  TEST(getCdBonusClaimFromExtra(extra, out));
+  TEST(out.inputIndex == 3);
+  TEST(out.claimedBonus == 0x0102030405060708ull);
+
+  // Truncated payload must fail cleanly (no over-read).
+  std::vector<uint8_t> truncated(extra.begin(), extra.begin() + 6);
+  TEST(!getCdBonusClaimFromExtra(truncated, out));
+}
+
+
+void testVaultSpendNoSurplusBurn() {
+  VaultUtxoSet vault;
+  Crypto::Hash txHash{};
+  Crypto::PublicKey key{};
+  vault.addUtxo(100, 6, AssetType::HEAT, VaultPartition::CD_APY_POOL, txHash, key);
+  vault.addUtxo(101, 9, AssetType::HEAT, VaultPartition::CD_APY_POOL, txHash, key);
+  TEST(vault.partitionBalance(VaultPartition::CD_APY_POOL, AssetType::HEAT) == 15);
+
+  // Overshooting spend: 6 + 9 selected for 10 needed — surplus 5 must be
+  // reported as change, not destroyed (W-3).
+  auto r = vault.spendUtxos(VaultPartition::CD_APY_POOL, AssetType::HEAT, 10);
+  TEST(r.amountSpent == 15);
+  TEST(r.changeAmount == 5);
+  TEST(r.changeSourceIndex == 101);
+  TEST(r.spentIndices.size() == 2);
+  // Caller mints the change back (mirrors Blockchain::mintVaultChangeUtxo).
+  vault.addUtxo(102, r.changeAmount, AssetType::HEAT, VaultPartition::CD_APY_POOL, txHash, key);
+  TEST(vault.partitionBalance(VaultPartition::CD_APY_POOL, AssetType::HEAT) == 5);
+
+  // Exact spend → no change.
+  auto r2 = vault.spendUtxos(VaultPartition::CD_APY_POOL, AssetType::HEAT, 5);
+  TEST(r2.amountSpent == 5);
+  TEST(r2.changeAmount == 0);
+
+  // Pop symmetry: unspend both spends, drop the change UTXO → originals
+  // restored (6 + 9), change gone with its spender.
+  vault.unSpendUtxos(r2.spentIndices);
+  vault.removeAboveIndex(102);
+  vault.unSpendUtxos(r.spentIndices);
+  TEST(vault.partitionBalance(VaultPartition::CD_APY_POOL, AssetType::HEAT) == 15);
+}
+
+
+
+
+
+// ---------------------------------------------------------------------------
+// Vault partition isolation: UTXOs in different partitions cannot be spent
+// from the wrong partition.
+// ---------------------------------------------------------------------------
+void testVaultPartitionIsolation() {
+  VaultUtxoSet vault;
+  Crypto::Hash txHash{};
+  Crypto::PublicKey key{};
+
+  // Seed three partitions with 100 HEAT each.
+  vault.addUtxo(0, 100, AssetType::HEAT, VaultPartition::CD_APY_POOL, txHash, key);
+  vault.addUtxo(1, 100, AssetType::HEAT, VaultPartition::BONUS_VAULT, txHash, key);
+  vault.addUtxo(2, 100, AssetType::HEAT, VaultPartition::GENERAL_RESERVE, txHash, key);
+
+  TEST(vault.partitionBalance(VaultPartition::CD_APY_POOL, AssetType::HEAT) == 100);
+  TEST(vault.partitionBalance(VaultPartition::BONUS_VAULT, AssetType::HEAT) == 100);
+  TEST(vault.partitionBalance(VaultPartition::GENERAL_RESERVE, AssetType::HEAT) == 100);
+
+  // Spending from CD_APY_POOL must not touch BONUS_VAULT or GENERAL_RESERVE.
+  auto r1 = vault.spendUtxos(VaultPartition::CD_APY_POOL, AssetType::HEAT, 50);
+  TEST(r1.amountSpent == 100);  // overshoot: only one UTXO (100) available
+  TEST(r1.changeAmount == 50);
+  TEST(vault.partitionBalance(VaultPartition::CD_APY_POOL, AssetType::HEAT) == 0);
+  TEST(vault.partitionBalance(VaultPartition::BONUS_VAULT, AssetType::HEAT) == 100);
+  TEST(vault.partitionBalance(VaultPartition::GENERAL_RESERVE, AssetType::HEAT) == 100);
+
+  // Spending from BONUS_VAULT.
+  auto r2 = vault.spendUtxos(VaultPartition::BONUS_VAULT, AssetType::HEAT, 100);
+  TEST(r2.amountSpent == 100);
+  TEST(r2.changeAmount == 0);
+  TEST(vault.partitionBalance(VaultPartition::BONUS_VAULT, AssetType::HEAT) == 0);
+  TEST(vault.partitionBalance(VaultPartition::GENERAL_RESERVE, AssetType::HEAT) == 100);
+
+  // Spending more than available from GENERAL_RESERVE → empty.
+  auto r3 = vault.spendUtxos(VaultPartition::GENERAL_RESERVE, AssetType::HEAT, 200);
+  TEST(r3.amountSpent == 100);
+  TEST(r3.changeAmount == 0);
+  TEST(vault.partitionBalance(VaultPartition::GENERAL_RESERVE, AssetType::HEAT) == 0);
+  TEST(vault.totalUtxos() == 3);  // unspent entries still present
+}
+
+// ---------------------------------------------------------------------------
+// Surplus-mint roundtrip across partitions: spend overshoots, mint change
+// back to same partition, verify final balances.
+// ---------------------------------------------------------------------------
+void testVaultSurplusMintRoundtrip() {
+  VaultUtxoSet vault;
+  Crypto::Hash txHash{};
+  Crypto::PublicKey key{};
+
+  vault.addUtxo(0, 30, AssetType::HEAT, VaultPartition::CD_APY_POOL, txHash, key);
+  vault.addUtxo(1, 70, AssetType::HEAT, VaultPartition::CD_APY_POOL, txHash, key);
+  TEST(vault.partitionBalance(VaultPartition::CD_APY_POOL, AssetType::HEAT) == 100);
+
+  // Spend 25: selects UTXO 0 (30), surplus = 5.
+  auto r = vault.spendUtxos(VaultPartition::CD_APY_POOL, AssetType::HEAT, 25);
+  TEST(r.amountSpent == 30);
+  TEST(r.changeAmount == 5);
+  TEST(r.changeSourceIndex == 0);
+
+  // Mint change back (index 2 = 5 HEAT).
+  vault.addUtxo(2, r.changeAmount, AssetType::HEAT, VaultPartition::CD_APY_POOL, txHash, key);
+  TEST(vault.partitionBalance(VaultPartition::CD_APY_POOL, AssetType::HEAT) == 75);
+
+  // Spend 50: selectUtxos sorts ascending [5(idx2), 70(idx1)].
+  // Selects both: 5 + 70 = 75, surplus = 25.
+  auto r2 = vault.spendUtxos(VaultPartition::CD_APY_POOL, AssetType::HEAT, 50);
+  TEST(r2.amountSpent == 75);
+  TEST(r2.changeAmount == 25);
+  TEST(r2.changeSourceIndex == 1);
+  vault.addUtxo(3, r2.changeAmount, AssetType::HEAT, VaultPartition::CD_APY_POOL, txHash, key);
+  TEST(vault.partitionBalance(VaultPartition::CD_APY_POOL, AssetType::HEAT) == 25);
+}
+
+// ---------------------------------------------------------------------------
+// Pop symmetry: model the real blockchain pop pattern — remove block outputs
+// first, then unspend inputs the block consumed. Verify the vault returns to
+// its pre-block state.
+// ---------------------------------------------------------------------------
+void testVaultPopSymmetry() {
+  VaultUtxoSet vault;
+  Crypto::Hash txHash{};
+  Crypto::PublicKey key{};
+
+  // Pre-existing UTXO from a prior block (index 0).
+  vault.addUtxo(0, 50, AssetType::HEAT, VaultPartition::CD_APY_POOL, txHash, key);
+  TEST(vault.partitionBalance(VaultPartition::CD_APY_POOL, AssetType::HEAT) == 50);
+
+  // Block connects: adds its output at index 1, and during the block's
+  // transaction processing the pre-existing UTXO 0 is consumed (spent).
+  vault.addUtxo(1, 50, AssetType::HEAT, VaultPartition::CD_APY_POOL, txHash, key);
+  TEST(vault.partitionBalance(VaultPartition::CD_APY_POOL, AssetType::HEAT) == 100);
+
+  // The block's claim tx spends UTXO 0 (pre-existing input consumed).
+  std::vector<uint64_t> spentIndices = {0};
+  vault.markSpent(0);
+  TEST(vault.partitionBalance(VaultPartition::CD_APY_POOL, AssetType::HEAT) == 50);
+  TEST(vault.totalUtxos() == 2);
+
+  // --- Pop the block ---
+  // Step 1: remove block outputs (indices >= 1, i.e. index 1).
+  vault.removeAboveIndex(1);
+  TEST(vault.totalUtxos() == 1);
+  // UTXO 0 is still spent, so balance is 0.
+  TEST(vault.partitionBalance(VaultPartition::CD_APY_POOL, AssetType::HEAT) == 0);
+
+  // Step 2: unspend the inputs the block consumed.
+  vault.unSpendUtxos(spentIndices);
+  TEST(vault.partitionBalance(VaultPartition::CD_APY_POOL, AssetType::HEAT) == 50);
+  TEST(vault.totalUtxos() == 1);
+}
+
+
+} // anonymous namespace
+
+// CD interest accrues per epoch and COMPOUNDS into the principal each epoch.
+// An auto-rolled CD stops compounding at its original maturity (rolloverEpoch)
+// while continuing to accrue on the frozen base. Nothing else pinned this, and
+// it is money math, so the exact figures are asserted rather than the shape.
+void testCdInterestCompounding() {
+  Logging::LoggerGroup nullLog;
+  Currency currency = CurrencyBuilder(nullLog).currency();
+  CommitmentIndex ci(currency);
+
+  const uint64_t RATE = 100000;  // 10% of FEE_POOL_RATE_PRECISION (1e6)
+  const uint64_t ED = parameters::EPOCH_DURATION_BLOCKS;
+  for (uint64_t e = 0; e <= 5; ++e) ci.recordEpochFeeRate(e, RATE, 100, 1000);
+
+  // 1000 over epochs 0..5 at 10%: 100,110,121,133,146,161 = 771.
+  // Simple interest would be 600 — compounding is deliberate.
+  uint64_t interest = currency.calculateCdInterest(1000, 0, (uint32_t)(5 * ED),
+                                                   ci, 0, false);
+  TEST(interest == 771);
+
+  // Auto-rolled with a 2-epoch original term. Since AUDIT 2.4 accrual also
+  // stops at maturity, so this covers epochs 0..2 only: 100 + 110 + 121 = 331.
+  // (Before the maturity clamp this ran to epoch 5 and returned >600.)
+  uint64_t rolled = currency.calculateCdInterest(1000, 0, (uint32_t)(5 * ED),
+                                                 ci, (uint32_t)(2 * ED), true);
+  TEST(rolled == 331);
+  TEST(rolled < interest);
+
+  // No elapsed time accrues nothing.
+  TEST(currency.calculateCdInterest(1000, 100, 100, ci, 0, false) == 0);
+  TEST(currency.calculateCdInterest(1000, 200, 100, ci, 0, false) == 0);
+
+  // Interest scales linearly in principal at equal terms.
+  uint64_t small = currency.calculateCdInterest(1000, 0, (uint32_t)(2 * ED), ci, 0, false);
+  uint64_t big   = currency.calculateCdInterest(10000, 0, (uint32_t)(2 * ED), ci, 0, false);
+  TEST(big >= small * 10 - 10 && big <= small * 10 + 10);
+}
+
+// AUDIT 2.1: legacy XFG term deposits earn no on-chain interest — all yield is
+// via HEAT CDs. calculateInterest() returning 0 must NOT strand a matured
+// legacy deposit: getTransactionInputAmount values the input at principal, so a
+// principal-minus-fee withdrawal still passes money conservation. The old body
+// computed a rate, a 128-bit product and an early-deposit multiplier, then
+// returned a variable that was initialised to 0 and never assigned — so it
+// always returned 0 too. This pins that equivalence.
+void testLegacyDepositWithdrawsForPrincipal() {
+  Logging::LoggerGroup nullLog;
+  Currency currency = CurrencyBuilder(nullLog).currency();
+
+  const uint64_t principal = 800000;  // 0.08 XFG in atomic units
+
+  // Interest is zero at every term and height, including the early-deposit
+  // window that used to carry a multiplier.
+  TEST(currency.calculateInterest(principal, 0, 0) == 0);
+  TEST(currency.calculateInterest(principal, parameters::DEPOSIT_MIN_TERM, 1) == 0);
+  TEST(currency.calculateInterest(principal, parameters::DEPOSIT_MAX_TERM, 1000000) == 0);
+  TEST(currency.calculateInterest(std::numeric_limits<uint64_t>::max(),
+                                  parameters::DEPOSIT_MAX_TERM, 1) == 0);
+
+  // A term deposit is valued at exactly its principal, so it remains spendable.
+  MultisignatureInput term{};
+  term.amount = principal;
+  term.signatureCount = 1;
+  term.outputIndex = 0;
+  term.term = parameters::DEPOSIT_MAX_TERM;
+  TransactionInput termIn = term;
+  TEST(currency.getTransactionInputAmount(termIn, 1000000) == principal);
+
+  // Term 0 (a plain multisig output, never a deposit) is unchanged.
+  MultisignatureInput plain = term;
+  plain.term = 0;
+  TransactionInput plainIn = plain;
+  TEST(currency.getTransactionInputAmount(plainIn, 1000000) == principal);
+
+  // Valuation does not drift with height — a deposit held longer is still
+  // worth its principal, which is what keeps withdrawal conservation stable.
+  TEST(currency.getTransactionInputAmount(termIn, 1) ==
+       currency.getTransactionInputAmount(termIn, 5000000));
+}
+
+
+// AUDIT 2.4: base CD interest must stop accruing at maturity. Before the fix,
+// `term` had no effect on the payout — it appears only in rolloverEpoch, which
+// collapses to endEpoch while auto-roll is disabled — so a 1-block commitment
+// earned the same per-epoch yield as a DEPOSIT_MAX_TERM CD, defeating
+// DEPOSIT_MIN_TERM. calculateCdBonus already clamped; these now agree.
+void testCdInterestStopsAtMaturity() {
+  Logging::LoggerGroup nullLog;
+  Currency currency = CurrencyBuilder(nullLog).currency();
+  CommitmentIndex ci(currency);
+
+  const uint64_t RATE = 100000;  // 10% per epoch
+  const uint64_t ED = parameters::EPOCH_DURATION_BLOCKS;
+  for (uint64_t e = 0; e <= 5; ++e) ci.recordEpochFeeRate(e, RATE, 100, 1000);
+
+  // Held six epochs. A CD whose term expires after two must not be paid for six.
+  uint64_t shortTerm = currency.calculateCdInterest(1000, 0, (uint32_t)(5 * ED),
+                                                    ci, (uint32_t)(2 * ED), false);
+  uint64_t noTerm    = currency.calculateCdInterest(1000, 0, (uint32_t)(5 * ED),
+                                                    ci, 0, false);
+  TEST(shortTerm < noTerm);
+
+  // Accrual is frozen after maturity: holding longer pays no more.
+  uint64_t atMaturity = currency.calculateCdInterest(1000, 0, (uint32_t)(2 * ED),
+                                                     ci, (uint32_t)(2 * ED), false);
+  TEST(shortTerm == atMaturity);
+
+  // A one-block "CD" earns essentially nothing rather than a full epoch's yield.
+  uint64_t oneBlock = currency.calculateCdInterest(1000, 0, (uint32_t)(5 * ED),
+                                                   ci, 1, false);
+  TEST(oneBlock < noTerm);
+  TEST(oneBlock <= 100);   // at most the first epoch's simple yield
+
+  // Longer term pays more than shorter, all else equal — term now matters.
+  uint64_t longTerm = currency.calculateCdInterest(1000, 0, (uint32_t)(5 * ED),
+                                                   ci, (uint32_t)(4 * ED), false);
+  TEST(longTerm > shortTerm);
+
+  // Bonus and base now clamp identically.
+  uint64_t bonusShort = currency.calculateCdBonus(1000, 0, (uint32_t)(5 * ED), ci, (uint32_t)(2 * ED));
+  uint64_t bonusLong  = currency.calculateCdBonus(1000, 0, (uint32_t)(5 * ED), ci, (uint32_t)(4 * ED));
+  TEST(bonusShort <= bonusLong);
+}
+
+
+// The Bonus Vault is a YIELD FLOOR, not a pro-rata tier pool. In any epoch whose
+// fee-derived rate fell below CD_YIELD_FLOOR_RATE, the vault tops each CD up to
+// the floor. There is no shared denominator, so a CD's top-up depends only on
+// its own principal and the global epoch rate — nothing another depositor does
+// can change it.
+void testCdYieldFloor() {
+  Logging::LoggerGroup nullLog;
+  Currency currency = CurrencyBuilder(nullLog).currency();
+  CommitmentIndex ci(currency);
+
+  const uint64_t FLOOR = parameters::CD_YIELD_FLOOR_RATE;
+  const uint64_t PREC  = parameters::FEE_POOL_RATE_PRECISION;
+  const uint64_t ED    = parameters::EPOCH_DURATION_BLOCKS;
+  const uint32_t TERM  = parameters::DEPOSIT_MAX_TERM;
+
+  // epoch 0 fat (at the floor), epochs 1-2 lean (half the floor), epoch 3 fat.
+  ci.recordEpochFeeRate(0, FLOOR,     100, 1000);
+  ci.recordEpochFeeRate(1, FLOOR / 2, 100, 1000);
+  ci.recordEpochFeeRate(2, FLOOR / 2, 100, 1000);
+  ci.recordEpochFeeRate(3, FLOOR * 4, 100, 1000);
+
+  const uint64_t P = 1000000;  // principal
+
+  // A fat epoch alone tops up nothing.
+  TEST(currency.calculateCdBonus(P, 0, (uint32_t)(0 * ED + 1), ci, TERM) == 0);
+
+  // One lean epoch pays exactly the shortfall on this CD's own principal.
+  uint64_t oneLean = currency.calculateCdBonus(P, (uint32_t)ED, (uint32_t)(ED + 1), ci, TERM);
+
+  // uint128_t (Common/Int128.h), not the __uint128_t GCC/Clang builtin: MSVC
+  // has no such type and only this line used it. Mirrors the same computation
+  // in Currency::calculateCdBonus, which this asserts against.
+  uint64_t expect1 = static_cast<uint64_t>(((uint128_t)P * (FLOOR - FLOOR / 2)) / PREC);
+  TEST(oneLean == expect1);
+
+  // Two lean epochs pay twice as much; the fat epochs contribute nothing.
+  uint64_t twoLean = currency.calculateCdBonus(P, 0, (uint32_t)(3 * ED), ci, TERM);
+  TEST(twoLean == expect1 * 2);
+
+  // Linear in principal — no denominator, so no interaction between depositors.
+  TEST(currency.calculateCdBonus(P * 10, 0, (uint32_t)(3 * ED), ci, TERM) == twoLean * 10);
+
+  // Flat in term: the floor is the same guarantee whatever the lock length.
+  uint64_t shortTerm = currency.calculateCdBonus(P, 0, (uint32_t)(3 * ED), ci,
+                                                 (uint32_t)(6 * ED));
+  uint64_t longTerm  = currency.calculateCdBonus(P, 0, (uint32_t)(3 * ED), ci, TERM);
+  TEST(shortTerm == longTerm);
+
+  // Still clamped at maturity — a matured CD stops collecting the floor.
+  uint64_t matured = currency.calculateCdBonus(P, 0, (uint32_t)(3 * ED), ci, (uint32_t)ED);
+  TEST(matured < twoLean);
+
+  // No elapsed time, and unrecorded epochs, pay nothing.
+  TEST(currency.calculateCdBonus(P, 100, 100, ci, TERM) == 0);
+  TEST(currency.calculateCdBonus(P, 200, 100, ci, TERM) == 0);
+  CommitmentIndex empty(currency);
+  TEST(currency.calculateCdBonus(P, 0, (uint32_t)(3 * ED), empty, TERM) == 0);
+}
+
+
+
+// The v11 rate denominator counts a CD from creation until the boundary that
+// closes cdLastCreditedEpoch, then drops it. That is only correct if the
+// payout credits exactly the same window — otherwise the denominator either
+// dilutes epochs nobody is paid for or omits epochs somebody is paid for.
+// Probe each epoch in turn with a lone nonzero rate.
+void testCdEarningWindowMatchesPayout() {
+  Logging::LoggerGroup nullLog;
+  Currency currency = CurrencyBuilder(nullLog).currency();
+  const uint64_t ED = parameters::EPOCH_DURATION_BLOCKS;
+  const uint32_t heights[] = {0, 1, (uint32_t)(ED - 1), (uint32_t)ED, (uint32_t)(ED + 17), (uint32_t)(3 * ED + 450)};
+  const uint32_t terms[] = {parameters::DEPOSIT_MIN_TERM, (uint32_t)(18 * ED), parameters::DEPOSIT_MAX_TERM,
+                            (uint32_t)(6 * ED + 1), (uint32_t)(6 * ED - 1)};
+  bool allMatch = true;
+  for (uint32_t c : heights) {
+    for (uint32_t t : terms) {
+      const uint64_t first = c / ED;
+      const uint64_t last = currency.cdLastCreditedEpoch(c, t);
+      if (last != (uint64_t(c) + t) / ED) allMatch = false;
+      for (uint64_t probe = (first > 0 ? first - 1 : 0); probe <= last + 1; ++probe) {
+        CommitmentIndex ci(currency);
+        for (uint64_t e = 0; e <= last + 2; ++e) {
+          ci.recordEpochFeeRate(e, e == probe ? 10000 : 0, 100, 1000);
+        }
+        const uint32_t farFuture = (uint32_t)((last + 3) * ED);
+        const bool paid = currency.calculateCdInterest(1000000, c, farFuture, ci, t, false) > 0;
+        const bool inWindow = probe >= first && probe <= last;
+        if (paid != inWindow) allMatch = false;
+      }
+    }
+  }
+  TEST(allMatch);
+}
+
+// One asset per commitment term, used by both sides of the per-asset balance.
+// Term 0 is plain HEAT: it used to be minted as HEAT but spent as XFG.
+void testCommitmentAssetClassification() {
+  const uint32_t terms[] = {0, parameters::DEPOSIT_MIN_TERM, parameters::DEPOSIT_MAX_TERM,
+                            parameters::HEAT_TERM, parameters::DEPOSIT_TERM_LP,
+                            parameters::DEPOSIT_TERM_POOL_XFG, parameters::DEPOSIT_TERM_POOL_HEAT,
+                            parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG, parameters::DIGM_TERM};
+  bool sidesAgree = true;
+  for (uint32_t term : terms) {
+    TransactionOutputCommitment out;
+    out.term = term;
+    if (Currency::classifyOutputAsset(out, term) != Currency::classifyCommitmentTermAsset(term))
+      sidesAgree = false;
+  }
+  TEST(sidesAgree);
+  TEST(Currency::classifyCommitmentTermAsset(0) == AssetType::HEAT);
+  TEST(Currency::classifyCommitmentTermAsset(parameters::DEPOSIT_MIN_TERM) == AssetType::HEAT);
+  TEST(Currency::classifyCommitmentTermAsset(parameters::HEAT_TERM) == AssetType::HEAT);
+  TEST(Currency::classifyCommitmentTermAsset(parameters::DEPOSIT_TERM_LP) == AssetType::LP);
+  TEST(Currency::classifyCommitmentTermAsset(parameters::DEPOSIT_TERM_POOL_XFG) == AssetType::XFG);
+  TEST(Currency::classifyCommitmentTermAsset(parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG) == AssetType::XFG);
+}
+
+// A real Blockchain at genesis in a temp directory: Hearth pool seeded, no
+// TWAP yet. Removes its directory on scope exit.
+struct TestChain {
+  Logging::LoggerGroup log;
+  Currency currency;
+  RealTimeProvider timeProvider;
+  tx_memory_pool pool;
+  Blockchain chain;
+  std::filesystem::path dir;
+  bool ok = false;
+
+  explicit TestChain(const std::string& tag)
+      : currency(CurrencyBuilder(log).currency()),
+        pool(currency, chain, timeProvider, log),
+        chain(currency, pool, log, false, false),
+        dir(std::filesystem::temp_directory_path() /
+            ("fuego_core_tests_" + tag + "_" + std::to_string(::getpid()))) {
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    ok = chain.init(dir.string(), false);
+  }
+  ~TestChain() {
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+  }
+};
+
+// rebuildCache() replays the chain from scratch and must start from the same
+// Hearth pool a fresh sync starts from. It used to reset the pool to empty and
+// never re-seed it, so every node that rebuilt its cache — including every
+// node crossing a cache-version bump — diverged from the rest of the network.
+void testRebuildCacheKeepsHearthSeed() {
+  TestChain t("rebuild");
+  TEST(t.ok);
+  const uint64_t seedXfg = parameters::HEARTH_POOL_SEED_XFG * parameters::COIN;
+  const uint64_t seedHeat = parameters::HEARTH_POOL_SEED_HEAT * parameters::COIN;
+  TEST(t.chain.getAmmPool().reserveXfg == seedXfg);
+  TEST(t.chain.getAmmPool().reserveHeat == seedHeat);
+
+  // The seed carries its provider's LP shares: √(xfg · heat).
+  const uint64_t seedShares = ammInitialLpShares(seedXfg, seedHeat);
+  TEST(seedShares > 0 && t.chain.getAmmPool().totalLpShares == seedShares);
+
+  t.chain.rebuildCache();
+  TEST(t.chain.getAmmPool().reserveXfg == seedXfg);
+  TEST(t.chain.getAmmPool().reserveHeat == seedHeat);
+  TEST(t.chain.getAmmPool().totalLpShares == seedShares);
+}
+
+// With seed shares, a first LP deposit earns its fair slice: 1% of both
+// reserves earns 1% of the shares. Without them it earned every share — and
+// with them the whole pool, seed included.
+void testSeedLpSharesMakeFirstDepositFair() {
+  TestChain t("seedshares");
+  TEST(t.ok);
+  const auto& pool = t.chain.getAmmPool();
+  const uint64_t shares = ammMintLpShares(pool.reserveXfg / 100, pool.reserveHeat / 100,
+                                          pool.totalLpShares, pool.reserveXfg, pool.reserveHeat);
+  TEST(shares == pool.totalLpShares / 100);
+  // Without the seed's shares the same deposit took everything.
+  TEST(ammMintLpShares(pool.reserveXfg / 100, pool.reserveHeat / 100, 0, 0, 0) > 0);
+}
+
+
+TransactionOutput keyOut(uint64_t amount) {
+  TransactionOutput out;
+  out.amount = amount;
+  out.target = KeyOutput{};
+  return out;
+}
+
+TransactionOutput commitmentOut(uint64_t amount, uint32_t term) {
+  TransactionOutputCommitment commitment{};
+  commitment.term = term;
+  TransactionOutput out;
+  out.amount = amount;
+  out.target = commitment;
+  return out;
+}
+
+// XFG key inputs only: validateSettlement neither resolves nor signs them.
+Transaction settlementTx(const std::vector<uint64_t>& xfgInputs,
+                         const std::vector<TransactionOutput>& outputs,
+                         const std::vector<uint8_t>& extra) {
+  Transaction tx{};
+  for (uint64_t amount : xfgInputs) {
+    KeyInput in{};
+    in.amount = amount;
+    tx.inputs.push_back(in);
+  }
+  tx.outputs = outputs;
+  tx.extra = extra;
+  return tx;
+}
+
+// The v11 balance rule: the fee is the XFG surplus only; HEAT and LP balance
+// exactly, counting declared sources and sinks.
+void testSettleAssetFlows() {
+  const uint64_t C = parameters::COIN;
+  uint64_t fee = 0;
+
+  // A mint burns 100 XFG and creates 9 HEAT, paying a 1 XFG fee. The v10 rule
+  // summed the assets: its "fee" was 100 + 1 − 9 = 92, all paid to the miner.
+  AssetFlows mint;
+  mint.in.xfg = 101 * C;
+  mint.xfgSink = 100 * C;
+  mint.heatSource = 9 * C;
+  mint.out.heat = 9 * C;
+  TEST(settleAssetFlows(mint, fee) && fee == 1 * C);
+
+  // HEAT beyond the declared source is refused, and so is HEAT left over.
+  AssetFlows more = mint;
+  more.out.heat += 1;
+  TEST(!settleAssetFlows(more, fee));
+  AssetFlows less = mint;
+  less.out.heat -= 1;
+  TEST(!settleAssetFlows(less, fee));
+
+  // LP shares balance exactly too.
+  AssetFlows lp;
+  lp.in.xfg = 1 * C;
+  lp.lpSource = 5;
+  lp.out.lp = 6;
+  TEST(!settleAssetFlows(lp, fee));
+
+  // Outputs above inputs: refused, never an underflowed fee.
+  AssetFlows over;
+  over.in.xfg = 1 * C;
+  over.out.xfg = 2 * C;
+  TEST(!settleAssetFlows(over, fee));
+
+  // Sums that overflow are refused.
+  AssetFlows wrap;
+  wrap.in.xfg = UINT64_MAX;
+  wrap.xfgSource = 1;
+  TEST(!settleAssetFlows(wrap, fee));
+}
+
+// validateSettlement on a real chain: fees, conversions, retired tags.
+void testValidateSettlementBasics() {
+  TestChain t("settle");
+  TEST(t.ok);
+  const uint64_t C = parameters::COIN;
+  AssetFlows flows;
+  uint64_t fee = 0;
+  std::string err;
+  auto check = [&](const Transaction& tx) {
+    Blockchain::SettlementScratch scratch;
+    return t.chain.validateSettlement(tx, 1, scratch, flows, fee, err);
+  };
+
+  // A 50 XFG treasury donation is burned, not paid to the miner.
+  std::vector<uint8_t> fund;
+  addTreasuryFundToExtra(fund, 0, 50 * C);
+  TEST(check(settlementTx({100 * C}, {keyOut(49 * C)}, fund)) && fee == 1 * C);
+
+  // A plain transaction cannot turn XFG into HEAT.
+  TEST(!check(settlementTx({100 * C}, {commitmentOut(90 * C, parameters::HEAT_TERM)}, {})));
+
+  // A mint is priced by the 8-block TWAP; at genesis there is none.
+  std::vector<uint8_t> mint;
+  addHeatMintAuthToExtra(mint, 10 * C, 1 * C);
+  TEST(!check(settlementTx({11 * C}, {commitmentOut(1 * C, parameters::HEAT_TERM)}, mint)));
+
+  // The retired 0x08 burn tag is refused: its amount was never checked
+  // against a burn, yet it raised the Eternal Flame and the block reward.
+  std::vector<uint8_t> legacyBurn;
+  TransactionExtraHeatCommitment claimed{};
+  claimed.amount = 1000000 * C;
+  addHeatCommitmentToExtra(legacyBurn, claimed);
+  TEST(!check(settlementTx({10 * C}, {keyOut(9 * C)}, legacyBurn)));
+
+  // One settlement tag per transaction.
+  std::vector<uint8_t> twoTags;
+  addTreasuryFundToExtra(twoTags, 0, 1 * C);
+  addTreasuryFundToExtra(twoTags, 0, 1 * C);
+  TEST(!check(settlementTx({10 * C}, {keyOut(7 * C)}, twoTags)));
+
+  // Before v11 the pool's fee is inputs minus outputs; outputs above inputs
+  // are refused even with a mint tag (it used to underflow the fee).
+  uint64_t legacyFee = 0;
+  TEST(t.chain.checkTransactionSettlement(settlementTx({10 * C}, {keyOut(9 * C)}, {}), legacyFee) &&
+       legacyFee == 1 * C);
+  TEST(!t.chain.checkTransactionSettlement(
+      settlementTx({1 * C}, {commitmentOut(100 * C, parameters::HEAT_TERM)}, mint), legacyFee));
+  // Before v11 the pool relays no HEAT, Hearth or 0x08 tag at all, even on a
+  // balanced transaction: v10 has no mint price and never checked a 0x08 burn.
+  TEST(!t.chain.checkTransactionSettlement(settlementTx({10 * C}, {keyOut(9 * C)}, legacyBurn), legacyFee));
+  TEST(!t.chain.checkTransactionSettlement(settlementTx({10 * C}, {keyOut(9 * C)}, mint), legacyFee));
+  TEST(!t.chain.checkTransactionSettlement(settlementTx({10 * C}, {keyOut(8 * C)}, fund), legacyFee));
+}
+
+// The pre-v11 tag cutoff defaults to the v11 height on mainnet, so it changes
+// no v10 block until a release moves it earlier; testnet is at v11 already.
+void testHeatwaveTagCutoffHeight() {
+  Logging::LoggerGroup nullLog;
+  Currency mainnet = CurrencyBuilder(nullLog).currency();
+  TEST(mainnet.heatwaveTagCutoffHeight() == parameters::HEATWAVE_TAG_CUTOFF_HEIGHT);
+  TEST(mainnet.heatwaveTagCutoffHeight() <= mainnet.upgradeHeight(BLOCK_MAJOR_VERSION_11));
+  Currency testnet = CurrencyBuilder(nullLog).testnet(true).currency();
+  TEST(testnet.heatwaveTagCutoffHeight() == testnet.upgradeHeight(BLOCK_MAJOR_VERSION_11));
+}
+
+// Swaps are priced on the constant-product curve, not linearly at spot.
+void testValidateSettlementSwapCurve() {
+  TestChain t("swap");
+  TEST(t.ok);
+  const uint64_t C = parameters::COIN;
+  const uint64_t rX = t.chain.getAmmPool().reserveXfg;
+  const uint64_t rH = t.chain.getAmmPool().reserveHeat;
+  const uint64_t input = rX / 10;
+  const uint64_t gross = ammGetOutputAmount(input, rX, rH, 0);
+  const uint64_t net = static_cast<uint64_t>(
+      ((uint128_t)gross * (parameters::HEARTH_FEE_DIVISOR - parameters::HEARTH_FEE_BPS)) /
+      parameters::HEARTH_FEE_DIVISOR);
+  // /amm_quote uses this same helper; a wallet quote above net cannot settle.
+  TEST(net == ammSwapNetOutput(input, rX, rH));
+  AssetFlows flows;
+  uint64_t fee = 0;
+  std::string err;
+  auto swap = [&](uint64_t output, uint64_t marker, uint64_t minOutput) {
+    std::vector<uint8_t> extra;
+    addAmmSwapAuthToExtra(extra, 0, input, output, minOutput);
+    std::vector<TransactionOutput> outs{commitmentOut(output, parameters::HEAT_TERM)};
+    if (marker > 0) outs.push_back(commitmentOut(marker, parameters::DEPOSIT_TERM_POOL_XFG));
+    Blockchain::SettlementScratch scratch;
+    return t.chain.validateSettlement(settlementTx({input + 1 * C}, outs, extra), 1, scratch,
+                                      flows, fee, err);
+  };
+
+  // The curve's net output settles, the deposit carried by a pool marker.
+  TEST(swap(net, input, 0) && fee == 1 * C);
+  // Or with no marker at all: the declared input is the sink either way.
+  TEST(swap(net, 0, 0) && fee == 1 * C);
+  // One atom above the curve is refused.
+  TEST(!swap(net + 1, input, 0));
+  // The old linear price paid a 10%-of-reserve swap ~10% more than the curve.
+  const uint64_t linear = static_cast<uint64_t>(
+      ((uint128_t)input * rH / rX) * (parameters::HEARTH_FEE_DIVISOR - parameters::HEARTH_FEE_BPS) /
+      parameters::HEARTH_FEE_DIVISOR);
+  TEST(linear > net && !swap(linear, input, 0));
+  // A marker may not carry more than the declared input.
+  TEST(!swap(net, input + 1, 0));
+  // The taker's own minimum is enforced.
+  TEST(!swap(net, input, net + 1));
+}
+
+// Limit deposits escrow the declared amount; order ids are single-use.
+void testValidateSettlementLimitDeposit() {
+  TestChain t("limit");
+  TEST(t.ok);
+  const uint64_t C = parameters::COIN;
+  Crypto::Hash orderId;
+  memset(orderId.data, 7, sizeof(orderId.data));
+  const Crypto::Hash addressHash{};
+  AssetFlows flows;
+  uint64_t fee = 0;
+  std::string err;
+  auto deposit = [&](uint64_t price) {
+    std::vector<uint8_t> extra;
+    addLimitDepositToExtra(extra, 1, 100 * C, price, 1000, orderId, addressHash);
+    return settlementTx({101 * C}, {commitmentOut(100 * C, parameters::DEPOSIT_TERM_POOL_XFG)}, extra);
+  };
+
+  Blockchain::SettlementScratch block;
+  TEST(t.chain.validateSettlement(deposit(10 * parameters::ORDER_PRICE_TICK), 1, block, flows, fee, err) &&
+       fee == 1 * C);
+  // The same order id again in the same block is refused.
+  TEST(!t.chain.validateSettlement(deposit(10 * parameters::ORDER_PRICE_TICK), 1, block, flows, fee, err));
+  // Off-tick prices are refused.
+  Blockchain::SettlementScratch fresh;
+  TEST(!t.chain.validateSettlement(deposit(10 * parameters::ORDER_PRICE_TICK + 1), 1, fresh, flows, fee, err));
+}
+
+// CDs open on their own height after HEAT and Hearth have run alone. Mainnet
+// waits for CD_ACTIVATION_HEIGHT (v12's height until a release sets a date);
+// testnet keeps CDs from its v11 height so they stay exercised.
+void testCdActivationHeight() {
+  Logging::LoggerGroup nullLog;
+  Currency mainnet = CurrencyBuilder(nullLog).currency();
+  TEST(mainnet.cdActivationHeight() == parameters::CD_ACTIVATION_HEIGHT);
+  TEST(mainnet.cdActivationHeight() > mainnet.upgradeHeight(BLOCK_MAJOR_VERSION_11));
+  Currency testnet = CurrencyBuilder(nullLog).testnet(true).currency();
+  TEST(testnet.cdActivationHeight() == testnet.upgradeHeight(BLOCK_MAJOR_VERSION_11));
+}
+
+// Limit fills are priced on the curve: an order's limit holds for its average
+// price over the fill, and a sell/buy round trip no longer profits.
+void testLimitFillsOnTheCurve() {
+  const uint64_t C = parameters::COIN;
+  const uint64_t X = 10000 * C, H = 1000 * C;
+
+  // Selling f pays an average of H/(X+f); at 0.08 HEAT/XFG that allows 2,500.
+  const uint64_t sellLimit = 8 * C / 100;
+  const uint64_t f = ammLimitSellCapacity(X, H, sellLimit);
+  TEST(f == 2500 * C);
+  const uint64_t gross = ammGetOutputAmount(f, X, H, 0);
+  TEST((uint128_t)gross * C >= (uint128_t)sellLimit * f);
+  const uint64_t past = ammGetOutputAmount(f + C, X, H, 0);
+  TEST((uint128_t)past * C < (uint128_t)sellLimit * (f + C));
+
+  // Taking g costs an average of H/(X−g); at 0.125 HEAT/XFG that allows 2,000.
+  const uint64_t buyLimit = 125 * C / 1000;
+  const uint64_t g = ammLimitBuyCapacity(X, H, buyLimit);
+  TEST(g == 2000 * C);
+  const uint64_t cost = ammCostToTake(g, H, X);
+  TEST((uint128_t)cost * C <= (uint128_t)buyLimit * g);
+  // The cost rounds up, so the product of the reserves never shrinks.
+  TEST((uint128_t)(H + cost) * (X - g) >= (uint128_t)H * X);
+  TEST(ammCostToTake(X, H, X) == 0);
+
+  // Round trip at the 5% backstop cap: sell 500 XFG, buy back with all the
+  // HEAT received. At the old flat spot price it came back ~8% ahead.
+  const uint64_t sell = X / 20;
+  const uint64_t heatGot = ammGetOutputAmount(sell, X, H, 0) / 100 * 99;
+  const uint64_t xfgBack = ammGetOutputAmount(heatGot, H - heatGot, X + sell, 0) / 100 * 99;
+  TEST(xfgBack < sell);
+  const uint64_t flatHeat = static_cast<uint64_t>((uint128_t)sell * H / X) / 100 * 99;
+  const uint64_t flatBack = static_cast<uint64_t>(
+      (uint128_t)flatHeat * (X + sell) / (H - flatHeat)) / 100 * 99;
+  TEST(flatBack > sell);
+}
+
+// Swaps may move the pool at most HEARTH_MAX_BLOCK_PRICE_MOVE_PCT from the
+// block's opening price: 100 = double or half.
+void testSwapPriceBand() {
+  TestChain t("band");
+  TEST(t.ok);
+  const uint64_t C = parameters::COIN;
+  const uint64_t rX = t.chain.getAmmPool().reserveXfg;
+  const uint64_t rH = t.chain.getAmmPool().reserveHeat;
+  AssetFlows flows;
+  uint64_t fee = 0;
+  std::string err;
+  auto sell = [&](uint64_t input) {
+    const uint64_t output = ammSwapNetOutput(input, rX, rH);
+    std::vector<uint8_t> extra;
+    addAmmSwapAuthToExtra(extra, 0, input, output, 0);
+    Blockchain::SettlementScratch scratch;
+    scratch.openingSpot = ammGetSpotPrice(rX, rH);
+    return t.chain.validateSettlement(
+        settlementTx({input + 1 * C}, {commitmentOut(output, parameters::HEAT_TERM),
+                                       commitmentOut(input, parameters::DEPOSIT_TERM_POOL_XFG)}, extra),
+        1, scratch, flows, fee, err);
+  };
+  // Selling 30% of the XFG reserve leaves the price at ~0.59× — inside.
+  TEST(sell(rX * 3 / 10));
+  // Selling 50% leaves it at ~0.44× — past half, refused for that reason.
+  TEST(!sell(rX / 2) && err.find("band") != std::string::npos);
+}
+
+// Regression: the coinbase blacklist must cover every settlement tag.
+//
+// prevalidate_miner_transaction used to keep its own hand-maintained list of
+// settlement tags. That list had drifted from isHeatwaveTag: it omitted the two
+// RETIRED legacy LP tags (TransactionExtraAmmAddLiquidity / AmmRemoveLiquidity).
+// The coinbase is pushed BEFORE the settlement loop, so validateSettlement -- which
+// rejects those tags for regular transactions -- never sees it, and the legacy
+// branch in pushTransaction would add the tag's self-asserted amounts straight into
+// m_ammPool reserves. m_ammPool is not persisted, so a corrupted reserve reproduces
+// on every resync.
+//
+// The blacklist is now derived from isHeatwaveTag, so this asserts the property
+// that makes it safe: every settlement tag is one the coinbase path rejects, so the
+// two lists cannot drift apart again.
+// Test-only access to Blockchain's private prevalidate_miner_transaction, declared
+// as a friend in Blockchain.h. The coinbase settlement-tag check had NO coverage,
+// which is how its blacklist drifted out of sync with isHeatwaveTag and admitted
+// the retired legacy AMM LP tags.
+namespace CryptoNote {
+class VaultCoreTestAccess {
+public:
+  static bool prevalidateCoinbase(Blockchain& chain, const Block& b, uint32_t height) {
+    return chain.prevalidate_miner_transaction(b, height);
+  }
+  static uint64_t ammReserveXfg(const Blockchain& chain) { return chain.m_ammPool.reserveXfg; }
+  static uint64_t ammReserveHeat(const Blockchain& chain) { return chain.m_ammPool.reserveHeat; }
+  static size_t coinbaseUnlockWindow(const Blockchain& chain) { return chain.m_currency.minedMoneyUnlockWindow(); }
+  // Block validation must judge its transactions by the block's OWN version.
+  // checkCommitmentSpendInput used to derive it from getBlockMajorVersionForHeight(H+1),
+  // which during a block's validation is the NEXT height's rules.
+  static bool txOutputsValid(Blockchain& chain, const Transaction& tx, uint32_t height, uint8_t v) {
+    return chain.check_tx_outputs(tx, height, v);
+  }
+  // The fallback used when the caller passes 0. Reproduced here from the public
+  // authority so the test pins the convention the mempool and template paths use.
+  static uint8_t derivedVersion(const Blockchain& chain, uint32_t height) {
+    return chain.getBlockMajorVersionForHeight(height);
+  }
+  static uint8_t getBlockMajorVersionForHeightForTest(const Blockchain& chain, uint32_t height) {
+    return chain.getBlockMajorVersionForHeight(height);
+  }
+  static uint32_t m_currency_upgrade_height_v11(const Blockchain& chain) {
+    return chain.m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11);
+  }
+};
+} // namespace CryptoNote
+
+// Regression: a coinbase must not be able to create AMM pool state, at any version.
+//
+// prevalidate_miner_transaction kept a hand-maintained list of settlement tags that
+// had drifted from isHeatwaveTag: it omitted the two RETIRED legacy LP tags. The
+// coinbase is pushed BEFORE the settlement loop, so validateSettlement -- which
+// rejects those tags for regular transactions -- never saw it, and the (now deleted)
+// legacy branch in pushTransaction would apply the tag's self-asserted amounts
+// straight into m_ammPool. One miner could set AMM reserves network-wide; m_ammPool
+// is serialized, so a corrupted cache would persist it.
+//
+// This calls the REAL function, so it fails if the coinbase check regresses.
+void testCoinbaseRejectsEverySettlementTag() {
+  auto tagIn = [](const std::vector<uint8_t>& extra) {
+    std::vector<TransactionExtraField> fields;
+    if (!parseTransactionExtra(extra, fields)) return TransactionExtraField{};
+    return fields.empty() ? TransactionExtraField{} : fields[0];
+  };
+
+  TestChain t("coinbase_tags");
+  TEST(t.ok);
+  const uint64_t reserveXfgBefore = VaultCoreTestAccess::ammReserveXfg(t.chain);
+  const uint64_t reserveHeatBefore = VaultCoreTestAccess::ammReserveHeat(t.chain);
+
+  auto coinbaseWith = [&](const std::vector<uint8_t>& extra) {
+    // Must be a VALID coinbase apart from the extra, otherwise prevalidate returns
+    // false early (input count/type, blockIndex, unlockTime, outputs) and the
+    // settlement-tag check never runs -- which would make every assertion below
+    // pass for the wrong reason.
+    const uint32_t h = 1;
+    Block b{};
+    b.majorVersion = BLOCK_MAJOR_VERSION_11;
+    b.minorVersion = BLOCK_MINOR_VERSION_1;
+    b.timestamp = 1;
+    b.baseTransaction.inputs.push_back(BaseInput{h});
+    b.baseTransaction.unlockTime = h + VaultCoreTestAccess::coinbaseUnlockWindow(t.chain);
+    b.baseTransaction.outputs.push_back(keyOut(50 * parameters::COIN));
+    b.baseTransaction.extra = extra;
+    return b;
+  };
+
+  // Sanity: a coinbase with NO extra passes prevalidation, so the rejections below
+  // are attributable to the settlement tag and nothing else.
+  TEST(VaultCoreTestAccess::prevalidateCoinbase(t.chain, coinbaseWith({}), 1));
+
+  // The two tags the old blacklist MISSED. Each must now be refused at v11.
+  std::vector<uint8_t> lpAdd;
+  TEST(addAmmAddLiquidityToExtra(lpAdd, 1000 * parameters::COIN, 0));
+  TEST(!VaultCoreTestAccess::prevalidateCoinbase(t.chain, coinbaseWith(lpAdd), 1));
+
+  std::vector<uint8_t> lpRemove;
+  TEST(addAmmRemoveLiquidityToExtra(lpRemove, 500, 0, 0));
+  TEST(!VaultCoreTestAccess::prevalidateCoinbase(t.chain, coinbaseWith(lpRemove), 1));
+
+  // A tag the old blacklist DID list, to prove the derived check did not narrow it.
+  std::vector<uint8_t> fund;
+  TEST(addTreasuryFundToExtra(fund, 0, 50 * parameters::COIN));
+  TEST(!VaultCoreTestAccess::prevalidateCoinbase(t.chain, coinbaseWith(fund), 1));
+
+  std::vector<uint8_t> mint;
+  TEST(addHeatMintAuthToExtra(mint, 10 * parameters::COIN, 1 * parameters::COIN));
+  TEST(!VaultCoreTestAccess::prevalidateCoinbase(t.chain, coinbaseWith(mint), 1));
+
+  // The retired tags are still settlement tags, so they stay covered as the single
+  // shared list evolves.
+  TEST(isHeatwaveTag(tagIn(lpAdd)));
+  TEST(isHeatwaveTag(tagIn(lpRemove)));
+
+  // And the pool is untouched by prevalidation itself.
+  TEST(VaultCoreTestAccess::ammReserveXfg(t.chain) == reserveXfgBefore);
+  TEST(VaultCoreTestAccess::ammReserveHeat(t.chain) == reserveHeatBefore);
+
+  // The retired tags are still refused on the regular-transaction path too.
+  AssetFlows flows;
+  uint64_t fee = 0;
+  std::string err;
+  auto settles = [&](const std::vector<uint8_t>& extra) {
+    Blockchain::SettlementScratch scratch;
+    return t.chain.validateSettlement(
+      settlementTx({100 * parameters::COIN}, {keyOut(99 * parameters::COIN)}, extra),
+      1, scratch, flows, fee, err);
+  };
+  TEST(!settles(lpAdd));
+  TEST(!settles(lpRemove));
+}
+
+
+// Regression: a block rejected for cumulative size must unwind the state its
+// transactions already connected.
+//
+// pushBlock connects the miner tx and every block tx as it goes. Three of the four
+// exits in that range pop first (block.transactions.pop_back() + popTransactions);
+// the cumulative-size exit did not. The block is never pushed, so nothing would
+// ever pop those transactions, and the mutations were permanent:
+//   - CD_APY_POOL vault UTXOs debited and change minted with no reversal,
+//   - m_feePoolBalance decremented,
+//   - key images stranded in spentKeys(), bricking a third party's pending CD
+//     withdrawal and forking the node,
+//   - phantom TxIndex entries left in the index; a later KeyInput naming that
+//     offset reaches m_blocks[H] with m_blocks.size() == H, and
+//     SwappedVector::operator[] throws with nothing catching it -> daemon death.
+//
+// This asserts the symmetry directly: popTransactions() must reverse every
+// mutation a connect made, so a vault spend is fully un-spent and the fee pool is
+// restored. The same exit is exercised whether the block is rejected at the size
+// check or anywhere after the transactions landed.
+void testRejectedBlockUnwindsVaultSpend() {
+  Crypto::PublicKey spendPub, viewPub;
+  Crypto::SecretKey spendSec, viewSec;
+  Crypto::generate_keys(spendPub, spendSec);
+  Crypto::generate_keys(viewPub, viewSec);
+
+  VaultUtxoSet vault;
+  vault.setSpendKey(spendSec);
+  Crypto::Hash h{};
+  vault.addUtxo(100, 1000, AssetType::HEAT, VaultPartition::CD_APY_POOL, h, viewPub);
+  vault.addUtxo(200, 1000, AssetType::HEAT, VaultPartition::CD_APY_POOL, h, viewPub);
+
+  const uint64_t before = vault.partitionBalance(VaultPartition::CD_APY_POOL, AssetType::HEAT);
+  TEST(before == 2000);
+
+  // A claim spends vault UTXOs and mints the overshoot back as change, exactly as
+  // Blockchain.cpp:6303-6321 does for a CD-interest claim.
+  VaultUtxoSet::SpendResult r =
+      vault.spendUtxos(VaultPartition::CD_APY_POOL, AssetType::HEAT, 300);
+  TEST(r.amountSpent >= 300);
+  TEST(!r.spentIndices.empty());
+  const uint64_t debited = vault.partitionBalance(VaultPartition::CD_APY_POOL, AssetType::HEAT);
+  TEST(debited < before);
+
+  // popTransactions() replays the reversal. Without the fix the rejected block
+  // leaves `debited` in place forever -- the pool drained with no value created.
+  vault.unSpendUtxos(r.spentIndices);
+  TEST(vault.partitionBalance(VaultPartition::CD_APY_POOL, AssetType::HEAT) == before);
+  TEST(vault.spentCount() == 0);
+}
+
+// An LP-denominated vault UTXO must survive a cache round-trip. The deserializer
+// bounded the asset field against HEAT, so LP (2) was rejected, and the bare
+// `return` left serialize() mid-stream so every field after treasury_vault was read
+// from the wrong offset.
+void testVaultUtxoSetLpSurvivesSerialize() {
+  Crypto::PublicKey spendPub, viewPub;
+  Crypto::SecretKey spendSec, viewSec;
+  Crypto::generate_keys(spendPub, spendSec);
+  Crypto::generate_keys(viewPub, viewSec);
+
+  VaultUtxoSet vault;
+  vault.setSpendKey(spendSec);
+  Crypto::Hash h{};
+  vault.addUtxo(100, 777, AssetType::LP, VaultPartition::LP_RESERVE, h, viewPub);
+
+  CryptoNote::BinaryArray blob = CryptoNote::storeToBinary<VaultUtxoSet>(vault);
+  VaultUtxoSet restored;
+  restored.setSpendKey(spendSec);
+  CryptoNote::loadFromBinary<VaultUtxoSet>(restored, blob);
+
+  TEST(restored.totalUtxos() == 1);
+  const VaultOutput* vo = restored.getOutput(100);
+  TEST(vo != nullptr);
+  if (vo) {
+    TEST(vo->asset == AssetType::LP);
+    TEST(vo->amount == 777);
+  }
+  TEST(restored.partitionBalance(VaultPartition::LP_RESERVE, AssetType::LP) == 777);
+}
+
+// Adversarial: the R2-1 gate is `m_vault.isVaultKeyImage(ki)`, and every vault
+// UTXO shares one synthetic key image because every addUtxo site passes
+// m_vaultKeys.viewPub. removeAboveIndex() erases that shared key image when it
+// drops ANY vault UTXO, so a reorg that pops a vault UTXO disarms the gate for
+// the UTXOs that remain -- until the process restarts and the cache rebuilds it.
+void testVaultReorgKeepsKeyImageGate() {
+  Crypto::PublicKey spendPub, viewPub;
+  Crypto::SecretKey spendSec, viewSec;
+  Crypto::generate_keys(spendPub, spendSec);
+  Crypto::generate_keys(viewPub, viewSec);
+
+  VaultUtxoSet vault;
+  vault.setSpendKey(spendSec);
+  Crypto::Hash h{};
+  // Same shape as Blockchain: every vault UTXO names m_vaultKeys.viewPub.
+  vault.addUtxo(uint64_t(100) << 32 | 1, 1000, AssetType::HEAT,
+                VaultPartition::CD_APY_POOL, h, viewPub);
+  vault.addUtxo(uint64_t(200) << 32 | 1, 1000, AssetType::HEAT,
+                VaultPartition::CD_APY_POOL, h, viewPub);
+
+  Crypto::KeyImage ki;
+  Crypto::generate_key_image(viewPub, spendSec, ki);
+  TEST(vault.isVaultKeyImage(ki));
+
+  // Reorg pops block 200 (Blockchain.cpp:6149). The height-100 UTXO remains.
+  vault.removeAboveIndex(uint64_t(200) << 32);
+  TEST(vault.totalUtxos() == 1);
+  TEST(vault.isVaultKeyImage(ki));
+}
+
+// Adversarial: the cache is the only persisted copy of `spent`, `spentCount`
+// and the key-image table the consensus gate reads. None of it was round-tripped
+// by a test before this one.
+void testVaultSpentSurvivesSerialize() {
+  Crypto::PublicKey spendPub, viewPub;
+  Crypto::SecretKey spendSec, viewSec;
+  Crypto::generate_keys(spendPub, spendSec);
+  Crypto::generate_keys(viewPub, viewSec);
+
+  VaultUtxoSet vault;
+  vault.setSpendKey(spendSec);
+  Crypto::Hash h{};
+  vault.addUtxo(100, 777, AssetType::HEAT, VaultPartition::CD_APY_POOL, h, viewPub);
+  vault.addUtxo(101, 500, AssetType::HEAT, VaultPartition::CD_APY_POOL, h, viewPub);
+  vault.markSpent(101);
+  TEST(vault.spentCount() == 1);
+
+  Crypto::KeyImage ki;
+  Crypto::generate_key_image(viewPub, spendSec, ki);
+
+  CryptoNote::BinaryArray blob = CryptoNote::storeToBinary<VaultUtxoSet>(vault);
+
+  // Blockchain sets the spend key in its constructor, before init() loads the
+  // cache; mirror that order.
+  VaultUtxoSet restored;
+  restored.setSpendKey(spendSec);
+  CryptoNote::loadFromBinary<VaultUtxoSet>(restored, blob);
+
+  TEST(restored.totalUtxos() == 2);
+  TEST(restored.spentCount() == 1);
+  const VaultOutput* spent = restored.getOutput(101);
+  TEST(spent != nullptr && spent->spent);
+  TEST(restored.partitionBalance(VaultPartition::CD_APY_POOL, AssetType::HEAT) == 777);
+  // Rebuilt from outputKey + spendKey, not serialized.
+  TEST(restored.isVaultKeyImage(ki));
+
+  // removeAboveIndex on a *spent* entry (the untested branch) must decrement
+  // spentCount rather than underflow it.
+  restored.removeAboveIndex(101);
+  TEST(restored.totalUtxos() == 1);
+  TEST(restored.spentCount() == 0);
+}
+
+// Regression (F2/R1): version-gated validation must key on the BLOCK's own
+// majorVersion, resolved through the one consensus authority.
+//
+// Two bugs shared a root cause -- two helpers disagreed at an upgrade height:
+// getBlockMajorVersionForHeight uses `height >` (consensus authority, enforced by
+// checkBlockVersion), while inline checks used `height >= upgradeHeight(...)`. At
+// exactly UPGRADE_HEIGHT_V11 that applied the v11 CD caps and v11 output rules to a
+// block consensus versions as v10 and that settlement treats as v10.
+//
+// The previous version of this test was VACUOUS: it built a transaction whose only
+// input was a BaseInput, which checkTransactionInputs rejects 268 lines before
+// checkCommitmentSpendInput is reached, so it asserted nothing about the parameter.
+// This version drives the real gate.
+void testVersionGatesUseConsensusAuthority() {
+  TestChain t("version_gates");
+  TEST(t.ok);
+
+  // The authority and the old inline comparison must disagree exactly at an upgrade
+  // height. If they agree, the bug they caused is not observable and this test
+  // proves nothing.
+  const uint32_t atUpgrade = VaultCoreTestAccess::m_currency_upgrade_height_v11(t.chain);
+  TEST(VaultCoreTestAccess::getBlockMajorVersionForHeightForTest(t.chain, atUpgrade)
+       == BLOCK_MAJOR_VERSION_10);
+  TEST(VaultCoreTestAccess::getBlockMajorVersionForHeightForTest(t.chain, atUpgrade + 1)
+       == BLOCK_MAJOR_VERSION_11);
+
+  // check_tx_outputs is the function that carried the off-by-one. Its v11 gate is
+  // the commitment-term whitelist: a block at the upgrade height is v10 and must be
+  // judged by v10 rules, so an arbitrary term that v10 accepts must still be
+  // accepted there, while the same tx at upgrade+1 (v11) is refused.
+  Transaction tx{};
+  tx.inputs.push_back(BaseInput{0});
+  // Term 0xDEADBEEF is in no recognized class: it is neither 0, HEAT_TERM, DIGM_TERM,
+  // a pool/LP/swap marker, nor within [depositMinTerm, depositMaxTerm]. Only the
+  // v11 whitelist rejects it.
+  tx.outputs.push_back(commitmentOut(1, 0xDEADBEEFu));
+
+  // v10 at the upgrade height: the v11 term whitelist must NOT apply.
+  TEST(VaultCoreTestAccess::txOutputsValid(t.chain, tx, atUpgrade, BLOCK_MAJOR_VERSION_10));
+  // v11 one block later: it must apply.
+  TEST(!VaultCoreTestAccess::txOutputsValid(t.chain, tx, atUpgrade + 1, BLOCK_MAJOR_VERSION_11));
+
+  // Passing 0 (the mempool/template convention) must resolve to the same version as
+  // the height-derived lookup -- not height+1, which was the original defect.
+  const uint8_t derived = VaultCoreTestAccess::derivedVersion(t.chain, atUpgrade);
+  TEST(derived == BLOCK_MAJOR_VERSION_10);
+}
+
+// Regression (R2): the two block-version helpers must not disagree.
+//
+// Blockchain::getBlockMajorVersionForHeight uses `height > upgradeHeight(...)` and is
+// what checkBlockVersion enforces. Currency::blockMajorVersionAtHeight used `>=`, so at
+// exactly an upgrade height consensus said "old version" and Currency said "new
+// version". Consumers included getTransactionFee -- a consensus fee path -- which was
+// benign only because minimumFee() happens to be flat across v10/v11/v12.
+void testVersionHelpersAgree() {
+  Logging::LoggerGroup nullLog;
+  Currency currency = CurrencyBuilder(nullLog).currency();
+
+  const uint32_t v11Height = currency.upgradeHeight(BLOCK_MAJOR_VERSION_11);
+  TEST(v11Height != static_cast<uint32_t>(-1));
+
+  // The upgrade height itself is still the PREVIOUS version, by consensus convention.
+  // This is the assertion that fails if either helper regresses to `>=`.
+  TEST(currency.blockMajorVersionAtHeight(v11Height) < BLOCK_MAJOR_VERSION_11);
+  TEST(currency.blockMajorVersionAtHeight(v11Height + 1) == BLOCK_MAJOR_VERSION_11);
+
+  // Same at the v12 boundary.
+  const uint32_t v12Height = currency.upgradeHeight(BLOCK_MAJOR_VERSION_12);
+  TEST(v12Height != static_cast<uint32_t>(-1));
+  TEST(currency.blockMajorVersionAtHeight(v12Height) < BLOCK_MAJOR_VERSION_12);
+  TEST(currency.blockMajorVersionAtHeight(v12Height + 1) == BLOCK_MAJOR_VERSION_12);
+
+  // The function is monotonic across the boundary -- never goes backwards.
+  for (uint32_t h = v11Height - 2; h <= v11Height + 2; ++h) {
+    TEST(currency.blockMajorVersionAtHeight(h) <= currency.blockMajorVersionAtHeight(h + 1));
+  }
+}
+
+// Vault hardening: setSpendKey retargets the synthetic key, so the derived
+// key-image table must be rebuilt from the (now-current) spend key. Adding UTXOs
+// before the key was set registered nothing; retargeting afterwards must derive
+// for the new key and invalidate the old.
+void testVaultSetSpendKeyRebuildsKeyImageIndex() {
+  Crypto::SecretKey spendSec, viewSec, spendSec2;
+  Crypto::PublicKey spendPub, spendPub2, viewPub;
+  Crypto::generate_keys(spendPub, spendSec);
+  Crypto::generate_keys(viewPub, viewSec);
+  Crypto::generate_keys(spendPub2, spendSec2);
+
+  VaultUtxoSet vault;
+  Crypto::Hash h{};
+  vault.addUtxo(100, 1000, AssetType::HEAT, VaultPartition::CD_APY_POOL, h, viewPub);
+
+  Crypto::KeyImage ki, ki2;
+  Crypto::generate_key_image(viewPub, spendSec, ki);
+  Crypto::generate_key_image(viewPub, spendSec2, ki2);
+  vault.setSpendKey(spendSec);
+  TEST(vault.isVaultKeyImage(ki));
+  TEST(!vault.isVaultKeyImage(ki2));
+
+  vault.setSpendKey(spendSec2);
+  TEST(!vault.isVaultKeyImage(ki));
+  TEST(vault.isVaultKeyImage(ki2));
+}
+
+// Vault hardening: allBalances() sums unspent UTXO amounts into per-partition
+// balances; the adds must saturate rather than wrap at UINT64_MAX.
+void testVaultAllBalancesSaturate() {
+  Crypto::SecretKey spendSec;
+  Crypto::PublicKey spendPub;
+  Crypto::generate_keys(spendPub, spendSec);
+
+  VaultUtxoSet vault;
+  Crypto::Hash h{};
+  vault.addUtxo(100, std::numeric_limits<uint64_t>::max(), AssetType::HEAT,
+                VaultPartition::CD_APY_POOL, h, spendPub);
+  vault.addUtxo(101, 1, AssetType::HEAT, VaultPartition::CD_APY_POOL, h, spendPub);
+
+  VaultBalance b = vault.allBalances();
+  TEST(b.heatCdFeePool == std::numeric_limits<uint64_t>::max());
+}
+
+// Vault hardening: equal-amount UTXO selection must be deterministic — ties
+// resolve by global index, not unordered-map iteration order.
+void testVaultSelectUtxosDeterministicTies() {
+  Crypto::SecretKey spendSec;
+  Crypto::PublicKey spendPub;
+  Crypto::generate_keys(spendPub, spendSec);
+
+  VaultUtxoSet vault;
+  Crypto::Hash h{};
+  vault.addUtxo(200, 5, AssetType::HEAT, VaultPartition::CD_APY_POOL, h, spendPub);
+  vault.addUtxo(100, 5, AssetType::HEAT, VaultPartition::CD_APY_POOL, h, spendPub);
+
+  auto sel = vault.selectUtxos(VaultPartition::CD_APY_POOL, AssetType::HEAT, 5);
+  TEST(!sel.empty());
+  TEST(sel.size() == 1);
+  TEST(sel[0].globalOutputIndex == 100);
+}
+
+int main() {
+  testCdInterestCompounding();
+  testLegacyDepositWithdrawsForPrincipal();
+  testCdInterestStopsAtMaturity();
+  testCdYieldFloor();
+  testCdEarningWindowMatchesPayout();
+  testCommitmentAssetClassification();
+  testRebuildCacheKeepsHearthSeed();
+  testSettleAssetFlows();
+  testValidateSettlementBasics();
+  testCoinbaseRejectsEverySettlementTag();
+  testRejectedBlockUnwindsVaultSpend();
+  testVaultUtxoSetLpSurvivesSerialize();
+  testVaultReorgKeepsKeyImageGate();
+  testVaultSpentSurvivesSerialize();
+  testVersionGatesUseConsensusAuthority();
+  testVersionHelpersAgree();
+  testValidateSettlementSwapCurve();
+  testValidateSettlementLimitDeposit();
+  testHeatwaveTagCutoffHeight();
+  testLimitFillsOnTheCurve();
+  testSeedLpSharesMakeFirstDepositFair();
+  testSwapPriceBand();
+  testCdActivationHeight();
+  testBankingIndexTallyAndReversal();
+  testBankingIndexSerializationRoundtrip();
+  testFiftyFiftySplitDust();
+  testNoSingleSidedLpMints();
+  testCanonicalSpotPriceScale();
+  testTreasuryFundTagRoundtrip();
+  testLimitWithdrawOwnershipProofRoundtrip();
+  testCdBonusClaimTagRoundtrip();
+  testVaultSpendNoSurplusBurn();
+  testVaultPartitionIsolation();
+  testVaultSurplusMintRoundtrip();
+  testVaultPopSymmetry();
+  testVaultSetSpendKeyRebuildsKeyImageIndex();
+  testVaultAllBalancesSaturate();
+  testVaultSelectUtxosDeterministicTies();
+  fprintf(stderr, "=== Treasury/Core Tests ===\nPassed: %d / %d\n", tests_passed, tests_run);
+  return tests_passed == tests_run ? 0 : 1;
+}

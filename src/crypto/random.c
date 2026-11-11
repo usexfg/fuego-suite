@@ -1,20 +1,19 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
-// Copyright (c) 2018-2019 Conceal Network & Conceal Devs
+// Copyright (c) 2017-2022 Fuego Developers
 // Copyright (c) 2016-2019 The Karbowanec developers
+// Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free & open source software distributed in the hope 
-// that it will be useful, but WITHOUT ANY WARRANTY; without even
+// Fuego is free & open source software distributed in the hope
+// it will be useful, but WITHOUT ANY WARRANTY; without even an
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You may redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include <assert.h>
 #include <stddef.h>
@@ -78,10 +77,35 @@ static void generate_system_random_bytes(size_t n, void *result) {
 
 #endif
 
+#ifdef _WIN32
+#include <windows.h>
+static CRITICAL_SECTION random_lock_cs;
+static int random_lock_inited = 0;
+
+static void random_lock_acquire(void) {
+    if (!random_lock_inited) {
+        InitializeCriticalSection(&random_lock_cs);
+        random_lock_inited = 1;
+    }
+    EnterCriticalSection(&random_lock_cs);
+}
+
+static void random_lock_release(void) {
+    LeaveCriticalSection(&random_lock_cs);
+}
+#else
+#include <pthread.h>
+
+static pthread_mutex_t random_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static void random_lock_acquire(void) { pthread_mutex_lock(&random_lock); }
+static void random_lock_release(void) { pthread_mutex_unlock(&random_lock); }
+#endif
+
 static union hash_state state;
 
 #if !defined(NDEBUG)
-static volatile int curstate; /* To catch thread safety problems. */
+static volatile int curstate;
 #endif
 
 FINALIZER(deinit_random) {
@@ -89,11 +113,33 @@ FINALIZER(deinit_random) {
   assert(curstate == 1);
   curstate = 0;
 #endif
+  random_lock_acquire();
   memset(&state, 0, sizeof(union hash_state));
+  random_lock_release();
 }
 
-INITIALIZER(init_random) {
+#ifndef _WIN32
+static void reinit_random_child() {
+  pthread_mutex_init(&random_lock, NULL);
   generate_system_random_bytes(32, &state);
+}
+
+static void prepare_random_fork() {
+  pthread_mutex_lock(&random_lock);
+}
+
+static void parent_random_fork() {
+  pthread_mutex_unlock(&random_lock);
+}
+#endif
+
+INITIALIZER(init_random) {
+  random_lock_acquire();
+  generate_system_random_bytes(32, &state);
+  random_lock_release();
+#ifndef _WIN32
+  pthread_atfork(prepare_random_fork, parent_random_fork, reinit_random_child);
+#endif
   REGISTER_FINALIZER(deinit_random);
 #if !defined(NDEBUG)
   assert(curstate == 0);
@@ -106,11 +152,13 @@ void generate_random_bytes(size_t n, void *result) {
   assert(curstate == 1);
   curstate = 2;
 #endif
+  random_lock_acquire();
   if (n == 0) {
 #if !defined(NDEBUG)
     assert(curstate == 2);
     curstate = 1;
 #endif
+    random_lock_release();
     return;
   }
   for (;;) {
@@ -121,6 +169,7 @@ void generate_random_bytes(size_t n, void *result) {
       assert(curstate == 2);
       curstate = 1;
 #endif
+      random_lock_release();
       return;
     } else {
       memcpy(result, &state, HASH_DATA_AREA);
@@ -128,4 +177,5 @@ void generate_random_bytes(size_t n, void *result) {
       n -= HASH_DATA_AREA;
     }
   }
+  random_lock_release();
 }

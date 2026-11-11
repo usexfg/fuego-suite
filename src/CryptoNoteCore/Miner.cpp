@@ -1,20 +1,19 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
+// Copyright (c) 2017-2022 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it
+// Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You can redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "Miner.h"
 
@@ -115,6 +114,24 @@ namespace CryptoNote
       return false;
     }
 
+    // ── Inject FCI basket vote into coinbase TxExtra ──────────────────────
+    // present_mask == 0 → skip entirely; no extra bytes written, full backward compat.
+    // Phase 1: all votes land on-chain permanently for auditable DIGM back-pay.
+    if (m_fci_basket.present_mask != 0) {
+      if (!addMinerBasketVoteToExtra(bl.baseTransaction.extra, m_fci_basket)) {
+        logger(WARNING) << "[FCI] Failed to inject basket vote into coinbase extra";
+      }
+    }
+
+    // ── Inject Paradio vote (future DIGM feature) if configured ──────────
+    if (!m_paradio_vote.empty()) {
+      TransactionExtraMinerParadioVote pv;
+      pv.song_title = m_paradio_vote;
+      if (!addMinerParadioVoteToExtra(bl.baseTransaction.extra, pv)) {
+        logger(WARNING) << "[Paradio] Failed to inject vote into coinbase extra";
+      }
+    }
+
     set_block_template(bl, di);
     return true;
   }
@@ -207,6 +224,33 @@ namespace CryptoNote
       }
     }
 
+    // ── FCI basket — copy from config, will be injected into every coinbase ─
+    m_fci_basket.present_mask = config.fciPresentMask;
+    m_fci_basket.power        = config.fciPower;
+    m_fci_basket.milk         = config.fciMilk;
+    m_fci_basket.bread        = config.fciBread;
+    m_fci_basket.eggs         = config.fciEggs;
+    m_fci_basket.gas          = config.fciGas;
+    m_fci_basket.rice         = config.fciRice;
+    m_paradio_vote            = config.paradioVote;
+
+    if (m_fci_basket.present_mask) {
+      logger(INFO) << "[FCI] Basket vote active: mask=0x"
+        << std::hex << static_cast<int>(m_fci_basket.present_mask) << std::dec
+        << " power=" << m_fci_basket.power
+        << " milk=" << m_fci_basket.milk
+        << " bread=" << m_fci_basket.bread
+        << " eggs=" << m_fci_basket.eggs
+        << " gas=" << m_fci_basket.gas
+        << " rice=" << m_fci_basket.rice
+        << " (power in milli-USD/kWh, rest in cents)";
+    } else {
+      logger(INFO) << "[FCI] No basket prices configured. Use --fci-power/milk/gas/bread/eggs/rice or --fci-oracle to participate.";
+    }
+    if (!m_paradio_vote.empty()) {
+      logger(INFO) << "[Paradio] Block vote: '" << m_paradio_vote << "'";
+    }
+
     return true;
   }
   //-----------------------------------------------------------------------------------------------------
@@ -243,7 +287,7 @@ namespace CryptoNote
       m_threads.push_back(std::thread(std::bind(&miner::worker_thread, this, i)));
     }
 
-    logger(INFO, YELLOW) << "Fango mining has begun. Using " << threads_count << " CPU threads";
+    logger(INFO, YELLOW) << "Fuego mining has begun. Using " << threads_count << " CPU threads";
     return true;
   }
   
@@ -273,7 +317,7 @@ namespace CryptoNote
     }
 
     m_threads.clear();
-    logger(INFO) << "Fango mining has been stopped, " << m_threads.size() << " halted" ;
+    logger(INFO) << "Fuego mining has been stopped, " << m_threads.size() << " halted" ;
     return true;
   }
   //-----------------------------------------------------------------------------------------------------
@@ -409,7 +453,7 @@ namespace CryptoNote
         //we lucky!
         ++m_config.current_extra_message_index;
 
-        logger(INFO, BRIGHT_YELLOW) << "FANGO block found at difficulty of: " << local_diff;
+        logger(INFO, BRIGHT_YELLOW) << "Fuego block found at difficulty of: " << local_diff;  // add block height to message
 
         if(!m_handler.handle_block_found(b)) {
           --m_config.current_extra_message_index;

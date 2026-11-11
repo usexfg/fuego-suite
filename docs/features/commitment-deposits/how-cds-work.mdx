@@ -1,0 +1,80 @@
+---
+title: "How commitment deposits work"
+description: "Lock HEAT for a term, earn variable yield from protocol fees, keep balance private."
+keywords: ["commitment deposit", "CD", "HEAT", "yield", "fuego"]
+---
+
+A **commitment deposit (CD)** locks **HEAT** for a fixed term and earns interest funded by **protocol fees** (atomic swaps + Hearth CD share) — not by printing tokens.
+
+## Prerequisite: mint HEAT first
+
+```
+XFG → mint HEAT → lock HEAT as CD
+```
+
+There is **no** XFG CD path. COLD / Ember_Heat / “lock XFG” flows are **deprecated and removed**.
+
+See [Mint HEAT](/features/heat/mint-heat).
+
+## CD vs staking vs bank CD
+
+| | Bank CD | Staking | Fuego HEAT CD |
+|--|---------|---------|----------------|
+| Asset locked | Fiat | Protocol token | **HEAT** |
+| Yield source | Bank | Emissions / rewards | **Swap + Hearth fee revenue** |
+| Rate | Fixed | Schedule | Variable |
+| Transferable | Rarely | Rarely | Yes (commitment transfer) |
+| Balance public | Yes | Often | Hidden (commitment) |
+
+Do not call this “staking.”
+
+## How interest is funded
+
+Yield plumbing is fed by the **only two protocol fee streams**:
+
+| Source | Rate | CD-related share |
+|--------|------|------------------|
+| Atomic swap (SwapXFG / DeXFG) | **2%** per swap (1% initiation + 1% claim) | **80%** of that fee → CD yield pool (`SWAP_FEE_CD_SHARE_PCT_V11`) at v11+ |
+| Hearth trade | **1%** (`HEARTH_FEE_BPS`) | 30% → CD accumulator at v11 (70% at v12); remainder is the maker rebate |
+
+Also from atomic swaps at v11+: **20%** Bonus Vault, **0%** Treasury. Pre-v11 blocks settled 69/11/20 and replay that split.
+
+The v11 mint premium is **1%** of each mint's burn (`HEAT_MINT_PREMIUM_BPS = 100`), a haircut inside the burn that funds both AuntPoL legs (withheld XFG → XFG leg, the HEAT it buys → HEAT leg); the **0.1%** CD creation fee is charged in XFG to the dev fund — neither is protocol revenue.
+
+## On-chain representation
+
+Creating a CD produces a `TransactionOutputCommitment` with a **real term** (block/epoch length), **not** `HEAT_TERM` (mint marker).
+
+At maturity you spend with a commitment spend that can claim interest validated against fee-pool accounting.
+
+## Epochs and terms
+
+| Network | Blocks per epoch | Approx. time |
+|---------|------------------|--------------|
+| Mainnet | **900** (`EPOCH_DURATION_BLOCKS`) | ~**5 days** (at ~480s blocks) |
+| Testnet | **10** | Fast epochs for testing |
+
+Protocol CD term bounds:
+
+| Bound | Epochs | Approx. mainnet |
+|-------|--------|-----------------|
+| Min | **6** | ~1 month |
+| Max | **72** | ~1 year |
+
+## Lifecycle
+
+```
+Mint HEAT
+    ↓
+Create HEAT CD (term in epochs / blocks)
+    ↓
+Epochs pass — fees accumulate
+    ↓
+Maturity
+    ↓
+Withdraw HEAT (+ interest)  OR  Rollover (new CD = principal + interest)
+```
+
+<Card title="Create a HEAT CD" icon="plus" href="/features/commitment-deposits/creating-deposits">
+  Step-by-step after you have HEAT.
+</Card>

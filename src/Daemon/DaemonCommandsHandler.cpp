@@ -1,24 +1,23 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
+// Copyright (c) 2017-2026 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it
+// Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You can redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "DaemonCommandsHandler.h"
 #include <ctime>
-#include "P2p/NetNode.h"
+#include "../P2p/NetNode.h"
 #include "CryptoNoteCore/Miner.h"
 #include "CryptoNoteCore/Core.h"
 #include "CryptoNoteCore/Currency.h"
@@ -26,7 +25,8 @@
 #include "Serialization/SerializationTools.h"
 #include "version.h"
 #include <boost/format.hpp>
-#include "math.h"
+#include "Common/MathUtils.h"
+#include "Common/ConsoleTools.h"
 
 namespace
 {
@@ -61,13 +61,15 @@ DaemonCommandsHandler::DaemonCommandsHandler(CryptoNote::core& core, CryptoNote:
   m_consoleHandler.setHandler("print_ban", boost::bind(&DaemonCommandsHandler::print_ban, this, boost::arg<1>()), "Print banned nodes");
   m_consoleHandler.setHandler("ban", boost::bind(&DaemonCommandsHandler::ban, this, boost::arg<1>()), "Ban a given <IP> for a given amount of <seconds>, ban <IP> [<seconds>]");
   m_consoleHandler.setHandler("unban", boost::bind(&DaemonCommandsHandler::unban, this, boost::arg<1>()), "Unban a given <IP>, unban <IP>");
+  m_consoleHandler.setHandler("getburnedxfg", boost::bind(&DaemonCommandsHandler::get_burned_xfg, this, boost::arg<1>()), "Get total burned XFG amount");
 }
 
 //--------------------------------------------------------------------------------
 std::string DaemonCommandsHandler::get_commands_str()
 {
   std::stringstream ss;
-  ss << "FANGO  ||  " << PROJECT_VERSION_LONG << ENDL;
+  // Add bright orange color code directly to stringstream
+  ss << "\033[1;33mFUEGO  ||  " << PROJECT_VERSION_LONG << "\033[0m" << ENDL;
   ss << "Commands: " << ENDL;
   std::string usage = m_consoleHandler.getUsage();
   boost::replace_all(usage, "\n", "\n  ");
@@ -325,20 +327,42 @@ bool DaemonCommandsHandler::status(const std::vector<std::string>& args) {
   bool synced = ((uint32_t)height == (uint32_t)last_known_block_index);
   uint64_t totalCoinsInNetwork = m_core.coinsEmittedAtHeight(height);
   uint64_t totalCoinsOnDeposits = m_core.depositAmountAtHeight(height);
+  uint64_t totalCoinsEthereal = m_core.getBurnedXfgAtHeight(height);
   uint64_t amountOfActiveCoins = totalCoinsInNetwork - totalCoinsOnDeposits;
+
+  auto heatMetrics = m_core.getHeatMetrics();
+  uint64_t totalHeatSupply = heatMetrics.heatSupply;
+  uint64_t totalXfgBurned = heatMetrics.burnedXfg;
+  uint64_t heatLockedInCDs = heatMetrics.heatCdFeePool;
+  uint64_t circulatingHeat = (totalHeatSupply > heatLockedInCDs) ? (totalHeatSupply - heatLockedInCDs) : 0;
+  uint64_t totalEternalFlame = totalCoinsEthereal * CryptoNote::parameters::MINT_BURN_EF_PCT / 100;
+  uint64_t swfBalance = heatMetrics.swfBurnedXfgPendingHeat;
+  uint64_t permanentlyBurned = heatMetrics.permanentlyBurnedXfg;
+  // circulating: total emitted minus all burned (EF + SWF pending + permanent) — SWF pending removed from circulating but not total supply
+  // effective max / total supply: moneySupply - permanent (permanent = SWF converted to HEAT)
+  uint64_t actualTotalSupply = (totalCoinsInNetwork > totalCoinsEthereal) ? (totalCoinsInNetwork - totalCoinsEthereal) : 0;
+  uint64_t effectiveMaxSupply = (m_core.currency().moneySupply() > permanentlyBurned) ? (m_core.currency().moneySupply() - permanentlyBurned) : 0;
+  uint64_t actualCircSupply = (actualTotalSupply > totalCoinsOnDeposits) ? (actualTotalSupply - totalCoinsOnDeposits) : 0;
 
 
 std::cout << std::endl
-         << "FANGO |" << (m_core.currency().isTestnet() ? " LOCAL Testnet - " : " TESTNET | ")
-         << (synced ? "synced " : "syncing ") << height << "/" << last_known_block_index 
+         << "\033[1mFuego Reserve\033[0m |" << (m_core.currency().isTestnet() ? " Testnet - " : " MAINNET | ")
+         << (synced ? "synced " : "syncing ") << height << "/" << last_known_block_index
          << " (" << get_sync_percentage(height, last_known_block_index) << "%) "<< std::endl;
 std::cout << "**************************************************"<< std::endl;
 std::cout << "Network Hashrate: " << get_mining_speed(hashrate) << ", Difficulty: " << difficulty << std::endl;
 std::cout << "Block Major version: " << (int)majorVersion << ", " << "Alt Blocks: " << alt_blocks_count << std::endl;
 const auto &currency = m_core.currency();
-std::cout << "Active XFG :  " << currency.formatAmount(amountOfActiveCoins) << " (" << currency.formatAmount(calculatePercent(currency, amountOfActiveCoins, totalCoinsInNetwork)) << "%)" << std::endl;
-std::cout << "Current XFG on Deposit : " << currency.formatAmount(totalCoinsOnDeposits) << " (" << currency.formatAmount(calculatePercent(currency, totalCoinsOnDeposits, totalCoinsInNetwork)) << "%)" << std::endl;
-std::cout << "Total Coins in Network :  " << currency.formatAmount(totalCoinsInNetwork)<<" XFG"<< std::endl;
+std::cout << "Total " << (m_core.currency().isTestnet() ? "TEST" : "XFG") << " issued to date:  " << currency.formatAmount(totalCoinsInNetwork) << " " << (m_core.currency().isTestnet() ? "TEST" : "XFG") << std::endl;
+std::cout << "Total XFG Burned  : " << (totalCoinsEthereal >= 1000000 ? currency.formatAmount(totalCoinsEthereal) : "0.0") << " " << (m_core.currency().isTestnet() ? "TEST" : "XFG") << " (" << (totalCoinsEthereal > 0 ? currency.formatAmount(calculatePercent(currency, totalEternalFlame, totalCoinsEthereal)) : "0.0") << "% Eternal Flame)" << std::endl;
+std::cout << "Total HΞ∆T Minted : " << currency.formatAmount(totalHeatSupply) << " HΞ∆T" << std::endl;
+std::cout << "XFG in Legacy Deposits : " << (totalCoinsOnDeposits >= 1000000 ? currency.formatAmount(totalCoinsOnDeposits) : "0.0") << " " << (m_core.currency().isTestnet() ? "TEST" : "XFG") << " (" << currency.formatAmount(calculatePercent(currency, totalCoinsOnDeposits, totalCoinsInNetwork)) << "%)" << std::endl;
+std::cout << "Total HΞ∆T Locked in CDs : " << (heatLockedInCDs >= 1000000 ? currency.formatAmount(heatLockedInCDs) : "0.0") << " HΞ∆T (" << (totalHeatSupply > 0 ? currency.formatAmount(calculatePercent(currency, heatLockedInCDs, totalHeatSupply)) : "0.0") << "%)" << std::endl;
+std::cout << "Circulating HΞ∆T : " << currency.formatAmount(circulatingHeat) << " HΞ∆T (" << (totalHeatSupply > 0 ? currency.formatAmount(calculatePercent(currency, circulatingHeat, totalHeatSupply)) : "0.0") << "%)" << std::endl;
+  std::cout << "Treasury HΞ∆T Reserve : " << (heatMetrics.treasuryHeatReserve >= 1000000 ? currency.formatAmount(heatMetrics.treasuryHeatReserve) : "0.0") << " HΞ∆T" << std::endl;
+  std::cout << "SWF Balance (XFG) : " << currency.formatAmount(swfBalance) << " " << (m_core.currency().isTestnet() ? "TEST" : "XFG") << std::endl;
+ // std::cout << "SWF balance held in HΞ∆T : " << currency.formatAmount(permanentlyBurned) << " " << (m_core.currency().isTestnet() ? "TEST" : "XFG") << std::endl;  //  permanently removed should add to burn total when converted. this needs to be heat balance
+  std::cout << "Current XFG Total Supply: " << currency.formatAmount(actualTotalSupply) << " " << (m_core.currency().isTestnet() ? "TEST" : "XFG") << " (effective max: " << currency.formatAmount(effectiveMaxSupply) << ")" << std::endl;
 std::cout << "**************************************************"<< std::endl;
   return true;
 }
@@ -465,7 +489,7 @@ bool DaemonCommandsHandler::ban(const std::vector<std::string>& args)
     if (seconds == 0) {
       return false;
     }
-  } 
+  }
   try {
     ip = Common::stringToIpAddress(addr);
   } catch (const std::exception &e) {
@@ -487,4 +511,9 @@ bool DaemonCommandsHandler::unban(const std::vector<std::string>& args)
     return false;
   }
   return m_srv.unban_host(ip);
+}
+bool DaemonCommandsHandler::get_burned_xfg(const std::vector<std::string>& args) {
+  uint64_t burnedXFG = m_core.currency().getEternalFlame();
+  std::cout << "Total burned XFG: " << m_core.currency().formatAmount(burnedXFG) << " XFG" << std::endl;
+  return true;
 }

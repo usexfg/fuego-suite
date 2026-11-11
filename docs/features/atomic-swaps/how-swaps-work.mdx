@@ -1,0 +1,64 @@
+---
+title: "How swapXFG atomic swaps work"
+description: "Trustless cross-chain swaps via SwapDaemon — no escrow custodian."
+keywords: ["atomic swap", "swapXFG", "SwapDaemon", "adaptor signature", "fuego"]
+---
+
+**swapXFG** is Fuego’s cross-chain atomic swap stack (`SwapDaemon` / suite binaries). A swap either **completes** for both sides or **refunds** — no custodial middleman.
+
+## Guarantee
+
+- **Complete**: both parties receive agreed assets  
+- **Refund**: both recover originals after timelock  
+
+No partial “exchange keeps your funds.”
+
+## Mechanism
+
+Fuego uses **adaptor signatures** (and chain-specific clients) rather than only classical HTLCs on every chain. High-level flow:
+
+1. Parties exchange adaptor / setup data  
+2. Each locks or prepares chain-specific spend paths  
+3. Completion reveals the secret material needed for the other leg  
+4. Timeout → refund path  
+
+State is persisted by the swap daemon so restarts resume non-terminal swaps.
+
+## Protocol swap fee (live)
+
+| Constant | Value |
+|----------|-------|
+| `SWAP_FEE_RATE_BPS` | **100** = **1%** of XFG swap amount per side |
+
+Charged **twice** per completed swap: **1% on initiation + 1% on claim = 2% total** (Alice and Bob each pay 1%). Initiated from the SwapXFG TUI or the DeXFG tab in the Fuego-Wallet GUI.
+
+### Fee split (not 100% to CDs)
+
+| Share | v11+ % | Destination |
+|-------|--------|-------------|
+| CD yield | **80** | `SWAP_FEE_CD_SHARE_PCT_V11` |
+| Bonus Vault | **20** | `SWAP_FEE_BONUS_VAULT_PCT_V11` |
+| Treasury | **0** | `SWAP_FEE_TREASURY_SHARE_PCT_V11` (retired at v11) |
+
+The split is versioned. Blocks before v11 settled **69 CD / 11 Bonus Vault / 20 Treasury** and reorg replay keeps that split, so `SWAP_FEE_*_PRE_V11` still exists and pre-v11 blocks reverse correctly.
+
+Counterparty chains charge only their own network/miner fees on top.
+
+## vs Hearth
+
+| | Hearth | swapXFG |
+|--|--------|---------|
+| Domain | On-chain XFG↔HEAT | Cross-chain XFG↔BTC/ETH/… |
+| Fee | 1% Hearth (30% CD / 70% maker at v11, 70/30 at v12) | **2%** atomic swap (1% + 1%, 80/20 at v11+) |
+
+These are the **only two protocol earnings streams**. The v11 mint premium (1% of each mint's burn) is a haircut inside the burn that funds both AuntPoL legs — the withheld XFG is the XFG leg and the HEAT it buys is the HEAT leg — not revenue. The 0.1% CD creation fee is paid in XFG to the dev fund — also not protocol revenue.
+
+## Timeouts
+
+If a counterparty stalls, wait for timelock then refund (`refund` / RPC). Watchdog logs are warnings only — you initiate refunds.
+
+## Related
+
+- [Supported pairs](/features/atomic-swaps/supported-pairs)
+- [Fees and timeouts](/features/atomic-swaps/fees-and-timeouts)
+- [Step-by-step](/features/atomic-swaps/step-by-step-guide)

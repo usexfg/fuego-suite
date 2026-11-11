@@ -1,20 +1,19 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
+// Copyright (c) 2017-2022 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it
+// Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You can redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #pragma once
 #include "CryptoNoteProtocol/CryptoNoteProtocolDefinitions.h"
@@ -49,6 +48,20 @@ using CryptoNote::ISerializer;
         KV_MEMBER(available_balance)
         KV_MEMBER(balance)
         KV_MEMBER(unlocked_balance)
+      }
+    };
+  };
+
+  struct COMMAND_RPC_GET_ADDRESS {
+    typedef CryptoNote::EMPTY_STRUCT request;
+
+    struct response {
+      std::string address;
+      std::string status;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(address)
+        KV_MEMBER(status)
       }
     };
   };
@@ -140,7 +153,7 @@ using CryptoNote::ISerializer;
         std::string payment_id;
         std::string address;      
 
-        void serialize(ISerializer& s) {
+void serialize(CryptoNote::ISerializer& s) {
           KV_MEMBER(payment_id)
           KV_MEMBER(address)         
         }
@@ -257,9 +270,11 @@ using CryptoNote::ISerializer;
 
     struct response {
       uint64_t height;
+      std::string network;
 
       void serialize(ISerializer& s) {
         KV_MEMBER(height)
+        KV_MEMBER(network)
       }
     };
   };
@@ -398,5 +413,744 @@ using CryptoNote::ISerializer;
       }
     };
   };
-}
-}
+
+  // Initiate an adaptor-signature atomic swap (Musig2 escrow).
+  // Generates keys, aggregates Musig2 key, generates nonces.
+  // Returns our pubkey, nonces, and (if role=bob) adaptor point for sharing with counterparty.
+  struct COMMAND_RPC_INITIATE_SWAP {
+    struct request {
+      uint64_t    xfgAmount;
+      std::string peerPubKey;   // 64-char hex Ed25519 pubkey of counterparty
+      std::string pair;         // "SOL", "ETH", "XMR", "BCH"
+      std::string role;         // "alice" or "bob" (default: alice)
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(xfgAmount)
+        KV_MEMBER(peerPubKey)
+        KV_MEMBER(pair)
+        KV_MEMBER(role)
+      }
+    };
+
+    struct response {
+      std::string swapId;
+      std::string ourPubKey;
+      std::string nonce0;
+      std::string nonce1;
+      std::string escrowKey;    // Musig2 aggregated pubkey (escrow address)
+      std::string adaptorPoint; // only set when role=bob
+      std::string dleqChallenge;
+      std::string dleqResponse;
+      std::string status;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(swapId)
+        KV_MEMBER(ourPubKey)
+        KV_MEMBER(nonce0)
+        KV_MEMBER(nonce1)
+        KV_MEMBER(escrowKey)
+        KV_MEMBER(adaptorPoint)
+        KV_MEMBER(dleqChallenge)
+        KV_MEMBER(dleqResponse)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
+  // Complete a swap after receiving the counterparty's adaptor secret.
+  struct COMMAND_RPC_COMPLETE_SWAP {
+    struct request {
+      std::string swapId;
+      std::string adaptorSecret;    // 64-char hex adaptor secret t
+      std::string peerPartialSig;   // 64-char hex peer's partial Musig2 sig
+      std::string txPrefixHash;     // 64-char hex hash of the escrow tx prefix
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(swapId)
+        KV_MEMBER(adaptorSecret)
+        KV_MEMBER(peerPartialSig)
+        KV_MEMBER(txPrefixHash)
+      }
+    };
+
+    struct response {
+      std::string txHash;
+      std::string status;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(txHash)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
+  // Cooperatively refund a swap (both parties agree to unwind).
+  struct COMMAND_RPC_REFUND_SWAP {
+    struct request {
+      std::string swapId;
+      std::string peerPartialSig;   // peer's partial sig over refund tx
+      std::string txPrefixHash;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(swapId)
+        KV_MEMBER(peerPartialSig)
+        KV_MEMBER(txPrefixHash)
+      }
+    };
+
+    struct response {
+      std::string txHash;
+      std::string status;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(txHash)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
+  // Sign a swap offer payload with the wallet's spend key.
+  // offerId is the hex-encoded offer ID (SHA-256 of offer fields).
+  // Returns the maker's public key and signature for submission to the network.
+  struct COMMAND_RPC_SIGN_OFFER {
+    struct request {
+      uint64_t    xfgAmount;
+      uint64_t    rateNum;
+      uint8_t     pair;
+      uint32_t    ttlBlocks;
+      bool        isSell;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(xfgAmount)
+        KV_MEMBER(rateNum)
+        KV_MEMBER(pair)
+        KV_MEMBER(ttlBlocks)
+        KV_MEMBER(isSell)
+      }
+    };
+
+    struct response {
+      std::string offerId;       // hex-encoded offer ID
+      std::string makerPubKey;   // hex-encoded spend public key
+      std::string signature;     // hex-encoded signature over offerId hash
+      uint64_t    timestamp;
+      std::string status;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(offerId)
+        KV_MEMBER(makerPubKey)
+        KV_MEMBER(signature)
+        KV_MEMBER(timestamp)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
+  struct COMMAND_RPC_SIGN_CANCEL {
+    struct request {
+      std::string offerId;
+      uint64_t    timestamp;   // anti-replay: bound the cancel signature lifetime
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(offerId)
+        KV_MEMBER(timestamp)
+      }
+    };
+
+    struct response {
+      std::string offerId;
+      std::string makerPubKey;
+      std::string signature;
+      uint64_t    timestamp;
+      std::string status;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(offerId)
+        KV_MEMBER(makerPubKey)
+        KV_MEMBER(signature)
+        KV_MEMBER(timestamp)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
+  struct COMMAND_RPC_SIGN_ORDER {
+    struct request {
+      uint8_t     side;       // 0=BID, 1=ASK
+      uint8_t     pair;
+      uint64_t    price;      // XFG per 1 CTR, scaled by 1e7
+      uint64_t    amount;     // XFG amount (atomic units)
+      uint32_t    ttlBlocks;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(side)
+        KV_MEMBER(pair)
+        KV_MEMBER(price)
+        KV_MEMBER(amount)
+        KV_MEMBER(ttlBlocks)
+      }
+    };
+
+    struct response {
+      std::string orderId;      // hex-encoded order ID (canonical)
+      std::string makerPubKey;  // hex-encoded spend public key
+      std::string signature;    // hex-encoded Ed25519 signature over orderId hash
+      uint64_t    nonce;        // included so daemon can re-verify orderId
+      std::string status;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(orderId)
+        KV_MEMBER(makerPubKey)
+        KV_MEMBER(signature)
+        KV_MEMBER(nonce)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
+  // ── Phase 7: CD / COLD wallet RPC bridges ─────────────────────────────────
+
+  struct COMMAND_RPC_CREATE_AFK_LOCK {
+    struct request {
+      uint64_t amount;
+      uint32_t timeout_hours;
+      uint8_t pair;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(amount)
+        KV_MEMBER(timeout_hours)
+        KV_MEMBER(pair)
+      }
+    };
+
+    struct response {
+      std::string lockId;
+      std::string adaptorPoint;
+      std::string preSig;
+      std::string hashLock;   // H(t) — lets the taker lock the counterparty HTLC
+      std::string status;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(lockId)
+        KV_MEMBER(adaptorPoint)
+        KV_MEMBER(preSig)
+        KV_MEMBER(hashLock)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
+  struct COMMAND_RPC_CLAIM_AFK_SWAP {
+    struct request {
+      std::string swapId;
+      std::string secret_s;
+      std::string target_chain;
+      std::string payout_address; // required: real XFG address for claim proceeds
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(swapId)
+        KV_MEMBER(secret_s)
+        KV_MEMBER(target_chain)
+        KV_MEMBER(payout_address)
+      }
+    };
+
+    struct response {
+      std::string txHash;
+      std::string status;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(txHash)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
+  struct COMMAND_RPC_LIST_CDS {
+    typedef CryptoNote::EMPTY_STRUCT request;
+
+    struct deposit_entry {
+      uint64_t deposit_id;
+      uint64_t amount;
+      uint32_t term;
+      uint64_t unlock_height;
+      uint64_t creation_height;
+      std::string deposit_type;  // "COLD" or "HEAT"
+      bool locked;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(deposit_id)
+        KV_MEMBER(amount)
+        KV_MEMBER(term)
+        KV_MEMBER(unlock_height)
+        KV_MEMBER(creation_height)
+        KV_MEMBER(deposit_type)
+        KV_MEMBER(locked)
+      }
+    };
+
+    struct response {
+      std::vector<deposit_entry> deposits;
+      std::string status;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(deposits)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
+  struct COMMAND_RPC_CREATE_CD {
+    struct request {
+      uint64_t amount;
+      uint32_t term;
+      uint32_t deposit_type;  // HEAT=0x08, xCD=0xCD, YIELD=0x07; validated in handler
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(amount)
+        KV_MEMBER(term)
+        KV_MEMBER(deposit_type)
+      }
+    };
+
+    struct response {
+      std::string tx_hash;
+      uint64_t deposit_id;
+      uint64_t unlock_height;
+      std::string status;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(tx_hash)
+        KV_MEMBER(deposit_id)
+        KV_MEMBER(unlock_height)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
+  struct COMMAND_RPC_WITHDRAW_CD {
+    struct request {
+      uint64_t deposit_id;
+
+      void serialize(ISerializer& s) {        KV_MEMBER(deposit_id)
+      }
+    };
+
+    struct response {
+      std::string tx_hash;
+      std::string status;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(tx_hash)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
+  struct COMMAND_RPC_ROLLOVER_CD {
+    struct request {
+      uint64_t deposit_id;
+      uint32_t new_term;  // 0 = same term as original
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(deposit_id)
+        KV_MEMBER(new_term)
+      }
+    };
+
+    struct response {
+      std::string tx_hash;
+      uint64_t new_amount;
+      std::string status;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(tx_hash)
+        KV_MEMBER(new_amount)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
+  struct COMMAND_RPC_ESTIMATE_CD_YIELD {
+    struct request {
+      uint64_t amount;
+      uint32_t creation_height;
+      uint32_t current_height;  // 0 = use current blockchain height
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(amount)
+        KV_MEMBER(creation_height)
+        KV_MEMBER(current_height)
+      }
+    };
+
+    struct response {
+      uint64_t estimated_interest;
+      uint32_t effective_epochs;
+      std::string status;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(estimated_interest)
+        KV_MEMBER(effective_epochs)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
+  // HEAT mint: burn XFG to create HEAT stablecoin
+  struct COMMAND_RPC_HEAT_MINT {
+    struct request {
+      uint64_t xfg_burned;
+      uint64_t heat_minted;
+      uint64_t fee;
+      uint64_t mixin;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(xfg_burned)
+        KV_MEMBER(heat_minted)
+        KV_MEMBER(fee)
+        KV_MEMBER(mixin)
+      }
+    };
+
+    struct response {
+      std::string tx_hash;
+      std::string status;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(tx_hash)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
+  // Send HEAT to another address
+  struct COMMAND_RPC_SEND_HEAT {
+    struct request {
+      std::string address;
+      uint64_t amount;
+      uint64_t fee;
+      uint64_t mixin;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(address)
+        KV_MEMBER(amount)
+        KV_MEMBER(fee)
+        KV_MEMBER(mixin)
+      }
+    };
+
+    struct response {
+      std::string tx_hash;
+      std::string status;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(tx_hash)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
+  // Swap XFG↔HEAT on the Hearth AMM
+  struct COMMAND_RPC_AMM_SWAP {
+    struct request {
+      uint8_t  direction;     // 0 = XFG→HEAT, 1 = HEAT→XFG
+      uint64_t input_amount;
+      uint64_t expected_output;
+      uint64_t min_output;
+      uint64_t fee;
+      uint64_t mixin;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(direction)
+        KV_MEMBER(input_amount)
+        KV_MEMBER(expected_output)
+        KV_MEMBER(min_output)
+        KV_MEMBER(fee)
+        KV_MEMBER(mixin)
+      }
+    };
+
+    struct response {
+      std::string tx_hash;
+      std::string status;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(tx_hash)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
+  // Add liquidity to the Hearth AMM pool
+  struct COMMAND_RPC_AMM_ADD_LIQUIDITY {
+    struct request {
+      uint64_t amount_xfg;
+      uint64_t amount_heat;
+      uint64_t fee;
+      uint64_t mixin;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(amount_xfg)
+        KV_MEMBER(amount_heat)
+        KV_MEMBER(fee)
+        KV_MEMBER(mixin)
+      }
+    };
+
+    struct response {
+      std::string tx_hash;
+      std::string status;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(tx_hash)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
+  // Remove LP liquidity
+  struct COMMAND_RPC_AMM_REMOVE_LIQUIDITY {
+    struct request {
+      uint64_t lp_shares;
+      uint64_t min_xfg;
+      uint64_t min_heat;
+      uint64_t fee;
+      uint64_t mixin;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(lp_shares)
+        KV_MEMBER(min_xfg)
+        KV_MEMBER(min_heat)
+        KV_MEMBER(fee)
+        KV_MEMBER(mixin)
+      }
+    };
+
+    struct response {
+      std::string tx_hash;
+      std::string status;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(tx_hash)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
+  // Claim LP swap fee earnings (fee-only, LP position stays in pool)
+  struct COMMAND_RPC_AMM_CLAIM_LP_FEES {
+    struct request {
+      uint64_t lp_shares;
+      uint64_t min_xfg;
+      uint64_t min_heat;
+      uint64_t fee;
+      uint64_t mixin;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(lp_shares)
+        KV_MEMBER(min_xfg)
+        KV_MEMBER(min_heat)
+        KV_MEMBER(fee)
+        KV_MEMBER(mixin)
+      }
+    };
+
+    struct response {
+      std::string tx_hash;
+      std::string status;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(tx_hash)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
+  // Create a HEAT CD deposit (locks HEAT for term epochs)
+  struct COMMAND_RPC_HEAT_DEPOSIT {
+    struct request {
+      uint64_t amount;
+      uint32_t term_epochs;
+      uint64_t banking_fee;
+      uint64_t fee;
+      uint64_t mixin;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(amount)
+        KV_MEMBER(term_epochs)
+        KV_MEMBER(banking_fee)
+        KV_MEMBER(fee)
+        KV_MEMBER(mixin)
+      }
+    };
+
+    struct response {
+      std::string tx_hash;
+      std::string status;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(tx_hash)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
+  // v11+ Hearth limit order commands
+  struct COMMAND_RPC_DONATE {
+    struct request {
+      uint64_t amount;      // XFG atomics to burn to the treasury
+      uint64_t fee;
+      uint64_t mixin;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(amount)
+        KV_MEMBER(fee)
+        KV_MEMBER(mixin)
+      }
+    };
+
+    struct response {
+      std::string tx_hash;
+      std::string status;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(tx_hash)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
+  struct COMMAND_RPC_PLACE_LIMIT_ORDER {
+    struct request {
+      uint8_t side;           // 0=BUY_XFG, 1=SELL_XFG
+      uint64_t amount;        // XFG for sells, HEAT for buys
+      uint64_t target_price;  // HEAT/XFG ratio × COIN
+      uint32_t expiration;    // 0 = no expiry, else block height
+      uint64_t fee;
+      uint64_t mixin;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(side)
+        KV_MEMBER(amount)
+        KV_MEMBER(target_price)
+        KV_MEMBER(expiration)
+        KV_MEMBER(fee)
+        KV_MEMBER(mixin)
+      }
+    };
+
+    struct response {
+      std::string tx_hash;
+      std::string status;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(tx_hash)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
+  struct COMMAND_RPC_CANCEL_LIMIT_ORDER {
+    struct request {
+      std::string order_id;
+      uint64_t fee;
+      uint64_t mixin;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(order_id)
+        KV_MEMBER(fee)
+        KV_MEMBER(mixin)
+      }
+    };
+
+    struct response {
+      std::string tx_hash;
+      std::string status;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(tx_hash)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
+  struct COMMAND_RPC_GET_LIMIT_ORDERS {
+    typedef CryptoNote::EMPTY_STRUCT request;
+
+    struct LimitOrderInfo {
+      std::string order_id;
+      uint8_t side;
+      uint64_t amount;
+      uint64_t proceeds_xfg;
+      uint64_t proceeds_heat;
+      uint64_t target_price;
+      uint32_t expiration;
+      bool withdrawn;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(order_id)
+        KV_MEMBER(side)
+        KV_MEMBER(amount)
+        KV_MEMBER(proceeds_xfg)
+        KV_MEMBER(proceeds_heat)
+        KV_MEMBER(target_price)
+        KV_MEMBER(expiration)
+        KV_MEMBER(withdrawn)
+      }
+    };
+
+    struct response {
+      std::vector<LimitOrderInfo> orders;
+      std::string status;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(orders)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
+  // v11+: claim preview for a CD deposit (principal + base/bonus split, claimable, warnings)
+  struct COMMAND_RPC_GET_CD_CLAIM_PREVIEW {
+    struct request {
+      uint64_t deposit_id;
+
+      void serialize(CryptoNote::ISerializer& s) {
+        KV_MEMBER(deposit_id)
+      }
+    };
+
+    struct response {
+      uint64_t principal;
+      uint64_t base_interest;
+      uint64_t bonus_interest;
+      uint64_t claimable_interest;
+      uint64_t claimable_bonus;
+      uint64_t fee_pool_balance;
+      uint64_t bonus_vault_balance;
+      bool earns_interest;
+      bool capped;
+      std::string warning;
+      std::string note;
+      std::string status;
+
+      void serialize(CryptoNote::ISerializer& s) {
+        KV_MEMBER(principal)
+        KV_MEMBER(base_interest)
+        KV_MEMBER(bonus_interest)
+        KV_MEMBER(claimable_interest)
+        KV_MEMBER(claimable_bonus)
+        KV_MEMBER(fee_pool_balance)
+        KV_MEMBER(bonus_vault_balance)
+        KV_MEMBER(earns_interest)
+        KV_MEMBER(capped)
+        KV_MEMBER(warning)
+        KV_MEMBER(note)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
+} // namespace wallet_rpc
+} // namespace Tools

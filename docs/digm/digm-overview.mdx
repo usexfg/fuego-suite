@@ -1,0 +1,26 @@
+---
+title: "DIGM Overview"
+description: "The DIGM ecosystem on Fuego: Architecture and implementation details"
+---
+
+## What is DIGM?
+
+DIGM focuses on becoming the primary use-case layer on top of Fuego that drives atomic swap volume, which in turn fuels the Commitment Deposit (CD) yield pool.
+
+In the DIGM ecosystem, Fuego serves as a privacy-focused store-of-value chain with native atomic swaps, and on-chain yield. By driving music purchases and ecosystem usage in XFG, DIGM acts as the killer app to secure Fuego's long-term economic model.
+
+## Core Features
+
+- **No L2/L3:** The architecture relies directly on Fuego L1. The previously planned Elderfiers and L2 networks have been removed to minimize regulatory surface and concentrate engineering efforts on core features like hidden amounts (BP+ / MLSAG) and atomic swaps.
+- **P2P Atomic Swaps:** Uses adaptor signatures, indistinguishable from normal ring signatures.
+- **Asset Tags:** DIGM leverages specific `tx_extra` tags (e.g., `0xA8` for DIGM Mint) directly on-chain to handle meta-information without requiring an entire secondary blockchain.
+
+## Ecosystem Assets
+
+The ecosystem utilizes several on-chain assets:
+- **XFG (Fuego):** The native gas and store of value token.
+- **HEAT:** The proof-of-burn token.
+- **CD (Commitment Deposit):** Locked yield-bearing output.
+- **DIGM:** Specific asset types for artists, curators, and listeners managed through special `tx_extra` metadata tags.
+
+> **Note:** DIGM functionality is still being expanded. Check the `tx_extra` tags in the codebase (e.g., `0x0A` for Albums, `0x0B` for Listen Rights, `0x0C` for Curator rules, etc.) to see current capability levels.

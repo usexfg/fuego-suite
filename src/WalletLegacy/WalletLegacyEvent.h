@@ -1,25 +1,28 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
+// Copyright (c) 2017-2022 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it
+// Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You can redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #pragma once
 
 #include "IWalletLegacy.h"
 #include "Common/ObserverManager.h"
+
+namespace CryptoNote {
+  class WalletLegacy;
+}
 
 namespace CryptoNote
 {
@@ -31,6 +34,7 @@ public:
   };
 
   virtual void notify(Tools::ObserverManager<CryptoNote::IWalletLegacyObserver>& observer) = 0;
+  virtual void process(CryptoNote::WalletLegacy* wallet) {}
 };
 
 class WalletTransactionUpdatedEvent : public WalletLegacyEvent
@@ -204,6 +208,62 @@ public:
   }
 private:
   uint64_t m_balance;
+};
+
+/* HEAT balance */
+
+class WalletActualHeatBalanceUpdatedEvent : public WalletLegacyEvent
+{
+public:
+  WalletActualHeatBalanceUpdatedEvent(uint64_t balance) : m_balance(balance) {}
+  virtual ~WalletActualHeatBalanceUpdatedEvent() {}
+
+  virtual void notify(Tools::ObserverManager<CryptoNote::IWalletLegacyObserver>& observer)
+  {
+    observer.notify(&IWalletLegacyObserver::actualHeatBalanceUpdated, m_balance);
+  }
+private:
+  uint64_t m_balance;
+};
+
+class WalletPendingHeatBalanceUpdatedEvent : public WalletLegacyEvent
+{
+public:
+  WalletPendingHeatBalanceUpdatedEvent(uint64_t balance) : m_balance(balance) {}
+  virtual ~WalletPendingHeatBalanceUpdatedEvent() {}
+
+  virtual void notify(Tools::ObserverManager<CryptoNote::IWalletLegacyObserver>& observer)
+  {
+    observer.notify(&IWalletLegacyObserver::pendingHeatBalanceUpdated, m_balance);
+  }
+private:
+  uint64_t m_balance;
+};
+
+class WalletBurnDepositSecretCreatedEvent : public WalletLegacyEvent
+{
+public:
+  WalletBurnDepositSecretCreatedEvent(const std::string& txHash, const Crypto::SecretKey& secret, uint64_t amount, const std::vector<uint8_t>& metadata) 
+    : m_txHash(txHash), m_secret(secret), m_amount(amount), m_metadata(metadata) {}
+  virtual ~WalletBurnDepositSecretCreatedEvent() {}
+
+  virtual void notify(Tools::ObserverManager<CryptoNote::IWalletLegacyObserver>& observer) override
+  {
+    observer.notify(&IWalletLegacyObserver::burnSecretCreated, m_txHash);
+  }
+
+  virtual void process(CryptoNote::WalletLegacy* wallet) override;
+
+  const std::string& getTxHash() const { return m_txHash; }
+  const Crypto::SecretKey& getSecret() const { return m_secret; }
+  uint64_t getAmount() const { return m_amount; }
+  const std::vector<uint8_t>& getMetadata() const { return m_metadata; }
+
+private:
+  std::string m_txHash;
+  Crypto::SecretKey m_secret;
+  uint64_t m_amount;
+  std::vector<uint8_t> m_metadata;
 };
 
 

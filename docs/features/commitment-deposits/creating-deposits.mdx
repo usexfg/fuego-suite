@@ -1,0 +1,66 @@
+---
+title: "Creating a HEAT CD"
+description: "Lock HEAT for a term after minting — not XFG, not COLD."
+keywords: ["create deposit", "HEAT CD", "commitment deposit", "fuego"]
+---
+
+## Prerequisites
+
+- Synced daemon
+- Wallet with **HEAT** balance (mint first — [Mint HEAT](/features/heat/mint-heat))
+- Enough balance for the CD amount + network fee
+
+## Critical rule
+
+| Action | Asset | Term |
+|--------|-------|------|
+| Mint HEAT | Burn **XFG** | `HEAT_TERM` / `mintHeatV10` |
+| Open CD | Lock **HEAT** | Real term (6–72 epochs on mainnet) |
+
+`createDeposit` with a normal term is for **HEAT CDs**. Do not use legacy `cold` / COLD commands as the product path.
+
+## Create a CD
+
+Exact CLI names depend on wallet build. Conceptual:
+
+```
+# After HEAT is in the wallet:
+deposit <heat_amount> <term_epochs>
+```
+
+Term bounds (mainnet): **6–72 epochs** (`CD_MIN_EPOCHS` … `CD_MAX_EPOCHS`). Testnet allows shorter minimums for testing.
+
+Example pattern — lock HEAT for the minimum term:
+
+```
+deposit 10 6
+```
+
+Confirm the wallet reports a **HEAT** CD (not a burn/mint and not COLD).
+
+## What happens on-chain
+
+- Output: `TransactionOutputCommitment` for HEAT
+- Amount hidden under commitment
+- Maturity height = creation height + term blocks
+- Deposit secret stored in **your wallet file** — back it up
+
+## Verify
+
+Use wallet list/info commands for deposits (avoid relying on deprecated `list_cold` / `cold_info` naming in older docs — if still present in a binary, they may be legacy aliases).
+
+RPC: see [Deposits API](/api-reference/deposits).
+
+## Estimate yield
+
+```bash
+curl -X POST http://127.0.0.1:28080/estimate_cd_yield \
+  -H 'Content-Type: application/json' \
+  -d '{"amount": 100000000, "creation_height": 0}'
+```
+
+Amounts are in **atomic units** where **1 coin = 10,000,000** atomic (`COIN = 1e7`), not 1e9.
+
+## Testnet
+
+Testnet epochs are **10 blocks**. Use testnet to practice mint → CD → maturity → withdraw before mainnet.

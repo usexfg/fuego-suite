@@ -1,20 +1,19 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
+// Copyright (c) 2017-2022 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it
+// Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You can redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "TransactionUtils.h"
 
@@ -35,6 +34,15 @@ bool checkInputsKeyimagesDiff(const CryptoNote::TransactionPrefix& tx) {
     if (in.type() == typeid(KeyInput)) {
       if (!ki.insert(boost::get<KeyInput>(in).keyImage).second)
         return false;
+    } else if (in.type() == typeid(TransactionInputCommitmentSpend)) {
+      if (!ki.insert(boost::get<TransactionInputCommitmentSpend>(in).keyImage).second)
+        return false;
+    } else if (in.type() == typeid(TransactionInputCommitmentTransfer)) {
+      if (!ki.insert(boost::get<TransactionInputCommitmentTransfer>(in).keyImage).second)
+        return false;
+    } else if (in.type() == typeid(TransactionInputSwapEscrow)) {
+      if (!ki.insert(boost::get<TransactionInputSwapEscrow>(in).keyImage).second)
+        return false;
     }
   }
   return true;
@@ -49,6 +57,15 @@ size_t getRequiredSignaturesCount(const TransactionInput& in) {
   if (in.type() == typeid(MultisignatureInput)) {
     return boost::get<MultisignatureInput>(in).signatureCount;
   }
+  if (in.type() == typeid(TransactionInputCommitmentSpend)) {
+    return boost::get<TransactionInputCommitmentSpend>(in).outputIndexes.size();
+  }
+  if (in.type() == typeid(TransactionInputCommitmentTransfer)) {
+    return boost::get<TransactionInputCommitmentTransfer>(in).outputIndexes.size();
+  }
+  if (in.type() == typeid(TransactionInputSwapEscrow)) {
+    return 1;
+  }
   return 0;
 }
 
@@ -59,6 +76,15 @@ uint64_t getTransactionInputAmount(const TransactionInput& in) {
   if (in.type() == typeid(MultisignatureInput)) {
     // TODO calculate interest
     return boost::get<MultisignatureInput>(in).amount;
+  }
+  if (in.type() == typeid(TransactionInputCommitmentSpend)) {
+    return boost::get<TransactionInputCommitmentSpend>(in).amount;
+  }
+  if (in.type() == typeid(TransactionInputCommitmentTransfer)) {
+    return boost::get<TransactionInputCommitmentTransfer>(in).amount;
+  }
+  if (in.type() == typeid(TransactionInputSwapEscrow)) {
+    return boost::get<TransactionInputSwapEscrow>(in).amount;
   }
   return 0;
 }
@@ -72,6 +98,15 @@ TransactionTypes::InputType getTransactionInputType(const TransactionInput& in) 
   }
   if (in.type() == typeid(BaseInput)) {
     return TransactionTypes::InputType::Generating;
+  }
+  if (in.type() == typeid(TransactionInputCommitmentSpend)) {
+    return TransactionTypes::InputType::CommitmentSpend;
+  }
+  if (in.type() == typeid(TransactionInputCommitmentTransfer)) {
+    return TransactionTypes::InputType::CommitmentTransfer;
+  }
+  if (in.type() == typeid(TransactionInputSwapEscrow)) {
+    return TransactionTypes::InputType::SwapEscrow;
   }
   return TransactionTypes::InputType::Invalid;
 }
@@ -99,6 +134,15 @@ TransactionTypes::OutputType getTransactionOutputType(const TransactionOutputTar
   }
   if (out.type() == typeid(MultisignatureOutput)) {
     return TransactionTypes::OutputType::Multisignature;
+  }
+  if (out.type() == typeid(TransactionOutputCommitment)) {
+    return TransactionTypes::OutputType::Commitment;
+  }
+  if (out.type() == typeid(TransactionOutputOrder)) {
+    return TransactionTypes::OutputType::Order;
+  }
+  if (out.type() == typeid(TransactionOutputSwapEscrow)) {
+    return TransactionTypes::OutputType::SwapEscrow;
   }
   return TransactionTypes::OutputType::Invalid;
 }
@@ -141,7 +185,9 @@ bool findOutputsToAccount(const CryptoNote::TransactionPrefix& transaction, cons
   generate_key_derivation(txPubKey, keys.viewSecretKey, derivation);
 
   for (const TransactionOutput& o : transaction.outputs) {
-    assert(o.target.type() == typeid(KeyOutput) || o.target.type() == typeid(MultisignatureOutput));
+    assert(o.target.type() == typeid(KeyOutput) || o.target.type() == typeid(MultisignatureOutput) ||
+           o.target.type() == typeid(TransactionOutputCommitment) ||
+           o.target.type() == typeid(TransactionOutputSwapEscrow));
     if (o.target.type() == typeid(KeyOutput)) {
       if (is_out_to_acc(keys, boost::get<KeyOutput>(o.target), derivation, keyIndex)) {
         out.push_back(outputIndex);

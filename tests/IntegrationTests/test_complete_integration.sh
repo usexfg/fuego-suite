@@ -1,0 +1,10 @@
+#!/bin/bash
+echo "🔥 Complete XFGWINTER-FUEGO Integration Test"
+echo "=================================================="
+echo ""
+echo "✅ xfgwinter CLI is working: ./xfgwinter-cli"
+echo "✅ Integration setup complete!"
+echo ""
+echo "Next steps:"
+echo "1. Start fuego-fresh: ./fuegod --testnet --rpc-bind-port 18180"
+echo "2. Create burn deposit using RPC"

@@ -1,20 +1,19 @@
-// Copyright (c) 2019-2021 Fango Developers
-// Copyright (c) 2018-2021 Fandom Gold Society
+// Copyright (c) 2017-2022 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it
+// Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You can redistribute it and/or modify it under the terms
 // of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fango includes elements written 
+// by the Free Software Foundation. Fuego includes elements written
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "PoolRpcServer.h"
 
@@ -98,7 +97,14 @@ bool pool_rpc_server::handle_command_line(const boost::program_options::variable
 //------------------------------------------------------------------------------------------------------------------------------
 bool pool_rpc_server::init(const boost::program_options::variables_map& vm) {
   if (!handle_command_line(vm)) {
-    logger(ERROR) << "Failed to process command line in pool_rpc_server";
+    logger(Logging::ERROR) << "Failed to process command line in pool_rpc_server";
+    return false;
+  }
+
+  if (m_rpcUser.empty() || m_rpcPassword.empty()) {
+    logger(Logging::ERROR, Logging::BRIGHT_RED) << "RPC credentials are REQUIRED for security."
+      << " Set --rpc-user and --rpc-password (strong, random values)."
+      << " Running with empty credentials is disabled.";
     return false;
   }
 
@@ -140,7 +146,8 @@ void pool_rpc_server::processRequest(const CryptoNote::HttpRequest& request, Cry
   } catch (const JsonRpcError& err) {
     jsonResponse.setError(err);
   } catch (const std::exception& e) {
-    jsonResponse.setError(JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, e.what()));
+    logger(WARNING) << "Pool RPC internal error (not sent to client): " << e.what();
+    jsonResponse.setError(JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Internal pool error"));
   }
 
   response.setBody(jsonResponse.getBody());
@@ -194,7 +201,7 @@ bool pool_rpc_server::on_transfer(const wallet_rpc::COMMAND_RPC_TRANSFER::reques
     ttl = static_cast<uint64_t>(time(nullptr)) + req.ttl;
   }
 
-  uint64_t actualFee = CryptoNote::parameters::MINIMUM_FEE_V2;
+  uint64_t actualFee = m_currency.minimumFee();
 
   std::string extraString;
   std::copy(extra.begin(), extra.end(), std::back_inserter(extraString));
@@ -221,7 +228,8 @@ bool pool_rpc_server::on_transfer(const wallet_rpc::COMMAND_RPC_TRANSFER::reques
     res.tx_secret_key = Common::podToHex(transactionSK);
 
   } catch (const std::exception& e) {
-    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, e.what());
+    logger(WARNING) << "Pool RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "Internal pool error");
   }
   return true;
 }
@@ -230,7 +238,7 @@ bool pool_rpc_server::on_optimize(const wallet_rpc::COMMAND_RPC_OPTIMIZE::reques
   std::vector<CryptoNote::WalletLegacyTransfer> transfers;
   std::vector<CryptoNote::TransactionMessage> messages;
   std::string extraString;
-  uint64_t fee = CryptoNote::parameters::MINIMUM_FEE_V2;
+  uint64_t fee = m_currency.minimumFee();
   uint64_t mixIn = 0;
   uint64_t unlockTimestamp = 0;
   uint64_t ttl = 0;
@@ -258,7 +266,8 @@ bool pool_rpc_server::on_optimize(const wallet_rpc::COMMAND_RPC_OPTIMIZE::reques
     res.tx_secret_key = Common::podToHex(transactionSK);
 
   } catch (const std::exception& e) {
-    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, e.what());
+    logger(WARNING) << "Pool RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "Internal pool error");
   }
   return true;
 }
@@ -267,7 +276,8 @@ bool pool_rpc_server::on_store(const wallet_rpc::COMMAND_RPC_STORE::request& req
   try {
     WalletHelper::storeWallet(m_wallet, m_walletFilename);
   } catch (std::exception& e) {
-    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, std::string("Couldn't save wallet: ") + e.what());
+    logger(WARNING) << "Pool RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Internal pool error");
   }
 
   return true;

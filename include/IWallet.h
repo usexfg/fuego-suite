@@ -1,17 +1,16 @@
+// Copyright (c) 2017-2026 Fuego Developers
 // Copyright (c) 2012-2018 The CryptoNote developers
-// Copyright (c) 2018-2021 Fandom Gold Society
-// Copyright (c) 2019-2021 Fango Developers
 //
-// This file is part of Fango.
+// This file is part of Fuego.
 //
-// Fango is free software distributed in the hope that it 
+// Fuego is free software distributed in the hope that it
 // will be useful- but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 // PURPOSE. You are encouraged to redistribute it and/or modify it
 // under the terms of the GNU General Public License v3 or later
 // versions as published by the Free Software Foundation.
 // You should have received a copy of the GNU General Public License
-// along with Fango. If not, see <https://www.gnu.org/licenses/>.
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #pragma once
 
@@ -20,7 +19,8 @@
 #include <vector>
 #include <boost/optional.hpp>
 #include "CryptoNote.h"
-#include "CryptoNoteConfig.h"
+#include "../src/CryptoNoteConfig.h"
+#include "../src/CryptoNoteCore/CryptoNoteBasic.h"
 
 namespace CryptoNote
 {
@@ -63,9 +63,16 @@ struct WalletTransactionCreatedData
 
 struct Deposit
 {
+  // Deposit type enum
+  enum class Type : uint8_t {
+    HEAT = 0x08,        // HEAT deposits/CDs (term field carries HEAT_TERM or lock blocks)
+    // COLD = 0xCD,      // REMOVED: COLD yield deposit
+    // LEGACY_BOND = 0xCB, // REMOVED: no bond claims exist
+  };
+
   size_t creatingTransactionId;
   size_t spendingTransactionId;
-  uint32_t term;
+  uint32_t term;        // User-defined unlock time (independent of type)
   uint64_t amount;
   uint64_t interest;
   uint64_t height;
@@ -74,6 +81,8 @@ struct Deposit
   uint32_t outputInTransaction;
   Crypto::Hash transactionHash;
   std::string address;
+  std::string extra;    // Transaction extra field (contains commitment info)
+  Type depositType = Type::HEAT;  // Default to HEAT
 };
 
 struct WalletTransactionUpdatedData
@@ -151,8 +160,8 @@ struct TransactionParameters
   std::vector<std::string> sourceAddresses;
   std::vector<WalletOrder> destinations;
   std::vector<WalletMessage> messages;
-  uint64_t fee = CryptoNote::parameters::MINIMUM_FEE_V2;
-  uint64_t mixIn = CryptoNote::parameters::MINIMUM_MIXIN;
+  uint64_t fee = CryptoNote::parameters::MINIMUM_FEE;
+  uint64_t mixIn = CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
   std::string extra;
   DepositId firstDepositId = WALLET_INVALID_DEPOSIT_ID;
   size_t depositCount = 0;
@@ -185,9 +194,9 @@ public:
   virtual ~IWallet() {}
 
   virtual void initialize(const std::string& path, const std::string& password) = 0;
-  virtual void createDeposit(uint64_t amount, uint64_t term, std::string sourceAddress, std::string destinationAddress, std::string &transactionHash) = 0;
+  virtual void createDeposit(uint64_t amount, uint64_t term, std::string sourceAddress, std::string destinationAddress, std::string &transactionHash)=0;
   virtual void withdrawDeposit(DepositId depositId, std::string &transactionHash) = 0;
-  virtual Deposit getDeposit(size_t depositIndex) const = 0;
+  virtual Deposit getDeposit(size_t bankingIndex) const = 0;
   virtual void initializeWithViewKey(const std::string& path, const std::string& password, const Crypto::SecretKey& viewSecretKey) = 0;
   virtual void load(const std::string& path, const std::string& password, std::string& extra) = 0;
   virtual void load(const std::string& path, const std::string& password) = 0;
@@ -201,7 +210,7 @@ public:
 
   virtual size_t getAddressCount() const = 0;
 
-  virtual size_t getWalletDepositCount() const = 0;  
+  virtual size_t getWalletDepositCount() const = 0;
   virtual std::vector<DepositsInBlockInfo> getDeposits(const Crypto::Hash &blockHash, size_t count) const = 0;
   virtual std::vector<DepositsInBlockInfo> getDeposits(uint32_t blockIndex, size_t count) const = 0;
 
@@ -225,6 +234,9 @@ public:
   virtual uint64_t getUnlockedDepositBalance() const = 0;
   virtual uint64_t getUnlockedDepositBalance(const std::string &address) const = 0;
 
+  virtual uint64_t getLockedHeatBalance() const = 0;
+  virtual uint64_t getUnlockedHeatBalance() const = 0;
+
   virtual size_t getTransactionCount() const = 0;
   virtual WalletTransaction getTransaction(size_t transactionIndex) const = 0;
   virtual size_t getTransactionTransferCount(size_t transactionIndex) const = 0;
@@ -243,6 +255,9 @@ public:
   virtual std::vector<size_t> getDelayedTransactionIds() const = 0;
 
   virtual size_t transfer(const TransactionParameters &sendingTransaction, Crypto::SecretKey &transactionSK) = 0;
+
+  virtual void mintHeatV10(uint64_t xfgBurned, uint64_t heatMinted, uint64_t fee, uint64_t mixin, std::string &transactionHash) = 0;
+  virtual void sendHeatV10(const std::string &recipient, uint64_t amount, uint64_t fee, uint64_t mixin, std::string &transactionHash) = 0;
 
   virtual size_t makeTransaction(const TransactionParameters &sendingTransaction) = 0;
   virtual void commitTransaction(size_t transactionId) = 0;

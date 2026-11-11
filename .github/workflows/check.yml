@@ -116,7 +116,185 @@ jobs:
         run: |
           cmake -B build -DCMAKE_BUILD_TYPE=Release -DUSE_VENDORED_SECP256K1=OFF -G Ninja
           cmake --build build -j$(nproc)
-        
+
+      - name: Cross-curve proof library tests
+        run: cargo test --release --locked --manifest-path src/SwapDaemon/Crypto/cross_curve_dleq/Cargo.toml
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -LE manual -j$(nproc)
+
+  build-ubuntu24-clang:
+    name: Ubuntu 24.04 (Clang)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang cmake libboost-all-dev libssl-dev libicu-dev libjsoncpp-dev libsecp256k1-dev ninja-build
+
+      - name: Build
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DUSE_VENDORED_SECP256K1=OFF -G Ninja \
+            -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+          cmake --build build -j$(nproc)
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -LE manual -j$(nproc)
+
+  utxo-regtest-gate:
+    name: UTXO transport gate (${{ matrix.chain }} regtest)
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        chain: [btc, ltc, bch]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libboost-all-dev libssl-dev libicu-dev libjsoncpp-dev libsecp256k1-dev ninja-build
+
+      - name: Build the gate
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DUSE_VENDORED_SECP256K1=OFF -G Ninja
+          cmake --build build -j$(nproc) --target test_utxo_regtest
+
+      - name: Start a ${{ matrix.chain }} regtest node
+        run: scripts/regtest-node.sh ${{ matrix.chain }} "$RUNNER_TEMP/node" 18990
+
+      - name: Run the gate
+        run: build/src/test_daemons/test_utxo_regtest ${{ matrix.chain }} 127.0.0.1 18990 gate gate
+
+  evm-anvil-gate:
+    name: EVM transport gate (anvil)
+    runs-on: ubuntu-24.04
+    env:
+      RPC: http://127.0.0.1:8545
+      DEPLOYER: "0x4e59b44847b379578588920ca78fbf26c0b4956c"
+      REGISTRY: "0xcef71d1a85d98f0d9ce242b41bbd9fd5d99aefeb"
+      POINT_REGISTRY: "0x10e9f7e464f3e538b9324fb830c2d8daaf7126da"
+      # anvil's published development account 0; it holds only test ether.
+      ANVIL_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libboost-all-dev libssl-dev libicu-dev libjsoncpp-dev libsecp256k1-dev ninja-build
+
+      - uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Committed contract artifacts match a fresh pinned build
+        run: |
+          cd contracts/artifacts-build
+          npm ci --no-audit --no-fund
+          node build.js --check
+
+      - name: PointTimelock contract tests
+        run: |
+          diff contracts/point-timelock/src/PointTimelock.sol src/SwapDaemon/Ethereum/PointTimelock.sol
+          cd contracts/point-timelock
+          forge install foundry-rs/forge-std@v1.9.4 --no-git
+          forge test -vv
+
+      - name: Build the gate
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DUSE_VENDORED_SECP256K1=OFF -G Ninja
+          cmake --build build -j$(nproc) --target test_evm_anvil_gate
+
+      - name: Start anvil
+        run: |
+          anvil --host 127.0.0.1 --port 8545 > "$RUNNER_TEMP/anvil.log" 2>&1 &
+          for _ in $(seq 1 30); do cast block-number --rpc-url "$RPC" >/dev/null 2>&1 && exit 0; sleep 1; done
+          cat "$RUNNER_TEMP/anvil.log"; exit 1
+
+      - name: Deploy HashedTimelock and PointTimelock through the deterministic deployer
+        run: |
+          test "$(cast code --rpc-url "$RPC" "$DEPLOYER")" != "0x"
+          salt="$(printf '0%.0s' $(seq 1 64))"
+          for contract in HashedTimelock PointTimelock; do
+            data="0x${salt}$(tr -d '[:space:]' < src/SwapDaemon/Ethereum/${contract}_sol_${contract}.bin)"
+            cast send --rpc-url "$RPC" --private-key "$ANVIL_KEY" "$DEPLOYER" "$data"
+          done
+          test "$(cast code --rpc-url "$RPC" "$REGISTRY")" != "0x"
+          test "$(cast code --rpc-url "$RPC" "$POINT_REGISTRY")" != "0x"
+
+      - name: Run the gate
+        run: build/src/test_daemons/test_evm_anvil_gate "$RPC" "$REGISTRY"
+
+  sol-validator-gate:
+    name: SOL transport gate (solana-test-validator)
+    runs-on: ubuntu-24.04
+    env:
+      SOLANA_RELEASE: v1.18.26
+      # sha256 of the agave release asset solana-release-x86_64-unknown-linux-gnu.tar.bz2
+      SOLANA_TARBALL_SHA256: 913c3fd7d9ac22b0a002dd2a691433176cc153e8839790589eba492d095f6d97
+      PROGRAM_ID: J4H9vUpp5CtJF9x4iPAMj7fqp5fpH9KTGcRzRC8e72ig
+      SOL_RPC: http://127.0.0.1:8899
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libboost-all-dev libssl-dev libicu-dev libjsoncpp-dev libsecp256k1-dev ninja-build
+
+      - name: Install the Solana tool suite
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/solana.tar.bz2" \
+            "https://github.com/anza-xyz/agave/releases/download/${SOLANA_RELEASE}/solana-release-x86_64-unknown-linux-gnu.tar.bz2"
+          echo "${SOLANA_TARBALL_SHA256}  $RUNNER_TEMP/solana.tar.bz2" | sha256sum -c -
+          tar xjf "$RUNNER_TEMP/solana.tar.bz2" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/solana-release/bin" >> "$GITHUB_PATH"
+
+      - name: The gate's program id is the program's declare_id
+        run: grep -q "declare_id!(\"${PROGRAM_ID}\")" src/SwapDaemon/Solana/htlc_program.rs
+
+      - name: Build the xfg_htlc program
+        working-directory: src/SwapDaemon/Solana/program
+        run: |
+          # cargo-build-sbf 1.18 lists ~/.cache/solana before creating it and panics if it is missing.
+          mkdir -p "$HOME/.cache/solana"
+          cargo build-sbf --tools-version v1.43 -- --locked
+
+      - name: Build the gate
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DUSE_VENDORED_SECP256K1=OFF -G Ninja
+          cmake --build build -j$(nproc) --target test_sol_validator_gate
+
+      - name: Start solana-test-validator with the program at its declare_id
+        run: |
+          solana-test-validator --reset --quiet --ledger "$RUNNER_TEMP/ledger" \
+            --bpf-program "$PROGRAM_ID" src/SwapDaemon/Solana/program/target/deploy/xfg_htlc.so \
+            > "$RUNNER_TEMP/validator.log" 2>&1 &
+          for _ in $(seq 1 90); do solana --url "$SOL_RPC" cluster-version >/dev/null 2>&1 && exit 0; sleep 1; done
+          tail -50 "$RUNNER_TEMP/validator.log"; exit 1
+
+      - name: Fund Alice and Bob
+        run: |
+          for party in alice bob; do
+            solana-keygen new --no-bip39-passphrase --silent --force -o "$RUNNER_TEMP/$party.json"
+            solana --url "$SOL_RPC" airdrop 100 "$RUNNER_TEMP/$party.json"
+          done
+
+      - name: Run the gate
+        run: |
+          build/src/test_daemons/test_sol_validator_gate 127.0.0.1 8899 "$PROGRAM_ID" \
+            "$RUNNER_TEMP/alice.json" "$RUNNER_TEMP/bob.json"
+
   sanitizers-ubuntu:
     name: Sanitizers (ASan+UBSan)
     runs-on: ubuntu-24.04

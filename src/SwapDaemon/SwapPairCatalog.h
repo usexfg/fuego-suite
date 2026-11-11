@@ -27,7 +27,13 @@ enum class SwapChainFamily : uint8_t {
 // ADAPTER: supported by the generic family adapter when runtime preflight
 //          succeeds (RPC, signer, chain id, and HTLC registry).
 // STAGED: id is reserved but new offers/swaps must be rejected.
-enum class SwapPairSupport : uint8_t { ACTIVE, ADAPTER, STAGED };
+// ACTIVE:  executable through a dedicated chain client.
+// ADAPTER: executable through the generic EVM adapter.
+// STAGED:  id reserved; no executable client; kept out of the order book.
+// GATED:   client implemented and gossiped, but no swap may start until its
+//          transport passes the end-to-end gate (remediation plan 1.9).
+// GATED is appended so existing numeric values never change.
+enum class SwapPairSupport : uint8_t { ACTIVE, ADAPTER, STAGED, GATED };
 
 enum class EvmTxEnvelope : uint8_t { NONE, LEGACY, EIP1559, SPECIAL };
 
@@ -39,13 +45,13 @@ enum class EvmTxEnvelope : uint8_t { NONE, LEGACY, EIP1559, SPECIAL };
 #define XFG_SWAP_PAIR_CATALOG(X) \
   X(SOL,          0,  "sol",        "SOL",   "Solana",          SOLANA,     0,      400,      400,  9,  ACTIVE,  NONE,    "sol.png",       "#9945ff") \
   X(ETH,          1,  "eth",        "ETH",   "Ethereum",        EVM,        1,    12000,    12000, 18,  ACTIVE,  EIP1559, "eth.png",       "#627eea") \
-  X(XMR,          2,  "xmr",        "XMR",   "Monero",          CRYPTONOTE, 0,   120000,   120000, 12,  ACTIVE,  NONE,    "monero.png",    "#ff6600") \
+  X(XMR,          2,  "xmr",        "XMR",   "Monero",          CRYPTONOTE, 0,   120000,   120000, 12,  GATED,   NONE,    "monero.png",    "#ff6600") \
   X(BCH,          3,  "bch",        "BCH",   "Bitcoin Cash",    UTXO,       0,   600000,   600000,  8,  ACTIVE,  NONE,    "bch.png",       "#8dc351") \
   X(ARB,          4,  "arb",        "ETH",   "Arbitrum",        EVM,    42161,      250,      250, 18,  ACTIVE,  EIP1559, "arb.png",       "#28a0f0") \
   X(BASE,         5,  "base",       "ETH",   "Base",            EVM,     8453,     2000,     2000, 18,  ACTIVE,  EIP1559, "base.png",      "#0052ff") \
-  X(KMD_SPV,      6,  "kmd",        "KMD",   "Komodo",          UTXO,       0,    60000,    60000,  8,  ACTIVE,  NONE,    "kmd.png",       "#2b6def") \
+  X(KMD_SPV,      6,  "kmd",        "KMD",   "Komodo",          UTXO,       0,    60000,    60000,  8,  GATED,   NONE,    "kmd.png",       "#2b6def") \
   X(BNB,          7,  "bsc",        "BNB",   "BSC Chain",       EVM,       56,     3000,     3000, 18,  ACTIVE,  EIP1559, "bnb.png",       "#f3ba2f") \
-  X(DCR,          8,  "dcr",        "DCR",   "Decred",          UTXO,       0,   300000,   300000,  8,  ACTIVE,  NONE,    "dcr.png",       "#2970ff") \
+  X(DCR,          8,  "dcr",        "DCR",   "Decred",          UTXO,       0,   300000,   300000,  8,  GATED,   NONE,    "dcr.png",       "#2970ff") \
   X(BTC,          9,  "btc",        "BTC",   "Bitcoin",         UTXO,       0,   600000,   600000,  8,  ACTIVE,  NONE,    "btc.png",       "#f7931a") \
   X(LTC,         10,  "ltc",        "LTC",   "Litecoin",        UTXO,       0,   150000,   150000,  8,  ACTIVE,  NONE,    "ltc.png",       "#bfbbbb") \
   X(POLYGON,     11,  "poly",       "POL",   "Polygon",         EVM,      137,     2000,     2000, 18,  ACTIVE,  EIP1559, "matic.png",     "#8247e5") \
@@ -57,9 +63,9 @@ enum class EvmTxEnvelope : uint8_t { NONE, LEGACY, EIP1559, SPECIAL };
   X(SIA,         17,  "sia",        "SC",    "Sia",             SIA,        0,    15000,    15000, 24,  STAGED,  NONE,    "sc.png",        "#00b8d4") \
   X(UNICHAIN,    18,  "uni",        "ETH",   "Unichain",        EVM,      130,     1000,     1000, 18,  ACTIVE,  EIP1559, "uni.png",       "#fc72ff") \
   X(PLASMA,      19,  "xpl",        "XPL",   "Plasma",          EVM,     9745,     2000,     2000, 18,  ACTIVE,  EIP1559, "xpl.png",       "#7b2ff2") \
-  X(DOGE,        20,  "doge",       "DOGE",  "Dogecoin",        UTXO,       0,    60000,    60000,  8,  ACTIVE,  NONE,    "doge.png",      "#c2a633") \
-  X(DASH,        21,  "dash",       "DASH",  "Dash",            UTXO,       0,   260000,   260000,  8,  ACTIVE,  NONE,    "dash.png",      "#008ce7") \
-  X(ZCASH,       22,  "zec",        "ZEC",   "Zcash",           UTXO,       0,   150000,   150000,  8,  ACTIVE,  NONE,    "zec.png",       "#f4b728") \
+  X(DOGE,        20,  "doge",       "DOGE",  "Dogecoin",        UTXO,       0,    60000,    60000,  8,  GATED,   NONE,    "doge.png",      "#c2a633") \
+  X(DASH,        21,  "dash",       "DASH",  "Dash",            UTXO,       0,   260000,   260000,  8,  GATED,   NONE,    "dash.png",      "#008ce7") \
+  X(ZCASH,       22,  "zec",        "ZEC",   "Zcash",           UTXO,       0,   150000,   150000,  8,  GATED,   NONE,    "zec.png",       "#f4b728") \
   X(PULSECHAIN,  23,  "pls",        "PLS",   "PulseChain",      EVM,      369,     1000,     1000, 18,  ACTIVE,  LEGACY,  "plsx.png",      "#ff7b00") \
   X(ZANO,        24,  "zano",       "ZANO",  "Zano",            CRYPTONOTE, 0,   120000,   120000, 12,  STAGED,  NONE,    "zano.png",      "#8a2be2") \
   X(MONAD,       25,  "monad",      "MON",   "Monad",           EVM,      143,      500,      500, 18,  ACTIVE,  EIP1559, "monad.png",     "#836ef9") \
@@ -134,6 +140,14 @@ constexpr bool isProtocolSwapPair(uint8_t id) {
       SWAP_PAIR_CATALOG[id].support != SwapPairSupport::STAGED;
 }
 
+// A swap may start only on a pair whose transport has an executable path.
+// The relay, order book, offer manager and daemon readiness all read this.
+constexpr bool isExecutableSwapPair(uint8_t id) {
+  return isKnownSwapPair(id) &&
+      (SWAP_PAIR_CATALOG[id].support == SwapPairSupport::ACTIVE ||
+       SWAP_PAIR_CATALOG[id].support == SwapPairSupport::ADAPTER);
+}
+
 constexpr const char* swapChainFamilyToString(SwapChainFamily family) {
   switch (family) {
     case SwapChainFamily::SOLANA: return "solana";
@@ -152,6 +166,7 @@ constexpr const char* swapPairSupportToString(SwapPairSupport support) {
     case SwapPairSupport::ACTIVE: return "active";
     case SwapPairSupport::ADAPTER: return "adapter";
     case SwapPairSupport::STAGED: return "staged";
+    case SwapPairSupport::GATED: return "gated";
   }
   return "staged";
 }

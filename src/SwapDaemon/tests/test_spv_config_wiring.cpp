@@ -6,6 +6,9 @@
 
 #include <cassert>
 #include <iostream>
+#include <iterator>
+#include <cstring>
+#include <set>
 #include <string>
 #include <vector>
 #include <fstream>
@@ -36,6 +39,10 @@ static void expectConfig(bool condition, const char* message) {
   if (!condition) throw std::runtime_error(message);
 }
 
+static void expectConfig(bool condition, const std::string& message) {
+  expectConfig(condition, message.c_str());
+}
+
 // =============================================================================
 // Helper: write a temp JSON config file and return its path
 // =============================================================================
@@ -47,9 +54,7 @@ static std::string writeTempConfig(const std::string& jsonContent) {
     return "";
   }
   std::string path(name);
-  std::ofstream f(path, std::ios::out);
-  f << jsonContent;
-  f.close();
+  std::ofstream(path, std::ios::out) << jsonContent;
   return path;
 #else
   char tmpl[] = "/tmp/spv_config_test_XXXXXX";
@@ -215,36 +220,152 @@ static void test_config_spv_overrides_rpc() {
   std::cout << "  PASS: test_config_spv_overrides_rpc" << std::endl;
 }
 
-// The example is commented and contains placeholder keys. Exercise its
-// PulseChain host and port entries as a minimal valid operator config.
-static void test_pulsechain_example_keys() {
+static std::string exampleConfigPath() {
   const std::string thisFile = __FILE__;
   const auto suffix = thisFile.rfind("/src/SwapDaemon/tests/");
-  const std::string examplePath = suffix == std::string::npos
+  return suffix == std::string::npos
       ? "swap_config.example.json"
       : thisFile.substr(0, suffix) + "/swap_config.example.json";
-  std::ifstream example(examplePath);
-  expectConfig(example.good(), "Cannot read swap_config.example.json");
-  std::string hostLine;
-  std::string portLine;
-  for (std::string line; std::getline(example, line); ) {
-    if (line.find("\"pulsechain_rpc_host\"") != std::string::npos) hostLine = line;
-    if (line.find("\"pulsechain_rpc_port\"") != std::string::npos) portLine = line;
-  }
-  expectConfig(!hostLine.empty() && !portLine.empty(), "PulseChain example keys missing");
-  const auto trailingComma = portLine.rfind(',');
-  if (trailingComma != std::string::npos) portLine.erase(trailingComma);
-  const std::string json = "{" + hostLine + "\n" + portLine + "\n}";
-  const std::string path = writeTempConfig(json);
+}
 
+// Brace-matched, so it assumes no braces inside the object's strings or comments.
+static std::string jsonObjectAfterKey(const std::string& text, const std::string& key) {
+  const auto keyPos = text.find("\"" + key + "\"");
+  if (keyPos == std::string::npos) return "";
+  const auto open = text.find('{', keyPos);
+  if (open == std::string::npos) return "";
+  int depth = 0;
+  for (size_t i = open; i < text.size(); ++i) {
+    if (text[i] == '{') ++depth;
+    if (text[i] == '}' && --depth == 0) return text.substr(open, i - open + 1);
+  }
+  return "";
+}
+
+// The example's SPV sections meet the new-swap trust policy (plan 2.4) and
+// carry no SPV mode for KMD or DCR, which have no header validator (plan 2.3).
+static std::string exampleUtxoChainSettings() {
+  std::ifstream example(exampleConfigPath());
+  std::string line;
+  std::vector<std::string> settings;
+  while (std::getline(example, line)) {
+    const size_t start = line.find_first_not_of(' ');
+    if (start == std::string::npos || line.compare(start, 1, "\"") != 0) continue;
+    for (const char* prefix : {"\"btc_", "\"ltc_", "\"bch_", "\"kmd_", "\"dcr_"})
+      if (line.compare(start, std::strlen(prefix), prefix) == 0) settings.push_back(line.substr(0, line.find("//")));
+  }
+  std::string json = "{";
+  for (size_t i = 0; i < settings.size(); ++i) {
+    std::string setting = settings[i];
+    setting.erase(setting.find_last_not_of(" ,") + 1);
+    json += (i ? "," : "") + setting;
+  }
+  return json + "}";
+}
+
+static void test_example_spv_sections_meet_trust_policy() {
   ChainClientConfig cfg;
   std::string errMsg;
-  expectConfig(loadChainClientConfig(path, cfg, errMsg), "PulseChain example keys did not load");
-  expectConfig(cfg.pulsechain_host == "rpc.pulsechain.com", "PulseChain host mismatch");
-  expectConfig(cfg.pulsechain_port == 443, "PulseChain port mismatch");
-
+  const std::string path = writeTempConfig(exampleUtxoChainSettings());
+  expectConfig(loadChainClientConfig(path, cfg, errMsg), "example UTXO settings did not load: " + errMsg);
   std::remove(path.c_str());
-  std::cout << "  PASS: test_pulsechain_example_keys" << std::endl;
+  const struct {
+    const char* chain;
+    const std::vector<std::string>& servers;
+    size_t minServers;
+    uint64_t checkpointHeight;
+    const std::string& checkpointHash;
+  } sections[] = {
+      {"btc", cfg.btcSpvServers, cfg.btcSpvMinServers, cfg.btcSpvCheckpointHeight, cfg.btcSpvCheckpointHash},
+      {"ltc", cfg.ltcSpvServers, cfg.ltcSpvMinServers, cfg.ltcSpvCheckpointHeight, cfg.ltcSpvCheckpointHash},
+      {"bch", cfg.bchSpvServers, cfg.bchSpvMinServers, cfg.bchSpvCheckpointHeight, cfg.bchSpvCheckpointHash},
+  };
+  for (const auto& section : sections) {
+    std::set<std::string> hosts;
+    for (const auto& server : section.servers) hosts.insert(server.substr(0, server.rfind(':')));
+    expectConfig(section.servers.size() >= 3 && hosts.size() == section.servers.size(),
+                 std::string(section.chain) + " example needs three servers on distinct hosts");
+    expectConfig(section.minServers >= 2, std::string(section.chain) + " example quorum below 2");
+    expectConfig(section.checkpointHeight > 0 && section.checkpointHash.size() == 64,
+                 std::string(section.chain) + " example has no checkpoint");
+  }
+  expectConfig(cfg.kmdMode.empty() && cfg.dcrMode.empty(), "example still configures KMD or DCR SPV");
+}
+
+// Flat per-chain EVM fields are retired (plan R5). A config carrying one,
+// including the names the old example used, is refused with the evm_chains
+// key that replaces it.
+static void test_retired_flat_evm_keys_rejected() {
+  const std::pair<std::string, std::string> cases[] = {
+    {"{\"pulsechain_rpc_host\":\"rpc.pulsechain.com\"}", "evm_chains.pls"},
+    {"{\"eth_host\":\"eth.llamarpc.com\"}", "evm_chains.eth"},
+    {"{\"gleec_htlc_registry\":\"0x0123456789abcdef0123456789abcdef01234567\"}", "evm_chains.gleec"},
+    {"{\"plasma_priv_key\":\"" + std::string(64, '1') + "\"}", "evm_chains.xpl"},
+  };
+  for (const auto& c : cases) {
+    const std::string path = writeTempConfig(c.first);
+    ChainClientConfig cfg;
+    std::string errMsg;
+    expectConfig(!loadChainClientConfig(path, cfg, errMsg), "retired flat EVM key accepted");
+    expectConfig(errMsg.find(c.second) != std::string::npos, "retirement error names the wrong evm_chains key");
+    std::remove(path.c_str());
+  }
+  std::cout << "  PASS: test_retired_flat_evm_keys_rejected" << std::endl;
+}
+
+// evm_chains is the only config path for generic-adapter pairs, and the
+// example is the operator's only template for it.
+static void test_example_evm_chains_cover_every_adapter_pair() {
+  std::ifstream example(exampleConfigPath());
+  expectConfig(example.good(), "Cannot read swap_config.example.json");
+  const std::string text((std::istreambuf_iterator<char>(example)),
+                         std::istreambuf_iterator<char>());
+  const std::string block = jsonObjectAfterKey(text, "evm_chains");
+  expectConfig(!block.empty(), "example has no evm_chains object");
+
+  const std::string path = writeTempConfig("{\"evm_chains\": " + block + "}");
+  ChainClientConfig cfg;
+  std::string errMsg;
+  expectConfig(loadChainClientConfig(path, cfg, errMsg), "example evm_chains did not load");
+  std::remove(path.c_str());
+
+  std::set<SwapPair> configured;
+  for (const auto& entry : cfg.evmChains) {
+    expectConfig(!entry.rpcUrl.empty(), "example evm_chains entry has no rpc_url");
+    expectConfig(entry.privateKeyHex.empty(), "example evm_chains ships a signing key");
+    configured.insert(entry.pair);
+  }
+  // No public endpoint is shipped for these; the example says so.
+  const std::set<SwapPair> withoutExampleEndpoint = {SwapPair::GLEEC, SwapPair::ROBINHOOD};
+  for (const auto& descriptor : SWAP_PAIR_CATALOG) {
+    const bool executableEvm = descriptor.family == SwapChainFamily::EVM &&
+                               isExecutableSwapPair(descriptor.id) &&
+                               withoutExampleEndpoint.count(descriptor.pair) == 0;
+    expectConfig(configured.count(descriptor.pair) == (executableEvm ? 1u : 0u),
+                 "example evm_chains drifted from the catalog's executable EVM pairs");
+  }
+  std::cout << "  PASS: test_example_evm_chains_cover_every_adapter_pair" << std::endl;
+}
+
+// Pyth corroboration (plan R6): all three settings or none.
+static void test_pyth_corroboration_config() {
+  const std::string contract = "0x0123456789abcdef0123456789abcdef01234567";
+  struct Case { std::string json; bool loads; const char* label; } cases[] = {
+    {"{}", true, "no Pyth settings load"},
+    {"{\"pyth_rpc_url\":\"https://rpc.example.invalid\",\"pyth_contract\":\"" + contract +
+         "\",\"pyth_chain_id\":1}", true, "complete Pyth settings load"},
+    {"{\"pyth_rpc_url\":\"https://rpc.example.invalid\"}", false, "Pyth URL alone refused"},
+    {"{\"pyth_rpc_url\":\"https://rpc.example.invalid\",\"pyth_contract\":\"0x12\",\"pyth_chain_id\":1}",
+     false, "malformed Pyth contract refused"},
+  };
+  for (const auto& c : cases) {
+    const std::string path = writeTempConfig(c.json);
+    ChainClientConfig cfg;
+    std::string errMsg;
+    expectConfig(loadChainClientConfig(path, cfg, errMsg) == c.loads, c.label);
+    std::remove(path.c_str());
+  }
+  std::cout << "  PASS: test_pyth_corroboration_config" << std::endl;
 }
 
 static void test_gleec_registry_syntax_preserves_recovery_config() {
@@ -265,15 +386,16 @@ static void test_gleec_registry_syntax_preserves_recovery_config() {
 
   for (const std::string& registry : {std::string(), std::string("0x1234"), validAddress}) {
     const std::string path = writeTempConfig(
-        "{\"gleec_rpc_host\":\"127.0.0.1\",\"gleec_htlc_registry\":\"" +
-        registry + "\"}");
+        "{\"evm_chains\":{\"gleec\":{\"rpc_url\":\"http://127.0.0.1:8545\",\"chain_id\":11169,"
+        "\"htlc_registry\":\"" + registry + "\"}}}");
     ChainClientConfig cfg;
     std::string errMsg;
-    expectConfig(loadChainClientConfig(path, cfg, errMsg), "recovery config failed to load");
-    expectConfig(cfg.gleecHost == "127.0.0.1", "GLEEC host mismatch");
-    expectConfig(cfg.gleecHtlcRegistry == registry, "GLEEC registry value mismatch");
-    expectConfig(EthRpcClient::isValidEvmAddress(cfg.gleecHtlcRegistry) ==
-           (registry == validAddress), "GLEEC registry syntax result mismatch");
+    const bool loaded = loadChainClientConfig(path, cfg, errMsg);
+    expectConfig(loaded == (registry != "0x1234"), "GLEEC registry syntax not enforced at load");
+    if (loaded) {
+      expectConfig(cfg.evmChains.size() == 1 && cfg.evmChains[0].htlcRegistry == registry,
+                   "GLEEC registry value mismatch");
+    }
     std::remove(path.c_str());
   }
   std::cout << "  PASS: test_gleec_registry_syntax_preserves_recovery_config" << std::endl;
@@ -451,7 +573,10 @@ int main() {
   test_config_spv_single_server_no_checkpoint();
   test_config_spv_server_gap();
   test_config_spv_overrides_rpc();
-  test_pulsechain_example_keys();
+  test_retired_flat_evm_keys_rejected();
+  test_pyth_corroboration_config();
+  test_example_evm_chains_cover_every_adapter_pair();
+  test_example_spv_sections_meet_trust_policy();
   test_gleec_registry_syntax_preserves_recovery_config();
   test_chain_clients_expose_spv_mode();
   test_generic_evm_config();

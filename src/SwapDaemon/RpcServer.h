@@ -23,10 +23,12 @@
 
 // Forward-declare httplib to avoid pulling in the massive header.
 namespace httplib { class Server; class Request; }
+namespace Common { class JsonValue; }
 
 namespace XfgSwap {
 
 class SwapDaemon;
+struct SwapParams;
 
 // Lightweight JSON-RPC server for the Flutter wallet.
 // Binds to 127.0.0.1 and exposes swap management methods.
@@ -34,7 +36,9 @@ class SwapDaemon;
 // Methods:
 //   status          {}                                     → daemon network/profile/readiness status
 //   initiate_swap  {pair, xfg_amount, ctr_amount, peer, [role], [expected_peer_pubkey],
-//                   [our_swap_secret_key], [swap_id], [afk]}
+//                   [our_swap_secret_key], [swap_id], [afk]}; afk also needs the maker's
+//                   signed fill result: offer_id, adaptor_point, hash_lock, pre_sig,
+//                   ctr_address, [ctr_claim_pubkey], created_at, maker_signature
 //                  → {swap_id, our_swap_pubkey}
 //   accept         {swap_id}                              → {success, state}
 //   list_swaps     {}                                     → {swaps: [...]} (each with stateName/pairName)
@@ -70,6 +74,8 @@ private:
   std::string handleInitiateSwap(const std::string& params);
   std::string handleAccept(const std::string& params);
   std::string handleGetReserveProof(const std::string& params);
+  // Empty when the AFK fill result in `root` is signed by the expected peer; sets ctrPubKey.
+  std::string applySignedFillResult(const Common::JsonValue& root, SwapParams& params);
   std::string handleListSwaps(const std::string& params);
   std::string handleSwapStatus(const std::string& params);
   std::string handleRefund(const std::string& params);

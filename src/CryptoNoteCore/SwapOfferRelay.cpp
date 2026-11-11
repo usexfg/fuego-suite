@@ -13,6 +13,7 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "SwapOfferRelay.h"
+#include "CryptoNoteConfig.h"
 #include "Core.h"
 #include "P2p/LevinProtocol.h"
 #include "Logging/LoggerRef.h"
@@ -236,42 +237,56 @@ void SwapOfferRelay::submitSwapRequest(const std::string& offerId, uint64_t amou
   }
 }
 
-void SwapOfferRelay::handleSwapRequestResult(const std::string& takerPubKey,
-                                             const std::string& offerId,
-                                             const std::string& lockId,
-                                             const std::string& makerEndpoint,
-                                             const std::string& adaptorPoint,
-                                             const std::string& hashLock,
-                                             const std::string& preSig,
-                                             const std::string& ctrAddress,
-                                             uint64_t createdAt) {
-  std::lock_guard<std::mutex> lock(m_mutex);
+static void appendLengthPrefixed(std::string& data, const std::string& field) {
+  const uint32_t size = static_cast<uint32_t>(field.size());
+  for (int shift = 0; shift < 32; shift += 8) data.push_back(static_cast<char>((size >> shift) & 0xff));
+  data.append(field);
+}
+
+Crypto::Hash swapRequestResultHash(const std::string& takerPubKey, const SwapRequestResult& result) {
+  std::string data = "fuego-afk-fill-result-v1";
+  for (const std::string* field : {&takerPubKey, &result.offerId, &result.lockId, &result.makerEndpoint,
+                                   &result.adaptorPoint, &result.hashLock, &result.preSig, &result.ctrAddress,
+                                   &result.ctrClaimPubKey})
+    appendLengthPrefixed(data, *field);
+  appendLengthPrefixed(data, std::to_string(static_cast<int64_t>(result.createdAt)));
+  Crypto::Hash h;
+  cn_fast_hash(data.data(), data.size(), h);
+  return h;
+}
+
+bool SwapOfferRelay::isSignedByOfferMaker(const std::string& takerPubKey, const SwapRequestResult& result) const {
+  const auto offer = m_offers.find(result.offerId);
+  Crypto::Signature signature;
+  return offer != m_offers.end() && result.makerSignature.size() == 2 * sizeof(signature) &&
+         Common::podFromHex(result.makerSignature, signature) &&
+         Crypto::check_signature(swapRequestResultHash(takerPubKey, result), offer->second.makerPubKey, signature);
+}
+
+void SwapOfferRelay::storeSwapRequestResult(const std::string& takerPubKey, const SwapRequestResult& result) {
   auto& vec = m_requestResults[takerPubKey];
   // Dedupe by lockId (single-hop gossip may deliver duplicates).
   for (const auto& r : vec) {
-    if (r.lockId == lockId) return;
+    if (r.lockId == result.lockId) return;
   }
   if (vec.size() >= MAX_REQUEST_RESULTS_PER_TAKER) {
     vec.erase(vec.begin());  // drop oldest
   }
-  SwapRequestResult r;
-  r.offerId = offerId;
-  r.lockId = lockId;
-  r.makerEndpoint = makerEndpoint;
-  r.adaptorPoint = adaptorPoint;
-  r.hashLock = hashLock;
-  r.preSig = preSig;
-  r.ctrAddress = ctrAddress;
-  r.createdAt = static_cast<time_t>(createdAt);
-  vec.push_back(r);
+  vec.push_back(result);
+}
+
+void SwapOfferRelay::handleSwapRequestResult(const std::string& takerPubKey, const SwapRequestResult& result) {
+  if (!parameters::AFK_SOFT_ORDER_EXECUTION_ENABLED) return;
+  std::lock_guard<std::mutex> lock(m_mutex);
+  if (isSignedByOfferMaker(takerPubKey, result)) storeSwapRequestResult(takerPubKey, result);
 }
 
 void SwapOfferRelay::recordSwapRequestResult(const std::string& takerPubKey,
                                              const SwapRequestResult& result) {
-  handleSwapRequestResult(takerPubKey, result.offerId, result.lockId,
-                          result.makerEndpoint, result.adaptorPoint,
-                          result.hashLock, result.preSig, result.ctrAddress,
-                          static_cast<uint64_t>(result.createdAt));
+  {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    storeSwapRequestResult(takerPubKey, result);
+  }
 
   if (m_p2pEndpoint) {
     COMMAND_SWAP_REQUEST_RESULT::request msg;
@@ -283,7 +298,9 @@ void SwapOfferRelay::recordSwapRequestResult(const std::string& takerPubKey,
     msg.hashLock = result.hashLock;
     msg.preSig = result.preSig;
     msg.ctrAddress = result.ctrAddress;
+    msg.ctrClaimPubKey = result.ctrClaimPubKey;
     msg.createdAt = static_cast<uint64_t>(result.createdAt);
+    msg.makerSignature = result.makerSignature;
     auto buf = LevinProtocol::encode(msg);
     m_p2pEndpoint->externalRelayNotifyToAll(COMMAND_SWAP_REQUEST_RESULT::ID, buf, nullptr);
   }
@@ -398,8 +415,9 @@ bool SwapOfferRelay::updateOfferAmount(const std::string& offerId, uint64_t newR
 double SwapOfferRelay::getTwap(uint8_t pair) const {
   std::lock_guard<std::mutex> lock(m_mutex);
   auto it = m_twap.find(pair);
+  // No trades means no price: 0, never an invented constant.
   if (it == m_twap.end() || it->second.sumVolume == 0.0) {
-    return getSeedRate(pair);
+    return 0.0;
   }
   return it->second.sumProduct / it->second.sumVolume;
 }
@@ -409,7 +427,7 @@ CompositePrice SwapOfferRelay::getCompositePrice(uint8_t pair) const {
   auto it = m_composite.find(pair);
   if (it == m_composite.end()) {
     CompositePrice cp;
-    cp.rate = getSeedRate(pair);
+    cp.rate = 0.0;
     cp.sourceCount = 0;
     return cp;
   }
@@ -434,19 +452,6 @@ std::vector<SwapTradeRecord> SwapOfferRelay::getRecentTrades(uint8_t pair, uint3
     }
   }
   return res;
-}
-
-double SwapOfferRelay::getSeedRate(uint8_t pair) {
-  switch (pair) {
-    case 0: return 145.0;   // XMR
-    case 1: return 3500.0;  // ETH
-    case 2: return 450.0;   // BCH
-    case 3: return 170.0;   // SOL
-    case 4: return 1800.0;  // ARB
-    case 5: return 1800.0;  // BASE
-    case 6: return 380.0;   // BNB
-    default: return 0.0;
-  }
 }
 
 std::vector<PendingSwapRequest> SwapOfferRelay::getPendingSwapRequests() {

@@ -264,17 +264,27 @@ User calls withdrawDeposit(depositId) or rolloverDeposit(depositId, newTerm)
 
 APY is funded by protocol revenue, not inflation.
 
-**There are exactly TWO protocol earnings streams. Nothing else:**
+**Two protocol earnings streams are implemented today. This is not a closed
+list — new streams are wanted, provided they clear the "what may never fund
+yield" bar below:**
 
 ```
-Protocol Earnings (ONLY TWO):
+Protocol Earnings (implemented today):
 ├── ① Hearth swap fee:     1% per trade      (HEARTH_FEE_BPS = 100)
 │       on-chain Hearth DEX fills (XFG↔HEAT and any Hearth pair)
 ├── ② Atomic swap fee:     1% + 1% = 2% per cross-chain atomic swap
 │       (SWAP_FEE_RATE_BPS = 100 on initiation + 100 on claim)
 │       via SwapXFG TUI  OR  the DeXFG tab in the Fuego-Wallet GUI
 │       Split 80% CD Yield / 20% Bonus Vault (v11+; pre-v11 replay 69/11/20)
-└── (nothing else is protocol earnings)
+└── (room for more — propose them)
+
+MAY NEVER FUND CD YIELD OR ANY INTEREST:
+├── Burn-derived value: a mint burn is already fully claimed by the HEAT issued
+│                    against it. Paying yield from it (bankedBurn, the Eternal
+│                    Flame share, the SWF burn tally) issues a second claim on
+│                    collateral that is already spent.
+├── CD creation fee: a dev-fund payment, not revenue.
+└── Inflation:       yield is fees earned, never newly minted unbacked HEAT.
 
 NOT protocol earnings:
 ├── Mint premium:    1% of the declared burn (HEAT_MINT_PREMIUM_BPS = 100, v11+).

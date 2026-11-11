@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <mutex>
 #include "SpvHeader.h"
+#include "SpvChainRules.h"
 
 namespace XfgSwap {
 
@@ -51,6 +52,23 @@ public:
   // disagree with checkpointHash are rejected.  checkpointHash is in
   // display (big-endian) hex.
   bool anchor(uint64_t checkpointHeight, const std::string& checkpointHashDisplay);
+
+  // Enforce a chain's consensus rules (proof-of-work hash, nBits schedule,
+  // timestamps) on every header added after the checkpoint.
+  void setRules(const SpvChainRules& rules);
+  bool hasRules() const;
+  const SpvChainRules& rules() const { return m_rules; }
+
+  // The anchored checkpoint header itself: accepted only when its hash is the
+  // configured checkpoint hash. Every later header chains from it.
+  bool addCheckpointHeader(const SpvHeader& header);
+  // The checkpoint with the consecutive headers before it (oldest first),
+  // authenticated by hash links back from the checkpoint hash. They let the
+  // first retarget and median-time checks after the checkpoint be exact.
+  bool addCheckpointHistory(const std::vector<SpvHeader>& headers);
+
+  // Why the last header was refused (empty when none was).
+  std::string lastRejection() const;
 
   // Add a header that chains onto the current best tip.
   // Validates: link (prevHash == parent.hash()), PoW, checkpoint.
@@ -91,25 +109,50 @@ private:
     long double cumulativeWork = 0; // total work from genesis to here
   };
 
-  // height → list of headers at that height (may be >1 during a fork)
-  std::map<uint64_t, std::vector<ChainEntry>> m_entries;
-  mutable std::recursive_mutex m_mutex;
+  struct ChainState {
+    std::map<uint64_t, std::vector<ChainEntry>> entries;  // >1 per height during a fork
+    uint64_t bestTipHeight = 0;
+    std::string bestTipHash;
+  };
 
-  // Best chain state
-  uint64_t m_bestTipHeight = 0;
-  std::string m_bestTipHash;
+public:
+  // The stored chain, kept so headers a quorum later refuses can be undone.
+  class Snapshot {
+    friend class SpvHeaderStore;
+    ChainState state;
+  };
+  Snapshot snapshot() const;
+  void restore(const Snapshot& saved);
+
+  // Drop every header above `height`, which must be on the best chain; the
+  // header there becomes the tip so a competing branch can be added onto it.
+  bool rewindTo(uint64_t height);
+  long double tipWork() const;
+  // Lowest height a reorg may rewind to: the checkpoint or the prune boundary.
+  bool lowestRewindHeight(uint64_t& height) const;
+
+private:
+  ChainState m_chain;
+  mutable std::recursive_mutex m_mutex;
 
   // Checkpoint
   uint64_t m_checkpointHeight = 0;
   std::string m_checkpointHash;
   bool m_hasCheckpoint = false;
 
+  bool m_hasRules = false;
+  SpvChainRules m_rules;
+  std::string m_lastRejection;
+
+  bool rejectsUnderRules(const SpvHeader& header, uint64_t height, const SpvHeader& parent);
+
   // Maximum number of blocks to keep below the tip (0 = keep all).
   uint64_t m_maxHeightDelta = 0;
 
-  // Find a header by display hash across all heights.
+  // Find a header by display hash, newest heights first.
   // Returns (height, index) or (-1, 0) if not found.
   std::pair<int64_t, size_t> findHeaderByHash(const std::string& hashDisplay) const;
+  const ChainEntry* entryAt(uint64_t height, const std::string& hashDisplay) const;
 
   // Check if a given header hash belongs to the current best chain
   // at the given height.

@@ -363,6 +363,7 @@ std::string SwapStateMachine::serialize() const {
   root.insert("xfgTimeoutHeight", static_cast<int64_t>(m_params.xfgTimeoutHeight));
   root.insert("escrowClaimSigHex", m_params.escrowClaimSigHex);
   root.insert("secpPubHex", m_params.secpPubHex);
+  root.insert("crossCurveProofVerified", static_cast<int64_t>(m_params.crossCurveProofVerified ? 1 : 0));
   root.insert("xmrSpendPub", Common::podToHex(m_params.xmrSpendPub));
   root.insert("xmrViewPub", Common::podToHex(m_params.xmrViewPub));
   root.insert("peerXmrSpendPub", Common::podToHex(m_params.peerXmrSpendPub));
@@ -376,8 +377,10 @@ std::string SwapStateMachine::serialize() const {
   root.insert("ctrTimeoutBlock", static_cast<int64_t>(m_params.ctrTimeoutBlock));
 
   root.insert("ctrLockTxId", m_params.ctrLockTxId);
+  root.insert("ctrLockVout", static_cast<int64_t>(m_params.ctrLockVout));
   root.insert("ctrClaimTxId", m_params.ctrClaimTxId);
   root.insert("ctrClaimAttempted", static_cast<int64_t>(m_params.ctrClaimAttempted ? 1 : 0));
+  root.insert("ctrClaimSubmittedHeight", static_cast<int64_t>(m_params.ctrClaimSubmittedHeight));
   root.insert("ctrRefundAttempted", static_cast<int64_t>(m_params.ctrRefundAttempted ? 1 : 0));
   root.insert("ctrRefundSubmitted", static_cast<int64_t>(m_params.ctrRefundSubmitted ? 1 : 0));
   root.insert("ctrRefundTxId", m_params.ctrRefundTxId);
@@ -392,6 +395,7 @@ std::string SwapStateMachine::serialize() const {
               static_cast<int64_t>(m_params.escrow_refund_fee_report_attempted ? 1 : 0));
   root.insert("useSpvVerification", static_cast<int64_t>(m_params.useSpvVerification ? 1 : 0));
   root.insert("ctrAddress", m_params.ctrAddress);
+  root.insert("ctrPubKey", m_params.ctrPubKey);
   root.insert("peerEndpoint", m_params.peerEndpoint);
   root.insert("chainState", m_params.chainState);
 
@@ -568,6 +572,8 @@ SwapStateMachine SwapStateMachine::deserialize(const std::string& json) {
     params.escrowClaimSigHex = root("escrowClaimSigHex").getString();
   if (root.contains("secpPubHex") && root("secpPubHex").isString())
     params.secpPubHex = root("secpPubHex").getString();
+  if (root.contains("crossCurveProofVerified") && root("crossCurveProofVerified").isInteger())
+    params.crossCurveProofVerified = root("crossCurveProofVerified").getInteger() != 0;
   if (root.contains("xmrSpendPub"))
     Common::podFromHex(root("xmrSpendPub").getString(), params.xmrSpendPub);
   if (root.contains("xmrViewPub"))
@@ -591,10 +597,15 @@ SwapStateMachine SwapStateMachine::deserialize(const std::string& json) {
   params.ctrTimeoutBlock = static_cast<uint64_t>(root("ctrTimeoutBlock").getInteger());
 
   params.ctrLockTxId = root("ctrLockTxId").getString();
+  if (root.contains("ctrLockVout"))
+    params.ctrLockVout = static_cast<uint32_t>(root("ctrLockVout").getInteger());
   if (root.contains("ctrClaimTxId"))
     params.ctrClaimTxId = root("ctrClaimTxId").getString();
   if (root.contains("ctrClaimAttempted"))
     params.ctrClaimAttempted = root("ctrClaimAttempted").getInteger() != 0;
+  if (root.contains("ctrClaimSubmittedHeight") && root("ctrClaimSubmittedHeight").isInteger() &&
+      root("ctrClaimSubmittedHeight").getInteger() >= 0)
+    params.ctrClaimSubmittedHeight = static_cast<uint64_t>(root("ctrClaimSubmittedHeight").getInteger());
   if (root.contains("ctrRefundAttempted"))
     params.ctrRefundAttempted = root("ctrRefundAttempted").getInteger() != 0;
   if (root.contains("ctrRefundSubmitted"))
@@ -620,6 +631,8 @@ SwapStateMachine SwapStateMachine::deserialize(const std::string& json) {
   if (root.contains("useSpvVerification"))
     params.useSpvVerification = root("useSpvVerification").getInteger() != 0;
   params.ctrAddress = root("ctrAddress").getString();
+  if (root.contains("ctrPubKey"))
+    params.ctrPubKey = root("ctrPubKey").getString();
   params.peerEndpoint = root("peerEndpoint").getString();
   params.chainState = root("chainState").getString();
 

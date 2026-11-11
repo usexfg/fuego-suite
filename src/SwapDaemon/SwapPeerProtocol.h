@@ -63,6 +63,10 @@ enum class PeerMessageType : uint8_t {
   // proof the maker marked the swap AFK_CLAIMED (payout broadcast).
   AFK_CLAIM_ACK       = 14,
 
+  // Alice → Bob after funding the counterparty lock: where the lock is and,
+  // on UTXO chains, the exact lock script. Bob verifies all of it on chain.
+  CTR_LOCKED          = 15,
+
   // XMR (CryptoNote adaptor) leg. Each party generates a per-swap XMR
   // keypair (spend + view) and shares the spend pubkey, view pubkey, and
   // the VIEW SECRET (read-only — both parties need it to scan the shared
@@ -104,6 +108,8 @@ struct MsgAdaptorExchange {
   Crypto::PublicKey ptlcPoint{};    // T duplicated for explicit PTLC verify (same as adaptorPoint for PTLC/BRIDGE)
   bool requirePtlc = false;         // sender policy flag
   std::string secpPubHex;           // T_secp = t·G_secp, compressed 33-byte hex (66 chars); empty = legacy peer
+  std::string ctrClaimPubKeyHex;    // UTXO HTLC chains: Bob's compressed claim key (66 hex); empty elsewhere
+  std::vector<uint8_t> crossCurveProof; // point locks: cross_dleq proof that adaptorPoint and secpPubHex share t
 };
 
 // Phase 3: Both parties send their Musig2 public nonces.
@@ -152,6 +158,14 @@ struct MsgAfkClaim {
   std::string finalSigHex;     // final-signature proof of claim (hex); required
 };
 
+// Alice's counterparty lock: a txid (UTXO) or contract id (EVM registries) in
+// lockRef, the lock output index (UTXO), and the lock script hex (UTXO).
+struct MsgCtrLocked {
+  std::string lockRef;
+  uint32_t lockOutputIndex = 0;
+  std::string lockState;
+};
+
 // XMR leg key material: spend pubkey, view pubkey, and the view secret
 // (read-only — required to scan the shared address). Spend secret is never
 // sent in this message.
@@ -190,6 +204,7 @@ struct PeerMessage {
   MsgRingRound2 ringRound2;
   MsgSecretReveal secretReveal;
   MsgAfkClaim afkClaim;
+  MsgCtrLocked ctrLocked;
   MsgXmrKeys xmrKeys;
   MsgXmrShareReveal xmrShareReveal;
 

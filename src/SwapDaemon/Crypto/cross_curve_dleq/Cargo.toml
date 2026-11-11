@@ -1,0 +1,24 @@
+[package]
+name = "fuego_cross_curve_dleq"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "GPL-3.0-or-later"
+description = "C interface to sigma_fun's secp256k1/ed25519 discrete-log equality proof for xfg-swapd"
+publish = false
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+sigma_fun = { version = "=0.9.0", default-features = false, features = ["alloc", "secp256k1", "ed25519", "serde", "bincode"] }
+curve25519-dalek = { package = "curve25519-dalek-ng", version = "4", default-features = false, features = ["u64_backend"] }
+bincode = { version = "2", default-features = false, features = ["alloc", "serde"] }
+sha2 = { version = "0.10", default-features = false }
+rand_chacha = { version = "0.3", default-features = false }
+rand_core = { version = "0.6", features = ["getrandom"] }
+
+[profile.release]
+opt-level = 3
+overflow-checks = true
+codegen-units = 1

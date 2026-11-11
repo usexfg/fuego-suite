@@ -1763,7 +1763,9 @@ struct swap_request_result_entry {
   std::string hashLock;       // hex, H(t) — counterparty-family hash
   std::string preSig;         // hex, maker's adaptor pre-signature
   std::string ctrAddress;     // maker's counterparty-chain receive address
+  std::string ctrClaimPubKey; // hex, maker's UTXO claim key; empty elsewhere
   uint64_t    createdAt;
+  std::string makerSignature; // hex, offer maker's signature over the result
 
   void serialize(ISerializer& s) {
     KV_MEMBER(offerId)
@@ -1773,7 +1775,9 @@ struct swap_request_result_entry {
     KV_MEMBER(hashLock)
     KV_MEMBER(preSig)
     KV_MEMBER(ctrAddress)
+    KV_MEMBER(ctrClaimPubKey)
     KV_MEMBER(createdAt)
+    KV_MEMBER(makerSignature)
   }
 };
 
@@ -1839,7 +1843,6 @@ struct COMMAND_RPC_GET_SWAP_PRICE {
 
   struct response {
     std::string twap;             // atomic swap TWAP (double as string)
-    std::string seedRate;         // bootstrap seed rate
     std::string compositeRate;    // weighted avg across all sources
     uint32_t    sourceCount;      // how many sources contributed
     std::vector<price_source_rpc_entry> sources;  // source breakdown
@@ -1854,7 +1857,6 @@ struct COMMAND_RPC_GET_SWAP_PRICE {
 
     void serialize(ISerializer& s) {
       KV_MEMBER(twap)
-      KV_MEMBER(seedRate)
       KV_MEMBER(compositeRate)
       KV_MEMBER(sourceCount)
       KV_MEMBER(sources)

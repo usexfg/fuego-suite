@@ -17,6 +17,8 @@
 #include <cstdint>
 #include <vector>
 
+#include "Common/JsonValue.h"
+
 namespace XfgSwap {
 
 struct BtcUtxo {
@@ -97,41 +99,10 @@ public:
                   uint64_t expectedSatoshis,
                   uint32_t minConfirms = 1);
 
-  // Claim BTC from an HTLC by revealing the preimage (adaptor secret).
-  // Uses P2WSH SegWit spending with witness stack.
-  // claimerWif:     WIF key of the recipient.
-  // htlcTxid:       txid of the locking transaction.
-  // htlcVout:       output index of the HTLC output.
-  // htlcAmount:     satoshis locked in the HTLC.
-  // redeemScriptHex: hex-encoded witness script.
-  // preimageHex:    32-byte hex adaptor secret.
-  // destAddress:    where to send the claimed BTC.
-  bool claim(const std::string& claimerWif,
-             const std::string& htlcTxid,
-             uint32_t htlcVout,
-             uint64_t htlcAmount,
-             const std::string& redeemScriptHex,
-             const std::string& preimageHex,
-             const std::string& destAddress,
-             std::string& claimTxId);
-
-  // Refund BTC from an HTLC after the timeout has elapsed.
-  // Uses P2WSH SegWit spending with witness stack.
-  // senderWif:      WIF key of the original sender.
-  // htlcTxid:       txid of the locking transaction.
-  // htlcVout:       output index of the HTLC output.
-  // htlcAmount:     satoshis locked.
-  // redeemScriptHex: hex-encoded witness script.
-  // timeoutBlock:   CLTV timeout block height for nLocktime.
-  // destAddress:    where to send the refunded BTC.
-  bool refundHtlc(const std::string& senderWif,
-                  const std::string& htlcTxid,
-                  uint32_t htlcVout,
-                  uint64_t htlcAmount,
-                  const std::string& redeemScriptHex,
-                  uint32_t timeoutBlock,
-                  const std::string& destAddress,
-                  std::string& refundTxId);
+  // One JSON-RPC call. False on a transport failure or an RPC error object,
+  // with the node's message in `error`; otherwise `result` holds "result".
+  bool callJson(const std::string& method, const std::string& params,
+                Common::JsonValue& result, std::string& error);
 
 private:
   std::string rpcCall(const std::string& method, const std::string& params);

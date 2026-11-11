@@ -1,6 +1,7 @@
 // Copyright (c) 2017-2026 Fuego Developers
 #include "BtcTaprootPtlc.h"
 #include "BtcPtlcScript.h" // for reference script structure (optional)
+#include <algorithm>
 #include <openssl/ec.h>
 #include <openssl/bn.h>
 #include <openssl/sha.h>

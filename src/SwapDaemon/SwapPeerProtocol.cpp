@@ -15,9 +15,11 @@
 #include "SwapPeerProtocol.h"
 #include "Common/JsonValue.h"
 #include "Common/StringTools.h"
+#include "Crypto/CrossCurveDleq.h"
 #include "crypto/hash.h"
 
 #include <cstring>
+#include <limits>
 #include <vector>
 #include <stdexcept>
 
@@ -169,10 +171,32 @@ Crypto::Hash peerMessageDigest(const PeerMessage& msg) {
         // Cross-curve extension — length-prefixed string, covered whenever it
         // carries data or the other extension fields are covered. When every
         // field is default/empty the digest matches pre-extension peers.
-        if (!msg.adaptorExchange.secpPubHex.empty() || usePtlcFields) {
+        const bool hasClaimKey = !msg.adaptorExchange.ctrClaimPubKeyHex.empty();
+        const bool hasCrossCurveProof = !msg.adaptorExchange.crossCurveProof.empty();
+        if ((hasClaimKey || hasCrossCurveProof) && !usePtlcFields) {
+          buf.push_back(static_cast<uint8_t>(msg.adaptorExchange.lockType));
+          appendPod(buf, msg.adaptorExchange.ptlcPoint);
+          buf.push_back(msg.adaptorExchange.requirePtlc ? 1 : 0);
+        }
+        if (!msg.adaptorExchange.secpPubHex.empty() || usePtlcFields || hasClaimKey || hasCrossCurveProof) {
           appendU32LE(buf, static_cast<uint32_t>(msg.adaptorExchange.secpPubHex.size()));
           buf.insert(buf.end(), msg.adaptorExchange.secpPubHex.begin(),
                      msg.adaptorExchange.secpPubHex.end());
+        }
+        // Claim-key extension: every earlier extension field is encoded above
+        // whenever it is present, so the tagged segment cannot be re-parsed
+        // as one of them.
+        if (hasClaimKey) {
+          buf.push_back(0xC1);
+          appendU32LE(buf, static_cast<uint32_t>(msg.adaptorExchange.ctrClaimPubKeyHex.size()));
+          buf.insert(buf.end(), msg.adaptorExchange.ctrClaimPubKeyHex.begin(),
+                     msg.adaptorExchange.ctrClaimPubKeyHex.end());
+        }
+        if (hasCrossCurveProof) {
+          buf.push_back(0xC2);
+          appendU32LE(buf, static_cast<uint32_t>(msg.adaptorExchange.crossCurveProof.size()));
+          buf.insert(buf.end(), msg.adaptorExchange.crossCurveProof.begin(),
+                     msg.adaptorExchange.crossCurveProof.end());
         }
       }
       break;
@@ -213,6 +237,13 @@ Crypto::Hash peerMessageDigest(const PeerMessage& msg) {
       buf.insert(buf.end(), msg.afkClaim.finalSigHex.begin(), msg.afkClaim.finalSigHex.end());
       break;
     case PeerMessageType::AFK_CLAIM_ACK:
+      break;
+    case PeerMessageType::CTR_LOCKED:
+      appendU32LE(buf, static_cast<uint32_t>(msg.ctrLocked.lockRef.size()));
+      buf.insert(buf.end(), msg.ctrLocked.lockRef.begin(), msg.ctrLocked.lockRef.end());
+      appendU32LE(buf, msg.ctrLocked.lockOutputIndex);
+      appendU32LE(buf, static_cast<uint32_t>(msg.ctrLocked.lockState.size()));
+      buf.insert(buf.end(), msg.ctrLocked.lockState.begin(), msg.ctrLocked.lockState.end());
       break;
     case PeerMessageType::XMR_KEYS:
       appendPod(buf, msg.xmrKeys.spendPub);
@@ -273,6 +304,10 @@ std::string serializePeerMessage(const PeerMessage& msg) {
       payload.insert("ptlcPoint", podHex(msg.adaptorExchange.ptlcPoint));
       payload.insert("requirePtlc", static_cast<int64_t>(msg.adaptorExchange.requirePtlc ? 1 : 0));
       payload.insert("secpPubHex", msg.adaptorExchange.secpPubHex);
+      if (!msg.adaptorExchange.ctrClaimPubKeyHex.empty())
+        payload.insert("ctrClaimPubKey", msg.adaptorExchange.ctrClaimPubKeyHex);
+      if (!msg.adaptorExchange.crossCurveProof.empty())
+        payload.insert("crossCurveProof", Common::toHex(msg.adaptorExchange.crossCurveProof));
       break;
 
     case PeerMessageType::NONCE_EXCHANGE:
@@ -312,6 +347,12 @@ std::string serializePeerMessage(const PeerMessage& msg) {
       break;
 
     case PeerMessageType::AFK_CLAIM_ACK:
+      break;
+
+    case PeerMessageType::CTR_LOCKED:
+      payload.insert("lockRef", msg.ctrLocked.lockRef);
+      payload.insert("lockOutputIndex", static_cast<int64_t>(msg.ctrLocked.lockOutputIndex));
+      payload.insert("lockState", msg.ctrLocked.lockState);
       break;
 
     case PeerMessageType::XMR_KEYS:
@@ -396,6 +437,16 @@ bool deserializePeerMessage(const std::string& json, PeerMessage& msg) {
         if (p.contains("secpPubHex") && p("secpPubHex").isString()) {
           msg.adaptorExchange.secpPubHex = p("secpPubHex").getString();
         }
+        if (p.contains("ctrClaimPubKey") && p("ctrClaimPubKey").isString()) {
+          msg.adaptorExchange.ctrClaimPubKeyHex = p("ctrClaimPubKey").getString();
+          if (msg.adaptorExchange.ctrClaimPubKeyHex.size() != 66) return false;
+        }
+        if (p.contains("crossCurveProof") && p("crossCurveProof").isString()) {
+          const std::string& proofHex = p("crossCurveProof").getString();
+          if (proofHex.empty() || proofHex.size() > 2 * CrossCurveDleq::MAX_PROOF_BYTES ||
+              !Common::fromHex(proofHex, msg.adaptorExchange.crossCurveProof))
+            return false;
+        }
         // For pure PTLC, ptlcPoint duplicates adaptorPoint if not explicitly set
         {
           Crypto::PublicKey zero{}; std::memset(&zero, 0, sizeof(zero));
@@ -461,6 +512,25 @@ bool deserializePeerMessage(const std::string& json, PeerMessage& msg) {
 
       case PeerMessageType::AFK_CLAIM_ACK:
         break;
+
+      case PeerMessageType::CTR_LOCKED: {
+        constexpr size_t MAX_LOCK_REF = 128;
+        constexpr size_t MAX_LOCK_STATE = 1024;
+        if (!p.contains("lockRef") || !p("lockRef").isString() ||
+            !p.contains("lockOutputIndex") || !p("lockOutputIndex").isInteger())
+          return false;
+        const int64_t outputIndex = p("lockOutputIndex").getInteger();
+        if (outputIndex < 0 || outputIndex > static_cast<int64_t>(std::numeric_limits<uint32_t>::max()))
+          return false;
+        msg.ctrLocked.lockRef = p("lockRef").getString();
+        msg.ctrLocked.lockOutputIndex = static_cast<uint32_t>(outputIndex);
+        if (p.contains("lockState") && p("lockState").isString())
+          msg.ctrLocked.lockState = p("lockState").getString();
+        if (msg.ctrLocked.lockRef.empty() || msg.ctrLocked.lockRef.size() > MAX_LOCK_REF ||
+            msg.ctrLocked.lockState.size() > MAX_LOCK_STATE)
+          return false;
+        break;
+      }
 
       case PeerMessageType::XMR_KEYS:
         if (!hexPod(p("spendPub").getString(), msg.xmrKeys.spendPub)) return false;

@@ -247,6 +247,9 @@ struct SwapParams {
   // verifies). Compressed 33-byte hex (66 chars); empty = not published.
   // Derived from adaptorSecret with the canonical byte-reversal rule.
   std::string secpPubHex;
+  // Alice: Bob's cross-curve proof that adaptorPoint and secpPubHex share t
+  // verified; a point lock is funded only when this is set.
+  bool crossCurveProofVerified = false;
 
   // Musig2 session state
   Musig2State musig2;
@@ -266,11 +269,15 @@ struct SwapParams {
   // Chain state
   uint32_t htlcOutputIndex;     // global HTLC output index on Fuego
   std::string ctrLockTxId;      // counterparty lock tx hash
+  uint32_t ctrLockVout = 0;     // UTXO chains: lock output index in ctrLockTxId
   std::string ctrClaimTxId;     // counterparty claim tx hash (Bob's on-chain claim of CTR)
   // Persisted before calling claim(): an RPC failure may mean the transaction
   // was submitted but its response was lost. While true, absence of a txid is
   // never evidence that Bob did not claim the counterparty leg.
   bool ctrClaimAttempted = false;
+  // Counterparty-chain height when the current claim was first seen pending;
+  // a point-lock claim still pending a few blocks later is replaced.
+  uint64_t ctrClaimSubmittedHeight = 0;
   // Written before Alice calls refund(). A lost RPC response leaves the
   // outcome unknown and must not generate a different refund transaction.
   bool ctrRefundAttempted = false;

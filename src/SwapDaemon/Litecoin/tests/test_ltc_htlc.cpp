@@ -3,6 +3,7 @@
 // Tests for LTC HTLC helper methods: P2WSH scriptPubKey generation and
 // SegWit witness-based preimage parsing.
 
+#include <algorithm>
 #include <cassert>
 #include <iostream>
 #include <string>
@@ -142,7 +143,14 @@ static void test_ltc_parseClaimPreimage_witness() {
   std::cout << "test_ltc_parseClaimPreimage_witness..." << std::endl;
 
   // Build a minimal HTLC redeem script
-  std::vector<uint8_t> hashLock(32, 0xAA);
+  // Known preimage (32 bytes)
+  std::vector<uint8_t> preimage = {
+    0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe, 0xba, 0xbe,
+    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+    0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
+    0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28
+  };
+  std::vector<uint8_t> hashLock = LtcHtlcScript::sha256(preimage);
   std::vector<uint8_t> recipientPubKey(33, 0x02);
   recipientPubKey[32] = 0x01;
   std::vector<uint8_t> senderPubKey(33, 0x03);
@@ -155,13 +163,6 @@ static void test_ltc_parseClaimPreimage_witness() {
   // Compute the P2WSH scriptPubKey
   auto p2wshScriptPubKey = LtcHtlcScript::redeemScriptToP2wshScriptPubKey(redeemScript);
 
-  // Known preimage (32 bytes)
-  std::vector<uint8_t> preimage = {
-    0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe, 0xba, 0xbe,
-    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-    0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
-    0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28
-  };
 
   // Create a fake DER signature
   std::vector<uint8_t> signature(71, 0xAB);

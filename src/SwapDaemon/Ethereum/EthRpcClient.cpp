@@ -17,6 +17,8 @@
 #include "Crypto/Secp256k1Signer.h"
 #include "Crypto/RlpEncoder.h"
 #include "crypto/keccak.h"
+#include "crypto/hash.h"
+#include "Common/StringTools.h"
 #include <HTTP/httplib.h>
 
 #include <atomic>
@@ -33,6 +35,13 @@ namespace XfgSwap {
 // ---------------------------------------------------------------------------
 // Hex helpers
 // ---------------------------------------------------------------------------
+
+// Gas ceilings for the registry calls, about twice the use measured before
+// refunds on the pinned HashedTimelock and PointTimelock bytecode (lock 142k,
+// claim 108k, refund 85k) so a hardfork repricing state access still fits.
+static constexpr uint64_t LOCK_GAS_CEILING = 300000;
+static constexpr uint64_t CLAIM_GAS_CEILING = 250000;
+static constexpr uint64_t REFUND_GAS_CEILING = 200000;
 
 static uint64_t hexToUint64(const std::string& hex) {
   std::string s = hex;
@@ -452,22 +461,66 @@ bool EthRpcClient::isExpectedChain() {
   return m_chainId != 0 && getChainId(actual) && actual == m_chainId;
 }
 
-bool EthRpcClient::hasDeployedHtlcRegistry() {
-  if (!isValidEvmAddress(m_htlcRegistry)) return false;
+bool runtimeCodeMatchesHash(const std::string& runtimeCodeHex, const std::string& codeHashHex) {
+  if (runtimeCodeHex.size() <= 2 || runtimeCodeHex.compare(0, 2, "0x") != 0 ||
+      runtimeCodeHex.size() % 2 != 0 || codeHashHex.size() != 64)
+    return false;
+  std::vector<uint8_t> code;
+  code.reserve((runtimeCodeHex.size() - 2) / 2);
+  for (size_t i = 2; i < runtimeCodeHex.size(); i += 2) {
+    const std::string byteHex = runtimeCodeHex.substr(i, 2);
+    if (!std::isxdigit(static_cast<unsigned char>(byteHex[0])) ||
+        !std::isxdigit(static_cast<unsigned char>(byteHex[1])))
+      return false;
+    code.push_back(static_cast<uint8_t>(std::stoul(byteHex, nullptr, 16)));
+  }
+  Crypto::Hash digest;
+  Crypto::cn_fast_hash(code.data(), code.size(), digest);  // CryptoNote fast hash is keccak-256
+  std::string lower = codeHashHex;
+  std::transform(lower.begin(), lower.end(), lower.begin(),
+                 [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+  return Common::podToHex(digest) == lower;
+}
 
-  const std::string params = "[\"" + m_htlcRegistry + "\",\"latest\"]";
-  const std::string response = jsonRpc("eth_getCode", params);
-  if (response.empty() || jsonHasError(response)) return false;
+std::string create2Address(const std::string& deployerHex, const std::vector<uint8_t>& salt32,
+                           const std::vector<uint8_t>& initCode) {
+  const std::string deployer = deployerHex.compare(0, 2, "0x") == 0 ? deployerHex.substr(2) : deployerHex;
+  if (deployer.size() != 40 || salt32.size() != 32) return "";
+  std::vector<uint8_t> preimage = {0xff};
+  for (size_t i = 0; i < deployer.size(); i += 2) {
+    const std::string byteHex = deployer.substr(i, 2);
+    if (!std::isxdigit(static_cast<unsigned char>(byteHex[0])) ||
+        !std::isxdigit(static_cast<unsigned char>(byteHex[1])))
+      return "";
+    preimage.push_back(static_cast<uint8_t>(std::stoul(byteHex, nullptr, 16)));
+  }
+  preimage.insert(preimage.end(), salt32.begin(), salt32.end());
+  Crypto::Hash initCodeHash;
+  Crypto::cn_fast_hash(initCode.data(), initCode.size(), initCodeHash);
+  const uint8_t* initHashBytes = reinterpret_cast<const uint8_t*>(&initCodeHash);
+  preimage.insert(preimage.end(), initHashBytes, initHashBytes + sizeof(initCodeHash));
+  Crypto::Hash addressHash;
+  Crypto::cn_fast_hash(preimage.data(), preimage.size(), addressHash);
+  return "0x" + Common::podToHex(addressHash).substr(24);
+}
 
+EthRpcClient::RegistryCode EthRpcClient::registryCode(const std::string& address, const std::string& codeHashHex) {
+  if (!isValidEvmAddress(address)) return RegistryCode::NO_CODE;
+  const std::string response = jsonRpc("eth_getCode", "[\"" + address + "\",\"latest\"]");
+  if (response.empty() || jsonHasError(response)) return RegistryCode::UNREACHABLE;
   const std::string code = jsonGetResult(response);
-  if (code.size() <= 2 || code.compare(0, 2, "0x") != 0 ||
-      (code.size() - 2) % 2 != 0) return false;
+  if (code.size() < 2 || code.compare(0, 2, "0x") != 0 || (code.size() - 2) % 2 != 0) return RegistryCode::UNREACHABLE;
   bool hasNonzeroByte = false;
   for (size_t i = 2; i < code.size(); ++i) {
-    if (!std::isxdigit(static_cast<unsigned char>(code[i]))) return false;
+    if (!std::isxdigit(static_cast<unsigned char>(code[i]))) return RegistryCode::UNREACHABLE;
     hasNonzeroByte |= code[i] != '0';
   }
-  if (!hasNonzeroByte) return false;
+  if (!hasNonzeroByte) return RegistryCode::NO_CODE;
+  return runtimeCodeMatchesHash(code, codeHashHex) ? RegistryCode::PINNED : RegistryCode::OTHER_CODE;
+}
+
+bool EthRpcClient::hasDeployedHtlcRegistry() {
+  if (registryCode(m_htlcRegistry, m_htlcRegistryCodeHash) != RegistryCode::PINNED) return false;
 
   // A deployed address is not necessarily our HTLC registry. Query the
   // read-only getContract ABI with an unused id before enabling new swaps.
@@ -774,7 +827,7 @@ bool EthRpcClient::transactionFundingSufficient(const AtomicAmount& balanceWei,
 bool EthRpcClient::signAndSend(const std::vector<uint8_t>& to,
                                 const std::vector<uint8_t>& data,
                                 const AtomicAmount& valueWei,
-                                uint64_t gasLimit,
+                                uint64_t gasCeiling,
                                 std::string& txHash) {
   if (!m_hasSigner) {
     throw std::runtime_error("EthRpcClient::signAndSend: no signer configured — "
@@ -793,12 +846,12 @@ bool EthRpcClient::signAndSend(const std::vector<uint8_t>& to,
     queryGasPrice(gasPriceWei); // use dynamic if available, fallback otherwise
   }
 
-  // The RPC estimate includes a 20% safety buffer. Reject before signing if
-  // the caller's transaction gas cap cannot cover it.
-  uint64_t estimatedGas = 0;
+  // The buffered estimate is the transaction's gas limit; `gasCeiling` bounds
+  // what a misreporting RPC can make the signer commit to.
+  uint64_t gasLimit = 0;
   const std::string toHexValue = to.empty() ? std::string() : bytesToHex(to);
-  if (!estimateGas(toHexValue, bytesToHex(data), valueWei, estimatedGas) ||
-      estimatedGas > gasLimit) return false;
+  if (!estimateGas(toHexValue, bytesToHex(data), valueWei, gasLimit) ||
+      gasLimit > gasCeiling) return false;
 
   // Balance includes both the native lock value and the maximum transaction
   // fee. No transaction signature or broadcast is produced on an RPC failure,
@@ -806,7 +859,7 @@ bool EthRpcClient::signAndSend(const std::vector<uint8_t>& to,
   AtomicAmount balanceWei = 0;
   if (!getBalance(m_signerAddress, balanceWei) ||
       !transactionFundingSufficient(balanceWei, valueWei, gasLimit,
-                                    gasPriceWei, estimatedGas)) return false;
+                                    gasPriceWei, gasLimit)) return false;
 
   // Fetch nonce only after funding preflight, then sign and broadcast.
   uint64_t nonce = 0;
@@ -923,7 +976,7 @@ bool EthRpcClient::lockHtlc(const std::string& fromAddress,
   auto dataBytes = hexToBytes(calldata.substr(2));
 
   std::string txHash;
-  if (!signAndSend(toBytes, dataBytes, valueWei, /*gasLimit=*/200000, txHash))
+  if (!signAndSend(toBytes, dataBytes, valueWei, LOCK_GAS_CEILING, txHash))
     return false;
 
   // Wait for success receipt (lock does not create a new contract address)
@@ -1008,47 +1061,27 @@ std::string EthRpcClient::getClaimedPreimage(const std::string& contractIdHex,
   return bytesToHex(reinterpret_cast<const uint8_t*>(&info.preimage), 32, /*prefix=*/false);
 }
 
-bool EthRpcClient::claimHtlc(const std::string& /*fromAddress*/,
-                               const std::string& contractIdHex,
-                               const std::string& preimageHex,
-                               std::string& claimTxHash) {
-  if (m_htlcRegistry.empty()) return false;
-  Crypto::Hash preimage;
-  auto preimageBytes = hexToBytes(preimageHex);
-  if (preimageBytes.size() != 32) return false;
-  std::copy(preimageBytes.begin(), preimageBytes.end(),
-            reinterpret_cast<uint8_t*>(&preimage));
-
-  std::string calldata = EthAbi::encodeClaim(contractIdHex, preimage);
-  auto toBytes   = hexToBytes(m_htlcRegistry);
-  auto dataBytes = hexToBytes(calldata.substr(2));
-  return signAndSend(toBytes, dataBytes, /*valueWei=*/0, /*gasLimit=*/150000, claimTxHash);
+bool EthRpcClient::sendClaim(const std::string& registry, const std::string& contractIdHex,
+                             const std::string& secretHex32, std::string& claimTxHash) {
+  if (registry.empty()) return false;
+  const std::vector<uint8_t> secretBytes = hexToBytes(secretHex32);
+  if (secretBytes.size() != 32) return false;
+  Crypto::Hash secret;
+  std::copy(secretBytes.begin(), secretBytes.end(), reinterpret_cast<uint8_t*>(&secret));
+  const std::string calldata = EthAbi::encodeClaim(contractIdHex, secret);
+  return signAndSend(hexToBytes(registry), hexToBytes(calldata.substr(2)), /*valueWei=*/0, CLAIM_GAS_CEILING,
+                     claimTxHash);
 }
 
-bool EthRpcClient::claimPoint(const std::string& /*fromAddress*/,
-                              const std::string& contractIdHex,
-                              const std::string& secretHex32,
-                              std::string& claimTxHash) {
-  if (m_ptlcRegistry.empty()) return false;
-  auto secretBytes = hexToBytes(secretHex32);
-  if (secretBytes.size() != 32) return false;
+bool EthRpcClient::claimHtlc(const std::string& /*fromAddress*/, const std::string& contractIdHex,
+                             const std::string& preimageHex, std::string& claimTxHash) {
+  return sendClaim(m_htlcRegistry, contractIdHex, preimageHex, claimTxHash);
+}
 
-  // PointTimelock.claim(bytes32 contractId, bytes32 secret) — same selector
-  // shape as the HTLC path; secret is the canonical BIG-endian scalar t.
-  uint8_t cidBuf[32] = {};
-  auto cidBytes = hexToBytes(contractIdHex);
-  if (cidBytes.size() >= 32)
-    std::memcpy(cidBuf, cidBytes.data(), 32);
-  else
-    std::memcpy(cidBuf + (32 - cidBytes.size()), cidBytes.data(), cidBytes.size());
-
-  std::string calldata = "0x" + EthAbi::functionSelector("claim(bytes32,bytes32)").substr(2)
-    + bytesToHex(cidBuf, 32)
-    + bytesToHex(secretBytes.data(), 32);
-
-  auto toBytes   = hexToBytes(m_ptlcRegistry);
-  auto dataBytes = hexToBytes(calldata.substr(2));
-  return signAndSend(toBytes, dataBytes, /*valueWei=*/0, /*gasLimit=*/150000, claimTxHash);
+// PointTimelock.claim(bytes32,bytes32) takes the canonical big-endian scalar t.
+bool EthRpcClient::claimPoint(const std::string& /*fromAddress*/, const std::string& contractIdHex,
+                              const std::string& secretHex32, std::string& claimTxHash) {
+  return sendClaim(m_ptlcRegistry, contractIdHex, secretHex32, claimTxHash);
 }
 
 bool EthRpcClient::refundHtlc(const std::string& /*fromAddress*/,
@@ -1058,7 +1091,7 @@ bool EthRpcClient::refundHtlc(const std::string& /*fromAddress*/,
   std::string calldata = EthAbi::encodeRefund(contractIdHex);
   auto toBytes   = hexToBytes(m_htlcRegistry);
   auto dataBytes = hexToBytes(calldata.substr(2));
-  return signAndSend(toBytes, dataBytes, /*valueWei=*/0, /*gasLimit=*/80000, refundTxHash);
+  return signAndSend(toBytes, dataBytes, /*valueWei=*/0, REFUND_GAS_CEILING, refundTxHash);
 }
 
 bool EthRpcClient::refundPoint(const std::string& fromAddress,
@@ -1070,7 +1103,7 @@ bool EthRpcClient::refundPoint(const std::string& fromAddress,
   std::string calldata = EthAbi::encodeRefund(contractIdHex);
   auto toBytes   = hexToBytes(m_ptlcRegistry);
   auto dataBytes = hexToBytes(calldata.substr(2));
-  return signAndSend(toBytes, dataBytes, /*valueWei=*/0, /*gasLimit=*/80000, refundTxHash);
+  return signAndSend(toBytes, dataBytes, /*valueWei=*/0, REFUND_GAS_CEILING, refundTxHash);
 }
 
 bool EthRpcClient::sendRawTransaction(const std::string& signedTxHex, std::string& txHash) {
@@ -1134,7 +1167,7 @@ bool EthRpcClient::lockPoint(const std::string& fromAddress,
   auto dataBytes = hexToBytes(calldata.substr(2));
 
   std::string txHash;
-  if (!signAndSend(toBytes, dataBytes, valueWei, /*gasLimit=*/200000, txHash))
+  if (!signAndSend(toBytes, dataBytes, valueWei, LOCK_GAS_CEILING, txHash))
     return false;
 
   EthTxReceipt receipt;

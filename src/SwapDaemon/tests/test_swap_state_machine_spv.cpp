@@ -7,6 +7,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <stdexcept>
 #include "Common/JsonValue.h"
 #include "SwapDaemon/SwapDatabase.h"
@@ -14,6 +15,9 @@
 #include "SwapDaemon/SwapStateMachine.h"
 #include "SwapDaemon/SwapDaemon.h"
 #include "SwapDaemon/RpcServer.h"
+#include "SwapDaemon/IChainClient.h"
+#include "SwapDaemon/AdaptorSwap.h"
+#include "SwapDaemon/SwapPeerProtocol.h"
 #include "Logging/ConsoleLogger.h"
 #include <HTTP/httplib.h>
 
@@ -27,6 +31,12 @@ struct SwapDaemonTestAccess {
   static bool preparePeerIdentity(SwapParams& params) {
     return SwapDaemon::preparePeerIdentity(params);
   }
+  static void registerChain(SwapDaemon& daemon, SwapPair pair, std::unique_ptr<IChainClient> client) {
+    daemon.m_chainRegistry.registerChain(pair, std::move(client));
+  }
+  static bool handleCtrLocked(SwapDaemon& daemon, SwapStateMachine& sm) { return daemon.handleCtrLocked(sm); }
+  static bool handleWaitingSpv(SwapDaemon& daemon, SwapStateMachine& sm) { return daemon.handleWaitingSpv(sm); }
+  static bool handlePreSigsReady(SwapDaemon& daemon, SwapStateMachine& sm) { return daemon.handlePreSigsReady(sm); }
 };
 struct RpcServerTestAccess {
   static std::string dispatch(RpcServer& server, const std::string& request) {
@@ -769,9 +779,456 @@ static bool test_expected_peer_key_is_not_a_completed_exchange() {
   return true;
 }
 
+namespace {
+struct ScriptedClaim {
+  ChainClientResult claimResult = ChainClientResult::notSent("BTC: lock is not buried in a quorum-verified block");
+  std::string deadlineError;
+  int claimCalls = 0;
+};
+
+class ScriptedClaimClient : public IChainClient {
+public:
+  explicit ScriptedClaimClient(std::shared_ptr<ScriptedClaim> script) : m_script(std::move(script)) {}
+  std::string chainName() const override { return "BTC"; }
+  ChainClientResult lock(const SwapParams&) override { return ChainClientResult::fail("not scripted"); }
+  ChainClientResult verifyLock(const SwapParams&) override { return ChainClientResult::fail("not scripted"); }
+  ChainClientResult claim(const SwapParams&) override {
+    ++m_script->claimCalls;
+    return m_script->claimResult;
+  }
+  ChainClientResult refund(const SwapParams&) override { return ChainClientResult::fail("not scripted"); }
+  ChainClientResult verifyReserveProof(const std::string&, uint64_t, const std::string&) override {
+    return ChainClientResult::fail("not scripted");
+  }
+  std::string claimDeadlineError(const SwapParams&) override { return m_script->deadlineError; }
+
+private:
+  std::shared_ptr<ScriptedClaim> m_script;
+};
+
+SwapStateMachine bobAwaitingClaim(const std::string& swapId, bool spv) {
+  SwapParams params{};
+  params.swapId = swapId;
+  params.pair = SwapPair::BTC;
+  params.role = SwapRole::BOB;
+  params.useSpvVerification = spv;
+  params.requiredConfirmations = 6;
+  std::memset(&params.adaptorSecret, 0x11, sizeof(params.adaptorSecret));
+  SwapStateMachine sm(params);
+  sm.transition(SwapState::ADAPTOR_KEYS_EXCHANGED);
+  sm.transition(SwapState::ADAPTOR_ESCROW_FUNDED);
+  sm.transition(SwapState::ADAPTOR_PRESIGS_READY);
+  sm.transition(SwapState::ADAPTOR_CTR_LOCKED);
+  if (spv) sm.transition(SwapState::ADAPTOR_WAITING_SPV);
+  return sm;
+}
+
+bool claimIntentAfterOneTick(const std::filesystem::path& dir, const std::string& swapId, bool spv,
+                             const std::shared_ptr<ScriptedClaim>& script, bool& claimAttempted) {
+  Logging::ConsoleLogger logger(Logging::FATAL);
+  SwapDaemon daemon("127.0.0.1", 1, dir.string(), logger);
+  SwapDaemonTestAccess::registerChain(daemon, SwapPair::BTC, std::make_unique<ScriptedClaimClient>(script));
+  daemon.database().setEncryptionKey("unsent-claim-test-key");
+  if (!daemon.database().saveSwap(bobAwaitingClaim(swapId, spv))) return false;
+  SwapStateMachine loaded;
+  if (!daemon.database().loadSwap(swapId, loaded)) return false;
+  if (spv) SwapDaemonTestAccess::handleWaitingSpv(daemon, loaded);
+  else SwapDaemonTestAccess::handleCtrLocked(daemon, loaded);
+  SwapStateMachine persisted;
+  if (!daemon.database().loadSwap(swapId, persisted)) return false;
+  claimAttempted = persisted.params().ctrClaimAttempted;
+  return true;
+}
+} // namespace
+
+static bool test_unsent_claim_keeps_xfg_refund_open() {
+  std::cout << "  test_unsent_claim_keeps_xfg_refund_open... ";
+  namespace fs = std::filesystem;
+  const fs::path base = fs::temp_directory_path() /
+      ("xfg-unsent-claim-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+  fs::create_directories(base);
+  bool ok = true;
+  auto expect = [&](bool condition, const std::string& label) {
+    if (!condition) { std::cout << " [" << label << "]"; ok = false; }
+  };
+  for (const bool spv : {false, true}) {
+    const std::string mode = spv ? "spv" : "full";
+    bool attempted = true;
+
+    auto unsent = std::make_shared<ScriptedClaim>();
+    expect(claimIntentAfterOneTick(base / (mode + "-unsent"), "unsent", spv, unsent, attempted) &&
+               unsent->claimCalls == 1 && !attempted,
+           mode + ": a claim refused before sending withdraws the claim intent");
+
+    auto ambiguous = std::make_shared<ScriptedClaim>();
+    ambiguous->claimResult = ChainClientResult::fail("BTC: no server accepted the transaction");
+    expect(claimIntentAfterOneTick(base / (mode + "-ambiguous"), "ambiguous", spv, ambiguous, attempted) &&
+               ambiguous->claimCalls == 1 && attempted,
+           mode + ": a claim that may have reached the network keeps the XFG refund held");
+
+    auto late = std::make_shared<ScriptedClaim>();
+    late->deadlineError = "BTC: lock timeout 120 is within the 18-block claim runway of tip 110";
+    expect(claimIntentAfterOneTick(base / (mode + "-late"), "late", spv, late, attempted) &&
+               late->claimCalls == 0 && !attempted,
+           mode + ": a claim inside the runway is never attempted");
+  }
+  std::error_code ignored;
+  fs::remove_all(base, ignored);
+  std::cout << (ok ? "PASS\n" : "FAIL\n");
+  return ok;
+}
+
+namespace {
+struct AdaptorPair {
+  SwapParams alice{};
+  SwapParams bob{};
+};
+
+AdaptorPair adaptorPairFor(const std::string& swapId, SwapPair swapPair) {
+  AdaptorPair pair;
+  pair.alice.role = SwapRole::ALICE;
+  pair.bob.role = SwapRole::BOB;
+  adaptor_generate_keys(pair.alice);
+  adaptor_generate_keys(pair.bob);
+  pair.alice.peerSwapPubKey = pair.bob.ourSwapPubKey;
+  pair.bob.peerSwapPubKey = pair.alice.ourSwapPubKey;
+  for (SwapParams* side : {&pair.alice, &pair.bob}) {
+    side->swapId = swapId;
+    side->pair = swapPair;
+    side->xfgAmount = 1000000000;
+    side->ctrAmount = AtomicAmount("100000");
+    adaptor_key_aggregate(*side);
+  }
+  adaptor_generate_adaptor(pair.bob, pair.bob.escrowPubKey);
+  return pair;
+}
+
+AdaptorPair btcAdaptorPair(const std::string& swapId) { return adaptorPairFor(swapId, SwapPair::BTC); }
+
+PeerMessage signedAdaptorExchange(const AdaptorPair& pair, SwapLockType lockType) {
+  PeerMessage message{};
+  message.type = PeerMessageType::ADAPTOR_EXCHANGE;
+  message.swapId = pair.bob.swapId;
+  message.adaptorExchange.adaptorPoint = pair.bob.adaptorPoint;
+  message.adaptorExchange.adaptorDleqQ = pair.bob.adaptorDleqQ;
+  message.adaptorExchange.dleqProof = pair.bob.adaptorDleqProof;
+  message.adaptorExchange.htlcHashLock = pair.bob.hashLock;
+  message.adaptorExchange.lockType = lockType;
+  message.adaptorExchange.ptlcPoint = pair.bob.adaptorPoint;
+  message.adaptorExchange.secpPubHex = pair.bob.secpPubHex;
+  signPeerMessage(message, pair.bob.ourSwapPubKey, pair.bob.ourSwapSecKey);
+  return message;
+}
+
+bool aliceAcceptsAdaptorExchange(const std::filesystem::path& dir, SwapLockType lockType, SwapLockType& stored) {
+  const AdaptorPair pair = btcAdaptorPair("ptlc-gate");
+  Logging::ConsoleLogger logger(Logging::FATAL);
+  SwapDaemon daemon("127.0.0.1", 1, dir.string(), logger);
+  daemon.database().setEncryptionKey("ptlc-gate-test-key");
+  if (!daemon.database().saveSwap(SwapStateMachine(pair.alice))) return false;
+  const bool accepted = SwapDaemonTestAccess::handlePeerMessage(daemon, signedAdaptorExchange(pair, lockType));
+  SwapStateMachine persisted;
+  daemon.database().loadSwap("ptlc-gate", persisted);
+  stored = persisted.params().lockType;
+  return accepted;
+}
+} // namespace
+
+static bool test_peer_cannot_select_disabled_pure_ptlc() {
+  std::cout << "  test_peer_cannot_select_disabled_pure_ptlc... ";
+  namespace fs = std::filesystem;
+  const fs::path base = fs::temp_directory_path() /
+      ("xfg-ptlc-gate-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+  fs::create_directories(base);
+  bool ok = true;
+  SwapLockType stored = SwapLockType::HTLC;
+  if (!aliceAcceptsAdaptorExchange(base / "bridge", SwapLockType::PTLC_HTLC_BRIDGE, stored) ||
+      stored != SwapLockType::PTLC_HTLC_BRIDGE) {
+    std::cout << " [a valid bridge bundle was refused]";
+    ok = false;
+  }
+  if (aliceAcceptsAdaptorExchange(base / "pure", SwapLockType::PTLC, stored) || stored == SwapLockType::PTLC) {
+    std::cout << " [a peer selected pure PTLC for BTC while it is disabled]";
+    ok = false;
+  }
+  std::error_code ignored;
+  fs::remove_all(base, ignored);
+  std::cout << (ok ? "PASS\n" : "FAIL\n");
+  return ok;
+}
+
+namespace {
+class PointLockClient : public IChainClient {
+public:
+  explicit PointLockClient(int& lockCalls) : m_lockCalls(lockCalls) {}
+  std::string chainName() const override { return "ETH"; }
+  bool supportsPurePtlc() const override { return true; }
+  ChainClientResult lock(const SwapParams&) override {
+    ++m_lockCalls;
+    return ChainClientResult::fail("not scripted");
+  }
+  ChainClientResult verifyLock(const SwapParams&) override { return ChainClientResult::fail("not scripted"); }
+  ChainClientResult claim(const SwapParams&) override { return ChainClientResult::fail("not scripted"); }
+  ChainClientResult refund(const SwapParams&) override { return ChainClientResult::fail("not scripted"); }
+  ChainClientResult verifyReserveProof(const std::string&, uint64_t, const std::string&) override {
+    return ChainClientResult::fail("not scripted");
+  }
+
+private:
+  int& m_lockCalls;
+};
+
+struct PointLockOutcome {
+  bool accepted = false;
+  bool proofVerified = false;
+  bool hashLockBound = true;
+  SwapLockType storedLockType = SwapLockType::HTLC;
+};
+
+PointLockOutcome deliverToPointLockAlice(const std::filesystem::path& dir, const AdaptorPair& pair,
+                                         const PeerMessage& message) {
+  Logging::ConsoleLogger logger(Logging::FATAL);
+  int lockCalls = 0;
+  SwapDaemon daemon("127.0.0.1", 1, dir.string(), logger);
+  SwapDaemonTestAccess::registerChain(daemon, SwapPair::ETH, std::make_unique<PointLockClient>(lockCalls));
+  daemon.database().setEncryptionKey("point-lock-test-key");
+  PointLockOutcome outcome;
+  if (!daemon.database().saveSwap(SwapStateMachine(pair.alice))) return outcome;
+  outcome.accepted = SwapDaemonTestAccess::handlePeerMessage(daemon, message);
+  SwapStateMachine persisted;
+  daemon.database().loadSwap(pair.alice.swapId, persisted);
+  outcome.proofVerified = persisted.params().crossCurveProofVerified;
+  outcome.storedLockType = persisted.params().lockType;
+  static const Crypto::Hash ZERO_HASH{};
+  outcome.hashLockBound = std::memcmp(&persisted.params().hashLock, &ZERO_HASH, sizeof(ZERO_HASH)) != 0;
+  return outcome;
+}
+
+PeerMessage provenExchange(const AdaptorPair& pair, SwapLockType lockType, const AdaptorPair* proofSource = nullptr) {
+  PeerMessage message = signedAdaptorExchange(pair, lockType);
+  adaptor_prove_cross_curve((proofSource ? *proofSource : pair).bob, message.adaptorExchange.crossCurveProof);
+  signPeerMessage(message, pair.bob.ourSwapPubKey, pair.bob.ourSwapSecKey);
+  return message;
+}
+} // namespace
+
+static bool test_point_lock_requires_cross_curve_proof() {
+  std::cout << "  test_point_lock_requires_cross_curve_proof... ";
+  namespace fs = std::filesystem;
+  const fs::path base = fs::temp_directory_path() /
+      ("xfg-point-lock-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+  fs::create_directories(base);
+  bool ok = true;
+  auto expect = [&](bool condition, const std::string& label) {
+    if (!condition) { std::cout << " [" << label << "]"; ok = false; }
+  };
+  const AdaptorPair pair = adaptorPairFor("point-lock", SwapPair::ETH);
+  const AdaptorPair otherSecret = adaptorPairFor("point-lock", SwapPair::ETH);
+
+  const PointLockOutcome valid = deliverToPointLockAlice(base / "valid", pair, provenExchange(pair, SwapLockType::PTLC));
+  expect(valid.accepted && valid.proofVerified && valid.storedLockType == SwapLockType::PTLC,
+         "a proven point-lock exchange is accepted and recorded as verified");
+  expect(!valid.hashLockBound, "a point lock binds no hash lock that could veto the true t");
+
+  const PointLockOutcome downgrade =
+      deliverToPointLockAlice(base / "downgrade", pair, provenExchange(pair, SwapLockType::PTLC_HTLC_BRIDGE));
+  expect(!downgrade.accepted && !downgrade.proofVerified,
+         "a hash lock is refused for a pair this node locks by point");
+
+  const PointLockOutcome unproven =
+      deliverToPointLockAlice(base / "unproven", pair, signedAdaptorExchange(pair, SwapLockType::PTLC));
+  expect(!unproven.accepted && !unproven.proofVerified, "a point lock without the cross-curve proof is refused");
+
+  const PointLockOutcome forged =
+      deliverToPointLockAlice(base / "forged", pair, provenExchange(pair, SwapLockType::PTLC, &otherSecret));
+  expect(!forged.accepted && !forged.proofVerified, "a proof made for another secret is refused");
+
+  PeerMessage tampered = provenExchange(pair, SwapLockType::PTLC);
+  tampered.adaptorExchange.crossCurveProof[100] ^= 1;
+  const PointLockOutcome altered = deliverToPointLockAlice(base / "altered", pair, tampered);
+  expect(!altered.accepted, "a proof changed after signing is refused");
+
+  PeerMessage roundTrip;
+  const PeerMessage original = provenExchange(pair, SwapLockType::PTLC);
+  expect(deserializePeerMessage(serializePeerMessage(original), roundTrip) &&
+             roundTrip.adaptorExchange.crossCurveProof == original.adaptorExchange.crossCurveProof,
+         "the proof survives the wire encoding");
+
+  std::error_code ignored;
+  fs::remove_all(base, ignored);
+  std::cout << (ok ? "PASS\n" : "FAIL\n");
+  return ok;
+}
+
+static bool test_point_lock_gate_needs_verified_proof() {
+  std::cout << "  test_point_lock_gate_needs_verified_proof... ";
+  namespace fs = std::filesystem;
+  const fs::path base = fs::temp_directory_path() /
+      ("xfg-point-gate-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+  fs::create_directories(base);
+  bool ok = true;
+  for (const bool verified : {false, true}) {
+    AdaptorPair pair = adaptorPairFor(verified ? "gate-verified" : "gate-unverified", SwapPair::ETH);
+    SwapParams alice = pair.alice;
+    alice.adaptorPoint = pair.bob.adaptorPoint;
+    alice.secpPubHex = pair.bob.secpPubHex;
+    alice.lockType = SwapLockType::PTLC;
+    alice.crossCurveProofVerified = verified;
+    SwapStateMachine sm(alice);
+    sm.transition(SwapState::ADAPTOR_KEYS_EXCHANGED);
+    sm.transition(SwapState::ADAPTOR_ESCROW_FUNDED);
+    sm.transition(SwapState::ADAPTOR_PRESIGS_READY);
+    Logging::ConsoleLogger logger(Logging::FATAL);
+    int lockCalls = 0;
+    SwapDaemon daemon("127.0.0.1", 1, (base / alice.swapId).string(), logger);
+    SwapDaemonTestAccess::registerChain(daemon, SwapPair::ETH, std::make_unique<PointLockClient>(lockCalls));
+    SwapDaemonTestAccess::handlePreSigsReady(daemon, sm);
+    if ((lockCalls == 1) != verified) {
+      std::cout << (verified ? " [a verified point lock was not funded]" : " [an unverified point lock was funded]");
+      ok = false;
+    }
+  }
+  std::error_code ignored;
+  fs::remove_all(base, ignored);
+  std::cout << (ok ? "PASS\n" : "FAIL\n");
+  return ok;
+}
+
+static bool test_point_lock_notice_keeps_the_whole_state(const std::string& statePrefix, SwapPair counterChain) {
+  std::cout << "  test_point_lock_notice_keeps_the_whole_state (" << statePrefix << ")... ";
+  namespace fs = std::filesystem;
+  const fs::path dir = fs::temp_directory_path() /
+      ("xfg-point-notice-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+  AdaptorPair pair = adaptorPairFor("point-notice", counterChain);
+  pair.bob.peerSwapPubKey = pair.alice.ourSwapPubKey;
+  pair.bob.lockType = SwapLockType::PTLC;
+  const std::string lockState = statePrefix + std::string(64, 'a') + ":" + std::string(64, 'b') + ":850123:" +
+                                "02" + std::string(64, 'c') + ":" + std::string(64, 'd') + ":2000";
+  PeerMessage notice{};
+  notice.type = PeerMessageType::CTR_LOCKED;
+  notice.swapId = pair.bob.swapId;
+  notice.ctrLocked.lockRef = std::string(64, 'e');
+  notice.ctrLocked.lockOutputIndex = 1;
+  notice.ctrLocked.lockState = lockState;
+  signPeerMessage(notice, pair.alice.ourSwapPubKey, pair.alice.ourSwapSecKey);
+
+  Logging::ConsoleLogger logger(Logging::FATAL);
+  bool ok = true;
+  {
+    SwapDaemon daemon("127.0.0.1", 1, dir.string(), logger);
+    daemon.database().setEncryptionKey("point-notice-test-key");
+    SwapStateMachine sm(pair.bob);
+    sm.transition(SwapState::ADAPTOR_KEYS_EXCHANGED);
+    sm.transition(SwapState::ADAPTOR_ESCROW_FUNDED);
+    sm.transition(SwapState::ADAPTOR_PRESIGS_READY);
+    daemon.database().saveSwap(sm);
+    const bool first = SwapDaemonTestAccess::handlePeerMessage(daemon, notice);
+    const bool repeated = SwapDaemonTestAccess::handlePeerMessage(daemon, notice);
+    SwapStateMachine persisted;
+    daemon.database().loadSwap(pair.bob.swapId, persisted);
+    if (!first || persisted.params().chainState != lockState) {
+      std::cout << " [the point-lock state was not bound whole]";
+      ok = false;
+    }
+    if (!repeated) {
+      std::cout << " [a repeated identical notice was taken for a conflicting one]";
+      ok = false;
+    }
+  }
+  std::error_code ignored;
+  fs::remove_all(dir, ignored);
+  std::cout << (ok ? "PASS\n" : "FAIL\n");
+  return ok;
+}
+
+namespace {
+class StalledClaimClient : public IChainClient {
+public:
+  uint64_t tip = 1000;
+  int replacements = 0;
+  bool paysByChild = false;
+  std::string chainName() const override { return "BTC"; }
+  ChainClientResult lock(const SwapParams&) override { return ChainClientResult::fail("not scripted"); }
+  ChainClientResult verifyLock(const SwapParams&) override { return ChainClientResult::fail("not scripted"); }
+  ChainClientResult claim(const SwapParams&) override { return ChainClientResult::fail("not scripted"); }
+  ChainClientResult refund(const SwapParams&) override { return ChainClientResult::fail("not scripted"); }
+  ChainClientResult verifyReserveProof(const std::string&, uint64_t, const std::string&) override {
+    return ChainClientResult::fail("not scripted");
+  }
+  bool getCurrentHeight(uint64_t& height) override {
+    height = tip;
+    return true;
+  }
+  ChainClientResult getTransactionDetails(const std::string& txId, ChainClientResult& result) override {
+    result = ChainClientResult::ok(txId);
+    return result;
+  }
+  ChainClientResult bumpClaim(const SwapParams& params) override {
+    ++replacements;
+    if (!paysByChild) return ChainClientResult::ok(std::string(63, 'f') + std::to_string(replacements));
+    ChainClientResult raised = ChainClientResult::ok(params.ctrClaimTxId);
+    raised.feeChildTxId = std::string(63, 'c') + std::to_string(replacements);
+    return raised;
+  }
+};
+} // namespace
+
+static bool test_stalled_point_claim_fee_raised(bool paysByChild) {
+  std::cout << (paysByChild ? "  test_stalled_point_claim_is_paid_for_by_a_child... "
+                             : "  test_stalled_point_claim_is_replaced... ");
+  namespace fs = std::filesystem;
+  const fs::path dir = fs::temp_directory_path() /
+      ("xfg-stalled-claim-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+  SwapStateMachine sm = bobAwaitingClaim("stalled-claim", false);
+  sm.params().lockType = SwapLockType::PTLC;
+  sm.params().ctrClaimAttempted = true;
+  sm.params().ctrClaimTxId = std::string(64, 'a');
+  Logging::ConsoleLogger logger(Logging::FATAL);
+  bool ok = true;
+  {
+    SwapDaemon daemon("127.0.0.1", 1, dir.string(), logger);
+    auto owned = std::make_unique<StalledClaimClient>();
+    StalledClaimClient* client = owned.get();
+    client->paysByChild = paysByChild;
+    SwapDaemonTestAccess::registerChain(daemon, SwapPair::BTC, std::move(owned));
+    daemon.database().setEncryptionKey("stalled-claim-test-key");
+    daemon.database().saveSwap(sm);
+    auto tick = [&]() {
+      SwapStateMachine loaded;
+      daemon.database().loadSwap("stalled-claim", loaded);
+      SwapDaemonTestAccess::handleCtrLocked(daemon, loaded);
+      SwapStateMachine persisted;
+      daemon.database().loadSwap("stalled-claim", persisted);
+      return persisted.params();
+    };
+    const SwapParams first = tick();
+    client->tip += 2;
+    const SwapParams early = tick();
+    client->tip += 1;
+    const SwapParams replaced = tick();
+    if (first.ctrClaimSubmittedHeight != 1000 || client->replacements != 1) {
+      std::cout << " [the claim was not replaced exactly once after three blocks pending]";
+      ok = false;
+    }
+    if (early.ctrClaimTxId != std::string(64, 'a')) {
+      std::cout << " [the claim was replaced before three blocks passed]";
+      ok = false;
+    }
+    if ((replaced.ctrClaimTxId == std::string(64, 'a')) != paysByChild || replaced.ctrClaimSubmittedHeight != 1003) {
+      std::cout << (paysByChild ? " [a fee child changed the tracked claim or did not restart the wait]"
+                                : " [the replacement was not recorded]");
+      ok = false;
+    }
+  }
+  std::error_code ignored;
+  fs::remove_all(dir, ignored);
+  std::cout << (ok ? "PASS\n" : "FAIL\n");
+  return ok;
+}
+
 int main() {
   std::cout << "=== SwapStateMachine SPV state tests ===\n\n";
-  int pass = 0, total = 18;
+  int pass = 0, total = 27;
   if (test_spv_waiting_to_confirmed())    ++pass;
   if (test_spv_waiting_stays_on_retry())  ++pass;
   if (test_spv_waiting_to_refunded())     ++pass;
@@ -790,6 +1247,15 @@ int main() {
   if (test_amount_protocol_rejects_downgrade_mismatch_and_replay()) ++pass;
   if (test_non_evm_overflow_rejected_before_record_creation()) ++pass;
   if (test_expected_peer_key_is_not_a_completed_exchange()) ++pass;
+  if (test_unsent_claim_keeps_xfg_refund_open()) ++pass;
+  if (test_peer_cannot_select_disabled_pure_ptlc()) ++pass;
+  if (test_point_lock_requires_cross_curve_proof()) ++pass;
+  if (test_point_lock_gate_needs_verified_proof()) ++pass;
+  if (test_point_lock_notice_keeps_the_whole_state("tr1:", SwapPair::BTC)) ++pass;
+  if (test_point_lock_notice_keeps_the_whole_state("bs1:", SwapPair::BCH)) ++pass;
+  if (test_point_lock_notice_keeps_the_whole_state("ptlc:", SwapPair::SOL)) ++pass;
+  if (test_stalled_point_claim_fee_raised(false)) ++pass;
+  if (test_stalled_point_claim_fee_raised(true)) ++pass;
 
   std::cout << "\n=== " << pass << "/" << total << " tests passed ===\n";
   return (pass == total) ? 0 : 1;

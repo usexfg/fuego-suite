@@ -33,6 +33,7 @@ static void testCatalogIsContiguousAndUnique() {
   size_t evmCount = 0;
   size_t adapterCount = 0;
   size_t stagedCount = 0;
+  size_t gatedCount = 0;
   for (size_t i = 0; i < SWAP_PAIR_COUNT; ++i) {
     const auto& descriptor = SWAP_PAIR_CATALOG[i];
     assert(descriptor.id == i);
@@ -49,10 +50,23 @@ static void testCatalogIsContiguousAndUnique() {
     }
     if (descriptor.support == SwapPairSupport::ADAPTER) ++adapterCount;
     if (descriptor.support == SwapPairSupport::STAGED) ++stagedCount;
+    if (descriptor.support == SwapPairSupport::GATED) {
+      ++gatedCount;
+      assert(isProtocolSwapPair(static_cast<uint8_t>(i)));
+      assert(!isExecutableSwapPair(static_cast<uint8_t>(i)));
+    }
+    if (descriptor.support == SwapPairSupport::ACTIVE || descriptor.support == SwapPairSupport::ADAPTER)
+      assert(isExecutableSwapPair(static_cast<uint8_t>(i)));
   }
   assert(evmCount == 32);
   assert(adapterCount == 17);
   assert(stagedCount == 4);
+  assert(gatedCount == 6);
+  // CROSS_CURVE_PLAN X8: the UTXO chains whose point locks pass their node gates.
+  for (const SwapPair pair : {SwapPair::BTC, SwapPair::LTC, SwapPair::BCH}) {
+    assert(swapPairDescriptor(pair)->support == SwapPairSupport::ACTIVE);
+    assert(isExecutableSwapPair(static_cast<uint8_t>(pair)));
+  }
 }
 
 static void testActivationAndNames() {

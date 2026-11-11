@@ -2,8 +2,9 @@
 
 #include "../IChainClient.h"
 #include "SolRpcClient.h"
-#include <string>
 #include <memory>
+#include <mutex>
+#include <string>
 
 namespace XfgSwap {
 
@@ -13,10 +14,13 @@ public:
 
   std::string chainName() const override { return "SOL"; }
   std::string readinessError() override;
-  // On-chain ClaimPtlc + lockPtlc client paths landed (plan P3). Negotiation
-  // flip (HTLC/BRIDGE -> PTLC) stays behind FEATURE_PURE_PTLC at P4.2 — do
-  // not return true here until that flag lands.
   bool supportsPtlc() const override { return false; }
+  // Point locks (CROSS_CURVE_PLAN X4) need the configured program to carry
+  // lock_ptlc and claim_ptlc; a program without them keeps the hash lock and
+  // an unreadable one blocks new swaps.
+  bool supportsPurePtlc() const override { return pointLockSupport() == PointLockSupport::AVAILABLE; }
+  PointLockSupport pointLockSupport() const override;
+  std::string claimDeadlineError(const SwapParams& params) override;
   std::string getReceiveAddress() const override;
   ChainClientResult lock(const SwapParams& params) override;
   ChainClientResult lockPtlc(const SwapParams& params) override;
@@ -33,8 +37,16 @@ public:
   bool getCurrentHeight(uint64_t& height) override;
 
 private:
+  std::string openPointEscrowFor(const SwapParams& params, const std::string& pointHex);
+  ChainClientResult verifyPointLock(const SwapParams& params);
+  ChainClientResult claimPoint(const SwapParams& params);
+  bool escrowOpenThroughRunway(const SolHtlcInfo& info, const SwapParams& params, std::string& error);
+
   std::unique_ptr<SolRpcClient> m_rpc;
   std::string m_keypairBase58;
+  mutable std::mutex m_pointLockSupportMutex;
+  mutable bool m_pointLockSupportKnown = false;
+  mutable PointLockSupport m_pointLockSupport = PointLockSupport::UNKNOWN;
 };
 
 } // namespace XfgSwap

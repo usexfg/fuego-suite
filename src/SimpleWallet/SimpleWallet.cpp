@@ -4866,7 +4866,7 @@ bool simple_wallet::place_order(const std::vector<std::string>& args) {
     if (rounded == 0) rounded = tick;
     uint64_t drift = (rounded > price) ? (rounded - price) : (price - rounded);
     if (drift > tick / 20) {
-      fail_msg_writer() << "Invalid price: must be a multiple of the order tick (0.01)";
+      fail_msg_writer() << "Invalid price: must be a multiple of the order tick (0.00001)";
       return false;
     }
     price = rounded;

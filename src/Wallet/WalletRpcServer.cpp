@@ -1405,7 +1405,7 @@ bool wallet_rpc_server::on_place_limit_order(const wallet_rpc::COMMAND_RPC_PLACE
             ? (roundedPrice - req.target_price) : (req.target_price - roundedPrice);
         if (drift > tick / 20) {
           throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR,
-              "target_price must be a multiple of the order tick (0.01)");
+              "target_price must be a multiple of the order tick (0.00001)");
         }
       }
     }

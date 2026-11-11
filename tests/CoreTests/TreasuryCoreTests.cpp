@@ -10,6 +10,7 @@
 
 #include "CryptoNoteCore/BankingIndex.h"
 #include "CryptoNoteCore/AmmPool.h"
+#include "CryptoNoteCore/OrderbookAuction.h"
 #include "CryptoNoteConfig.h"
 #include "CryptoNoteCore/TransactionExtra.h"
 #include "CryptoNoteCore/CommitmentIndex.h"
@@ -1028,6 +1029,10 @@ void testValidateSettlementLimitDeposit() {
   // Off-tick prices are refused.
   Blockchain::SettlementScratch fresh;
   TEST(!t.chain.validateSettlement(deposit(10 * parameters::ORDER_PRICE_TICK + 1), 1, fresh, flows, fee, err));
+  // Audit 2026-11-11 M1: a 0.01 tick put the 0.125 launch price on an 8% grid.
+  // 0.12512 HEAT/XFG — 0.1% off it — is a valid limit price.
+  Blockchain::SettlementScratch nearLaunch;
+  TEST(t.chain.validateSettlement(deposit(1251200), 1, nearLaunch, flows, fee, err));
 }
 
 // CDs open on their own height after HEAT and Hearth have run alone. Mainnet
@@ -1207,6 +1212,9 @@ public:
     return chain.m_limitDeposits.count(orderId) > 0;
   }
   static uint64_t cdFeeHeatFromXfg(const Blockchain& chain) { return chain.m_cdFeeHeatFromXfg; }
+  static bool auctionFillsSettle(const Blockchain& chain, const AuctionResult& auction) {
+    return chain.auctionFillsSettle(auction);
+  }
   static void popOrderbookBlock(Blockchain& chain, uint32_t height) {
     chain.restoreOrderbookSnapshotFor(height);
   }
@@ -1718,7 +1726,7 @@ void testHearthBuyFromPoolBandConservesHeat() {
 
   const Crypto::Hash id = hearthOrderId(2);
   VaultCoreTestAccess::addLimitDeposit(t.chain, id, 0, 5 * parameters::COIN,
-                                       100 * parameters::ORDER_PRICE_TICK, height - 1);
+                                       parameters::COIN, height - 1);
   const AmmPoolState before = t.chain.getAmmPool();
   VaultCoreTestAccess::runOrderbookBlock(t.chain, height);
   const AmmPoolState after = t.chain.getAmmPool();
@@ -1754,7 +1762,7 @@ void testHearthBandSweepsNeverLowerK() {
     kHeld = kHeld && poolProduct(after) >= poolProduct(before);
     heatHeld = heatHeld && heatCreatedByBlock(before, after, 0, VaultCoreTestAccess::proceedsHeat(t.chain, sellId)) <= 0;
 
-    VaultCoreTestAccess::addLimitDeposit(t.chain, buyId, 0, buyBudgets[round], 500 * parameters::ORDER_PRICE_TICK, height - 1);
+    VaultCoreTestAccess::addLimitDeposit(t.chain, buyId, 0, buyBudgets[round], parameters::COIN, height - 1);
     before = t.chain.getAmmPool();
     VaultCoreTestAccess::runOrderbookBlock(t.chain, height++);
     after = t.chain.getAmmPool();
@@ -2002,6 +2010,35 @@ void testHeatSupplyCountsOnlyXfgValuedFees() {
   TEST(VaultCoreTestAccess::cdFeeHeatFromXfg(t.chain) == 0);
 }
 
+// Audit 2026-11-11 M2: auction settlement skipped a fill whose escrow or
+// reserve could not cover it while its counterparty's fill still applied —
+// value moved one way. The auction now settles whole or not at all.
+void testAuctionSettlesWholeOrNotAtAll() {
+  TestChain t("auction_whole");
+  TEST(t.ok);
+  const uint64_t C = parameters::COIN;
+  const Crypto::Hash ask = hearthOrderId(100);
+  VaultCoreTestAccess::addLimitDeposit(t.chain, ask, 1, 10 * C, parameters::ORDER_PRICE_TICK, 1);
+  VaultCoreTestAccess::addLimitDeposit(t.chain, hearthOrderId(102), 1, 10 * C, parameters::ORDER_PRICE_TICK, 1);
+  auto result = [&](const Crypto::Hash& userId, uint64_t userXfg, uint64_t poolHeat) {
+    AuctionResult r;
+    r.crossed = true;
+    r.matchedVolume = userXfg;
+    r.hasTaker = true;
+    r.takerIsBid = false;
+    Crypto::Hash poolId{};
+    poolId.data[0] = POOL_ORDER_ID_PREFIX;
+    r.fills.push_back({userId, 1, userXfg, poolHeat, 0, 0});
+    r.fills.push_back({poolId, 0, userXfg, poolHeat, 0, 0});
+    return r;
+  };
+  const uint64_t poolHeat = t.chain.getAmmPool().reserveHeat;
+  TEST(VaultCoreTestAccess::auctionFillsSettle(t.chain, result(ask, 10 * C, 1 * C)));
+  TEST(!VaultCoreTestAccess::auctionFillsSettle(t.chain, result(ask, 10 * C + 1, 1 * C)));
+  TEST(!VaultCoreTestAccess::auctionFillsSettle(t.chain, result(hearthOrderId(101), 1 * C, 1 * C)));
+  TEST(!VaultCoreTestAccess::auctionFillsSettle(t.chain, result(ask, 10 * C, poolHeat + 1)));
+}
+
 int main() {
   testCdInterestCompounding();
   testLegacyDepositWithdrawsForPrincipal();
@@ -2055,6 +2092,7 @@ int main() {
   testWithdrawnDepositsPrunedAndRestored();
   testLimitOrderKeysUnlinkable();
   testHeatSupplyCountsOnlyXfgValuedFees();
+  testAuctionSettlesWholeOrNotAtAll();
   fprintf(stderr, "=== Treasury/Core Tests ===\nPassed: %d / %d\n", tests_passed, tests_run);
   return tests_passed == tests_run ? 0 : 1;
 }

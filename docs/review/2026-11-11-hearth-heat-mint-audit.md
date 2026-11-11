@@ -22,7 +22,8 @@ Line numbers are `src/CryptoNoteCore/Blockchain.cpp` unless another file is name
 | H4 | Fixed: min size, required expiry, per-block cap, pruning of withdrawn orders |
 | H5 | Fixed: per-order one-time keys (wallet-only) |
 | M3 | Fixed: supply counts only XFG-valued CD fees as new HEAT |
-| M1, M2, M4-M7, L* | Open |
+| M1, M2 | Fixed: 0.00001 tick; auction settles whole or not at all |
+| M4-M7, L* | Open |
 
 Details and test evidence: `CHANGELOG.agent.md`, section "Hearth critical fixes".
 

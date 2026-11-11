@@ -67,6 +67,8 @@
 #undef ERROR
 using phmap::parallel_flat_hash_map;
 namespace CryptoNote {
+  struct AuctionResult;
+
   struct NOTIFY_REQUEST_GET_OBJECTS_request;
   struct NOTIFY_RESPONSE_GET_OBJECTS_request;
   struct COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS_request;
@@ -783,6 +785,7 @@ namespace CryptoNote {
     // plus the per-block records popBlock needs to reverse them.
     void serializeOrderbookState(ISerializer& s);
     void restoreOrderbookSnapshotFor(uint32_t poppedHeight);
+    bool auctionFillsSettle(const AuctionResult& auction) const;
     std::vector<std::pair<Crypto::Hash, LimitDepositInfo>> pruneSettledLimitDeposits(uint32_t height);
     std::deque<std::pair<uint32_t, OrderbookRollbackSnapshot>> m_orderbookSnapshots;
 

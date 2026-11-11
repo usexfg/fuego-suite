@@ -445,7 +445,7 @@ const uint64_t HEARTH_FEE_DIVISOR = 10000;
 // savers once the depth has a track record. The two legs always sum to 100.
 const uint64_t HEARTH_CD_SHARE_PCT_V11 = 30; // v11: 30% CD yield / 70% maker
 const uint64_t HEARTH_CD_SHARE_PCT_V12 = 70; // v12: 70% CD yield / 30% maker
-const uint64_t ORDER_PRICE_TICK = COIN / 100; // min price granularity (1%)
+const uint64_t ORDER_PRICE_TICK = COIN / 100000; // 0.00001 HEAT/XFG: 0.008% of the 0.125 launch price
 const uint64_t HEARTH_MINT_MAX_BPS_PER_BLOCK =
     500; // HEAT minted per block ≤ 5% of the pool's HEAT reserve at block open
 const uint64_t HEARTH_AUNTPOL_MAX_SPOT_DEVIATION_BPS =

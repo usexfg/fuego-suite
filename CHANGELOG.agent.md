@@ -6433,3 +6433,29 @@ Sign-off table:
 Not covered:
 - The XFG removed from reserves as a CD fee stays in pool marker outputs that nothing can spend, but is not added to the burn tally. Changing that moves the Eternal Flame and therefore the block reward, so it was left for a separate decision.
 - Pops of a backstop buy and of a HEAT→XFG swap restore `m_cdFeeHeatFromXfg` by code reading; no pop test drives them.
+
+## Price tick and auction atomicity (audit 2026-11-11: M1, M2)
+
+**Feature name**: 0.00001 HEAT/XFG price tick; all-or-nothing auction settlement
+**Agent**: Claude
+**Start date**: 2026-11-11
+**Consensus impact**: v11+ only (not live).
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | M1: `ORDER_PRICE_TICK` COIN/100 → COIN/100000 (0.008% of the 0.125 launch price; was 8%); wallet messages and Hearth docs updated | Claude | 2026-11-11 | DONE |
+| 2 | M2: `auctionFillsSettle` checks every fill (order live, side, per-order escrow, total escrow, pool reserves) before any applies; otherwise the block runs no auction fills | Claude | 2026-11-11 | DONE |
+| 3 | Tests: near-launch price valid; whole-or-nothing settle check on per-order escrow, unknown order and pool reserve | Claude | 2026-11-11 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j4` full build rc=0 |
+| Tests pass | DONE — core_tests 353/353, test_hearth_amm 38/38 |
+| Mutation check | DONE — old tick fails the near-launch test; dropping the per-order escrow check fails the settle test (the first test version did not isolate it; fixed) |
+| All tasks done | DONE |
+
+Not covered:
+- The wiring that skips the auction when `auctionFillsSettle` is false is not exercised by a test: no input reachable through validated deposits makes it false.
+- The per-fill `continue` guards inside the apply loop remain; after the pre-check they cannot fire.

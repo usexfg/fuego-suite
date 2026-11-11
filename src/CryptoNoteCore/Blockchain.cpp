@@ -730,6 +730,36 @@ CryptoNote::Blockchain::pruneSettledLimitDeposits(uint32_t height) {
   return pruned;
 }
 
+// Every fill of an auction moves two parties. Settling some and skipping
+// others moves value one way only, so the auction settles whole or not at all.
+bool CryptoNote::Blockchain::auctionFillsSettle(const AuctionResult& auction) const {
+  uint128_t poolXfgOut = 0, poolHeatOut = 0, escrowXfg = 0, escrowHeat = 0;
+  for (const auto& fill : auction.fills) {
+    if (fill.orderId.data[0] == POOL_ORDER_ID_PREFIX) {
+      if (fill.side == 1) poolXfgOut += fill.fillXfg;
+      else if (fill.rebateHeat > fill.heat) return false;
+      else poolHeatOut += fill.heat - fill.rebateHeat;
+      continue;
+    }
+    auto it = m_limitDeposits.find(fill.orderId);
+    if (it == m_limitDeposits.end()) return false;
+    const LimitDepositInfo& dep = it->second;
+    if (dep.withdrawn || dep.expired || dep.side != fill.side) return false;
+    const bool isTaker = auction.hasTaker && fill.side == (auction.takerIsBid ? 0 : 1);
+    if (fill.side == 1) {
+      if (fill.fillXfg > dep.amount) return false;
+      escrowXfg += fill.fillXfg;
+    } else {
+      const uint128_t heatCost = isTaker
+          ? (uint128_t)fill.heat + fill.cdFeeHeat + fill.rebateHeat : (uint128_t)fill.heat;
+      if (heatCost > dep.amount) return false;
+      escrowHeat += heatCost;
+    }
+  }
+  return poolXfgOut <= m_ammPool.reserveXfg && poolHeatOut <= m_ammPool.reserveHeat &&
+         escrowXfg <= m_ammPool.pendingXfg && escrowHeat <= m_ammPool.pendingHeat;
+}
+
 void CryptoNote::Blockchain::restoreOrderbookSnapshotFor(uint32_t poppedHeight) {
   if (!m_orderbookSnapshots.empty() && m_orderbookSnapshots.back().first == poppedHeight) {
     const auto& snap = m_orderbookSnapshots.back().second;
@@ -4540,7 +4570,12 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
     CryptoNote::AuctionResult auction =
         runAuction(auctionBids, auctionAsks, g_orderbookLastClearingPrice,
                    block.majorVersion);
-    if (auction.crossed && auction.matchedVolume > 0) {
+    const bool settles = auction.crossed && auction.matchedVolume > 0 && auctionFillsSettle(auction);
+    if (auction.crossed && auction.matchedVolume > 0 && !settles) {
+      logger(ERROR, BRIGHT_RED) << "Hearth auction at height " << height
+                                << " has a fill its escrow or reserves cannot settle; no fills this block";
+    }
+    if (settles) {
       auctionMatchedVolume = auction.matchedVolume;
       // P_clear = the discovered price (last-price semantics, bootstrap-seeded).
       g_orderbookLastClearingPrice = auction.clearingPrice;

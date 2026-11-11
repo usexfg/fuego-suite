@@ -1710,6 +1710,39 @@ namespace CryptoNote
     return result;
   }
 
+  namespace {
+    Crypto::SecretKey limitOrderScalar(const std::string& domain, const Crypto::SecretKey& walletSpendSecret,
+                                       const Crypto::Hash& orderId) {
+      std::vector<uint8_t> preimage(domain.begin(), domain.end());
+      preimage.insert(preimage.end(), walletSpendSecret.data, walletSpendSecret.data + sizeof(walletSpendSecret.data));
+      preimage.insert(preimage.end(), orderId.data, orderId.data + sizeof(orderId.data));
+      Crypto::SecretKey scalar;
+      Crypto::hash_to_scalar(preimage.data(), preimage.size(), scalar);
+      volatile uint8_t* wipe = preimage.data();
+      for (size_t i = 0; i < preimage.size(); ++i) wipe[i] = 0;
+      return scalar;
+    }
+  }
+
+  LimitOrderKeys deriveLimitOrderKeys(const Crypto::SecretKey& walletSpendSecret, const Crypto::Hash& orderId) {
+    LimitOrderKeys keys;
+    keys.spendSecretKey = limitOrderScalar("FuegoLimitOrderSpendV1", walletSpendSecret, orderId);
+    Crypto::SecretKey viewSecret = limitOrderScalar("FuegoLimitOrderViewV1", walletSpendSecret, orderId);
+    Crypto::secret_key_to_public_key(keys.spendSecretKey, keys.spendPublicKey);
+    Crypto::secret_key_to_public_key(viewSecret, keys.viewPublicKey);
+    uint8_t keyData[sizeof(keys.spendPublicKey.data) + sizeof(keys.viewPublicKey.data)];
+    memcpy(keyData, keys.spendPublicKey.data, sizeof(keys.spendPublicKey.data));
+    memcpy(keyData + sizeof(keys.spendPublicKey.data), keys.viewPublicKey.data, sizeof(keys.viewPublicKey.data));
+    Crypto::cn_fast_hash(keyData, sizeof(keyData), keys.addressHash);
+    return keys;
+  }
+
+  bool isOwnLimitOrder(const Crypto::SecretKey& walletSpendSecret, const Crypto::Hash& orderId,
+                       const Crypto::Hash& addressHash) {
+    const Crypto::Hash derived = deriveLimitOrderKeys(walletSpendSecret, orderId).addressHash;
+    return memcmp(derived.data, addressHash.data, sizeof(derived.data)) == 0;
+  }
+
   Crypto::Hash getLimitWithdrawAuthHash(const Crypto::Hash& orderId,
                                         const Crypto::Hash& addressHash,
                                         const Crypto::Hash& outputsHash) {

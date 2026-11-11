@@ -595,6 +595,21 @@ bool addMarketBuyAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t xfgWanted,
 bool addMarketSellAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t xfgToSell, uint64_t minHeatReceive);
 bool addLimitDepositToExtra(std::vector<uint8_t>& tx_extra, uint8_t side, uint64_t amount, uint64_t targetPrice, uint32_t expiration, const Crypto::Hash& orderId, const Crypto::Hash& addressHash);
 Crypto::Hash getLimitWithdrawOutputHash(const std::vector<CryptoNote::TransactionOutput>& outputs);
+// One-time keys for one limit order. The deposit's addressHash commits to them
+// and the withdraw reveals and signs with them, so no two orders share an
+// addressHash and a withdraw reveals no wallet key. Derived from the funding
+// wallet's spend secret and the order id, so a restored wallet finds its
+// orders again.
+struct LimitOrderKeys {
+  Crypto::PublicKey spendPublicKey;
+  Crypto::SecretKey spendSecretKey;
+  Crypto::PublicKey viewPublicKey;
+  Crypto::Hash addressHash;
+};
+LimitOrderKeys deriveLimitOrderKeys(const Crypto::SecretKey& walletSpendSecret, const Crypto::Hash& orderId);
+bool isOwnLimitOrder(const Crypto::SecretKey& walletSpendSecret, const Crypto::Hash& orderId,
+                     const Crypto::Hash& addressHash);
+
 Crypto::Hash getLimitWithdrawAuthHash(const Crypto::Hash& orderId,
                                       const Crypto::Hash& addressHash,
                                       const Crypto::Hash& outputsHash);

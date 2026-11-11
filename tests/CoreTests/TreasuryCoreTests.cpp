@@ -1168,8 +1168,9 @@ public:
     chain.processOrderbookForBlock(b, {}, height);
   }
   static void addLimitDeposit(Blockchain& chain, const Crypto::Hash& orderId, uint8_t side,
-                              uint64_t amount, uint64_t targetPrice, uint32_t height) {
-    Blockchain::LimitDepositInfo dep{side, amount, targetPrice, 0, orderId, false};
+                              uint64_t amount, uint64_t targetPrice, uint32_t height,
+                              const Crypto::Hash* addressHash = nullptr) {
+    Blockchain::LimitDepositInfo dep{side, amount, targetPrice, 0, addressHash ? *addressHash : orderId, false};
     dep.depositedAmount = amount;
     dep.createdHeight = height;
     chain.m_limitDeposits[orderId] = dep;
@@ -1930,6 +1931,49 @@ void testWithdrawnDepositsPrunedAndRestored() {
   TEST(VaultCoreTestAccess::hasLimitDeposit(t.chain, oldId));
 }
 
+// Audit 2026-11-11 H5: every order from one wallet carried the same
+// addressHash, and a withdraw published the wallet's spend and view keys.
+// Orders now use one-time keys derived from the wallet spend secret.
+void testLimitOrderKeysUnlinkable() {
+  TestChain t("limit_keys");
+  TEST(t.ok);
+  const uint64_t C = parameters::COIN;
+  Crypto::PublicKey walletSpendPublic, otherSpendPublic;
+  Crypto::SecretKey walletSpendSecret, otherSpendSecret;
+  Crypto::generate_keys(walletSpendPublic, walletSpendSecret);
+  Crypto::generate_keys(otherSpendPublic, otherSpendSecret);
+
+  const Crypto::Hash orderA = hearthOrderId(80), orderB = hearthOrderId(81);
+  const LimitOrderKeys keysA = deriveLimitOrderKeys(walletSpendSecret, orderA);
+  const LimitOrderKeys keysB = deriveLimitOrderKeys(walletSpendSecret, orderB);
+  TEST(memcmp(keysA.addressHash.data, keysB.addressHash.data, sizeof(keysA.addressHash.data)) != 0);
+  TEST(memcmp(keysA.spendPublicKey.data, walletSpendPublic.data, sizeof(walletSpendPublic.data)) != 0);
+  TEST(isOwnLimitOrder(walletSpendSecret, orderA, keysA.addressHash));
+  TEST(!isOwnLimitOrder(otherSpendSecret, orderA, keysA.addressHash));
+  TEST(!isOwnLimitOrder(walletSpendSecret, orderB, keysA.addressHash));
+  const LimitOrderKeys again = deriveLimitOrderKeys(walletSpendSecret, orderA);
+  TEST(memcmp(again.addressHash.data, keysA.addressHash.data, sizeof(again.addressHash.data)) == 0);
+
+  VaultCoreTestAccess::addLimitDeposit(t.chain, orderA, 1, 5 * C, parameters::ORDER_PRICE_TICK, 1, &keysA.addressHash);
+  auto withdrawSignedBy = [&](const Crypto::PublicKey& spendPublic, const Crypto::SecretKey& spendSecret,
+                              const Crypto::PublicKey& viewPublic) {
+    const std::vector<TransactionOutput> outputs{keyOut(5 * C)};
+    const Crypto::Hash outputsHash = getLimitWithdrawOutputHash(outputs);
+    Crypto::Signature proof;
+    Crypto::generate_signature(getLimitWithdrawAuthHash(orderA, keysA.addressHash, outputsHash),
+                               spendPublic, spendSecret, proof);
+    std::vector<uint8_t> extra;
+    addLimitWithdrawToExtra(extra, orderA, spendPublic, viewPublic, outputsHash, proof);
+    Blockchain::SettlementScratch scratch;
+    AssetFlows flows;
+    uint64_t fee = 0;
+    std::string err;
+    return t.chain.validateSettlement(settlementTx({C}, outputs, extra), 100, scratch, flows, fee, err);
+  };
+  TEST(withdrawSignedBy(keysA.spendPublicKey, keysA.spendSecretKey, keysA.viewPublicKey));
+  TEST(!withdrawSignedBy(walletSpendPublic, walletSpendSecret, keysA.viewPublicKey));
+}
+
 int main() {
   testCdInterestCompounding();
   testLegacyDepositWithdrawsForPrincipal();
@@ -1981,6 +2025,7 @@ int main() {
   testHearthBackstopBoundedByReserves();
   testLimitDepositBounds();
   testWithdrawnDepositsPrunedAndRestored();
+  testLimitOrderKeysUnlinkable();
   fprintf(stderr, "=== Treasury/Core Tests ===\nPassed: %d / %d\n", tests_passed, tests_run);
   return tests_passed == tests_run ? 0 : 1;
 }

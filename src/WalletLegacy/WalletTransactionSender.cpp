@@ -3153,11 +3153,7 @@ namespace CryptoNote
     context->v11DepositExpiration = expiration;
     context->v11DepositOrderId = orderId;
 
-    // Compute address_hash = cn_fast_hash(spendKey||viewKey) for privacy
-    uint8_t keyData[64];
-    memcpy(keyData, m_keys.address.spendPublicKey.data, 32);
-    memcpy(keyData + 32, m_keys.address.viewPublicKey.data, 32);
-    Crypto::cn_fast_hash(keyData, 64, context->v11DepositAddressHash);
+    context->v11DepositAddressHash = deriveLimitOrderKeys(m_keys.spendSecretKey, orderId).addressHash;
 
     transactionId = m_transactionsCache.addNewTransaction(neededMoney, fee, std::string(), {}, 0, {});
     context->transactionId = transactionId;
@@ -3197,13 +3193,7 @@ namespace CryptoNote
       if (!Common::podFromHex(deposit.address_hash, ownerHash)) {
         throw std::system_error(make_error_code(error::WRONG_PARAMETERS), "Invalid owner hash");
       }
-      uint8_t keyData[sizeof(m_keys.address.spendPublicKey.data) + sizeof(m_keys.address.viewPublicKey.data)];
-      memcpy(keyData, m_keys.address.spendPublicKey.data, sizeof(m_keys.address.spendPublicKey.data));
-      memcpy(keyData + sizeof(m_keys.address.spendPublicKey.data),
-             m_keys.address.viewPublicKey.data, sizeof(m_keys.address.viewPublicKey.data));
-      Crypto::Hash ownHash{};
-      Crypto::cn_fast_hash(keyData, sizeof(keyData), ownHash);
-      if (memcmp(ownHash.data, ownerHash.data, sizeof(ownHash.data)) != 0) {
+      if (!isOwnLimitOrder(m_keys.spendSecretKey, orderId, ownerHash)) {
         throw std::system_error(make_error_code(error::WRONG_PARAMETERS),
                                 "Limit order belongs to another wallet");
       }
@@ -3386,20 +3376,15 @@ namespace CryptoNote
         }
       }
 
-      uint8_t keyData[sizeof(m_keys.address.spendPublicKey.data) + sizeof(m_keys.address.viewPublicKey.data)];
-      memcpy(keyData, m_keys.address.spendPublicKey.data, sizeof(m_keys.address.spendPublicKey.data));
-      memcpy(keyData + sizeof(m_keys.address.spendPublicKey.data),
-             m_keys.address.viewPublicKey.data, sizeof(m_keys.address.viewPublicKey.data));
-      Crypto::Hash addressHash{};
-      Crypto::cn_fast_hash(keyData, sizeof(keyData), addressHash);
+      const LimitOrderKeys orderKeys = deriveLimitOrderKeys(m_keys.spendSecretKey, orderId);
       Crypto::Hash outputsHash = getLimitWithdrawOutputHash(transaction->getTransactionPrefix().outputs);
-      Crypto::Hash authHash = getLimitWithdrawAuthHash(orderId, addressHash, outputsHash);
+      Crypto::Hash authHash = getLimitWithdrawAuthHash(orderId, orderKeys.addressHash, outputsHash);
       Crypto::Signature proof;
-      Crypto::generate_signature(authHash, m_keys.address.spendPublicKey, m_keys.spendSecretKey, proof);
+      Crypto::generate_signature(authHash, orderKeys.spendPublicKey, orderKeys.spendSecretKey, proof);
 
       std::vector<uint8_t> extra;
-      addLimitWithdrawToExtra(extra, orderId, m_keys.address.spendPublicKey,
-                              m_keys.address.viewPublicKey, outputsHash, proof);
+      addLimitWithdrawToExtra(extra, orderId, orderKeys.spendPublicKey,
+                              orderKeys.viewPublicKey, outputsHash, proof);
       CryptoNote::BinaryArray extraData(extra.begin(), extra.end());
       transaction->appendExtra(extraData);
 

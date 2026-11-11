@@ -4964,19 +4964,16 @@ bool simple_wallet::show_orders(const std::vector<std::string>& args) {
     return false;
   }
 
-  // Compute wallet's own address_hash = cn_fast_hash(spendKey||viewKey)
   AccountKeys accountKeys;
   m_wallet->getAccountKeys(accountKeys);
-  std::vector<uint8_t> keyData(sizeof(accountKeys.address.spendPublicKey.data) + sizeof(accountKeys.address.viewPublicKey.data));
-  memcpy(keyData.data(), accountKeys.address.spendPublicKey.data, sizeof(accountKeys.address.spendPublicKey.data));
-  memcpy(keyData.data() + sizeof(accountKeys.address.spendPublicKey.data), accountKeys.address.viewPublicKey.data, sizeof(accountKeys.address.viewPublicKey.data));
-  Crypto::Hash myAddrHash = Crypto::cn_fast_hash(keyData.data(), keyData.size());
-  std::string myAddressHash = Common::podToHex(myAddrHash);
 
-  // Filter to wallet's own orders
+  // Each order has its own one-time keys (deriveLimitOrderKeys); only this
+  // wallet's spend key reproduces an order's addressHash.
   std::vector<CryptoNote::COMMAND_RPC_GET_LIMIT_ORDERS::LimitOrderInfo> myOrders;
   for (const auto& o : res.orders) {
-    if (o.address_hash == myAddressHash) {
+    Crypto::Hash orderId{}, addressHash{};
+    if (Common::podFromHex(o.order_id, orderId) && Common::podFromHex(o.address_hash, addressHash) &&
+        isOwnLimitOrder(accountKeys.spendSecretKey, orderId, addressHash)) {
       myOrders.push_back(o);
     }
   }

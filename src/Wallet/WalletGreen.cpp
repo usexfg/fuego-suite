@@ -1693,11 +1693,7 @@ namespace CryptoNote
       const auto &owner = getWalletRecord(getTransactionTransfer(firstDeposit.creatingTransactionId, 0).address);
       Crypto::Hash orderId{};
       Crypto::generate_random_bytes(sizeof(orderId.data), orderId.data);
-      Crypto::Hash addressHash{};
-      uint8_t keyData[64];
-      memcpy(keyData, owner.spendPublicKey.data, 32);
-      memcpy(keyData + 32, m_viewPublicKey.data, 32);
-      Crypto::cn_fast_hash(keyData, 64, addressHash);
+      const Crypto::Hash addressHash = deriveLimitOrderKeys(owner.spendSecretKey, orderId).addressHash;
       std::vector<uint8_t> extra;
       addLimitDepositToExtra(extra, side, amount, targetPrice, expiration, orderId, addressHash);
       transaction->appendExtra(CryptoNote::BinaryArray(extra.begin(), extra.end()));
@@ -1739,13 +1735,8 @@ namespace CryptoNote
 
     Crypto::Hash orderId{};
     Crypto::generate_random_bytes(sizeof(orderId.data), orderId.data);
-    Crypto::Hash addressHash{};
-    {
-      uint8_t keyData[64];
-      memcpy(keyData, selectedTransfers[0].wallet->spendPublicKey.data, 32);
-      memcpy(keyData + 32, m_viewPublicKey.data, 32);
-      Crypto::cn_fast_hash(keyData, 64, addressHash);
-    }
+    const Crypto::Hash addressHash =
+        deriveLimitOrderKeys(selectedTransfers[0].wallet->spendSecretKey, orderId).addressHash;
     std::vector<uint8_t> extra;
     addLimitDepositToExtra(extra, side, amount, targetPrice, expiration, orderId, addressHash);
     transaction->appendExtra(CryptoNote::BinaryArray(extra.begin(), extra.end()));
@@ -1816,13 +1807,7 @@ namespace CryptoNote
 
     const WalletRecord* ownerWallet = nullptr;
     for (const auto& wallet : m_walletsContainer.get<RandomAccessIndex>()) {
-      uint8_t keyData[sizeof(wallet.spendPublicKey.data) + sizeof(m_viewPublicKey.data)];
-      memcpy(keyData, wallet.spendPublicKey.data, sizeof(wallet.spendPublicKey.data));
-      memcpy(keyData + sizeof(wallet.spendPublicKey.data),
-             m_viewPublicKey.data, sizeof(m_viewPublicKey.data));
-      Crypto::Hash candidateHash{};
-      Crypto::cn_fast_hash(keyData, sizeof(keyData), candidateHash);
-      if (memcmp(candidateHash.data, ownerAddressHash.data, sizeof(candidateHash.data)) == 0) {
+      if (isOwnLimitOrder(wallet.spendSecretKey, orderId, ownerAddressHash)) {
         ownerWallet = &wallet;
         break;
       }
@@ -1875,12 +1860,12 @@ namespace CryptoNote
 
     Crypto::Hash outputsHash = getLimitWithdrawOutputHash(transaction->getTransactionPrefix().outputs);
     Crypto::Hash authHash = getLimitWithdrawAuthHash(orderId, ownerAddressHash, outputsHash);
+    const LimitOrderKeys orderKeys = deriveLimitOrderKeys(ownerWallet->spendSecretKey, orderId);
     Crypto::Signature proof;
-    Crypto::generate_signature(authHash, ownerWallet->spendPublicKey,
-                               ownerWallet->spendSecretKey, proof);
+    Crypto::generate_signature(authHash, orderKeys.spendPublicKey, orderKeys.spendSecretKey, proof);
     std::vector<uint8_t> extra;
-    addLimitWithdrawToExtra(extra, orderId, ownerWallet->spendPublicKey,
-                            m_viewPublicKey, outputsHash, proof);
+    addLimitWithdrawToExtra(extra, orderId, orderKeys.spendPublicKey,
+                            orderKeys.viewPublicKey, outputsHash, proof);
     transaction->appendExtra(CryptoNote::BinaryArray(extra.begin(), extra.end()));
     typedef CryptoNote::COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount outs_for_amount;
     std::vector<outs_for_amount> mixinResult;

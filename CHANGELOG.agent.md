@@ -6377,3 +6377,33 @@ Not covered:
 - Wallet expiry and size pre-checks have no automated test (no wallet test harness built).
 - Expired-but-unclaimed deposits stay in the set; their number is bounded by the minimum size each one locks.
 - The template's per-block deposit cap has no test (`tests/UnitTests/TransactionPool.cpp` not built).
+
+## Per-order limit keys (audit 2026-11-11: H5)
+
+**Feature name**: One-time keys per limit order
+**Agent**: Claude
+**Start date**: 2026-11-11
+**Plan**: `docs/review/2026-11-11-hearth-heat-mint-audit.md` (recommendation 7)
+**Consensus impact**: none (wallet-only; consensus already accepts any key pair that hashes to `addressHash`).
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `deriveLimitOrderKeys` / `isOwnLimitOrder` in `TransactionExtra`: spend and view scalars = `hash_to_scalar(domain ‖ walletSpendSecret ‖ orderId)`, preimage wiped | Claude | 2026-11-11 | DONE |
+| 2 | WalletGreen and WalletLegacy: deposits commit to the derived pair; withdraws reveal and sign with it | Claude | 2026-11-11 | DONE |
+| 3 | WalletGreen, WalletLegacy, wallet RPC `get_limit_orders`, SimpleWallet order list: ownership by derivation instead of the wallet's master-key hash | Claude | 2026-11-11 | DONE |
+| 4 | Test: distinct orders → distinct hashes; derivation reproducible; only the owner secret matches; a derived-key withdraw passes `validateSettlement`, a master-key one does not | Claude | 2026-11-11 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j4` full build rc=0 |
+| Tests pass | DONE — core_tests 341/341 |
+| Mutation check | DONE — dropping `orderId` from the derivation fails 2 checks |
+| All tasks done | DONE |
+
+Not covered:
+- Orders placed by wallets built before this change (master-key `addressHash`, testnet only — v11 is not live on mainnet) are not recognized by updated wallets and must be withdrawn with the old build.
+- View-only / tracking wallets cannot list orders (derivation needs the spend secret).
+- Self-trade exclusion in `runAuction` keys on `addressHash`; with per-order hashes it no longer matches two orders of one wallet (audit M7; it was already bypassable with a second hash).
+- The wallet code paths have no automated test; the derivation and consensus acceptance do.

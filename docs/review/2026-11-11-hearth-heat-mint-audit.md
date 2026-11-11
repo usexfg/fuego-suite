@@ -20,7 +20,8 @@ Line numbers are `src/CryptoNoteCore/Blockchain.cpp` unless another file is name
 | H1 | Fixed with C2 (`ammRevertPoolMakerFill`) |
 | H2, H3 | Fixed: median oracle, mint cap, reserve-bounded backstop, oracle-priced epoch work |
 | H4 | Fixed: min size, required expiry, per-block cap, pruning of withdrawn orders |
-| H5, M*, L* | Open |
+| H5 | Fixed: per-order one-time keys (wallet-only) |
+| M*, L* | Open |
 
 Details and test evidence: `CHANGELOG.agent.md`, section "Hearth critical fixes".
 

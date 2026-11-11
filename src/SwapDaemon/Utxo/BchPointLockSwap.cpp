@@ -100,14 +100,13 @@ std::string bchPointClaimDeadlineError(const UtxoHtlcChain& chain, const BchPoin
 std::string secretFromBchPointClaim(const SwapParams& params, const BchPointLockState& state,
                                     const std::vector<uint8_t>& claimTx) {
   Bip340::Point adaptorPoint;
-  BchSchnorr::Signature aliceSignature;
-  if (!adaptorPointOf(params, adaptorPoint) ||
-      !bchPointLockClaimSignature(claimTx, lockOutpoint(params), state.terms, aliceSignature))
-    return {};
-  for (const BchPointLockClaimOffer& offer : state.claimOffers) {
-    Bip340::Scalar adaptorSecret;
-    if (BchSchnorr::extract(offer.presig, aliceSignature, adaptorPoint, adaptorSecret))
-      return littleEndianSecretHex(adaptorSecret);
+  if (!adaptorPointOf(params, adaptorPoint)) return {};
+  for (const BchSchnorr::Signature& signature : bchPointLockSpendSignatures(claimTx, lockOutpoint(params))) {
+    for (const BchPointLockClaimOffer& offer : state.claimOffers) {
+      Bip340::Scalar adaptorSecret;
+      if (BchSchnorr::extract(offer.presig, signature, adaptorPoint, adaptorSecret))
+        return littleEndianSecretHex(adaptorSecret);
+    }
   }
   return {};
 }

@@ -203,16 +203,18 @@ uint64_t bchPointLockSpendVirtualSize(bool claimPath) {
   return claimPath ? 336 : 270;
 }
 
-bool bchPointLockClaimSignature(const std::vector<uint8_t>& rawTx, const UtxoOutpoint& lock,
-                                const BchPointLockTerms& terms, BchSchnorr::Signature& aliceSignature) {
+std::vector<BchSchnorr::Signature> bchPointLockSpendSignatures(const std::vector<uint8_t>& rawTx,
+                                                              const UtxoOutpoint& lock) {
   std::vector<std::vector<uint8_t>> items;
-  const std::vector<uint8_t> script = bchPointLockScript(terms);
-  if (!spendScriptSig(rawTx, lock, items) || items.size() != 4 || items[2] != std::vector<uint8_t>{0x01} ||
-      items[3] != script || items[1].size() != aliceSignature.size() + 1 ||
-      items[1].back() != static_cast<uint8_t>(BCH_SIGHASH_ALL_FORKID))
-    return false;
-  std::copy(items[1].begin(), items[1].begin() + aliceSignature.size(), aliceSignature.begin());
-  return true;
+  std::vector<BchSchnorr::Signature> signatures;
+  if (!spendScriptSig(rawTx, lock, items)) return signatures;
+  for (const std::vector<uint8_t>& item : items) {
+    BchSchnorr::Signature signature;
+    if (item.size() != signature.size() + 1 || item.back() != static_cast<uint8_t>(BCH_SIGHASH_ALL_FORKID)) continue;
+    std::copy(item.begin(), item.begin() + signature.size(), signature.begin());
+    signatures.push_back(signature);
+  }
+  return signatures;
 }
 
 bool isBchPointLockState(const std::string& chainState) { return chainState.rfind(STATE_PREFIX, 0) == 0; }

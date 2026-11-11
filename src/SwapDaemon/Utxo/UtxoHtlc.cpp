@@ -332,7 +332,13 @@ bool parseTransaction(const std::vector<uint8_t>& rawTx, std::vector<ParsedInput
   return true;
 }
 
+// Every item a push-only script leaves on the stack, in any encoding the
+// consensus rules accept: a claimer chooses the encoding, so a reader that
+// knew only one could be kept from seeing a valid claim.
 bool parsePushes(const std::vector<uint8_t>& script, std::vector<std::vector<uint8_t>>& pushes) {
+  constexpr uint8_t OP_PUSHDATA4 = 0x4e;
+  constexpr uint8_t OP_1NEGATE = 0x4f;
+  constexpr uint8_t OP_16 = 0x60;
   size_t i = 0;
   while (i < script.size()) {
     const uint8_t op = script[i++];
@@ -341,8 +347,12 @@ bool parsePushes(const std::vector<uint8_t>& script, std::vector<std::vector<uin
       pushes.emplace_back();
       continue;
     }
-    if (op == OP_1) {
-      pushes.push_back({0x01});
+    if (op == OP_1NEGATE) {
+      pushes.push_back({0x81});
+      continue;
+    }
+    if (op >= OP_1 && op <= OP_16) {
+      pushes.push_back({static_cast<uint8_t>(op - OP_1 + 1)});
       continue;
     }
     if (op < OP_PUSHDATA1) {
@@ -352,6 +362,10 @@ bool parsePushes(const std::vector<uint8_t>& script, std::vector<std::vector<uin
     } else if (op == OP_PUSHDATA2 && i + 1 < script.size()) {
       size = static_cast<size_t>(script[i]) | (static_cast<size_t>(script[i + 1]) << 8);
       i += 2;
+    } else if (op == OP_PUSHDATA4 && i + 3 < script.size()) {
+      size = static_cast<size_t>(script[i]) | (static_cast<size_t>(script[i + 1]) << 8) |
+             (static_cast<size_t>(script[i + 2]) << 16) | (static_cast<size_t>(script[i + 3]) << 24);
+      i += 4;
     } else {
       return false;
     }
@@ -604,24 +618,22 @@ bool spendScriptSig(const std::vector<uint8_t>& rawTx, const UtxoOutpoint& lock,
   return false;
 }
 
+// The lock's script lets the claim branch run only with a preimage of its
+// hash lock, so any spend of the lock that carries one is a claim. The item
+// is found by its hash, never by its position or by how the claimer encoded
+// the branch selector.
 bool extractHtlcPreimage(UtxoHtlcEncoding encoding, const std::vector<uint8_t>& rawTx,
                          const UtxoOutpoint& lock, const std::vector<uint8_t>& htlcScript,
                          std::vector<uint8_t>& preimage) {
   UtxoHtlcTerms terms;
-  std::vector<ParsedInput> inputs;
-  std::vector<ParsedOutput> outputs;
-  if (!isTxidHex(lock.txid) || !parseHtlcScript(htlcScript, terms) || !parseTransaction(rawTx, inputs, outputs))
-    return false;
-  const std::array<uint8_t, 32> lockTxid = littleEndianTxid(lock.txid);
-  for (const auto& input : inputs) {
-    if (input.prevTxid != lockTxid || input.prevVout != lock.vout) continue;
-    std::vector<std::vector<uint8_t>> items;
-    if (encoding == UtxoHtlcEncoding::P2WSH) items = input.witness;
-    else if (!parsePushes(input.scriptSig, items)) return false;
-    if (items.size() != 4 || items[3] != htlcScript || items[2] != std::vector<uint8_t>{0x01})
-      return false;
-    if (items[1].size() != 32 || sha256Digest(items[1]) != terms.hashLock) return false;
-    preimage = items[1];
+  std::vector<std::vector<uint8_t>> items;
+  if (!parseHtlcScript(htlcScript, terms)) return false;
+  const bool read = encoding == UtxoHtlcEncoding::P2WSH ? spendWitness(rawTx, lock, items)
+                                                        : spendScriptSig(rawTx, lock, items);
+  if (!read) return false;
+  for (const std::vector<uint8_t>& item : items) {
+    if (item.size() != 32 || sha256Digest(item) != terms.hashLock) continue;
+    preimage = item;
     return true;
   }
   return false;

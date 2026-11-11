@@ -255,6 +255,46 @@ static void testPreimageExtraction() {
         "claim of another outpoint is not this lock's claim");
 }
 
+// The byte sequence `find` occurs once in `rawTx`; the copy has `replacement` there.
+static std::vector<uint8_t> withBytesReplaced(std::vector<uint8_t> rawTx, const std::vector<uint8_t>& find,
+                                              const std::vector<uint8_t>& replacement) {
+  const auto at = std::search(rawTx.begin(), rawTx.end(), find.begin(), find.end());
+  if (at == rawTx.end() || std::search(at + 1, rawTx.end(), find.begin(), find.end()) != rawTx.end()) return {};
+  const size_t offset = static_cast<size_t>(at - rawTx.begin());
+  rawTx.erase(rawTx.begin() + offset, rawTx.begin() + offset + find.size());
+  rawTx.insert(rawTx.begin() + offset, replacement.begin(), replacement.end());
+  return rawTx;
+}
+
+// The claimer picks how the branch selector is encoded. A reader that knew
+// only OP_1 could be kept from the secret by a claim that is still valid.
+static void testPreimageExtractionIgnoresTheSelectorEncoding() {
+  Fixture f;
+  const UtxoOutpoint lock{LOCK_TXID, 1};
+  std::vector<uint8_t> selectorThenScript = {0x51, 0x4c, static_cast<uint8_t>(f.script.size())};
+  selectorThenScript.insert(selectorThenScript.end(), f.script.begin(), f.script.end());
+  for (const uint8_t selector : {0x52, 0x60, 0x4f}) {
+    std::vector<uint8_t> otherSelector = selectorThenScript;
+    otherSelector[0] = selector;
+    const std::vector<uint8_t> claim = withBytesReplaced(hex(P2SH_CLAIM), selectorThenScript, otherSelector);
+    std::vector<uint8_t> preimage;
+    check(!claim.empty() && extractHtlcPreimage(UtxoHtlcEncoding::P2SH_FORKID, claim, lock, f.script, preimage) &&
+              preimage == f.secret,
+          ("a P2SH claim with selector opcode " + std::to_string(selector) + " still reveals the secret").c_str());
+  }
+  std::vector<uint8_t> witnessSelectorThenScript = {0x01, 0x01, static_cast<uint8_t>(f.script.size())};
+  witnessSelectorThenScript.insert(witnessSelectorThenScript.end(), f.script.begin(), f.script.end());
+  std::vector<uint8_t> otherWitnessSelector = witnessSelectorThenScript;
+  otherWitnessSelector[1] = 0x02;
+  const std::vector<uint8_t> witnessClaim =
+      withBytesReplaced(hex(P2WSH_CLAIM), witnessSelectorThenScript, otherWitnessSelector);
+  std::vector<uint8_t> preimage;
+  check(!witnessClaim.empty() &&
+            extractHtlcPreimage(UtxoHtlcEncoding::P2WSH, witnessClaim, lock, f.script, preimage) &&
+            preimage == f.secret,
+        "a P2WSH claim with a non-minimal selector still reveals the secret");
+}
+
 static void testAmountsAndKeys() {
   uint64_t units = 0;
   check(formatCoinAmount(12345678) == "0.12345678", "8 decimals kept");
@@ -515,6 +555,7 @@ int main() {
   testSpendTransactions();
   testSpendRefusals();
   testPreimageExtraction();
+  testPreimageExtractionIgnoresTheSelectorEncoding();
   testAmountsAndKeys();
   testSpendTracker();
   testLockVerification();

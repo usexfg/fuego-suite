@@ -92,6 +92,15 @@ static void testScript(const Fixture& f) {
   check(bchPointLockScriptPubKey(otherBob) != scriptPubKey, "the output commits to Bob's key");
 }
 
+static bool recoversSecret(const std::vector<uint8_t>& spendTx, const Fixture& f,
+                           const BchSchnorr::AdaptorPresig& presig) {
+  for (const BchSchnorr::Signature& signature : bchPointLockSpendSignatures(spendTx, f.claim.lock)) {
+    BchSchnorr::Scalar recovered;
+    if (BchSchnorr::extract(presig, signature, f.T, recovered) && recovered == f.t) return true;
+  }
+  return false;
+}
+
 static void testSwap(const Fixture& f) {
   BchSchnorr::Message sighash;
   check(bchPointLockClaimSighash(f.terms, f.claim, sighash), "claim sighash");
@@ -115,11 +124,18 @@ static void testSwap(const Fixture& f) {
             items[3] == bchPointLockScript(f.terms),
         "the claim scriptSig is sigB, sigA (each with the FORKID type), OP_1, the redeem script");
 
-  BchSchnorr::Signature published;
-  BchSchnorr::Scalar recovered;
-  check(bchPointLockClaimSignature(claimTx, f.claim.lock, f.terms, published) && published == aliceSignature &&
-            BchSchnorr::extract(presig, published, f.T, recovered) && recovered == f.t,
-        "Alice recovers t from the claim scriptSig");
+  check(recoversSecret(claimTx, f, presig), "Alice recovers t from the claim scriptSig");
+  // Bob chooses the selector's encoding and may push more beneath the
+  // signatures; neither may hide t from Alice.
+  std::vector<uint8_t> otherSelector = claimTx;
+  const size_t selectorOffset = 4 + 1 + 36 + 1 + 66 + 66;
+  check(otherSelector[selectorOffset] == 0x51, "the selector sits after the two signatures");
+  otherSelector[selectorOffset] = 0x52;
+  check(recoversSecret(otherSelector, f, presig), "t is recovered from a claim whose selector is OP_2");
+  std::vector<uint8_t> extraPush = claimTx;
+  extraPush[4 + 1 + 36] += 2;
+  extraPush.insert(extraPush.begin() + 4 + 1 + 36 + 1, {0x01, 0x07});
+  check(recoversSecret(extraPush, f, presig), "t is recovered from a claim with an extra item under the signatures");
   uint64_t value = 0;
   std::vector<uint8_t> paid;
   check(readTransactionOutput(claimTx, 0, value, paid) && value == f.claim.lockValue - f.claim.fee &&
@@ -152,8 +168,11 @@ static void testRefund(const Fixture& f) {
             bchPointLockRefundTransaction(f.terms, f.claim, aliceSignature, refundTx),
         "refund transaction");
   check(lockTimeOf(refundTx) == f.terms.timeoutBlock, "the refund's nLockTime is the timeout");
-  BchSchnorr::Signature ignored;
-  check(!bchPointLockClaimSignature(refundTx, f.claim.lock, f.terms, ignored), "a refund is not read as a claim");
+  BchSchnorr::AdaptorPresig presig;
+  BchSchnorr::Message claimMessage;
+  bchPointLockClaimSighash(f.terms, f.claim, claimMessage);
+  BchSchnorr::presign(f.alice.secret, claimMessage, f.T, presig);
+  check(!recoversSecret(refundTx, f, presig), "a refund yields no t");
   BchSchnorr::Message claimSighash;
   bchPointLockClaimSighash(f.terms, f.claim, claimSighash);
   check(claimSighash != sighash, "claim and refund sign different messages");

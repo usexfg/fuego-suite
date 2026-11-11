@@ -73,10 +73,12 @@ bool bchPointLockRefundTransaction(const BchPointLockTerms& terms, const PointLo
                                    const BchSchnorr::Signature& aliceSignature, std::vector<uint8_t>& rawTx);
 uint64_t bchPointLockSpendVirtualSize(bool claimPath);
 
-// Alice's completed signature from a transaction that spends `lock` through
-// the claim branch of `terms`.
-bool bchPointLockClaimSignature(const std::vector<uint8_t>& rawTx, const UtxoOutpoint& lock,
-                                const BchPointLockTerms& terms, BchSchnorr::Signature& aliceSignature);
+// Every Schnorr signature with the FORKID hash type in the scriptSig that
+// spends `lock`. A claim must carry Alice's completed signature among them,
+// but the claimer chooses the encoding of everything around it, so the caller
+// tests each against T instead of trusting a position.
+std::vector<BchSchnorr::Signature> bchPointLockSpendSignatures(const std::vector<uint8_t>& rawTx,
+                                                              const UtxoOutpoint& lock);
 
 bool isBchPointLockState(const std::string& chainState);
 std::string encodeBchPointLockState(const BchPointLockState& state);

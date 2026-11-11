@@ -115,7 +115,7 @@ std::error_code getViewKey(std::string &viewSecretKey);
                           uint64_t mixin, std::string &transactionHash);
   std::error_code placeLimitOrder(uint8_t side, uint64_t amount, uint64_t targetPrice, uint32_t expiration,
                                   uint64_t mixin, std::string &transactionHash);
-  std::error_code cancelLimitOrder(const std::string &orderIdHex, uint64_t mixin, std::string &transactionHash);
+  std::error_code cancelLimitOrder(const std::string &orderIdHex, uint64_t mixin, bool stopOnly, std::string &transactionHash);
   std::error_code getLimitOrders(std::vector<GetLimitOrders::LimitOrderInfo> &orders);
   std::error_code registerAlias(const std::string &alias, const std::string &ownerAddress, std::string &transactionHash);
   std::error_code withdrawDeposit(uint64_t depositId, std::string &transactionHash);

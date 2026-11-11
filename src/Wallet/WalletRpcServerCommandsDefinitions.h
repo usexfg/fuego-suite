@@ -1056,11 +1056,13 @@ void serialize(CryptoNote::ISerializer& s) {
       std::string order_id;
       uint64_t fee;
       uint64_t mixin;
+      bool stop_only = false;  // stop filling, keep escrow frozen; withdraw later
 
       void serialize(ISerializer& s) {
         KV_MEMBER(order_id)
         KV_MEMBER(fee)
         KV_MEMBER(mixin)
+        KV_MEMBER(stop_only)
       }
     };
 

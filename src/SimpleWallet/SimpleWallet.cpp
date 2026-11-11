@@ -516,6 +516,7 @@ std::string simple_wallet::get_commands_str() {
     {"claim_lp_fees", "Claim LP swap fee earnings"},
     {"place_order", "Place limit order on Hearth"},
     {"cancel_order", "Cancel limit order by transaction hash"},
+    {"stop_order", "Stop a limit order filling; withdraw it afterwards with cancel_order"},
     {"orderbook", "Show Hearth CLOB orderbook"},
     {"show_orders", "Show your open limit orders on Hearth"}
   });
@@ -639,6 +640,7 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
   // Hearth orderbook commands (v11+)
   m_consoleHandler.setHandler("place_order", boost::bind(&simple_wallet::place_order, this, boost::arg<1>()), "place_order <buy|sell> <amount> <price> [exp_blocks] - Place limit order on Hearth");
   m_consoleHandler.setHandler("cancel_order", boost::bind(&simple_wallet::cancel_order, this, boost::arg<1>()), "cancel_order <tx_hash> - Cancel limit order by transaction hash");
+  m_consoleHandler.setHandler("stop_order", boost::bind(&simple_wallet::stop_order, this, boost::arg<1>()), "stop_order <order_id> - Stop a limit order filling so a later cancel_order cannot race a fill");
   m_consoleHandler.setHandler("orderbook", boost::bind(&simple_wallet::orderbook, this, boost::arg<1>()), "orderbook - Show Hearth CLOB orderbook");
   m_consoleHandler.setHandler("show_orders", boost::bind(&simple_wallet::show_orders, this, boost::arg<1>()), "show_orders - Show your open limit orders on Hearth");
 }
@@ -4915,6 +4917,26 @@ bool simple_wallet::cancel_order(const std::vector<std::string>& args) {
   }
   fail_msg_writer() << "Transaction failed";
   return false;
+}
+
+bool simple_wallet::stop_order(const std::vector<std::string>& args) {
+  Crypto::Hash orderId;
+  if (args.size() < 1 || !Common::podFromHex(args[0], orderId)) {
+    fail_msg_writer() << "Usage: stop_order <order_id>";
+    return false;
+  }
+  const uint64_t fee = m_currency.minimumFee();
+  if (m_wallet->actualBalance() < fee) {
+    fail_msg_writer() << "Insufficient balance for fee (" << m_currency.formatAmount(fee) << ")";
+    return false;
+  }
+  TransactionId tx = m_wallet->cancelOrderV13(orderId, fee, CryptoNote::parameters::MIN_TX_MIXIN_SIZE, true);
+  if (tx == WALLET_INVALID_TRANSACTION_ID) {
+    fail_msg_writer() << "Transaction failed";
+    return false;
+  }
+  success_msg_writer() << "Stop order submitted: tx " << tx << ". Withdraw with cancel_order once it confirms.";
+  return true;
 }
 
 bool simple_wallet::orderbook(const std::vector<std::string>& args) {

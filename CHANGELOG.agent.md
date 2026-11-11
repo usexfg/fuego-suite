@@ -6481,3 +6481,32 @@ Sign-off table:
 | All tasks done | DONE |
 
 Not done (other half of L2): bill denominations stay wallet-only. Enforcing them on every HEAT output would also bind limit-withdraw, LP-remove and swap outputs, which wallets build as single exact amounts today; that needs wallet changes on every HEAT output path first.
+
+## Two-step limit-order cancel (audit 2026-11-11: M4)
+
+**Feature name**: Signed stop tag for limit orders
+**Agent**: Claude
+**Start date**: 2026-11-11
+**Plan**: `docs/review/2026-11-11-hearth-heat-mint-audit.md` (recommendation 9)
+**Consensus impact**: v11+ only (not live). Tag 0x0F (`TransactionExtraOrderCancel`) redefined: it was unauthenticated, rejected before v11 and had no effect at v11.
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | 0x0F carries orderId + order one-time keys + signature over `getLimitCancelAuthHash`; settlement tag; valid only for a live order, at most one cancel/withdraw per order per block (validation and template) | Claude | 2026-11-11 | DONE |
+| 2 | Settlement sets the order stopped (`expired`): it stops filling, escrow and proceeds stay claimable by the existing withdraw; popTransaction clears it | Claude | 2026-11-11 | DONE |
+| 3 | Wallets: `stop_only` on WalletLegacy `cancelOrderV13`, WalletGreen `cancelLimitOrderV13`, wallet RPC and walletd `cancel_limit_order`; SimpleWallet `stop_order` command | Claude | 2026-11-11 | DONE |
+| 4 | Test: owner-signed cancel valid; second in same block, wrong key and already-stopped order refused; tag round-trips | Claude | 2026-11-11 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j4` full build rc=0 |
+| Tests pass | DONE — core_tests 361/361 |
+| Mutation check | DONE — disabling the ownership check fails the wrong-key test |
+| All tasks done | DONE |
+
+Not covered:
+- push/pop of the cancel (set/clear `expired`) is exercised by code reading only; no test drives pushTransaction/popTransaction.
+- The wallet stop paths have no automated test.
+- A stop costs a second transaction fee; one-step withdraw still works when no fill lands before inclusion.

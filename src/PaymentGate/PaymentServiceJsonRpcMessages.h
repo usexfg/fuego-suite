@@ -348,6 +348,7 @@ struct CancelLimitOrder
     std::string order_id;
     uint64_t fee = 0;
     uint64_t mixin = 0;
+    bool stop_only = false;
 
     void serialize(CryptoNote::ISerializer &serializer);
   };

@@ -1761,7 +1761,8 @@ namespace CryptoNote
       const Crypto::Hash &orderId,
       uint64_t fee,
       uint64_t mixin,
-      std::string &transactionHash)
+      std::string &transactionHash,
+      bool stopOnly)
   {
     throwIfNotInitialized();
     throwIfTrackingMode();
@@ -1842,7 +1843,9 @@ namespace CryptoNote
       transaction->addOutput(heatAmount, heatOut);
     };
 
-    if (orderSide == 1) {
+    if (stopOnly) {
+      // Stop only: no payout; the escrow waits frozen for the withdraw.
+    } else if (orderSide == 1) {
       if (orderAmount > 0) {
         transaction->addOutput(orderAmount, AccountPublicAddress{ownerWallet->spendPublicKey, m_viewPublicKey});
       }
@@ -1858,14 +1861,21 @@ namespace CryptoNote
       }
     }
 
-    Crypto::Hash outputsHash = getLimitWithdrawOutputHash(transaction->getTransactionPrefix().outputs);
-    Crypto::Hash authHash = getLimitWithdrawAuthHash(orderId, ownerAddressHash, outputsHash);
     const LimitOrderKeys orderKeys = deriveLimitOrderKeys(ownerWallet->spendSecretKey, orderId);
-    Crypto::Signature proof;
-    Crypto::generate_signature(authHash, orderKeys.spendPublicKey, orderKeys.spendSecretKey, proof);
     std::vector<uint8_t> extra;
-    addLimitWithdrawToExtra(extra, orderId, orderKeys.spendPublicKey,
-                            orderKeys.viewPublicKey, outputsHash, proof);
+    if (stopOnly) {
+      Crypto::Signature proof;
+      Crypto::generate_signature(getLimitCancelAuthHash(orderId, ownerAddressHash),
+                                 orderKeys.spendPublicKey, orderKeys.spendSecretKey, proof);
+      addOrderCancelToExtra(extra, orderId, orderKeys.spendPublicKey, orderKeys.viewPublicKey, proof);
+    } else {
+      Crypto::Hash outputsHash = getLimitWithdrawOutputHash(transaction->getTransactionPrefix().outputs);
+      Crypto::Hash authHash = getLimitWithdrawAuthHash(orderId, ownerAddressHash, outputsHash);
+      Crypto::Signature proof;
+      Crypto::generate_signature(authHash, orderKeys.spendPublicKey, orderKeys.spendSecretKey, proof);
+      addLimitWithdrawToExtra(extra, orderId, orderKeys.spendPublicKey,
+                              orderKeys.viewPublicKey, outputsHash, proof);
+    }
     transaction->appendExtra(CryptoNote::BinaryArray(extra.begin(), extra.end()));
     typedef CryptoNote::COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount outs_for_amount;
     std::vector<outs_for_amount> mixinResult;

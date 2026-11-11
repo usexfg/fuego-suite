@@ -3169,12 +3169,13 @@ namespace CryptoNote
   std::unique_ptr<WalletRequest> WalletTransactionSender::makeCancelOrderV13Request(
       TransactionId& transactionId,
       std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
-      const Crypto::Hash& orderId, uint64_t fee, uint64_t mixIn) {
+      const Crypto::Hash& orderId, uint64_t fee, uint64_t mixIn, bool stopOnly) {
     std::shared_ptr<SendTransactionContext> context = std::make_shared<SendTransactionContext>();
     context->dustPolicy.dustThreshold = m_currency.defaultDustThreshold();
     context->mixIn = mixIn == 0 ? m_currency.maxMixin() : mixIn;
 
     context->isV11LimitWithdraw = true;
+    context->v11WithdrawStopOnly = stopOnly;
     context->v11WithdrawOrderId = orderId;
 
     // Resolve the order on-chain before signing: the order id is public, so
@@ -3358,7 +3359,9 @@ namespace CryptoNote
         transaction->addOutput(heatAmount, heatOut);
       };
 
-      if (context->v11WithdrawSide == 1) {
+      if (context->v11WithdrawStopOnly) {
+        // Stop only: no payout; the escrow waits frozen for the withdraw.
+      } else if (context->v11WithdrawSide == 1) {
         // SELL_XFG: return the remaining XFG deposit plus HEAT fill proceeds.
         if (context->v11WithdrawAmount > 0) {
           transaction->addOutput(context->v11WithdrawAmount, m_keys.address);
@@ -3377,14 +3380,20 @@ namespace CryptoNote
       }
 
       const LimitOrderKeys orderKeys = deriveLimitOrderKeys(m_keys.spendSecretKey, orderId);
-      Crypto::Hash outputsHash = getLimitWithdrawOutputHash(transaction->getTransactionPrefix().outputs);
-      Crypto::Hash authHash = getLimitWithdrawAuthHash(orderId, orderKeys.addressHash, outputsHash);
-      Crypto::Signature proof;
-      Crypto::generate_signature(authHash, orderKeys.spendPublicKey, orderKeys.spendSecretKey, proof);
-
       std::vector<uint8_t> extra;
-      addLimitWithdrawToExtra(extra, orderId, orderKeys.spendPublicKey,
-                              orderKeys.viewPublicKey, outputsHash, proof);
+      if (context->v11WithdrawStopOnly) {
+        Crypto::Signature proof;
+        Crypto::generate_signature(getLimitCancelAuthHash(orderId, orderKeys.addressHash),
+                                   orderKeys.spendPublicKey, orderKeys.spendSecretKey, proof);
+        addOrderCancelToExtra(extra, orderId, orderKeys.spendPublicKey, orderKeys.viewPublicKey, proof);
+      } else {
+        Crypto::Hash outputsHash = getLimitWithdrawOutputHash(transaction->getTransactionPrefix().outputs);
+        Crypto::Hash authHash = getLimitWithdrawAuthHash(orderId, orderKeys.addressHash, outputsHash);
+        Crypto::Signature proof;
+        Crypto::generate_signature(authHash, orderKeys.spendPublicKey, orderKeys.spendSecretKey, proof);
+        addLimitWithdrawToExtra(extra, orderId, orderKeys.spendPublicKey,
+                                orderKeys.viewPublicKey, outputsHash, proof);
+      }
       CryptoNote::BinaryArray extraData(extra.begin(), extra.end());
       transaction->appendExtra(extraData);
 

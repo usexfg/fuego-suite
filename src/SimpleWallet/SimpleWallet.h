@@ -185,6 +185,7 @@ namespace CryptoNote
     // Hearth orderbook commands (v11+)
     bool place_order(const std::vector<std::string> &args);
     bool cancel_order(const std::vector<std::string> &args);
+    bool stop_order(const std::vector<std::string> &args);
     bool orderbook(const std::vector<std::string> &args);
     bool show_orders(const std::vector<std::string> &args);
 

@@ -691,6 +691,7 @@ void CancelLimitOrder::Request::serialize(CryptoNote::ISerializer &serializer)
   serializer(order_id, "order_id");
   serializer(fee, "fee");
   serializer(mixin, "mixin");
+  serializer(stop_only, "stop_only");
 }
 
 void CancelLimitOrder::Response::serialize(CryptoNote::ISerializer &serializer)

@@ -323,9 +323,14 @@ struct TransactionExtraOrderPlace {
   bool serialize(ISerializer& serializer);
 };
 
+// Stops a resting limit order: from the block that includes it the order no
+// longer fills, and its escrow and proceeds wait, frozen, for the withdraw.
+// Signed with the order's one-time keys (deriveLimitOrderKeys).
 struct TransactionExtraOrderCancel {
   Crypto::Hash orderId;
-  bool serialize(ISerializer& serializer);
+  Crypto::PublicKey spendPublicKey;
+  Crypto::PublicKey viewPublicKey;
+  Crypto::Signature proof;
 };
 
 struct TransactionExtraMarketBuyAuth {
@@ -590,7 +595,14 @@ bool addLpAddAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t amountXfg, uin
 bool addLpRemoveAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t lpSharesBurned,
                             uint64_t minXfg, uint64_t minHeat);
 bool addOrderPlaceToExtra(std::vector<uint8_t>& tx_extra, uint8_t side, uint64_t price, uint32_t expiration);
-bool addOrderCancelToExtra(std::vector<uint8_t>& tx_extra, const Crypto::Hash& orderId);
+bool addOrderCancelToExtra(std::vector<uint8_t>& tx_extra, const Crypto::Hash& orderId,
+                           const Crypto::PublicKey& spendPublicKey, const Crypto::PublicKey& viewPublicKey,
+                           const Crypto::Signature& proof);
+Crypto::Hash getLimitCancelAuthHash(const Crypto::Hash& orderId, const Crypto::Hash& addressHash);
+// The order key pair hashes to the deposit's addressHash and signed `authHash`.
+bool limitOrderKeysProve(const Crypto::Hash& addressHash, const Crypto::PublicKey& spendPublicKey,
+                         const Crypto::PublicKey& viewPublicKey, const Crypto::Hash& authHash,
+                         const Crypto::Signature& proof);
 bool addMarketBuyAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t xfgWanted, uint64_t maxHeatCost);
 bool addMarketSellAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t xfgToSell, uint64_t minHeatReceive);
 bool addLimitDepositToExtra(std::vector<uint8_t>& tx_extra, uint8_t side, uint64_t amount, uint64_t targetPrice, uint32_t expiration, const Crypto::Hash& orderId, const Crypto::Hash& addressHash);

@@ -940,7 +940,7 @@ TransactionId WalletLegacy::placeOrderV13(uint8_t side, uint64_t amount, uint64_
   return txId;
 }
 
-TransactionId WalletLegacy::cancelOrderV13(const Crypto::Hash& orderId, uint64_t fee, uint64_t mixIn) {
+TransactionId WalletLegacy::cancelOrderV13(const Crypto::Hash& orderId, uint64_t fee, uint64_t mixIn, bool stopOnly) {
   throwIfNotInitialised();
   TransactionId txId = 0;
   std::unique_ptr<WalletRequest> request;
@@ -948,7 +948,7 @@ TransactionId WalletLegacy::cancelOrderV13(const Crypto::Hash& orderId, uint64_t
   fee = m_currency.minimumFee();
   {
     std::unique_lock<std::mutex> lock(m_cacheMutex);
-    request = m_sender->makeCancelOrderV13Request(txId, events, orderId, fee, mixIn);
+    request = m_sender->makeCancelOrderV13Request(txId, events, orderId, fee, mixIn, stopOnly);
     if (request != nullptr) pushBalanceUpdatedEvents(events);
   }
   notifyClients(events);

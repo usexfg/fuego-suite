@@ -370,6 +370,9 @@ namespace CryptoNote
             {
               TransactionExtraOrderCancel cancel;
               read(iss, cancel.orderId.data, sizeof(cancel.orderId.data));
+              read(iss, cancel.spendPublicKey.data, sizeof(cancel.spendPublicKey.data));
+              read(iss, cancel.viewPublicKey.data, sizeof(cancel.viewPublicKey.data));
+              read(iss, cancel.proof.data, sizeof(cancel.proof.data));
               transactionExtraFields.push_back(cancel);
               break;
             }
@@ -647,7 +650,7 @@ namespace CryptoNote
 
     bool operator()(const TransactionExtraOrderCancel &t)
     {
-      return addOrderCancelToExtra(extra, t.orderId);
+      return addOrderCancelToExtra(extra, t.orderId, t.spendPublicKey, t.viewPublicKey, t.proof);
     }
 
     bool operator()(const TransactionExtraMarketBuyAuth &t)
@@ -1646,10 +1649,37 @@ namespace CryptoNote
     return true;
   }
 
-  bool addOrderCancelToExtra(std::vector<uint8_t>& tx_extra, const Crypto::Hash& orderId) {
+  bool addOrderCancelToExtra(std::vector<uint8_t>& tx_extra, const Crypto::Hash& orderId,
+                             const Crypto::PublicKey& spendPublicKey, const Crypto::PublicKey& viewPublicKey,
+                             const Crypto::Signature& proof) {
     tx_extra.push_back(TX_EXTRA_ORDER_CANCEL);
     tx_extra.insert(tx_extra.end(), orderId.data, orderId.data + sizeof(orderId.data));
+    tx_extra.insert(tx_extra.end(), spendPublicKey.data, spendPublicKey.data + sizeof(spendPublicKey.data));
+    tx_extra.insert(tx_extra.end(), viewPublicKey.data, viewPublicKey.data + sizeof(viewPublicKey.data));
+    tx_extra.insert(tx_extra.end(), proof.data, proof.data + sizeof(proof.data));
     return true;
+  }
+
+  Crypto::Hash getLimitCancelAuthHash(const Crypto::Hash& orderId, const Crypto::Hash& addressHash) {
+    static constexpr char domain[] = "FuegoLimitCancelV1";
+    std::vector<uint8_t> authData(domain, domain + sizeof(domain) - 1);
+    authData.insert(authData.end(), orderId.data, orderId.data + sizeof(orderId.data));
+    authData.insert(authData.end(), addressHash.data, addressHash.data + sizeof(addressHash.data));
+    Crypto::Hash result{};
+    Crypto::cn_fast_hash(authData.data(), authData.size(), result);
+    return result;
+  }
+
+  bool limitOrderKeysProve(const Crypto::Hash& addressHash, const Crypto::PublicKey& spendPublicKey,
+                           const Crypto::PublicKey& viewPublicKey, const Crypto::Hash& authHash,
+                           const Crypto::Signature& proof) {
+    uint8_t keyData[sizeof(spendPublicKey.data) + sizeof(viewPublicKey.data)];
+    memcpy(keyData, spendPublicKey.data, sizeof(spendPublicKey.data));
+    memcpy(keyData + sizeof(spendPublicKey.data), viewPublicKey.data, sizeof(viewPublicKey.data));
+    Crypto::Hash keysHash{};
+    Crypto::cn_fast_hash(keyData, sizeof(keyData), keysHash);
+    return memcmp(keysHash.data, addressHash.data, sizeof(keysHash.data)) == 0 &&
+           Crypto::check_signature(authHash, spendPublicKey, proof);
   }
 
   bool addMarketBuyAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t xfgWanted, uint64_t maxHeatCost) {

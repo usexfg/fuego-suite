@@ -99,6 +99,11 @@ namespace CryptoNote
           touch.hasWithdraw = true;
           touch.withdrawId = boost::get<TransactionExtraLimitWithdraw>(f).orderId;
         }
+        else if (f.type() == typeid(TransactionExtraOrderCancel))
+        {
+          touch.hasWithdraw = true;
+          touch.withdrawId = boost::get<TransactionExtraOrderCancel>(f).orderId;
+        }
       }
       return touch;
     }

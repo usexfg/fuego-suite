@@ -1208,6 +1208,9 @@ public:
     dep.withdrawn = true;
     dep.withdrawnHeight = height;
   }
+  static void markExpired(Blockchain& chain, const Crypto::Hash& orderId) {
+    chain.m_limitDeposits.at(orderId).expired = true;
+  }
   static bool hasLimitDeposit(const Blockchain& chain, const Crypto::Hash& orderId) {
     return chain.m_limitDeposits.count(orderId) > 0;
   }
@@ -2047,6 +2050,49 @@ void testAuctionSettlesWholeOrNotAtAll() {
   TEST(!VaultCoreTestAccess::auctionFillsSettle(t.chain, result(ask, 10 * C, poolHeat + 1)));
 }
 
+// Audit 2026-11-11 M4: a withdraw must match the order's balances exactly, so a
+// fill between signing and inclusion invalidated it and an order trading every
+// block could not be cancelled. A signed cancel now stops the order first.
+void testLimitOrderCancelTag() {
+  TestChain t("limit_cancel");
+  TEST(t.ok);
+  const uint64_t C = parameters::COIN;
+  Crypto::PublicKey walletSpendPublic;
+  Crypto::SecretKey walletSpendSecret;
+  Crypto::generate_keys(walletSpendPublic, walletSpendSecret);
+  const Crypto::Hash orderId = hearthOrderId(110);
+  const LimitOrderKeys keys = deriveLimitOrderKeys(walletSpendSecret, orderId);
+  VaultCoreTestAccess::addLimitDeposit(t.chain, orderId, 1, 5 * C, parameters::ORDER_PRICE_TICK, 1, &keys.addressHash);
+
+  auto cancelSignedBy = [&](const Crypto::PublicKey& spendPublic, const Crypto::SecretKey& spendSecret,
+                            Blockchain::SettlementScratch& scratch, std::string& err) {
+    Crypto::Signature proof;
+    Crypto::generate_signature(getLimitCancelAuthHash(orderId, keys.addressHash), spendPublic, spendSecret, proof);
+    std::vector<uint8_t> extra;
+    addOrderCancelToExtra(extra, orderId, spendPublic, keys.viewPublicKey, proof);
+    AssetFlows flows;
+    uint64_t fee = 0;
+    return t.chain.validateSettlement(settlementTx({2 * C}, {keyOut(1 * C)}, extra), 100, scratch, flows, fee, err) &&
+           fee == 1 * C;
+  };
+  std::string err;
+  Blockchain::SettlementScratch scratch;
+  TEST(cancelSignedBy(keys.spendPublicKey, keys.spendSecretKey, scratch, err));
+  TEST(!cancelSignedBy(keys.spendPublicKey, keys.spendSecretKey, scratch, err) && err.find("this block") != std::string::npos);
+  Blockchain::SettlementScratch other;
+  TEST(!cancelSignedBy(walletSpendPublic, walletSpendSecret, other, err) && err.find("ownership") != std::string::npos);
+
+  std::vector<uint8_t> extra;
+  TEST(addOrderCancelToExtra(extra, orderId, keys.spendPublicKey, keys.viewPublicKey, Crypto::Signature{}));
+  std::vector<TransactionExtraField> fields;
+  TEST(parseTransactionExtra(extra, fields) && fields.size() == 1 &&
+       fields[0].type() == typeid(TransactionExtraOrderCancel));
+
+  VaultCoreTestAccess::markExpired(t.chain, orderId);
+  Blockchain::SettlementScratch afterStop;
+  TEST(!cancelSignedBy(keys.spendPublicKey, keys.spendSecretKey, afterStop, err) && err.find("stopped") != std::string::npos);
+}
+
 int main() {
   testCdInterestCompounding();
   testLegacyDepositWithdrawsForPrincipal();
@@ -2101,6 +2147,7 @@ int main() {
   testLimitOrderKeysUnlinkable();
   testHeatSupplyCountsOnlyXfgValuedFees();
   testAuctionSettlesWholeOrNotAtAll();
+  testLimitOrderCancelTag();
   fprintf(stderr, "=== Treasury/Core Tests ===\nPassed: %d / %d\n", tests_passed, tests_run);
   return tests_passed == tests_run ? 0 : 1;
 }

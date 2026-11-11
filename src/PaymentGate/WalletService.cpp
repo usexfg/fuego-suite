@@ -2723,6 +2723,7 @@ namespace PaymentService
   std::error_code WalletService::cancelLimitOrder(
       const std::string &orderIdHex,
       uint64_t mixin,
+      bool stopOnly,
       std::string &transactionHash)
   {
     try
@@ -2737,7 +2738,7 @@ namespace PaymentService
         return make_error_code(CryptoNote::error::WRONG_PARAMETERS);
       }
       uint64_t fee = currency.minimumFee();
-      green->cancelLimitOrderV13(orderId, fee, mixin, transactionHash);
+      green->cancelLimitOrderV13(orderId, fee, mixin, transactionHash, stopOnly);
     }
     catch (std::system_error &x)
     {

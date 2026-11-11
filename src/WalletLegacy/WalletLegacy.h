@@ -132,7 +132,7 @@ public:
                                          uint64_t mixIn) override;
   // v11 Orderbook
   virtual TransactionId placeOrderV13(uint8_t side, uint64_t amount, uint64_t price, uint32_t expiration, uint64_t fee, uint64_t mixIn = 4) override;
-  virtual TransactionId cancelOrderV13(const Crypto::Hash& orderId, uint64_t fee, uint64_t mixIn = 4) override;
+  virtual TransactionId cancelOrderV13(const Crypto::Hash& orderId, uint64_t fee, uint64_t mixIn = 4, bool stopOnly = false) override;
   virtual TransactionId marketBuyV13(uint64_t xfgWanted, uint64_t maxHeatCost, uint64_t fee, uint64_t mixIn = 4) override;
   virtual TransactionId marketSellV13(uint64_t xfgToSell, uint64_t minHeatReceive, uint64_t fee, uint64_t mixIn = 4) override;
   virtual std::error_code cancelTransaction(size_t transactionId) override;

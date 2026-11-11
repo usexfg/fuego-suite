@@ -63,7 +63,10 @@ public:
                   uint64_t fee, uint64_t mixin, std::string &transactionHash);
   void placeLimitOrderV13(uint8_t side, uint64_t amount, uint64_t targetPrice, uint32_t expiration,
                           uint64_t fee, uint64_t mixin, std::string &transactionHash);
-  void cancelLimitOrderV13(const Crypto::Hash &orderId, uint64_t fee, uint64_t mixin, std::string &transactionHash);
+  // stopOnly: stop the order filling and leave its escrow frozen for a later
+  // withdraw (TransactionExtraOrderCancel); otherwise withdraw it.
+  void cancelLimitOrderV13(const Crypto::Hash &orderId, uint64_t fee, uint64_t mixin, std::string &transactionHash,
+                           bool stopOnly = false);
   std::vector<MultisignatureInput> prepareMultisignatureInputs(const std::vector<TransactionOutputInformation> &selectedTransfers);
 
   // Phase 5: Wallet Auto-Rollover + Compound Interest

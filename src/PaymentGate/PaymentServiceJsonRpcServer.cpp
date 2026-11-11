@@ -415,7 +415,7 @@ std::error_code PaymentServiceJsonRpcServer::handlePlaceLimitOrder(const PlaceLi
 
 std::error_code PaymentServiceJsonRpcServer::handleCancelLimitOrder(const CancelLimitOrder::Request& request, CancelLimitOrder::Response& response)
 {
-  auto ec = service.cancelLimitOrder(request.order_id, request.mixin, response.tx_hash);
+  auto ec = service.cancelLimitOrder(request.order_id, request.mixin, request.stop_only, response.tx_hash);
   if (!ec) {
     response.status = "OK";
   }

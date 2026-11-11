@@ -1451,7 +1451,7 @@ bool wallet_rpc_server::on_cancel_limit_order(const wallet_rpc::COMMAND_RPC_CANC
     CryptoNote::WalletHelper::SendCompleteResultObserver sent;
     WalletHelper::IWalletRemoveObserverGuard removeGuard(m_wallet, sent);
 
-    CryptoNote::TransactionId txId = m_wallet.cancelOrderV13(orderId, fee, mixin);
+    CryptoNote::TransactionId txId = m_wallet.cancelOrderV13(orderId, fee, mixin, req.stop_only);
 
     if (txId == WALLET_INVALID_TRANSACTION_ID) {
       throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Failed to cancel limit order");

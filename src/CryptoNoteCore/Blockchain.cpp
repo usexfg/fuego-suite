@@ -213,6 +213,7 @@ bool isSettlementTag(const CryptoNote::TransactionExtraField& f) {
          f.type() == typeid(TransactionExtraMarketSellAuth) ||
          f.type() == typeid(TransactionExtraLimitDeposit) ||
          f.type() == typeid(TransactionExtraLimitWithdraw) ||
+         f.type() == typeid(TransactionExtraOrderCancel) ||
          f.type() == typeid(TransactionExtraLpAddAuth) ||
          f.type() == typeid(TransactionExtraLpRemoveAuth) ||
          f.type() == typeid(TransactionExtraTreasuryFund);
@@ -6987,6 +6988,12 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
             }
             m_treasuryHeatReserve += fund.amount;
           }
+        } else if (field.type() == typeid(TransactionExtraOrderCancel)) {
+          const auto& cancel = boost::get<TransactionExtraOrderCancel>(field);
+          auto depIt = m_limitDeposits.find(cancel.orderId);
+          if (depIt != m_limitDeposits.end() && !depIt->second.withdrawn) {
+            depIt->second.expired = true;
+          }
         } else if (field.type() == typeid(TransactionExtraLimitWithdraw)) {
           const auto& wd = boost::get<TransactionExtraLimitWithdraw>(field);
           auto depIt = m_limitDeposits.find(wd.orderId);
@@ -7436,6 +7443,9 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
             m_ammPool.pendingHeat -= deposited;
         }
         m_limitDeposits.erase(dep.orderId);
+      } else if (field.type() == typeid(TransactionExtraOrderCancel)) {
+        auto depIt = m_limitDeposits.find(boost::get<TransactionExtraOrderCancel>(field).orderId);
+        if (depIt != m_limitDeposits.end()) depIt->second.expired = false;
       } else if (field.type() == typeid(TransactionExtraLimitWithdraw)) {
         const auto& wd = boost::get<TransactionExtraLimitWithdraw>(field);
         auto depIt = m_limitDeposits.find(wd.orderId);
@@ -8353,6 +8363,23 @@ bool CryptoNote::Blockchain::validateSettlement(const Transaction& tx, uint32_t 
       return false;
     }
     scratch.limitWithdrawIds.insert(w.orderId);
+  } else if (kind == typeid(TransactionExtraOrderCancel)) {
+    const auto& c = boost::get<TransactionExtraOrderCancel>(*tag);
+    auto it = m_limitDeposits.find(c.orderId);
+    if (it == m_limitDeposits.end() || it->second.withdrawn || it->second.expired) {
+      error = "order cancel: unknown, withdrawn or already stopped order";
+      return false;
+    }
+    if (!limitOrderKeysProve(it->second.addressHash, c.spendPublicKey, c.viewPublicKey,
+                             getLimitCancelAuthHash(c.orderId, it->second.addressHash), c.proof)) {
+      error = "order cancel: ownership proof failed";
+      return false;
+    }
+    if (scratch.limitWithdrawIds.count(c.orderId)) {
+      error = "order cancel: order already cancelled or withdrawn in this block";
+      return false;
+    }
+    scratch.limitWithdrawIds.insert(c.orderId);
   } else if (kind == typeid(TransactionExtraLpAddAuth)) {
     const auto& a = boost::get<TransactionExtraLpAddAuth>(*tag);
     const uint64_t shares = ammMintLpShares(a.amountXfg, a.amountHeat, m_ammPool.totalLpShares,

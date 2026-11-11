@@ -628,6 +628,12 @@ add_executable(test_cross_dleq
 target_link_libraries(test_cross_dleq PRIVATE
     SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
 
+# Reference only: the in-house proof X1 first shipped. Nothing in SwapDaemonLib uses it.
+add_executable(test_cross_dleq_inhouse
+    SwapDaemon/tests/test_cross_dleq_inhouse.cpp)
+target_link_libraries(test_cross_dleq_inhouse PRIVATE
+    Crypto Common OpenSSL::SSL OpenSSL::Crypto)
+
 # F32: AFK fill results are signed by the offer's maker and carry the claim key.
 add_executable(test_afk_fill_result
     SwapDaemon/tests/test_afk_fill_result.cpp)
@@ -1278,6 +1284,7 @@ set(_TEST_DAEMON_TARGETS
     test_afk_fill_result
     test_evm_claim_deadline
     test_cross_dleq
+    test_cross_dleq_inhouse
     test_bip340_adaptor
     test_bch_schnorr_adaptor
     test_bch_point_lock

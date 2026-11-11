@@ -152,6 +152,23 @@ static bool isZeroPub(const Crypto::PublicKey& k) {
   return true;
 }
 
+static bool decodeAccountKey(const std::string& base58, std::array<uint8_t, 32>& key) {
+  try {
+    const std::vector<uint8_t> bytes = Base58Std::decode(base58);
+    if (bytes.size() != key.size()) return false;
+    std::copy(bytes.begin(), bytes.end(), key.begin());
+    return true;
+  } catch (const std::exception&) {
+    return false;
+  }
+}
+
+// Escrow state carries account keys as hex; swap parameters carry base58 addresses.
+static bool isAccount(const std::string& stateKeyHex, const std::string& base58Address) {
+  std::array<uint8_t, 32> key{};
+  return decodeAccountKey(base58Address, key) && lowerHex(stateKeyHex) == Common::toHex(key.data(), key.size());
+}
+
 static bool isPointLockState(const std::string& chainState) { return chainState.rfind("ptlc:", 0) == 0; }
 
 // A swap negotiated as a point lock never takes the hash paths, whatever the
@@ -168,8 +185,8 @@ std::string SolChainClient::openPointEscrowFor(const SwapParams& params, const s
   const std::string escrow = m_rpc->deriveHtlcAddress(ownAddress, pointHex);
   SolHtlcInfo info;
   const bool ours = !escrow.empty() && m_rpc->getHtlcState(escrow, info) && info.lockType == 1 &&
-                    !info.claimed && !info.refunded && info.sender == ownAddress &&
-                    info.recipient == params.ctrAddress && lowerHex(info.ptlcPoint) == lowerHex(pointHex) &&
+                    !info.claimed && !info.refunded && isAccount(info.sender, ownAddress) &&
+                    isAccount(info.recipient, params.ctrAddress) && lowerHex(info.ptlcPoint) == lowerHex(pointHex) &&
                     info.timeoutSlot == params.ctrTimeoutBlock && info.amount == params.ctrAmount64();
   return ours ? escrow : std::string();
 }
@@ -207,7 +224,7 @@ ChainClientResult SolChainClient::verifyPointLock(const SwapParams& params) {
   if (info.amount < params.ctrAmount64()) return ChainClientResult::fail("SOL verifyLock: amount too low");
   if (isZeroPub(params.adaptorPoint) || lowerHex(info.ptlcPoint) != lowerHex(Common::podToHex(params.adaptorPoint)))
     return ChainClientResult::fail("SOL verifyLock: the escrow is not locked to this swap's adaptor point");
-  if (params.ctrAddress.empty() || info.recipient != params.ctrAddress)
+  if (!isAccount(info.recipient, params.ctrAddress))
     return ChainClientResult::fail("SOL verifyLock: the escrow does not pay our claim address");
   if (params.ctrTimeoutBlock > 0 && info.timeoutSlot != params.ctrTimeoutBlock)
     return ChainClientResult::fail("SOL verifyLock: timeout_slot mismatch");
@@ -252,8 +269,7 @@ ChainClientResult SolChainClient::verifyLock(const SwapParams& params) {
       info.timeoutSlot != params.ctrTimeoutBlock) {
     return ChainClientResult::fail("SOL verifyLock: timeout_slot mismatch");
   }
-  if (!params.ctrAddress.empty() && !info.recipient.empty() &&
-      lowerHex(info.recipient) != lowerHex(params.ctrAddress)) {
+  if (!params.ctrAddress.empty() && !info.recipient.empty() && !isAccount(info.recipient, params.ctrAddress)) {
     // Recipient may be base58; case-sensitive compare preferred for base58
     if (info.recipient != params.ctrAddress)
       return ChainClientResult::fail("SOL verifyLock: recipient mismatch");
@@ -385,17 +401,6 @@ bool SolChainClient::getCurrentHeight(uint64_t& height) {
 }
 
 
-static bool decodeAccountKey(const std::string& base58, std::array<uint8_t, 32>& key) {
-  try {
-    const std::vector<uint8_t> bytes = Base58Std::decode(base58);
-    if (bytes.size() != key.size()) return false;
-    std::copy(bytes.begin(), bytes.end(), key.begin());
-    return true;
-  } catch (const std::exception&) {
-    return false;
-  }
-}
-
 // Bob claims by proving knowledge of t for this escrow; the program stores t
 // for Alice. Nothing is sent unless the escrow is ours, open through the
 // claim runway, and the proof passes the program's own rule.
@@ -410,11 +415,11 @@ ChainClientResult SolChainClient::claimPoint(const SwapParams& params) {
     return ChainClientResult::notSent("SOL claim: the escrow is not locked to this swap's adaptor point");
   if (!escrowOpenThroughRunway(info, params, error))
     return ChainClientResult::notSent("SOL claim: " + error + "; publishing t now could let the locker refund");
-  if (info.recipient != getReceiveAddress())
+  if (!isAccount(info.recipient, getReceiveAddress()))
     return ChainClientResult::notSent("SOL claim: the escrow pays " + info.recipient +
                                       ", which this keypair cannot claim to");
   escrow.amount = info.amount;
-  if (!decodeAccountKey(params.ctrLockTxId, escrow.htlc) || !decodeAccountKey(info.recipient, escrow.recipient))
+  if (!decodeAccountKey(params.ctrLockTxId, escrow.htlc) || !decodeAccountKey(getReceiveAddress(), escrow.recipient))
     return ChainClientResult::notSent("SOL claim: malformed escrow or recipient key");
   if (isZeroSecret(params.adaptorSecret) ||
       !proveSolPointClaim(params.adaptorSecret, params.adaptorPoint, escrow, proof) ||

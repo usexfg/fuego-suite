@@ -12,7 +12,7 @@
 > (`HEARTH_CD_SHARE_PCT_V11` / `_V12`). The treasury's Hearth LP position (AuntPoL) is funded by
 > the **1% mint premium** itself (`HEAT_MINT_PREMIUM_BPS = 100`): the withheld premium XFG is the
 > **XFG leg** (`m_treasuryLpPendingXfg`, not burned) and the HEAT it buys is the **HEAT leg**
-> (`m_treasuryHeatReserve`). No SWF transfer is involved. The **CD creation fee** is 0.1% of the
+> (`m_treasuryHeatReserve`). (AuntPoL — a quiet nod to the Peaky Blinders matriarch who keeps the books.) No SWF transfer is involved. The **CD creation fee** is 0.1% of the
 > HEAT being deposited, charged in **XFG** to `FUEGO_DEV_FUND_ADDRESS`.
 
 ---
@@ -92,16 +92,16 @@ The current system has exactly TWO paths, distinguished by the `term` field in
 `TransactionOutputCommitment`:
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
+┌────────────────────────────────────────────────────────────────────┐
 │                     createDeposit()                             │
 │                     mintHeatV10()                               │
-└──────────────┬──────────────────────────────┬───────────────────┘
+└─────────────┬───────────────────────────┬────────────────────┘
                │                              │
     term == HEAT_TERM              term > 0 && term != HEAT_TERM
     (0xFFFFFFFF)                   (actual block count)
                │                              │
                ▼                              ▼
-┌──────────────────────────┐    ┌──────────────────────────────┐
+┌─────────────────────────┐    ┌─────────────────────────────┐
 │     HEAT BURN / MINT     │    │       HEAT CD (TERM)         │
 │                          │    │                              │
 │ • Burns XFG permanently  │    │ • Locks HEAT for N blocks    │
@@ -111,7 +111,7 @@ The current system has exactly TWO paths, distinguished by the `term` field in
 │ • Uses StarkCommitment   │    │ • Uses calculateCdInterest() │
 │   for zkSTARK proofs     │    │ • Supports rollover          │
 │ • Output: HEAT UTXOs     │    │ • Output: HEAT UTXOs locked  │
-└──────────────────────────┘    └──────────────────────────────┘
+└─────────────────────────┘    └─────────────────────────────┘
 ```
 
 ### Key Source Files
@@ -325,11 +325,11 @@ uint32_t m_depositTermForever = HEAT_TERM;  // Alias for getDepositTermBurn()
 The old system had TWO separate tokens, both using zkSTARK-based deposits:
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
+┌─────────────────────────────────────────────────────────────────────────────────┐
 │                    OLD DUAL-TOKEN SYSTEM (DEPRECATED)                   │
-├─────────────────────────────────────────────────────────────────────────┤
+├─────────────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
-│  ┌─────────────────────────────┐    ┌─────────────────────────────────┐ │
+│  ┌─────────────────────────────┐    ┌────────────────────────────────┐ │
 │  │      COLD Token             │    │      Embers_Heat Token           │ │
 │  │                             │    │                                  │ │
 │  │ • Inflationary rewards      │    │ • Fixed 10M:1 ratio with XFG    │ │
@@ -337,14 +337,14 @@ The old system had TWO separate tokens, both using zkSTARK-based deposits:
 │  │ • zkSTARK proof required    │    │ • "Forever-deposit" concept     │ │
 │  │ • Tag: 0xCD                 │    │ • Burn XFG → Get Embers_Heat    │ │
 │  │ • No HEAT involved          │    │ • zkSTARK proof required        │ │
-│  └─────────────────────────────┘    └─────────────────────────────────┘ │
+│  └────────────────────────────┘    └────────────────────────────────┘ │
 │                                                                         │
 │  Both systems:                                                          │
 │  • Used same deposit infrastructure                                     │
 │  • Required zkSTARK proof generation                                    │
 │  • Had "forever" or long-term lockup                                   │
 │  • Are now completely removed                                           │
-└─────────────────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### ❌ COLD Deposits (Removed)
@@ -398,374 +398,11 @@ The old system had TWO separate tokens, both using zkSTARK-based deposits:
 **Actual minting uses Hearth pool TWAP** (NOT 10M ratio):
 - `mintHeatV10()` → `heatMinted = xfgBurned * 10^18 / twap`
 - Falls back to spot pool rate if TWAP unavailable
-
-### ❌ XFG Deposits (Never Existed in Current Form)
-
-**What they would have been:**
-- Direct XFG deposits (locking XFG, not burning it)
-- Would have used `Deposit::Type::XFG` or similar
-
-**Why they don't exist:**
-- All deposits in current system are HEAT-based
-- XFG is either burned (for HEAT mint) or used as input currency
-- There is no "XFG deposit" type in the codebase
-
-**⚠️ GUARDRAIL**: If you see any code referencing `Deposit::Type::XFG` or "XFG deposit",
-it does not exist and should not be created without explicit design review.
+- The 10M ratio is ONLY for display/estimation, NOT actual mint pricing
 
 ---
 
-## CRITICAL DISTINCTIONS — GUARDRAILS
-
-### 1. HEAT Burn vs HEAT CD
-
-| Aspect | HEAT Burn/Mint | HEAT CD |
-|--------|----------------|---------|
-| **term value** | `HEAT_TERM` (0xFFFFFFFF) | Actual block count |
-| **Reversible?** | No — XFG is permanently burned | Yes — principal returned at maturity |
-| **Reward** | HEAT minted via pool TWAP | APY from protocol revenue (CD_APY_POOL) |
-| **zkSTARK?** | No — mint auth via ring signatures (STARK relay removed) | No (ring signature only) |
-| **APY source** | None (instant mint) | Protocol fees (swap, mint, banking) |
-| **Code path** | `mintHeatV10()` | `createDeposit()` with `term != HEAT_TERM` |
-
-### 2. TransactionOutputCommitment — Term Field Is Everything
-
-The `term` field in `TransactionOutputCommitment` determines the deposit type:
-
-```cpp
-// From include/CryptoNote.h
-struct TransactionOutputCommitment {
-    Crypto::PublicKey commitKey;       // ring-sig spend key
-    uint32_t term;                     // ← THIS DETERMINES DEPOSIT TYPE
-    Crypto::EllipticCurvePoint amountCommitment;
-    Crypto::MembershipProof amountProof;
-};
-```
-
-| term value | Meaning |
-|------------|---------|
-| `0xFFFFFFFF` (HEAT_TERM) | Permanent burn / HEAT mint |
-| `0xFFFFFFFD` (DEPOSIT_TERM_LP) | LP share (not user deposit) |
-| `0x504F4C58` ('POLX') | AMM pool XFG (not user deposit) |
-| `0x504F4C48` ('POLH') | AMM pool HEAT (not user deposit) |
-| Any other value > 0 | Term-locked HEAT CD |
-
-### 3. No Separate Deposit Token
-
-Unlike the old COLD system, current deposits do NOT:
-- Create a separate token (no "Embers", no "COLD tokens")
-- Use zkSTARKs for reward claims (only HEAT burns use STARKs for proof)
-- Have inflationary rewards (APY comes from protocol revenue)
-
-### 4. Deposit Secret Storage
-
-All deposits (both HEAT burns and HEAT CDs) store a 32-byte secret locally:
-- Used to derive `commitKey` and `keyImage` for ring signature spending
-- Stored in wallet's local secret store (never on blockchain)
-- Required for withdrawal or rollover
-
-```cpp
-// From WalletGreen.cpp createDeposit()
-std::array<uint8_t, 32> depositSecret;
-generate_random_bytes(sizeof(depositSecret), depositSecret.data());
-CryptoNote::DepositCommitmentKeys commitKeys = CryptoNote::deriveCommitmentKeys(depositSecret);
-```
-
----
-
-## BONUS VAULT & TIER-BASED BONUSES
-
-### Swap Fee Routing (versioned)
-
-```
-Epoch Swap Fees Distribution:
-├── v11+:  80% → CD Yield Pool (CD_APY_POOL) — direct APY to CD holders
-│          20% → Bonus Vault — loyalty + tier bonuses for longer locks
-│           0% → Treasury Reserve (retired at v11)
-└── pre-v11 replay: 69% CD / 11% Bonus / 20% Treasury
-```
-
-The treasury leg was retired because the treasury's Hearth LP position is now funded
-by the mint premium itself — the withheld premium XFG is the XFG leg and the HEAT it
-buys is the HEAT leg — so taking a swap-fee cut for it double-funded the same position.
-The `treasuryShare` constant and accumulator stay so pre-v11 blocks reverse correctly.
-
-### Bonus Vault
-
-The Bonus Vault (repurposed from deprecated rollover vault) accumulates 20% of epoch
-swap fees (11% pre-v11) to fund tier-based loyalty bonuses:
-
-```cpp
-// CryptoNoteConfig.h
-const uint64_t SWAP_FEE_BONUS_VAULT_PCT_V11 = 20;  // 20% → Bonus Vault (v11+)
-
-// Blockchain.h
-uint64_t m_bonusVaultBalance = 0;  // bonus vault (loyalty + tier bonuses)
-```
-
-### Tier-Based Loyalty Bonuses
-
-Longer lock periods earn higher bonus multipliers on top of base APY:
-
-| Tier (Epochs) | Lock Period | Bonus Multiplier | Bonus Pct |
-|---------------|-------------|------------------|-----------|
-| 72 | ~1 year | 2.5× | 250% |
-| 36 | ~6 months | 2.0× | 200% |
-| 18 | ~3 months | 1.5× | 150% |
-| 6 | ~1 month | 1.25× | 125% |
-| Rolling | None | 1.0× | 100% (no bonus) |
-
-```cpp
-// CryptoNoteConfig.h
-const uint64_t LOYALTY_BONUS_72_EPOCHS_PCT = 250;  // 72 epochs: 2.5× bonus
-const uint64_t LOYALTY_BONUS_36_EPOCHS_PCT = 200;  // 36 epochs: 2.0× bonus
-const uint64_t LOYALTY_BONUS_18_EPOCHS_PCT = 150;  // 18 epochs: 1.5× bonus
-const uint64_t LOYALTY_BONUS_6_EPOCHS_PCT = 125;   // 6 epochs: 1.25× bonus
-const uint64_t LOYALTY_BONUS_ROLLING_PCT = 100;    // Rolling: 1.0× (no bonus)
-```
-
-### Bonus Calculation Logic
-
-Bonuses are computed separately from base interest and never compound:
-
-```cpp
-// Currency.cpp calculateCdInterest()
-uint64_t loyaltyBonusPct = LOYALTY_BONUS_ROLLING_PCT;  // default: no bonus
-if (term == DEPOSIT_MAX_TERM) {
-  loyaltyBonusPct = LOYALTY_BONUS_72_EPOCHS_PCT;  // 2.5×
-} else if (term == 36 * epochDuration) {
-  loyaltyBonusPct = LOYALTY_BONUS_36_EPOCHS_PCT;  // 2.0×
-} else if (term == 18 * epochDuration) {
-  loyaltyBonusPct = LOYALTY_BONUS_18_EPOCHS_PCT;  // 1.5×
-} else if (term == 6 * epochDuration) {
-  loyaltyBonusPct = LOYALTY_BONUS_6_EPOCHS_PCT;  // 1.25×
-}
-
-// Bonus applied on last N epochs (never compounded)
-if (epochsToMaturity < LOYALTY_BONUS_FULL_EPOCHS) {
-  loyaltyBonus += (origEpochInterest * loyaltyBonusPct) / 100;
-} else if (epochsToMaturity == LOYALTY_BONUS_FULL_EPOCHS) {
-  loyaltyBonus += (origEpochInterest * loyaltyBonusPct) / 200;
-}
-```
-
-### RPC Endpoint
-
-```json
-// GET /fee_pool_info
-{
-  "fee_pool_balance": 80,        // 80% CD yield pool (v11+)
-  "treasury_balance": 0,         // 0% treasury reserve (retired at v11)
-  "bonus_vault_balance": 20,     // 20% bonus vault (v11+)
-  "rollover_vault_balance": 0,   // deprecated, kept for compat
-  "current_epoch_swap_fees": 1000,
-  "total_cd_locked": 50000,
-  "current_epoch_number": 100
-}
-```
-
----
-
-## COMPLETE POOL ACCOUNTING AUDIT
-
-### All Tracking Variables (25 total)
-
-#### Active Pool/Vault Variables (23)
-| Variable | Purpose | Updated By |
-|----------|---------|------------|
-| `m_poolLockedXfg` | AMM pool XFG lock | Pool operations |
-| `m_poolLockedHeat` | AMM pool HEAT lock | Pool operations |
-| `m_cdYieldPool` | CD yield accumulator (reset each epoch) | Swap fees (80% at v11+) |
-| `m_cdReserve` | CD reserve | — |
-| `m_heatCdFeePool` | HEAT CD fee pool | CD yield minting |
-| `m_protocolLpShares` | Protocol LP shares | Treasury LP |
-| `m_treasuryLpYield` | Treasury LP yield | — |
-| `m_bootstrapXfgOwed` | Bootstrap XFG owed | — |
-| `m_bootstrapRepaymentVault` | Bootstrap repayment vault | — |
-| `m_swfBalance` | Sovereign Wealth Fund XFG | Mint burn (50%) |
-| `m_feePoolBalance` | CD yield pool (swap fees) | CD yield minting |
-| `m_currentEpochSwapFees` | Current epoch swap fees | Swap fee collection |
-| `m_totalCdLocked` | Total XFG locked in CDs | Deposit/withdrawal |
-| ~~`m_totalLegacyBondLocked`~~ | REMOVED (2026-09-11 purge) | — |
-| ~~`m_legacyBondYieldPool`~~ | REMOVED (2026-09-11 purge) | — |
-| `m_totalSwapFeesCollected` | Lifetime swap fees | Swap fee collection |
-| `m_totalCdInterestPaid` | Lifetime CD interest paid | Interest claims |
-| `m_totalTreasuryAccrued` | Total treasury accrued | — |
-| `m_treasuryBalance` | Treasury balance | — |
-| `m_treasuryHeatReserve` | Treasury HEAT reserve | — |
-| `m_treasuryLpReserve` | Treasury LP reserve | Treasury LP |
-| `m_treasurySwapFeeXfg` | Treasury swap fee XFG | — |
-| `m_treasuryLpPendingXfg` | Treasury LP pending XFG (AuntPoL XFG leg) | Mint premium (v11+) + swap fees (0% at v11+; 20% pre-v11) |
-| `m_swfHeatBalance` | SWF HEAT balance (off-chain DIGM collateral) | SWF conversion |
-| `m_bonusVaultBalance` | Bonus vault (funds the lean-epoch yield floor) | Swap fees (20% at v11+; 11% pre-v11) |
-
-#### Deprecated Variables (2)
-| Variable | Status | Serialization |
-|----------|--------|---------------|
-| `m_totalRolloverAccrued` | Dead code | Kept for compat |
-| `m_treasuryXfgReserve` | Dead code (never incremented) | Kept for compat |
-
-### Percentage Routing (Verified)
-
-#### Swap Fees (80/20 at v11+; 69/11/20 pre-v11 replay)
-```
-100% epochSwapFees
-├── 80% → cdShare (100% to regular CDs; legacy-bond split removed 2026-09-11)
-│   └── cdShare → m_cdYieldPool → HEAT minting → m_heatCdFeePool + m_feePoolBalance
-├── 20% → bonusVaultShare → m_bonusVaultBalance
-└──  0% → treasuryShare (retired at v11; the counter and branch stay for replay)
-```
-
-#### Treasury Counter XFG Conversion (pre-v11 replay only)
-```
-m_treasuryLpPendingXfg (was m_treasuryCounterXFG)
-├── 80% → convertAmount → HEAT → CD_APY_POOL vault UTXOs
-│   ├── XFG burned: 50% → EF (m_bankingIndex), 50% → SWF (m_swfBalance)
-│   └── HEAT minted → m_heatSupply, CD_APY_POOL vault
-└── 20% remaining → LP_RESERVE → Hearth AMM pool
-    ├── XFG → m_ammPool.reserveXfg, m_treasuryLpReserve
-    ├── HEAT → m_ammPool.reserveHeat
-    └── LP shares → m_protocolLpShares, LP_RESERVE vault
-```
-
-At v11 this half-convert path is skipped: the treasury leg of the swap fee is 0, and the
-Treasury LP Manager pairs the premium XFG leg against the premium HEAT leg at the pool ratio
-instead of converting one into the other.
-
-#### SWF Collateral Conversion (every 8 epochs)
-```
-m_swfBalance
-├── 50% → xfgToConvert → HEAT (at pool rate)
-│   └── m_swfHeatBalance (off-chain DIGM collateral)
-└── 50% remains in m_swfBalance
-```
-
-#### Mint Burn (50/50)
-```
-XFG burned from treasury conversion
-├── 50% → Eternal Flame (permanent deflation)
-└── 50% → SWF (m_swfBalance)
-```
-
-### Security Verification
-
-#### Overflow Protection (All additions verified)
-| Variable | Overflow Check | Line |
-|----------|---------------|------|
-| `m_bonusVaultBalance` | ✓ | 4482 |
-| `m_treasuryLpPendingXfg` | ✓ | 4520 |
-| `m_cdYieldPool` | ✓ | 4626, 4630 |
-| ~~`m_legacyBondYieldPool`~~ | REMOVED | — |
-| `m_feePoolBalance` | ✓ | 4656, 5552 |
-| `m_swfBalance` | ✓ | 4036, 4553 |
-| `m_swfHeatBalance` | ✓ | 4616 |
-
-#### Underflow Protection
-- `m_treasuryLpPendingXfg -= convertAmount` — guarded by prior `convertAmount` calculation
-- `m_swfBalance -= xfgToConvert` — guarded by `xfgToConvert = m_swfBalance / 2`
-
-### Code Path Trace
-
-#### Epoch Boundary Processing
-1. **Auto-roll matured CDs** → `m_commitmentIndex.processAutoRolls()`
-2. **Split swap fees** → 80% CD / 20% Bonus / 0% Treasury at v11+ (69/11/20 pre-v11 replay)
-3. **Route bonus vault** → `m_bonusVaultBalance += bonusVaultShare`
-4. **Split CD share** → regular CDs vs legacy bonds (50/50)
-5. **Record epoch fee rate** → `m_commitmentIndex.recordEpochFeeRate()`
-6. **Route treasury share** → `m_treasuryLpPendingXfg += treasuryShare` (0 at v11+)
-7. **Pair AuntPoL** → premium XFG (XFG leg) + premium HEAT (HEAT leg) → ratio-paired LP
-8. **Burn XFG** → 50% EF, 50% SWF
-9. **Route 20% to LP** → Hearth AMM pool
-10. **SWF collateral conversion** → every 8 epochs
-11. **Mint CD yield** → HEAT → m_heatCdFeePool + m_feePoolBalance
-
-### Documentation Updated
-- `DEPOSIT_ARCHITECTURE.md` — Complete pool accounting audit
-- `AGENTS.md` — Swap fee routing (80/20 at v11+)
-- `CryptoNoteConfig.h` — All percentage constants
-
----
-
-## ROLLOVER SYSTEM
-
-### Current Implementation
-
-Rollover allows a mature CD to be reinvested (principal + interest) into a new CD:
-
-```cpp
-// Two overloads in WalletGreen.h
-bool rolloverDeposit(DepositId depositId, uint32_t newTerm,
-                     const CommitmentIndex& commitmentIndex,
-                     std::string &txHashOut);
-
-bool rolloverDeposit(DepositId depositId, uint32_t newTerm,
-                     uint64_t precomputedInterest,
-                     std::string &txHashOut);
-```
-
-**Flow:**
-1. Verify deposit is mature (`unlockHeight <= currentHeight`)
-2. Calculate interest via `calculateCdInterest()`
-3. Spend old commitment output (ring signature)
-4. Create new commitment output with `principal + interest`
-5. Send transaction
-
-### Auto-Roll Feature
-
-`CommitmentIndex::processAutoRolls()` marks matured CDs for one-time auto-roll:
-- Called at epoch boundaries
-- Sets `autoRollApplied` flag on matured entries
-- Does NOT automatically execute rollover — just marks them
-
----
-
-## WHAT TO AVOID (ANTI-PATTERNS)
-
-### ❌ Do NOT reintroduce COLD
-- No `TX_EXTRA_COLD_COMMITMENT` (0xCD tag)
-- No `TransactionExtraSimpleCD` struct
-- No `CommitmentType::COLD` enum value
-- No `Deposit::Type::COLD` enum value
-
-### ❌ Do NOT create XFG deposits
-- There is no `Deposit::Type::XFG`
-- All deposits are HEAT-based
-- You cannot "deposit XFG" — XFG is burned to mint HEAT, then HEAT is deposited as CD
-
-### ❌ Do NOT confuse the two-step deposit process
-- Step 1: Burn XFG → Mint HEAT (via `mintHeatV10()` or `createDeposit(HEAT_TERM)`)
-- Step 2: Deposit HEAT as CD (via `createDeposit(term != HEAT_TERM)`)
-- You CANNOT "deposit a deposit" — you must mint HEAT first, then deposit it
-
-### ❌ Do NOT use legacy 10M ratio for actual minting
-- There is no fixed XFG→HEAT ratio anywhere in code (10M field deleted 2026-09-11)
-- Actual minting uses Hearth pool TWAP: `heatMinted = xfgBurned * 10^18 / twap`
-- The 10M ratio is ONLY for display/estimation in commitment extra tags
-- If you need actual mint pricing, use `mintHeatV10()` or query Hearth pool TWAP
-
-### ❌ Do NOT use inflationary APY
-- APY must come from protocol revenue (CD_APY_POOL)
-- Never mint new HEAT for APY rewards
-- If CD_APY_POOL is empty, APY = 0
-
-### ❌ Do NOT confuse HEAT burn with HEAT CD
-- HEAT burn: `term == HEAT_TERM`, irreversible, mints HEAT
-- HEAT CD: `term != HEAT_TERM`, reversible at maturity, earns APY
-
-### ❌ Do NOT remove deposit secret storage
-- All deposits need local secret storage for withdrawal/rollover
-- Without secret, commitment output is unspendable
-
-### ❌ Do NOT confuse "heat" references in code
-- "HEAT" can mean EITHER the current flatcoin OR the legacy Embers_Heat token
-- `mintHeatV10()` uses Hearth pool TWAP (current HEAT flatcoin) — the only mint path
-- Always check which "heat" a piece of code refers to
-
----
-
-## PRIVACY CONSIDERATIONS
-
-### Term Length and Privacy
+## Term Length and Privacy
 
 **Question**: Do different term lengths hurt transaction privacy?
 

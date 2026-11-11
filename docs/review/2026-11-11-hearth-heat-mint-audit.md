@@ -25,7 +25,14 @@ Line numbers are `src/CryptoNoteCore/Blockchain.cpp` unless another file is name
 | M1, M2 | Fixed: 0.00001 tick; auction settles whole or not at all |
 | L2 (minimum mint) | Fixed in consensus; bill denominations still wallet-only |
 | M4 | Fixed: signed stop tag (0x0F) then withdraw |
-| M5-M7, L1, L3-L5 | Open |
+| M5 | Open — needs a policy decision: wire the Hearthstone reference into pricing/redemption, or document HEAT as pool-priced |
+| M6 | Open — committing the auction fields to the PoW hash changes the block hashing blob (hard-fork-level format decision) |
+| M7 | Moot after H5: per-order addressHash values never match across orders, so self-trade exclusion no longer applies; wash trading pays the taker fee and cannot lift the backstop (H2) |
+| L1 | Open — orderId front-running is grief only; it now costs the griefer a ≥1 XFG / 0.1 HEAT deposit plus fee (H4) |
+| L2 (denominations) | Open — needs every HEAT output path in the wallets to decompose into bills first |
+| L3 | Left as documented: the scanMintTx miscount cannot mint, because a mint with any HEAT input fails `heatMinted == heatOutputs` |
+| L4 | Open — saturating adds still mask invariant breaks instead of rejecting the block |
+| L5 | By design: mint and swap amounts are public in tx extra |
 
 Details and test evidence: `CHANGELOG.agent.md`, section "Hearth critical fixes".
 

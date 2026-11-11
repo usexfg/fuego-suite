@@ -84,6 +84,15 @@ bool ammValidateSwap(uint64_t input, uint64_t output,
 bool ammValidateInvariant(uint64_t reserveAIn, uint64_t reserveBIn,
                           uint64_t reserveAOut, uint64_t reserveBOut);
 
+// The pool as a call-auction maker (its 0xF0 depth-band orders). It trades
+// `xfg` for `heat` at the clearing price and keeps the maker rebate for LPs.
+// `side` is the pool order's side: 1 sells XFG, 0 buys XFG. Returns false,
+// leaving the pool unchanged, when the reserves cannot settle the fill.
+bool ammApplyPoolMakerFill(AmmPoolState& pool, uint8_t side,
+                           uint64_t xfg, uint64_t heat, uint64_t rebateHeat);
+void ammRevertPoolMakerFill(AmmPoolState& pool, uint8_t side,
+                            uint64_t xfg, uint64_t heat, uint64_t rebateHeat);
+
 bool ammValidateDepositRatio(uint64_t amountA, uint64_t amountB,
                               uint64_t reserveA, uint64_t reserveB,
                               uint32_t toleranceBps);

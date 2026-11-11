@@ -23,6 +23,10 @@
 #include "CryptoNoteCore/TransactionPool.h"
 #include "Serialization/ISerializer.h"
 #include "Serialization/BinarySerializationTools.h"
+#include "Serialization/BinaryInputStreamSerializer.h"
+#include "Serialization/BinaryOutputStreamSerializer.h"
+#include "Common/MemoryInputStream.h"
+#include "Common/VectorOutputStream.h"
 
 #include <cassert>
 #include <cstdio>
@@ -1158,6 +1162,41 @@ public:
     return chain.m_currency.isTestnet() ? parameters::TESTNET_EPOCH_DURATION_BLOCKS
                                         : parameters::EPOCH_DURATION_BLOCKS;
   }
+  static void runOrderbookBlock(Blockchain& chain, uint32_t height) {
+    Block b{};
+    b.majorVersion = BLOCK_MAJOR_VERSION_11;
+    chain.processOrderbookForBlock(b, {}, height);
+  }
+  static void addLimitDeposit(Blockchain& chain, const Crypto::Hash& orderId, uint8_t side,
+                              uint64_t amount, uint64_t targetPrice, uint32_t height) {
+    Blockchain::LimitDepositInfo dep{side, amount, targetPrice, 0, orderId, false};
+    dep.depositedAmount = amount;
+    dep.createdHeight = height;
+    chain.m_limitDeposits[orderId] = dep;
+    (side == 1 ? chain.m_ammPool.pendingXfg : chain.m_ammPool.pendingHeat) += amount;
+  }
+  static uint64_t proceedsHeat(const Blockchain& chain, const Crypto::Hash& orderId) {
+    return chain.m_limitDeposits.at(orderId).proceedsHeat;
+  }
+  static uint64_t proceedsXfg(const Blockchain& chain, const Crypto::Hash& orderId) {
+    return chain.m_limitDeposits.at(orderId).proceedsXfg;
+  }
+  static uint64_t escrowLeft(const Blockchain& chain, const Crypto::Hash& orderId) {
+    return chain.m_limitDeposits.at(orderId).amount;
+  }
+  static std::vector<uint8_t> saveOrderbookState(Blockchain& chain) {
+    std::vector<uint8_t> bytes;
+    Common::VectorOutputStream out(bytes);
+    BinaryOutputStreamSerializer s(out);
+    chain.serializeOrderbookState(s);
+    return bytes;
+  }
+  static void resetToStartup(Blockchain& chain) { chain.rebuildCache(); }
+  static void loadOrderbookState(Blockchain& chain, const std::vector<uint8_t>& bytes) {
+    Common::MemoryInputStream in(bytes.data(), bytes.size());
+    BinaryInputStreamSerializer s(in);
+    chain.serializeOrderbookState(s);
+  }
 };
 } // namespace CryptoNote
 
@@ -1580,6 +1619,159 @@ void testVaultSelectUtxosDeterministicTies() {
   TEST(sel[0].globalOutputIndex == 100);
 }
 
+// The Hearth tests below drive the production per-block path
+// (processOrderbookForBlock) on a v11 height past the 144-block bootstrap.
+namespace {
+
+uint32_t enterHearthAuctionPhase(TestChain& t) {
+  uint32_t height = VaultCoreTestAccess::m_currency_upgrade_height_v11(t.chain);
+  for (int i = 0; i < 400 && t.chain.isOrderbookInBootstrap(); ++i) {
+    VaultCoreTestAccess::runOrderbookBlock(t.chain, height++);
+  }
+  VaultCoreTestAccess::runOrderbookBlock(t.chain, height++);
+  return height;
+}
+
+Crypto::Hash hearthOrderId(uint8_t tag) {
+  Crypto::Hash h{};
+  h.data[0] = 0x5A;
+  h.data[1] = tag;
+  return h;
+}
+
+uint128_t poolProduct(const AmmPoolState& pool) {
+  return (uint128_t)pool.reserveXfg * pool.reserveHeat;
+}
+
+// HEAT that the block created (positive) or destroyed (negative) across every
+// ledger a fill can touch: pool reserves, limit escrow, proceeds, CD accumulator.
+int64_t heatCreatedByBlock(const AmmPoolState& before, const AmmPoolState& after,
+                           uint64_t proceedsBefore, uint64_t proceedsAfter) {
+  return (int64_t)(after.reserveHeat - before.reserveHeat) +
+         (int64_t)(after.pendingHeat - before.pendingHeat) +
+         (int64_t)(proceedsAfter - proceedsBefore) +
+         (int64_t)(after.cdHearthFeeAccumulator - before.cdHearthFeeAccumulator);
+}
+
+int64_t xfgCreatedByBlock(const AmmPoolState& before, const AmmPoolState& after,
+                          uint64_t proceedsBefore, uint64_t proceedsAfter) {
+  return (int64_t)(after.reserveXfg - before.reserveXfg) +
+         (int64_t)(after.pendingXfg - before.pendingXfg) +
+         (int64_t)(proceedsAfter - proceedsBefore);
+}
+
+const int64_t HEARTH_ROUNDING_DUST = 64;
+
+} // namespace
+
+// Regression (audit 2026-11-11 C2): a user sell smaller than the pool's bid
+// band left the pool as the rationed side. The pool was then the taker: its
+// fee and the user's maker rebate were paid by nobody, which created 1% of
+// every such fill as HEAT.
+void testHearthSellIntoPoolBandConservesHeat() {
+  TestChain t("hearth_sell");
+  TEST(t.ok);
+  uint32_t height = enterHearthAuctionPhase(t);
+  TEST(!t.chain.isOrderbookInBootstrap());
+
+  const Crypto::Hash id = hearthOrderId(1);
+  VaultCoreTestAccess::addLimitDeposit(t.chain, id, 1, 50 * parameters::COIN,
+                                       parameters::ORDER_PRICE_TICK, height - 1);
+  const AmmPoolState before = t.chain.getAmmPool();
+  VaultCoreTestAccess::runOrderbookBlock(t.chain, height);
+  const AmmPoolState after = t.chain.getAmmPool();
+
+  TEST(VaultCoreTestAccess::escrowLeft(t.chain, id) == 0);
+  const int64_t heatCreated = heatCreatedByBlock(before, after, 0, VaultCoreTestAccess::proceedsHeat(t.chain, id));
+  const int64_t xfgCreated = xfgCreatedByBlock(before, after, 0, VaultCoreTestAccess::proceedsXfg(t.chain, id));
+  TEST(heatCreated <= 0 && heatCreated >= -HEARTH_ROUNDING_DUST);
+  TEST(xfgCreated == 0);
+  TEST(poolProduct(after) >= poolProduct(before));
+}
+
+void testHearthBuyFromPoolBandConservesHeat() {
+  TestChain t("hearth_buy");
+  TEST(t.ok);
+  uint32_t height = enterHearthAuctionPhase(t);
+
+  const Crypto::Hash id = hearthOrderId(2);
+  VaultCoreTestAccess::addLimitDeposit(t.chain, id, 0, 5 * parameters::COIN,
+                                       100 * parameters::ORDER_PRICE_TICK, height - 1);
+  const AmmPoolState before = t.chain.getAmmPool();
+  VaultCoreTestAccess::runOrderbookBlock(t.chain, height);
+  const AmmPoolState after = t.chain.getAmmPool();
+
+  TEST(VaultCoreTestAccess::proceedsXfg(t.chain, id) > 0);
+  const int64_t heatCreated = heatCreatedByBlock(before, after, 0, VaultCoreTestAccess::proceedsHeat(t.chain, id));
+  const int64_t xfgCreated = xfgCreatedByBlock(before, after, 0, VaultCoreTestAccess::proceedsXfg(t.chain, id));
+  TEST(heatCreated <= 0 && heatCreated >= -HEARTH_ROUNDING_DUST);
+  TEST(xfgCreated <= 0 && xfgCreated >= -HEARTH_ROUNDING_DUST);
+  TEST(poolProduct(after) >= poolProduct(before));
+}
+
+// Regression (audit 2026-11-11 C1): the band quoted 10% of the reserves at
+// prices inside ±0.42% of P_clear, so one sweep bought it ~10% better than
+// the curve and lowered the product of the reserves. Every sweep size, on
+// either side and over consecutive blocks, must leave the product no lower.
+void testHearthBandSweepsNeverLowerK() {
+  TestChain t("hearth_sweep");
+  TEST(t.ok);
+  uint32_t height = enterHearthAuctionPhase(t);
+  const uint64_t C = parameters::COIN;
+  const uint64_t sellSizes[] = {1 * C, 37 * C, 400 * C, 900 * C, 3000 * C};
+  const uint64_t buyBudgets[] = {1 * C, 9 * C, 60 * C, 140 * C, 400 * C};
+  uint8_t tag = 10;
+  bool kHeld = true, heatHeld = true;
+  for (int round = 0; round < 5; ++round) {
+    const Crypto::Hash sellId = hearthOrderId(tag++);
+    const Crypto::Hash buyId = hearthOrderId(tag++);
+    VaultCoreTestAccess::addLimitDeposit(t.chain, sellId, 1, sellSizes[round], parameters::ORDER_PRICE_TICK, height - 1);
+    AmmPoolState before = t.chain.getAmmPool();
+    VaultCoreTestAccess::runOrderbookBlock(t.chain, height++);
+    AmmPoolState after = t.chain.getAmmPool();
+    kHeld = kHeld && poolProduct(after) >= poolProduct(before);
+    heatHeld = heatHeld && heatCreatedByBlock(before, after, 0, VaultCoreTestAccess::proceedsHeat(t.chain, sellId)) <= 0;
+
+    VaultCoreTestAccess::addLimitDeposit(t.chain, buyId, 0, buyBudgets[round], 500 * parameters::ORDER_PRICE_TICK, height - 1);
+    before = t.chain.getAmmPool();
+    VaultCoreTestAccess::runOrderbookBlock(t.chain, height++);
+    after = t.chain.getAmmPool();
+    kHeld = kHeld && poolProduct(after) >= poolProduct(before);
+    heatHeld = heatHeld && heatCreatedByBlock(before, after, 0, VaultCoreTestAccess::proceedsHeat(t.chain, buyId)) <= 0;
+  }
+  TEST(kHeld);
+  TEST(heatHeld);
+}
+
+// Regression (audit 2026-11-11 C3): the auction's clearing price, bootstrap
+// counters, depth band, volatility history and fill rollback records were
+// process memory only. A node restarted from its cache re-entered bootstrap
+// and stopped running auctions its peers ran. Restoring the cached state into
+// a process holding start-up state must reproduce the next block exactly.
+void testHearthOrderbookStateSurvivesRestart() {
+  TestChain t("hearth_restart");
+  TEST(t.ok);
+  VaultCoreTestAccess::resetToStartup(t.chain);
+  const std::vector<uint8_t> startupState = VaultCoreTestAccess::saveOrderbookState(t.chain);
+  uint32_t height = enterHearthAuctionPhase(t);
+  VaultCoreTestAccess::addLimitDeposit(t.chain, hearthOrderId(40), 1, 20 * parameters::COIN,
+                                       parameters::ORDER_PRICE_TICK, height - 1);
+  VaultCoreTestAccess::runOrderbookBlock(t.chain, height++);
+
+  const std::vector<uint8_t> cached = VaultCoreTestAccess::saveOrderbookState(t.chain);
+  TEST(cached != startupState);
+  VaultCoreTestAccess::runOrderbookBlock(t.chain, height);
+  const std::vector<uint8_t> nextBlockState = VaultCoreTestAccess::saveOrderbookState(t.chain);
+
+  VaultCoreTestAccess::loadOrderbookState(t.chain, startupState);
+  TEST(t.chain.isOrderbookInBootstrap());
+  VaultCoreTestAccess::loadOrderbookState(t.chain, cached);
+  TEST(!t.chain.isOrderbookInBootstrap());
+  TEST(VaultCoreTestAccess::saveOrderbookState(t.chain) == cached);
+  VaultCoreTestAccess::runOrderbookBlock(t.chain, height);
+  TEST(VaultCoreTestAccess::saveOrderbookState(t.chain) == nextBlockState);
+}
+
 int main() {
   testCdInterestCompounding();
   testLegacyDepositWithdrawsForPrincipal();
@@ -1621,6 +1813,10 @@ int main() {
   testVaultSetSpendKeyRebuildsKeyImageIndex();
   testVaultAllBalancesSaturate();
   testVaultSelectUtxosDeterministicTies();
+  testHearthSellIntoPoolBandConservesHeat();
+  testHearthBuyFromPoolBandConservesHeat();
+  testHearthBandSweepsNeverLowerK();
+  testHearthOrderbookStateSurvivesRestart();
   fprintf(stderr, "=== Treasury/Core Tests ===\nPassed: %d / %d\n", tests_passed, tests_run);
   return tests_passed == tests_run ? 0 : 1;
 }

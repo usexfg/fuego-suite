@@ -691,6 +691,21 @@ namespace CryptoNote {
       bool isTaker = false;    // auction: this fill is on the fee-paying side
       uint64_t rebateHeat = 0; // auction maker fills: rebate credited to proceedsHeat
       uint64_t priceHeat = 0;  // auction: fill's price value (fillXfg × p*/COIN)
+
+      void serialize(ISerializer& s) {
+        s(orderId, "order_id");
+        s(side, "side");
+        s(xfg, "xfg");
+        s(heat, "heat");
+        s(feeHeat, "fee_heat");
+        s(netXfg, "net_xfg");
+        s(newlyExpired, "newly_expired");
+        s(isAuction, "is_auction");
+        s(isPoolFill, "is_pool_fill");
+        s(isTaker, "is_taker");
+        s(rebateHeat, "rebate_heat");
+        s(priceHeat, "price_heat");
+      }
     };
     std::deque<std::pair<uint32_t, std::vector<OrderFillRecord>>> m_blockOrderFills;
     // Per-block alias register/release/transfer undo journal for popBlock
@@ -731,18 +746,29 @@ namespace CryptoNote {
       bool isInBootstrap = true;
       uint32_t bootstrapBlocksRemaining = 0;
       uint32_t lastNumMatches = 0;
-      uint32_t blocksSinceLastPoolRegen = 0;
-      uint64_t priorPoolRegenPclear = 0;
-      uint64_t priorPoolXfgReserve = 0;
-      uint64_t priorPoolHeatReserve = 0;
       uint64_t poolBandFilledLastBlock = 0;
-      uint64_t lastRegenPclear = 0;  // first-run sentinel for shouldRegenerate()
       // PoolOrderOrchestrator::m_priceHistory drives computeSpreadBps, which
       // prices pool orders that move real reserves. Without this the deque
       // survives popBlock and reorged nodes compute a different spread for the
       // same height.
       std::deque<uint64_t> priceHistory;
+
+      void serialize(ISerializer& s) {
+        s(orders, "orders");
+        s(poolOrders, "pool_orders");
+        s(lastClearingPrice, "last_clearing_price");
+        s(isInBootstrap, "is_in_bootstrap");
+        s(bootstrapBlocksRemaining, "bootstrap_blocks_remaining");
+        s(lastNumMatches, "last_num_matches");
+        s(poolBandFilledLastBlock, "pool_band_filled_last_block");
+        std::vector<uint64_t> history(priceHistory.begin(), priceHistory.end());
+        s(history, "price_history");
+        if (s.type() == ISerializer::INPUT) priceHistory.assign(history.begin(), history.end());
+      }
     };
+    // Auction and depth-band state that every later block's fills depend on,
+    // plus the per-block records popBlock needs to reverse them.
+    void serializeOrderbookState(ISerializer& s);
     std::deque<std::pair<uint32_t, OrderbookRollbackSnapshot>> m_orderbookSnapshots;
 
     // Cumulative fee pool accounting (lifetime totals, never reset)

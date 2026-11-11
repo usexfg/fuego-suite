@@ -304,6 +304,30 @@ static void testNoCrossWhenSpread() {
   CHECK(!r.crossed && r.fills.empty(), "best bid below best ask yields no fills");
 }
 
+// Regression (audit 2026-11-11 H1): reverting a pool sell fill added the HEAT
+// back instead of removing it, so a reorg over such a block left reserveHeat
+// high by twice the fill. Apply then revert must restore the pool exactly.
+static void testPoolMakerFillRevertIsExact() {
+  std::cout << "\nPool maker fill: apply/revert round trip\n";
+  AmmPoolState seed;
+  seed.reserveXfg = 8000 * COIN;
+  seed.reserveHeat = 1000 * COIN;
+  for (uint8_t side = 0; side < 2; ++side) {
+    AmmPoolState pool = seed;
+    CHECK(ammApplyPoolMakerFill(pool, side, 40 * COIN, 5 * COIN, 3500000),
+          (side ? "pool sell fill applies" : "pool buy fill applies"));
+    CHECK(side ? pool.reserveHeat == seed.reserveHeat + 5 * COIN + 3500000
+               : pool.reserveHeat == seed.reserveHeat - 5 * COIN + 3500000,
+          "the maker rebate stays in the pool's HEAT reserve");
+    ammRevertPoolMakerFill(pool, side, 40 * COIN, 5 * COIN, 3500000);
+    CHECK(pool.reserveXfg == seed.reserveXfg && pool.reserveHeat == seed.reserveHeat,
+          (side ? "pool sell fill reverts exactly" : "pool buy fill reverts exactly"));
+  }
+  AmmPoolState thin = seed;
+  CHECK(!ammApplyPoolMakerFill(thin, 1, seed.reserveXfg + 1, 1, 0) &&
+        thin.reserveXfg == seed.reserveXfg, "a fill larger than the reserve is refused untouched");
+}
+
 int main() {
   std::cout << "Hearth subsystem tests\n======================\n";
   testAmmGuards();
@@ -316,6 +340,7 @@ int main() {
   testConservation();
   testDeterminism();
   testNoCrossWhenSpread();
+  testPoolMakerFillRevertIsExact();
   std::cout << "\n======================\n"
             << g_pass << " passed, " << g_fail << " failed\n";
   return g_fail == 0 ? 0 : 1;

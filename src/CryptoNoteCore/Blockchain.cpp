@@ -76,7 +76,7 @@ bool operator<(const Crypto::KeyImage& keyImage1, const Crypto::KeyImage& keyIma
 }
 }
 
-#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 17  // v17: genesis Hearth seed is 8,000 XFG / 1,000 HEAT (forces replay so no cache can carry the old 10,000 / 1,250 reserves)
+#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 18  // v18: orderbook auction state and its rollback records are cached (forces replay: a v17 cache has none, and a node restarted from one re-entered bootstrap and forked)
 #define CURRENT_BLOCKCHAININDICES_STORAGE_ARCHIVE_VER 1
 
 namespace CryptoNote {
@@ -533,6 +533,8 @@ public:
         }
       }
 
+      m_bs.serializeOrderbookState(s);
+
     auto dur = std::chrono::steady_clock::now() - start;
 
     logger(INFO) << "Serialization time: " << std::chrono::duration_cast<std::chrono::milliseconds>(dur).count() << "ms";
@@ -704,13 +706,59 @@ namespace {
   uint32_t g_orderbookLastNumMatches = 0;
   bool g_orderbookIsInBootstrap = true;
   uint32_t g_orderbookBootstrapBlocksRemaining = BOOTSTRAP_BLOCKS;
-  uint32_t g_blocksSinceLastPoolRegen = 0;
-  uint64_t g_priorPoolRegenPclear = 0;
-  uint64_t g_priorPoolXfgReserve = 0;
-  uint64_t g_priorPoolHeatReserve = 0;
   uint64_t g_poolBandFilledLastBlock = 0;
 
 } // namespace
+
+void CryptoNote::Blockchain::serializeOrderbookState(ISerializer& s) {
+  const bool loading = s.type() == ISerializer::INPUT;
+
+  s(g_orderbookLastClearingPrice, "orderbook_last_clearing_price");
+  s(g_orderbookLastNumMatches, "orderbook_last_num_matches");
+  s(g_orderbookIsInBootstrap, "orderbook_is_in_bootstrap");
+  s(g_orderbookBootstrapBlocksRemaining, "orderbook_bootstrap_blocks_remaining");
+  s(g_poolBandFilledLastBlock, "pool_band_filled_last_block");
+
+  std::vector<uint64_t> priceHistory(g_poolOrchestrator.priceHistory().begin(),
+                                     g_poolOrchestrator.priceHistory().end());
+  s(priceHistory, "pool_price_history");
+  std::vector<Order> poolOrders = loading ? std::vector<Order>() : g_orderbookMempool.getAllPoolOrders();
+  s(poolOrders, "pool_orders");
+
+  std::vector<uint32_t> snapshotHeights, fillHeights;
+  std::vector<OrderbookRollbackSnapshot> snapshots;
+  std::vector<std::vector<OrderFillRecord>> fills;
+  if (!loading) {
+    for (const auto& kv : m_orderbookSnapshots) {
+      snapshotHeights.push_back(kv.first);
+      snapshots.push_back(kv.second);
+    }
+    for (const auto& kv : m_blockOrderFills) {
+      fillHeights.push_back(kv.first);
+      fills.push_back(kv.second);
+    }
+  }
+  s(snapshotHeights, "orderbook_snapshot_heights");
+  s(snapshots, "orderbook_snapshots");
+  s(fillHeights, "order_fill_heights");
+  s(fills, "order_fills");
+  if (!loading) return;
+
+  if (snapshotHeights.size() != snapshots.size() || fillHeights.size() != fills.size()) {
+    throw std::runtime_error("Invalid orderbook state cache");
+  }
+  g_poolOrchestrator.restorePriceHistory(std::deque<uint64_t>(priceHistory.begin(), priceHistory.end()));
+  g_orderbookMempool.clear();
+  g_orderbookMempool.setPoolOrders(poolOrders);
+  m_orderbookSnapshots.clear();
+  for (size_t i = 0; i < snapshots.size(); ++i) {
+    m_orderbookSnapshots.emplace_back(snapshotHeights[i], std::move(snapshots[i]));
+  }
+  m_blockOrderFills.clear();
+  for (size_t i = 0; i < fills.size(); ++i) {
+    m_blockOrderFills.emplace_back(fillHeights[i], std::move(fills[i]));
+  }
+}
 
 bool CryptoNote::Blockchain::addObserver(IBlockchainStorageObserver* observer) {
   return m_observerManager.add(observer);
@@ -1168,10 +1216,6 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
     g_orderbookLastNumMatches = 0;
     g_orderbookIsInBootstrap = true;
     g_orderbookBootstrapBlocksRemaining = BOOTSTRAP_BLOCKS;
-    g_blocksSinceLastPoolRegen = 0;
-    g_priorPoolRegenPclear = 0;
-    g_priorPoolXfgReserve = 0;
-    g_priorPoolHeatReserve = 0;
     g_poolBandFilledLastBlock = 0;
 
     // Pass 1: block metadata indices + commitment index from tx extras.
@@ -4306,13 +4350,8 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
     snap.isInBootstrap = g_orderbookIsInBootstrap;
     snap.bootstrapBlocksRemaining = g_orderbookBootstrapBlocksRemaining;
     snap.lastNumMatches = g_orderbookLastNumMatches;
-    snap.blocksSinceLastPoolRegen = g_blocksSinceLastPoolRegen;
-    snap.priorPoolRegenPclear = g_priorPoolRegenPclear;
-    snap.priorPoolXfgReserve = g_priorPoolXfgReserve;
-    snap.priorPoolHeatReserve = g_priorPoolHeatReserve;
     snap.poolBandFilledLastBlock = g_poolBandFilledLastBlock;
     snap.priceHistory = g_poolOrchestrator.priceHistory();
-    snap.lastRegenPclear = g_poolOrchestrator.lastRegenPclear();
     snap.orders = g_orderbookMempool.getAllUserOrders();
     snap.poolOrders = g_orderbookMempool.getAllPoolOrders();
     m_orderbookSnapshots.push_back({height, std::move(snap)});
@@ -4338,47 +4377,24 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
   // Expire stale orders from mempool
   g_orderbookMempool.expireOrders(height);
 
-  // Pool orders: adaptive regeneration based on market conditions
+  // Pool depth band: rebuilt every block from the reserves as this block's
+  // transactions left them. A band carried over from an earlier block quotes
+  // reserves the pool no longer has.
   if (!g_orderbookIsInBootstrap && !m_ammPool.isEmpty()) {
-    uint64_t priorPclear = g_priorPoolRegenPclear;
-    g_blocksSinceLastPoolRegen++;
+    const uint64_t bandFilled = g_poolBandFilledLastBlock;
+    g_poolBandFilledLastBlock = 0;
+    const uint64_t bandPlaced = static_cast<uint64_t>((static_cast<uint128_t>(m_ammPool.reserveXfg) * HEARTH_DEPTH_BAND_PCT) / 100);
 
-    uint64_t bandFilled = g_poolBandFilledLastBlock;
-    g_poolBandFilledLastBlock = 0; // reset for this block
-    uint64_t bandPlaced = static_cast<uint64_t>((static_cast<uint128_t>(m_ammPool.reserveXfg) * HEARTH_DEPTH_BAND_PCT) / 100);
+    g_poolOrchestrator.recordPrice(ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat));
 
-    // V11+: the pool spot price (which moves with every swap/fill) drives the
-    // volatility signal; pre-v11 keeps the legacy P_clear feed.
-    uint64_t volatilityPrice = g_orderbookLastClearingPrice;
-    if (block.majorVersion >= BLOCK_MAJOR_VERSION_11 && !m_ammPool.isEmpty() && m_ammPool.reserveXfg > 0) {
-      volatilityPrice = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
-    }
-    g_poolOrchestrator.recordPrice(volatilityPrice);
-
-    uint32_t spreadBps = g_poolOrchestrator.computeSpreadBps(
+    PoolOrderParams pop;
+    pop.P_clear = g_orderbookLastClearingPrice;
+    pop.bandPct = HEARTH_DEPTH_BAND_PCT;
+    pop.reserveXfg = m_ammPool.reserveXfg;
+    pop.reserveHeat = m_ammPool.reserveHeat;
+    pop.spreadBps = g_poolOrchestrator.computeSpreadBps(
       g_orderbookLastClearingPrice, bandFilled, bandPlaced);
-
-    if (g_poolOrchestrator.shouldRegenerate(
-          g_orderbookLastClearingPrice, priorPclear,
-          m_ammPool.reserveXfg, m_ammPool.reserveHeat,
-          g_priorPoolXfgReserve, g_priorPoolHeatReserve,
-          bandFilled, bandPlaced, g_blocksSinceLastPoolRegen)) {
-
-      PoolOrderParams pop;
-      pop.P_clear = g_orderbookLastClearingPrice;
-      pop.bandPct = HEARTH_DEPTH_BAND_PCT;
-      pop.reserveXfg = m_ammPool.reserveXfg;
-      pop.reserveHeat = m_ammPool.reserveHeat;
-      pop.spreadBps = spreadBps;
-
-      auto poolOrders = generatePoolOrders(pop);
-      g_orderbookMempool.setPoolOrders(poolOrders);
-
-      g_blocksSinceLastPoolRegen = 0;
-      g_priorPoolRegenPclear = g_orderbookLastClearingPrice;
-      g_priorPoolXfgReserve = m_ammPool.reserveXfg;
-      g_priorPoolHeatReserve = m_ammPool.reserveHeat;
-    }
+    g_orderbookMempool.setPoolOrders(generatePoolOrders(pop));
   }
 
   // Shared per-block fill record (auction + backstop); pushed once below.
@@ -4461,44 +4477,21 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
         // Pool fills: orders with 0xF0 prefix are pool-generated, not backed
         // by m_limitDeposits.  The pool provides one asset, receives the other.
         if (fill.orderId.data[0] == 0xF0) {
-          uint64_t xfgMoved = 0;
-          uint64_t heatDebit = 0;
-          if (fill.side == 1) {
-            // Seller (pool is maker): XFG leaves pool, HEAT enters pool
-            xfgMoved = fill.fillXfg;
-            heatDebit = fill.heat;
-            if (m_ammPool.reserveXfg < xfgMoved) continue;
-            // Pool inventory lives in reserve*, never in pending*. pendingXfg /
-            // pendingHeat are the limit-order escrow float (see the deposit
-            // path and the backstop, which both draw fills from dep.amount).
-            // Crediting pool inventory here commingled the two and let pool
-            // trading starve a user's withdrawal at the pending-reserve gate.
-            m_ammPool.reserveXfg -= xfgMoved;
-            m_ammPool.reserveHeat += heatDebit;
-          } else {
-            // Buyer (pool is maker): HEAT leaves pool, XFG enters pool
-            xfgMoved = fill.fillXfg;
-            heatDebit = fill.heat;
-            if (m_ammPool.reserveHeat < heatDebit) continue;
-            m_ammPool.reserveHeat -= heatDebit;
-            m_ammPool.reserveXfg += xfgMoved;
-          }
-          if (fill.cdFeeHeat > 0) {
-            m_ammPool.cdHearthFeeAccumulator =
-              (m_ammPool.cdHearthFeeAccumulator > UINT64_MAX - fill.cdFeeHeat)
-                ? UINT64_MAX : m_ammPool.cdHearthFeeAccumulator + fill.cdFeeHeat;
-          }
+          // The pool is always the maker (runAuction's pool-maker rule): it
+          // trades at the clearing price and keeps the maker rebate for LPs.
+          const uint64_t xfgMoved = fill.fillXfg;
+          if (!ammApplyPoolMakerFill(m_ammPool, fill.side, xfgMoved, fill.heat, fill.rebateHeat)) continue;
+          g_poolBandFilledLastBlock += xfgMoved;
           OrderFillRecord rec;
           rec.orderId = fill.orderId;
           rec.side = fill.side;
           rec.xfg = xfgMoved;
-          rec.heat = heatDebit;
-          rec.feeHeat = fill.cdFeeHeat;
+          rec.heat = fill.heat;
+          rec.feeHeat = 0;
           rec.isAuction = true;
           rec.isPoolFill = true;
-          // Honour the auction's own taker side rather than hardcoding: this
-          // fill's direction determines whether the pool paid or received.
-          rec.isTaker = auction.hasTaker && (fill.side == (auction.takerIsBid ? 0 : 1));
+          rec.isTaker = false;
+          rec.rebateHeat = fill.rebateHeat;
           rec.priceHeat = fill.heat;
           fillsThisBlock.push_back(rec);
           block.orderbookNumMatches++;
@@ -6007,17 +6000,8 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
         if (!rec.isPoolFill) m_ammPool.pendingXfg += rec.xfg;
         uint64_t heatPaid = 0;
         if (rec.isPoolFill) {
-          // Pool-as-maker sell. Forward: reserveXfg -= x ; reserveHeat += heat.
-          // Nothing touched pending* (it is the limit-order escrow float), so
-          // leave it alone. Omitting this restore permanently desynchronised the
-          // AMM from a node that never saw the orphaned fill, and
-          // validateSettlement gates tx validity on these reserves.
-          m_ammPool.reserveXfg = (m_ammPool.reserveXfg > UINT64_MAX - rec.xfg)
-              ? UINT64_MAX : m_ammPool.reserveXfg + rec.xfg;
-          m_ammPool.reserveHeat = (m_ammPool.reserveHeat > UINT64_MAX - rec.heat)
-              ? UINT64_MAX : m_ammPool.reserveHeat + rec.heat;
-          if (rec.feeHeat > 0 && m_ammPool.cdHearthFeeAccumulator >= rec.feeHeat)
-            m_ammPool.cdHearthFeeAccumulator -= rec.feeHeat;
+          // pending* is the limit-order escrow float; pool fills never touch it.
+          ammRevertPoolMakerFill(m_ammPool, rec.side, rec.xfg, rec.heat, rec.rebateHeat);
         } else if (!rec.isAuction) {
           // Backstop fill. Forward removed (heatPaid + cdFeeHeat) from
           // reserveHeat and credited heatPaid to proceeds. Recompute heatPaid
@@ -6049,14 +6033,7 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
       } else {
         if (!rec.isPoolFill) m_ammPool.pendingHeat += rec.heat;
         if (rec.isPoolFill) {
-          // Pool-as-maker buy. Forward: reserveHeat -= heat ; reserveXfg += x.
-          // pending* untouched by the pool path — same reasoning as the sell.
-          m_ammPool.reserveHeat = (m_ammPool.reserveHeat > UINT64_MAX - rec.heat)
-              ? UINT64_MAX : m_ammPool.reserveHeat + rec.heat;
-          m_ammPool.reserveXfg = (m_ammPool.reserveXfg < rec.xfg)
-              ? 0 : m_ammPool.reserveXfg - rec.xfg;
-          if (rec.feeHeat > 0 && m_ammPool.cdHearthFeeAccumulator >= rec.feeHeat)
-            m_ammPool.cdHearthFeeAccumulator -= rec.feeHeat;
+          ammRevertPoolMakerFill(m_ammPool, rec.side, rec.xfg, rec.heat, rec.rebateHeat);
         } else if (!rec.isAuction) {
           // Backstop fill.
           m_ammPool.reserveHeat -= rec.heat;
@@ -6213,13 +6190,8 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
       g_orderbookIsInBootstrap = snap.isInBootstrap;
       g_orderbookBootstrapBlocksRemaining = snap.bootstrapBlocksRemaining;
       g_orderbookLastNumMatches = snap.lastNumMatches;
-      g_blocksSinceLastPoolRegen = snap.blocksSinceLastPoolRegen;
-      g_priorPoolRegenPclear = snap.priorPoolRegenPclear;
-      g_priorPoolXfgReserve = snap.priorPoolXfgReserve;
-      g_priorPoolHeatReserve = snap.priorPoolHeatReserve;
       g_poolBandFilledLastBlock = snap.poolBandFilledLastBlock;
       g_poolOrchestrator.restorePriceHistory(snap.priceHistory);
-      g_poolOrchestrator.restoreLastRegenPclear(snap.lastRegenPclear);
       g_orderbookMempool.clear();
       // Restore user orders
       for (const auto& o : snap.orders)

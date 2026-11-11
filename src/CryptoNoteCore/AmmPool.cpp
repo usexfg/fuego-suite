@@ -154,6 +154,33 @@ bool ammValidateInvariant(uint64_t reserveAIn, uint64_t reserveBIn,
   return after + MAX_ROUNDING_LOSS >= before;
 }
 
+bool ammApplyPoolMakerFill(AmmPoolState& pool, uint8_t side,
+                           uint64_t xfg, uint64_t heat, uint64_t rebateHeat) {
+  if (side == 1) {
+    if (pool.reserveXfg < xfg || heat > UINT64_MAX - rebateHeat ||
+        pool.reserveHeat > UINT64_MAX - (heat + rebateHeat)) return false;
+    pool.reserveXfg -= xfg;
+    pool.reserveHeat += heat + rebateHeat;
+    return true;
+  }
+  if (rebateHeat > heat || pool.reserveHeat < heat - rebateHeat ||
+      pool.reserveXfg > UINT64_MAX - xfg) return false;
+  pool.reserveHeat -= heat - rebateHeat;
+  pool.reserveXfg += xfg;
+  return true;
+}
+
+void ammRevertPoolMakerFill(AmmPoolState& pool, uint8_t side,
+                            uint64_t xfg, uint64_t heat, uint64_t rebateHeat) {
+  if (side == 1) {
+    pool.reserveXfg += xfg;
+    pool.reserveHeat -= heat + rebateHeat;
+    return;
+  }
+  pool.reserveHeat += heat - rebateHeat;
+  pool.reserveXfg -= xfg;
+}
+
 bool ammValidateDepositRatio(uint64_t amountA, uint64_t amountB,
                               uint64_t reserveA, uint64_t reserveB,
                               uint32_t toleranceBps) {

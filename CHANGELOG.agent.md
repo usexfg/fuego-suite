@@ -6284,3 +6284,36 @@ Sign-off table:
 | Build compiles | PENDING — rebuild required |
 | Tests pass | PENDING — rebuild required |
 | All tasks done | DONE (code changes) |
+
+## Hearth critical fixes (audit 2026-11-11: C1, C2, C3)
+
+**Feature name**: Hearth pool-band pricing, pool fee conservation, orderbook state persistence
+**Agent**: Claude
+**Start date**: 2026-11-11
+**Plan**: `docs/review/2026-11-11-hearth-heat-mint-audit.md` (recommendations 1-4)
+**Consensus impact**: v11+ only (not live). Cache archive version 17 -> 18 forces a replay.
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | C2: pool orders are always makers in `runAuction`; the side trading against the pool pays the 1% fee | Claude | 2026-11-11 | DONE |
+| 2 | C2: pool-fill settlement credits the maker rebate to `reserveHeat`; rollback mirrors it (also corrects the H1 sell-side sign) | Claude | 2026-11-11 | DONE |
+| 3 | C1: `generatePoolOrders` prices each tier from the constant-product curve at pool spot; band regenerates every block; `g_poolBandFilledLastBlock` wired; regeneration counters orphaned by per-block regeneration removed | Claude | 2026-11-11 | DONE |
+| 4 | C3: persist orderbook globals, `m_orderbookSnapshots`, `m_blockOrderFills` in the block cache; bump cache version | Claude | 2026-11-11 | DONE |
+| 5 | Regression tests: HEAT conservation on pool fills, `k` never falls on a band sweep, cache round-trip of orderbook state | Claude | 2026-11-11 | DONE |
+| 6 | Pool orders returned in `orderId` order so cached state serializes canonically | Claude | 2026-11-11 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j4` full build rc=0 (Release, Boost 1.83, vendored secp256k1) |
+| Tests pass | DONE — core_tests 301/301, test_hearth_amm 38/38, phase3 rc=0. test_orderbook_auction 62/63: `testFeeSplitFlipsAtV12` fails identically on HEAD's matcher (atom-sized fixture floors the v11 CD share to 0); pre-existing, not touched |
+| Mutation check | DONE — 6 deliberate breaks (pool-maker rule off, flat band at spot, rebate dropped, revert sign flipped, bootstrap flag and fill records not persisted) each fail a test |
+| All tasks done | DONE |
+
+Not covered:
+- The tests call `serializeOrderbookState` directly. That the block cache invokes it is shown by reading `BlockCacheSerializer`, not by a restart test.
+- popBlock still logs and continues when fill records were evicted (reorg deeper than 1,000 blocks). Audit recommendation 3 (refuse the pop, rebuild) is not done.
+- Orderbook state stays in file-static globals shared by every `Blockchain` in a process; only persistence was added.
+- `PoolOrderOrchestrator::shouldRegenerate` no longer has a consensus caller; left in place (covered by `Phase3_OrderbookTest`).
+- `Phase5_AdversarialTests.cpp` has `int main() { return 0; }`; it tests nothing.

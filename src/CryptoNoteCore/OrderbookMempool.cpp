@@ -289,6 +289,9 @@ std::vector<Order> OrderbookMempool::getAllPoolOrders() const {
   result.reserve(m_poolOrders.size());
   for (const auto& [id, order] : m_poolOrders)
     result.push_back(order);
+  std::sort(result.begin(), result.end(), [](const Order& a, const Order& b) {
+    return memcmp(a.orderId.data, b.orderId.data, sizeof(a.orderId.data)) < 0;
+  });
   return result;
 }
 

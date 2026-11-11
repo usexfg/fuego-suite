@@ -24,37 +24,62 @@
 //   Master keys: a = viewSecretKey,  b = spendSecretKey
 //                A = a*G (viewPublicKey), B = b*G (spendPublicKey)
 //
-//   Sub-address at index (major i, minor j):
-//     m    = H_s("Sublime" || a || i_LE32 || j_LE32)   [scalar, reduced mod l]
-//     D_ij = B + m*G                                    [sub spend public key]
-//     C_ij = A = a*G                                    [sub view public key = master view key]
-//     b_ij = b + m  (mod l)                             [sub spend secret key]
+//   V1 (legacy `fire` prefix, linkable):
+//     m    = H_s("Sublime" || a || i_LE32 || j_LE32)
+//     D_ij = B + m*G
+//     C_ij = A
+//     b_ij = b + m
+//     Sender: R = r*G. Receiver: a*R = r*A.
 //
-//   Sender encodes: tx_pub_key R = r*G, output_key = H(r*A, idx)*G + D_ij
-//   Receiver scans: derivation = a*R = a*r*G = r*A      (same ECDH as main address)
-//   Spend:          key image using b_ij instead of b
-//
-//   NOTE: C_ij = A (not a*D_ij) since we use same prefix for main & sub addresses
-//   The sender cannot detect a subaddress, so the tx public key is always R = r*G and standard scan a*R must recover correct derivation
+//   V2 (`funsa` prefix, unlinkable):
+//     m    = H_s("FuegoSubAddrV2" || a || i_LE32 || j_LE32)
+//     D_ij = B + m*G
+//     C_ij = a*D_ij     (no cofactor-8)
+//     b_ij = b + m
+//     Sender: R = r*D_ij. Receiver: a*R = r*C_ij.
 //
 // The index (0, 0) is reserved for the master address — do not create sub-addresses at (0,0).
 
 namespace Crypto {
 
+const uint8_t SUBADDRESS_VERSION_V1 = 1;
+const uint8_t SUBADDRESS_VERSION_V2 = 2;
+
 struct SubAddressKeys {
-  PublicKey spendPublicKey;    // D_ij = B + m*G
-  PublicKey viewPublicKey;     // C_ij = A = a*G (master view public key)
-  SecretKey spendSecretKey;    // b_ij = b + m  (zeroed if master spend key not provided)
+  PublicKey spendPublicKey;
+  PublicKey viewPublicKey;
+  SecretKey spendSecretKey;
   bool hasSpendSecretKey;
+  uint8_t version;
 };
 
-// Derive sub-address keys at index (major, minor).
-// masterSpendSecretKey: pass nullptr for view-only wallets (spendSecretKey will not be set).
 SubAddressKeys deriveSubAddressKeys(
     const SecretKey&  masterViewSecretKey,
     const PublicKey&  masterSpendPublicKey,
     const SecretKey*  masterSpendSecretKey,
     uint32_t major,
     uint32_t minor);
+
+SubAddressKeys deriveSubAddressKeysV2(
+    const SecretKey&  masterViewSecretKey,
+    const PublicKey&  masterSpendPublicKey,
+    const SecretKey*  masterSpendSecretKey,
+    uint32_t major,
+    uint32_t minor);
+
+bool scalarmultKeyNoCofactor(
+    const PublicKey& point,
+    const SecretKey& scalar,
+    PublicKey& result);
+
+bool subaddressTxPubKey(
+    const SecretKey& txSecret,
+    const PublicKey& subSpendPublicKey,
+    PublicKey& txPubKey);
+
+bool janusCheck(
+    const PublicKey& txPubKey,
+    const PublicKey& janusBase,
+    const SecretKey& subSpendSecret);
 
 } // namespace Crypto

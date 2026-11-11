@@ -521,8 +521,19 @@ bool RpcServer::k_on_check_tx_proof(const K_COMMAND_RPC_CHECK_TX_PROOF::request&
 		throw JsonRpc::JsonRpcError{ CORE_RPC_ERROR_CODE_INTERNAL_ERROR, "Tx pubkey was not found" };
 	}
 
-	// check signature
 	bool r = Crypto::check_tx_proof(txid, R, address.viewPublicKey, rA, sig);
+	if (!r) {
+		std::vector<Crypto::PublicKey> additional;
+		if (getAdditionalPubKeysFromExtra(transaction.extra, additional)) {
+			for (const auto& Rn : additional) {
+				if (Crypto::check_tx_proof(txid, Rn, address.viewPublicKey, rA, sig)) {
+					R = Rn;
+					r = true;
+					break;
+				}
+			}
+		}
+	}
 	res.signature_valid = r;
 
 	if (r) {

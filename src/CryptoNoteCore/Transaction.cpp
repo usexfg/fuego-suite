@@ -22,6 +22,7 @@
 #include "Account.h"
 #include "CryptoNoteCore/CryptoNoteTools.h"
 #include "CryptoNoteConfig.h"
+#include "crypto/subaddress.h"
 
 #include <boost/optional.hpp>
 #include <memory>
@@ -108,7 +109,7 @@ namespace CryptoNote {
     virtual size_t addInput(const TransactionInputCommitmentTransfer& input) override;
     virtual size_t addInput(const AccountKeys& senderKeys, const TransactionTypes::InputKeyInfo& info, KeyPair& ephKeys) override;
 
-    virtual size_t addOutput(uint64_t amount, const AccountPublicAddress& to) override;
+    virtual size_t addOutput(uint64_t amount, const AccountPublicAddress& to, bool isSubaddress = false) override;
     virtual size_t addOutput(uint64_t amount, const std::vector<AccountPublicAddress>& to, uint32_t requiredSignatures, uint32_t term = 0) override;
     virtual size_t addOutput(uint64_t amount, const KeyOutput& out) override;
     virtual size_t addOutput(uint64_t amount, const MultisignatureOutput& out) override;
@@ -149,6 +150,7 @@ namespace CryptoNote {
     boost::optional<SecretKey> secretKey;
     mutable boost::optional<Hash> transactionHash;
     TransactionExtra extra;
+    std::vector<PublicKey> additionalPubKeys;
   };
 
 
@@ -308,11 +310,41 @@ namespace CryptoNote {
     return transaction.inputs.size() - 1;
   }
 
-  size_t TransactionImpl::addOutput(uint64_t amount, const AccountPublicAddress& to) {
+  size_t TransactionImpl::addOutput(uint64_t amount, const AccountPublicAddress& to, bool isSubaddress) {
     checkIfSigning();
 
     KeyOutput outKey;
-    derivePublicKey(to, txSecretKey(), transaction.outputs.size(), outKey.key);
+    const size_t outputIndex = transaction.outputs.size();
+    if (isSubaddress || !additionalPubKeys.empty()) {
+      PublicKey dummy;
+      SecretKey r_n;
+      generate_keys(dummy, r_n);
+      PublicKey R_n;
+      if (isSubaddress) {
+        if (!Crypto::subaddressTxPubKey(r_n, to.spendPublicKey, R_n)) {
+          throw std::runtime_error("subaddress tx pubkey failed");
+        }
+      } else if (!secret_key_to_public_key(r_n, R_n)) {
+        throw std::runtime_error("additional tx pubkey failed");
+      }
+      KeyDerivation derivation;
+      if (!generate_key_derivation(to.viewPublicKey, r_n, derivation) ||
+          !derive_public_key(derivation, outputIndex, to.spendPublicKey, outKey.key)) {
+        throw std::runtime_error("subaddress output derivation failed");
+      }
+      if (additionalPubKeys.empty() && outputIndex > 0) {
+        PublicKey mainR;
+        if (!extra.getPublicKey(mainR)) {
+          throw std::runtime_error("missing main tx pubkey for mixed subaddress outputs");
+        }
+        additionalPubKeys.assign(outputIndex, mainR);
+      }
+      additionalPubKeys.push_back(R_n);
+      extra.set(TransactionExtraAdditionalPubKeys{additionalPubKeys});
+      transaction.extra = extra.serialize();
+    } else {
+      derivePublicKey(to, txSecretKey(), outputIndex, outKey.key);
+    }
     TransactionOutput out = { amount, outKey };
     transaction.outputs.emplace_back(out);
     invalidateHash();

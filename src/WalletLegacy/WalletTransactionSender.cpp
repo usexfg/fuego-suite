@@ -17,7 +17,8 @@
 
 #include "CryptoNoteCore/TransactionExtra.h"
 #include "INode.h"
-#include "crypto/crypto.h" //for rand()
+#include "crypto/crypto.h"
+#include "crypto/subaddress.h"
 #include <iostream>
 #include "CryptoNoteCore/Account.h"
 #include "DynamicRingSize.h"
@@ -1492,15 +1493,16 @@ namespace CryptoNote
       WalletLegacyTransfer &de = m_transactionsCache.getTransfer(idx);
 
       AccountPublicAddress addr;
-      if (!m_currency.parseAccountAddressString(de.address, addr))
+      bool isSubaddress = false;
+      if (!m_currency.parseAccountAddressString(de.address, addr, isSubaddress))
       {
         throw std::system_error(make_error_code(error::BAD_ADDRESS));
       }
 
       decompose_amount_into_digits(
           de.amount, dust_threshold,
-          [&](uint64_t chunk) { splitted_dsts.push_back(TransactionDestinationEntry(chunk, addr)); },
-          [&](uint64_t a_dust) { splitted_dsts.push_back(TransactionDestinationEntry(a_dust, addr)); });
+          [&](uint64_t chunk) { splitted_dsts.push_back(TransactionDestinationEntry(chunk, addr, isSubaddress)); },
+          [&](uint64_t a_dust) { splitted_dsts.push_back(TransactionDestinationEntry(a_dust, addr, isSubaddress)); });
     }
 
     decompose_amount_into_digits(
@@ -1987,7 +1989,8 @@ namespace CryptoNote
       const AccountPublicAddress& recipient,
       uint64_t amount,
       uint64_t fee,
-      uint64_t mixIn)
+      uint64_t mixIn,
+      bool isSubaddress)
   {
     throwIf(amount == 0, error::WRONG_AMOUNT);
 
@@ -2024,6 +2027,7 @@ namespace CryptoNote
     context->isV10HeatTransfer = true;
     context->v10HeatRecipient = recipient;
     context->v10HeatTransferAmount = amount;
+    context->v10HeatRecipientIsSubaddress = isSubaddress;
     setSpendingTransactionToDeposits(transactionId, selectedIds);
 
     uint64_t depositAmount = context->selectedTransfers.empty() ? 0 : context->selectedTransfers[0].amount;
@@ -2981,25 +2985,35 @@ namespace CryptoNote
       uint64_t totalHeat = context->foundMoney;
       uint64_t changeAmount = (totalHeat > amount) ? (totalHeat - amount) : 0;
 
-      // HEAT commitment output for recipient (FOREVER term, using recipient's view key)
       const uint32_t rcptIdx = static_cast<uint32_t>(transaction->getOutputCount());
-      std::array<uint8_t, 32> rcptSecret;
-      {
-        Crypto::SecretKey txSecretKey;
-        transaction->getTransactionSecretKey(txSecretKey);
-        Crypto::KeyDerivation ecdh;
-        Crypto::generate_key_derivation(recipient.viewPublicKey, txSecretKey, ecdh);
-        uint8_t preimage[36];
-        memcpy(preimage, &ecdh, 32);
-        preimage[32] = rcptIdx & 0xFF; preimage[33] = (rcptIdx >> 8) & 0xFF;
-        preimage[34] = (rcptIdx >> 16) & 0xFF; preimage[35] = (rcptIdx >> 24) & 0xFF;
-        Crypto::Hash h = Crypto::cn_fast_hash(preimage, sizeof(preimage));
-        memcpy(rcptSecret.data(), h.data, 32);
+      const bool recipientIsSubaddress = context->v10HeatRecipientIsSubaddress;
+      Crypto::SecretKey recipientTxSecret;
+      if (!transaction->getTransactionSecretKey(recipientTxSecret)) {
+        throw std::runtime_error("HEAT send: missing tx secret key");
+      }
+      if (recipientIsSubaddress) {
+        Crypto::PublicKey dummy;
+        Crypto::generate_keys(dummy, recipientTxSecret);
+      }
+      Crypto::KeyDerivation rcptEcdh;
+      if (!Crypto::generate_key_derivation(recipient.viewPublicKey, recipientTxSecret, rcptEcdh)) {
+        throw std::runtime_error("HEAT send: ECDH derivation failed");
       }
       CryptoNote::TransactionOutputCommitment rcptOut;
-      rcptOut.commitKey = deriveRecipientCommitmentKey(*transaction, rcptIdx, recipient);
+      if (!CryptoNote::deriveCommitmentOutputKey(
+            rcptEcdh, rcptIdx, recipient.spendPublicKey, rcptOut.commitKey)) {
+        throw std::runtime_error("HEAT send: commitment key derivation failed");
+      }
       rcptOut.term = parameters::HEAT_TERM;
       transaction->addOutput(amount, rcptOut);
+      std::vector<Crypto::PublicKey> additionalPubKeys;
+      if (recipientIsSubaddress) {
+        Crypto::PublicKey R_n;
+        if (!Crypto::subaddressTxPubKey(recipientTxSecret, recipient.spendPublicKey, R_n)) {
+          throw std::runtime_error("HEAT send: subaddress tx pubkey failed");
+        }
+        additionalPubKeys.push_back(R_n);
+      }
 
       // HEAT change (FOREVER term, sender's view key)
       if (changeAmount > 0) {
@@ -3021,6 +3035,17 @@ namespace CryptoNote
         chOut.commitKey = deriveSelfCommitmentKey(*transaction, chIdx);
         chOut.term = parameters::HEAT_TERM;
         transaction->addOutput(changeAmount, chOut);
+        if (recipientIsSubaddress) {
+          additionalPubKeys.push_back(transaction->getTransactionPublicKey());
+        }
+      }
+
+      if (!additionalPubKeys.empty()) {
+        std::vector<uint8_t> addlExtra;
+        if (!addAdditionalPubKeysToExtra(addlExtra, additionalPubKeys)) {
+          throw std::runtime_error("HEAT send: additional pubkeys extra failed");
+        }
+        transaction->appendExtra(CryptoNote::BinaryArray(addlExtra.begin(), addlExtra.end()));
       }
 
       transaction->setUnlockTime(0);

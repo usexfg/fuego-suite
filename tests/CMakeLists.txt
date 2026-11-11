@@ -89,6 +89,23 @@ target_link_libraries(commitment_owner_bound_tests PRIVATE
 )
 add_test(NAME commitment_owner_bound_tests COMMAND commitment_owner_bound_tests)
 
+add_executable(subaddress_v2_tests
+    UnitTests/SubaddressV2Test.cpp
+)
+target_include_directories(subaddress_v2_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/external/gtest/include
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_link_libraries(subaddress_v2_tests PRIVATE
+    CryptoNoteCore
+    Crypto
+    Common
+    gtest
+    gtest_main
+)
+add_test(NAME subaddress_v2_tests COMMAND subaddress_v2_tests)
+
 # Persistence of the published commitment key. The signer cannot choose between the
 # owner-bound and legacy derivations without it, and it used to be lost on every
 # wallet save/reload. Also covers loading pre-version-2 caches.

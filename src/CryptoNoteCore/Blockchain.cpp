@@ -37,6 +37,7 @@
 #include "../Serialization/SerializationOverloads.h"
 #include "CryptoNoteTools.h"
 #include "TransactionExtra.h"
+#include "SubaddressTx.h"
 #include "../crypto/crypto.h"
 #include "../Common/StringTools.h"
 #include "CommitmentIndex.h"
@@ -3921,6 +3922,17 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
     if (!check_tx_outputs(transactions[i], block.height, block.bl.majorVersion)) {
       isTransactionValid = false;
       logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " has at least one invalid output";
+    }
+
+    // funsa subaddress extras are consensus from v11: pre-v11 blocks may not
+    // carry 0x06/0x09, and an 0x06 key list must cover every output exactly.
+    {
+      std::string subaddrErr;
+      if (!validateSubaddressTxExtra(transactions[i], block.bl.majorVersion, &subaddrErr)) {
+        isTransactionValid = false;
+        logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
+                                   << " has invalid subaddress extra: " << subaddrErr;
+      }
     }
 
     // DIGM mint validation: lock HEAT → mint DIGM at 0.10 HEAT per DIGM.

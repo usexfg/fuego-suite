@@ -1576,6 +1576,13 @@ namespace PaymentService
     const bool valid = CryptoNote::parseAccountAddressString(prefix,
                                                              addr,
                                                              address_str);
+    if (!valid) {
+      return make_error_code(CryptoNote::error::BAD_ADDRESS);
+    }
+    if (prefix == CryptoNote::parameters::CRYPTONOTE_SUBADDRESS_BASE58_PREFIX ||
+        prefix == CryptoNote::CRYPTONOTE_SUBADDRESS_BASE58_PREFIX_TESTNET) {
+      return make_error_code(CryptoNote::error::BAD_ADDRESS);
+    }
 
     CryptoNote::BinaryArray ba;
     CryptoNote::toBinaryArray(addr, ba);

@@ -38,11 +38,7 @@ const size_t MEMPOOL_SIZE_LIMIT =
 const uint64_t CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX =
     1753191; /* "fire" address prefix */
 const uint64_t CRYPTONOTE_SUBADDRESS_BASE58_PREFIX =
-    CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX; // same as main (fire) for max
-                                             // privacy, ie indistinguishable to
-                                             // outside observers.
-// only potential issue being if user tried to send FROM a sub-addy, which
-// wallets will not support anyway
+    23047589992ULL; /* "funsa1" V2 subaddress prefix, 101 chars */
 const size_t CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW = 60;
 const size_t CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW_TESTNET = 0;
 const uint64_t DIFFICULTY_TARGET_DRGL = 81;
@@ -637,6 +633,10 @@ const uint8_t BLOCK_MAJOR_VERSION_12 =
     12; // HEAT CDs + unified output/input types + hidden amounts + MLSAG
 const uint8_t BLOCK_MAJOR_VERSION_13 = 13; // Deprecated: orderbook moved to v11
 
+inline bool funsaSubaddressActivated(uint8_t blockMajorVersion) {
+  return blockMajorVersion >= BLOCK_MAJOR_VERSION_11;
+}
+
 // Hearth taker-fee split for a block major version. Consensus paths must pass
 // the version of the block they are settling, never a default: a reorg replays
 // the block's own version and must recompute the same split.
@@ -765,7 +765,7 @@ const int RPC_DEFAULT_PORT_TESTNET = 28280;
 const uint64_t CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX_TESTNET =
     1075740; /* "TEST" address prefix */
 const uint64_t CRYPTONOTE_SUBADDRESS_BASE58_PREFIX_TESTNET =
-    CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX_TESTNET;
+    222156832; /* "Tsub" V2 subaddress prefix */
 const uint32_t TESTNET_HEAT_TERM =
     ((uint32_t)(-1)); // Forever term for burn transactions
 const uint64_t TESTNET_HEAT_MINT_MIN_HEAT =

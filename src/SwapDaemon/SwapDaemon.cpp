@@ -26,6 +26,7 @@
 #include "Common/JsonValue.h"
 #include "CryptoNoteCore/CryptoNoteTools.h"
 #include "CryptoNoteCore/CryptoNoteFormatUtils.h"
+#include "CryptoNoteCore/CryptoNoteBasicImpl.h"
 #include "CryptoNoteCore/TransactionExtra.h"
 #include "CryptoNoteCore/CryptoNoteTools.h"
 #include "CryptoNoteConfig.h"
@@ -990,9 +991,10 @@ std::string SwapDaemon::generateSwapId() {
 
 std::string SwapDaemon::resolveAddressOrAlias(const std::string& input) {
   if (input.empty()) return "";
-  // XFG addresses are 98 chars and start with lowercase 'f' (e.g. fireVHx...)
-  // Anything shorter or not starting with 'f' is treated as an alias candidate
-  const bool looksLikeAlias = input.length() < 98 || input[0] != 'f';
+  CryptoNote::AccountPublicAddress parsedAddr;
+  uint64_t parsedPrefix = 0;
+  const bool looksLikeAddress = CryptoNote::parseAccountAddressString(parsedPrefix, parsedAddr, input);
+  const bool looksLikeAlias = !looksLikeAddress;
   if (looksLikeAlias) {
     std::string candidate = input;
     if (!candidate.empty() && candidate[0] == '@') candidate = candidate.substr(1);

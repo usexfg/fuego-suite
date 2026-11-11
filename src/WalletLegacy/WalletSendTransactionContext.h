@@ -80,6 +80,7 @@ struct SendTransactionContext
   bool isV10HeatTransfer = false;
   AccountPublicAddress v10HeatRecipient;
   uint64_t v10HeatTransferAmount = 0;
+  bool v10HeatRecipientIsSubaddress = false;
 
   // v11+ orderbook context
   bool isV11LimitDeposit = false;

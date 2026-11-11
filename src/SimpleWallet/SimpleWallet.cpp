@@ -3821,10 +3821,13 @@ void simple_wallet::loadSubAddresses() {
   uint32_t major, minor;
   std::string addr;
   while (f >> major >> minor >> addr) {
+    const uint8_t version = m_currency.isSubAddressStr(addr)
+        ? Crypto::SUBADDRESS_VERSION_V2
+        : Crypto::SUBADDRESS_VERSION_V1;
     m_subAddresses.emplace_back(major, minor, addr);
     // Re-subscribe each sub-address to the chain scanner so incoming outputs are detected.
     try {
-      m_wallet->registerSubAddress(major, minor);
+      m_wallet->registerSubAddress(major, minor, version);
     } catch (...) {
       // If registration fails (e.g. wallet not yet fully initialized), skip silently.
       // The user can re-open the wallet to retry.
@@ -4761,7 +4764,8 @@ bool simple_wallet::send_heat(const std::vector<std::string>& args) {
   }
 
   CryptoNote::AccountPublicAddress addr;
-  if (!m_currency.parseAccountAddressString(args[0], addr)) {
+  bool isSubaddress = false;
+  if (!m_currency.parseAccountAddressString(args[0], addr, isSubaddress)) {
     fail_msg_writer() << "Invalid address: " << args[0];
     return false;
   }
@@ -4787,7 +4791,7 @@ bool simple_wallet::send_heat(const std::vector<std::string>& args) {
   CryptoNote::WalletHelper::SendCompleteResultObserver sent;
   WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
 
-  CryptoNote::TransactionId txId = m_wallet->sendHeatV10(addr, amount, fee, mixIn);
+  CryptoNote::TransactionId txId = m_wallet->sendHeatV10(addr, amount, fee, mixIn, isSubaddress);
 
   if (txId == WALLET_INVALID_TRANSACTION_ID) {
     fail_msg_writer() << "Send HEAT transaction failed";

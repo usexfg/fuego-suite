@@ -51,9 +51,11 @@ struct TransactionSourceEntry {
 struct TransactionDestinationEntry {
   uint64_t amount;                    //money
   AccountPublicAddress addr;          //destination address
+  bool isSubaddress;
 
-  TransactionDestinationEntry() : amount(0), addr(boost::value_initialized<AccountPublicAddress>()) {}
-  TransactionDestinationEntry(uint64_t amount, const AccountPublicAddress &addr) : amount(amount), addr(addr) {}
+  TransactionDestinationEntry() : amount(0), addr(boost::value_initialized<AccountPublicAddress>()), isSubaddress(false) {}
+  TransactionDestinationEntry(uint64_t amount, const AccountPublicAddress &addr, bool isSubaddress = false)
+    : amount(amount), addr(addr), isSubaddress(isSubaddress) {}
 };
 
 struct tx_message_entry

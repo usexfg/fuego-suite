@@ -36,6 +36,7 @@
 #include "Currency.h"
 
 #include "CryptoNoteConfig.h"
+#include "SubaddressTx.h"
 
 using namespace Logging;
 using namespace Crypto;
@@ -168,6 +169,22 @@ bool constructTransaction(
   std::vector<TransactionDestinationEntry> shuffled_dsts(destinations);
   std::sort(shuffled_dsts.begin(), shuffled_dsts.end(), [](const TransactionDestinationEntry& de1, const TransactionDestinationEntry& de2) { return de1.amount < de2.amount; });
 
+  SubaddressOutputPlan subPlan;
+  if (!planSubaddressOutputs(
+        txkey.secretKey,
+        txkey.publicKey,
+        sender_account_keys.viewSecretKey,
+        sender_account_keys.address.spendPublicKey,
+        shuffled_dsts,
+        subPlan)) {
+    logger(ERROR, BRIGHT_RED) << "Failed to plan subaddress transaction keys";
+    return false;
+  }
+  if (!applySubaddressTxExtra(tx.extra, subPlan)) {
+    logger(ERROR, BRIGHT_RED) << "Failed to write subaddress extra";
+    return false;
+  }
+
   uint64_t summary_outs_money = 0;
   //fill outputs
   size_t output_index = 0;
@@ -176,25 +193,17 @@ bool constructTransaction(
       logger(ERROR, BRIGHT_RED) << "Destination with wrong amount: " << dst_entr.amount;
       return false;
     }
-    KeyDerivation derivation;
     PublicKey out_eph_public_key;
-    bool r = generate_key_derivation(dst_entr.addr.viewPublicKey, txkey.secretKey, derivation);
-
+    bool r = derivePlannedOutputKey(
+        dst_entr,
+        subPlan,
+        sender_account_keys.viewSecretKey,
+        output_index,
+        out_eph_public_key);
     if (!(r)) {
       logger(ERROR, BRIGHT_RED)
-        << "at creation outs: failed to generate_key_derivation("
-        << dst_entr.addr.viewPublicKey << ", <secret_key>)";
-      return false;
-    }
-
-    r = derive_public_key(derivation, output_index,
-      dst_entr.addr.spendPublicKey,
-      out_eph_public_key);
-    if (!(r)) {
-      logger(ERROR, BRIGHT_RED)
-        << "at creation outs: failed to derive_public_key(" << derivation
-        << ", " << output_index << ", " << dst_entr.addr.spendPublicKey
-        << ")";
+        << "at creation outs: failed to derive subaddress output key at index "
+        << output_index;
       return false;
     }
 

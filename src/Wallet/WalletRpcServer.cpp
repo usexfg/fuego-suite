@@ -803,6 +803,13 @@ bool wallet_rpc_server::on_create_integrated(const wallet_rpc::COMMAND_RPC_CREAT
     const bool valid = CryptoNote::parseAccountAddressString(prefix, 
                                                             addr,
                                                             address_str);
+    if (!valid) {
+      return false;
+    }
+    if (prefix == CryptoNote::parameters::CRYPTONOTE_SUBADDRESS_BASE58_PREFIX ||
+        prefix == CryptoNote::CRYPTONOTE_SUBADDRESS_BASE58_PREFIX_TESTNET) {
+      return false;
+    }
 
     CryptoNote::BinaryArray ba;
     CryptoNote::toBinaryArray(addr, ba);
@@ -1062,7 +1069,8 @@ bool wallet_rpc_server::on_heat_mint(const wallet_rpc::COMMAND_RPC_HEAT_MINT::re
 bool wallet_rpc_server::on_send_heat(const wallet_rpc::COMMAND_RPC_SEND_HEAT::request& req, wallet_rpc::COMMAND_RPC_SEND_HEAT::response& res) {
   try {
     CryptoNote::AccountPublicAddress addr;
-    if (!m_currency.parseAccountAddressString(req.address, addr)) {
+    bool isSubaddress = false;
+    if (!m_currency.parseAccountAddressString(req.address, addr, isSubaddress)) {
       throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Invalid address");
     }
     if (req.amount == 0) throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "amount must be > 0");
@@ -1071,7 +1079,7 @@ bool wallet_rpc_server::on_send_heat(const wallet_rpc::COMMAND_RPC_SEND_HEAT::re
     CryptoNote::WalletHelper::SendCompleteResultObserver sent;
     WalletHelper::IWalletRemoveObserverGuard removeGuard(m_wallet, sent);
 
-    CryptoNote::TransactionId txId = m_wallet.sendHeatV10(addr, req.amount, fee, req.mixin);
+    CryptoNote::TransactionId txId = m_wallet.sendHeatV10(addr, req.amount, fee, req.mixin, isSubaddress);
     if (txId == WALLET_INVALID_TRANSACTION_ID) {
       throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "Send HEAT failed");
     }

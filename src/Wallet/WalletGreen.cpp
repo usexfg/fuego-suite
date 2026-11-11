@@ -1662,6 +1662,14 @@ namespace CryptoNote
     if (targetPrice % parameters::ORDER_PRICE_TICK != 0) {
       throw std::system_error(make_error_code(error::WRONG_PARAMETERS), "Limit price must be a multiple of the price tick");
     }
+    if (amount < limitOrderMinAmount(side)) {
+      throw std::system_error(make_error_code(error::WRONG_PARAMETERS), "Limit order below the minimum size");
+    }
+    const uint32_t nextHeight = m_node.getLastKnownBlockHeight() + 1;
+    expiration = limitOrderExpiryFor(expiration, nextHeight);
+    if (!limitOrderExpiryValid(expiration, nextHeight)) {
+      throw std::system_error(make_error_code(error::WRONG_PARAMETERS), "Limit order expiry must be a height within LIMIT_ORDER_MAX_TTL_BLOCKS");
+    }
     if (side == 0) {
       // BUY_XFG escrows HEAT: HEAT deposits fund the escrow and XFG pays the
       // fee. It used to fund a HEAT escrow with XFG, which consensus refuses.

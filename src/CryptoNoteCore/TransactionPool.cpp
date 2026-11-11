@@ -644,7 +644,8 @@ namespace CryptoNote
       // withdrawn once.
       const PoolTouch touch = getPoolTouch(txd.tx);
       if ((touch.movesReserves && reservesMoved) || touch.mintHeat > mintCapHeatLeft ||
-          (touch.hasDeposit && depositIds.count(touch.depositId)) ||
+          (touch.hasDeposit && (depositIds.count(touch.depositId) ||
+                                depositIds.size() >= parameters::LIMIT_DEPOSITS_MAX_PER_BLOCK)) ||
           (touch.hasWithdraw && withdrawIds.count(touch.withdrawId)))
       {
         continue;

@@ -4833,17 +4833,22 @@ bool simple_wallet::place_order(const std::vector<std::string>& args) {
     return false;
   }
 
-  uint32_t expiration = ORDERBOOK_DEFAULT_EXPIRY;
+  uint32_t ttlBlocks = parameters::LIMIT_ORDER_DEFAULT_TTL_BLOCKS;
   if (args.size() >= 4) {
-    if (!Common::fromString(args[3], expiration) || expiration == 0) {
+    if (!Common::fromString(args[3], ttlBlocks) || ttlBlocks == 0) {
       fail_msg_writer() << "Invalid expiration (blocks)";
       return false;
     }
-    if (expiration > ORDERBOOK_MAX_ENDURANCE) {
-      fail_msg_writer() << "Expiration exceeds max (" << ORDERBOOK_MAX_ENDURANCE << " blocks)";
+    if (ttlBlocks > parameters::LIMIT_ORDER_MAX_TTL_BLOCKS) {
+      fail_msg_writer() << "Expiration exceeds max (" << parameters::LIMIT_ORDER_MAX_TTL_BLOCKS << " blocks)";
       return false;
     }
   }
+  if (amount < limitOrderMinAmount(side)) {
+    fail_msg_writer() << "Order below the minimum size (" << m_currency.formatAmount(limitOrderMinAmount(side)) << ")";
+    return false;
+  }
+  const uint32_t expiration = m_node->getLastKnownBlockHeight() + 1 + ttlBlocks;
 
   uint64_t fee = m_currency.minimumFee();
   uint64_t balance = m_wallet->actualBalance();
@@ -4874,7 +4879,7 @@ bool simple_wallet::place_order(const std::vector<std::string>& args) {
                          << " " << m_currency.formatAmount(amount)
                          << (side == 0 ? " HEAT" : " XFG")
                          << " @ " << m_currency.formatAmount(price)
-                         << " | expires in " << expiration << " blocks"
+                         << " | expires in " << ttlBlocks << " blocks (height " << expiration << ")"
                          << " | tx: " << tx;
     return true;
   }

@@ -1195,6 +1195,19 @@ public:
   static void recordSpots(Blockchain& chain, uint32_t fromHeight, uint32_t count, uint64_t price) {
     for (uint32_t i = 0; i < count; ++i) chain.m_blockSpotHistory.push_back({fromHeight + i, price});
   }
+  static void markWithdrawn(Blockchain& chain, const Crypto::Hash& orderId, uint32_t height) {
+    auto& dep = chain.m_limitDeposits.at(orderId);
+    (dep.side == 1 ? chain.m_ammPool.pendingXfg : chain.m_ammPool.pendingHeat) -= dep.amount;
+    dep.withdrawnAmount = dep.amount;
+    dep.withdrawn = true;
+    dep.withdrawnHeight = height;
+  }
+  static bool hasLimitDeposit(const Blockchain& chain, const Crypto::Hash& orderId) {
+    return chain.m_limitDeposits.count(orderId) > 0;
+  }
+  static void popOrderbookBlock(Blockchain& chain, uint32_t height) {
+    chain.restoreOrderbookSnapshotFor(height);
+  }
   static uint64_t oraclePriceBefore(const Blockchain& chain, uint32_t height) {
     return chain.hearthOraclePriceBefore(height);
   }
@@ -1861,6 +1874,62 @@ void testHearthBackstopBoundedByReserves() {
   TEST(VaultCoreTestAccess::escrowLeft(t.chain, hearthOrderId(60)) > 0);
 }
 
+// Audit 2026-11-11 H4: deposits had no minimum, no required expiry and no
+// per-block cap, and every one is scanned every block forever.
+void testLimitDepositBounds() {
+  TestChain t("limit_bounds");
+  TEST(t.ok);
+  const uint64_t C = parameters::COIN;
+  const uint32_t height = 5000;
+  AssetFlows flows;
+  uint64_t fee = 0;
+  std::string err;
+  uint8_t next = 0;
+  auto deposit = [&](uint64_t amount, uint32_t expiration, Blockchain::SettlementScratch& scratch) {
+    Crypto::Hash orderId{};
+    orderId.data[0] = 0x6B;
+    orderId.data[1] = next++;
+    std::vector<uint8_t> extra;
+    addLimitDepositToExtra(extra, 1, amount, 10 * parameters::ORDER_PRICE_TICK, expiration, orderId, Crypto::Hash{});
+    return t.chain.validateSettlement(
+        settlementTx({amount + C}, {commitmentOut(amount, parameters::DEPOSIT_TERM_POOL_XFG)}, extra),
+        height, scratch, flows, fee, err);
+  };
+  Blockchain::SettlementScratch scratch;
+  TEST(deposit(C, height + 100, scratch));
+  TEST(!deposit(C - 1, height + 100, scratch) && err.find("minimum") != std::string::npos);
+  TEST(!deposit(C, 0, scratch) && err.find("expiry") != std::string::npos);
+  TEST(!deposit(C, height, scratch));
+  TEST(!deposit(C, height + parameters::LIMIT_ORDER_MAX_TTL_BLOCKS + 1, scratch));
+  TEST(deposit(C, height + parameters::LIMIT_ORDER_MAX_TTL_BLOCKS, scratch));
+
+  Blockchain::SettlementScratch full;
+  int accepted = 0;
+  for (uint32_t i = 0; i <= parameters::LIMIT_DEPOSITS_MAX_PER_BLOCK; ++i) {
+    if (deposit(C, height + 100, full)) ++accepted;
+  }
+  TEST(accepted == static_cast<int>(parameters::LIMIT_DEPOSITS_MAX_PER_BLOCK));
+  TEST(err.find("cap") != std::string::npos);
+}
+
+// Audit 2026-11-11 H4: withdrawn deposits left the scanned set never. They are
+// pruned past the rollback window, and a pop of the pruning block restores them.
+void testWithdrawnDepositsPrunedAndRestored() {
+  TestChain t("limit_prune");
+  TEST(t.ok);
+  uint32_t height = enterHearthAuctionPhase(t);
+  const Crypto::Hash oldId = hearthOrderId(70), recentId = hearthOrderId(71);
+  VaultCoreTestAccess::addLimitDeposit(t.chain, oldId, 1, parameters::COIN, parameters::ORDER_PRICE_TICK, height - 1);
+  VaultCoreTestAccess::addLimitDeposit(t.chain, recentId, 1, parameters::COIN, parameters::ORDER_PRICE_TICK, height - 1);
+  VaultCoreTestAccess::markWithdrawn(t.chain, oldId, height - 1001);
+  VaultCoreTestAccess::markWithdrawn(t.chain, recentId, height - 999);
+  VaultCoreTestAccess::runOrderbookBlock(t.chain, height);
+  TEST(!VaultCoreTestAccess::hasLimitDeposit(t.chain, oldId));
+  TEST(VaultCoreTestAccess::hasLimitDeposit(t.chain, recentId));
+  VaultCoreTestAccess::popOrderbookBlock(t.chain, height);
+  TEST(VaultCoreTestAccess::hasLimitDeposit(t.chain, oldId));
+}
+
 int main() {
   testCdInterestCompounding();
   testLegacyDepositWithdrawsForPrincipal();
@@ -1910,6 +1979,8 @@ int main() {
   testHearthMintCapPerBlock();
   testAuntPolSkipsPushedPool();
   testHearthBackstopBoundedByReserves();
+  testLimitDepositBounds();
+  testWithdrawnDepositsPrunedAndRestored();
   fprintf(stderr, "=== Treasury/Core Tests ===\nPassed: %d / %d\n", tests_passed, tests_run);
   return tests_passed == tests_run ? 0 : 1;
 }

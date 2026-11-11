@@ -666,6 +666,7 @@ namespace CryptoNote {
       uint64_t depositedAmount = 0; // original deposit amount (immutable; pop reversal)
       uint64_t withdrawnAmount = 0; // escrow amount returned by the withdraw (exact pop reversal)
       uint32_t createdHeight = 0;   // block height of the deposit (auction time priority)
+      uint32_t withdrawnHeight = 0; // block that withdrew it; pruned once past the rollback window
       bool withdrawn = false;
       bool expired = false; // auto-returned on expiry (remaining claimable)
     };
@@ -755,6 +756,8 @@ namespace CryptoNote {
       // survives popBlock and reorged nodes compute a different spread for the
       // same height.
       std::deque<uint64_t> priceHistory;
+      // Withdrawn deposits this block pruned; a pop puts them back.
+      std::vector<std::pair<Crypto::Hash, LimitDepositInfo>> prunedDeposits;
 
       void serialize(ISerializer& s) {
         s(orders, "orders");
@@ -767,11 +770,14 @@ namespace CryptoNote {
         std::vector<uint64_t> history(priceHistory.begin(), priceHistory.end());
         s(history, "price_history");
         if (s.type() == ISerializer::INPUT) priceHistory.assign(history.begin(), history.end());
+        s(prunedDeposits, "pruned_deposits");
       }
     };
     // Auction and depth-band state that every later block's fills depend on,
     // plus the per-block records popBlock needs to reverse them.
     void serializeOrderbookState(ISerializer& s);
+    void restoreOrderbookSnapshotFor(uint32_t poppedHeight);
+    std::vector<std::pair<Crypto::Hash, LimitDepositInfo>> pruneSettledLimitDeposits(uint32_t height);
     std::deque<std::pair<uint32_t, OrderbookRollbackSnapshot>> m_orderbookSnapshots;
 
     // Cumulative fee pool accounting (lifetime totals, never reset)

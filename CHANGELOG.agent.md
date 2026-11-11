@@ -6347,3 +6347,33 @@ Not covered:
 - The block-template mint cap (`TransactionPool::fill_block_template`) has no test; `tests/UnitTests/TransactionPool.cpp` is not built (BUILD_TESTS=OFF).
 - The per-block 2× price band still applies to direct swaps only. Auction and backstop moves are not banded; the medians make single-block moves irrelevant to pricing, not impossible.
 - Parameters (5% mint cap, 2% AuntPoL deviation, epoch-long median) are initial values, not derived from simulation.
+
+## Limit-order set bounds (audit 2026-11-11: H4)
+
+**Feature name**: Bounded limit-deposit set; wallet order expiry fix
+**Agent**: Claude
+**Start date**: 2026-11-11
+**Plan**: `docs/review/2026-11-11-hearth-heat-mint-audit.md` (recommendation 6)
+**Consensus impact**: v11+ only (not live). Cache archive 18 -> 19 (forces replay).
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Deposit rules: min 1 XFG / 0.1 HEAT, required expiry `height < expiration ≤ height + LIMIT_ORDER_MAX_TTL_BLOCKS` (5,400), ≤ 100 new deposits per block (validation + template) | Claude | 2026-11-11 | DONE |
+| 2 | Withdrawn deposits pruned past the 1,000-block rollback window; pruned entries kept in the block's orderbook snapshot and restored by popBlock (`restoreOrderbookSnapshotFor` extracted) | Claude | 2026-11-11 | DONE |
+| 3 | `LimitDepositInfo.withdrawnHeight` set on withdraw, cleared on pop, serialized | Claude | 2026-11-11 | DONE |
+| 4 | Wallets: SimpleWallet converted its TTL into an absolute height (it passed the TTL itself, which consensus reads as a height, so its orders expired at once); WalletGreen/WalletLegacy map 0 to `LIMIT_ORDER_DEFAULT_TTL_BLOCKS` and pre-check size and expiry | Claude | 2026-11-11 | DONE |
+| 5 | Removed `ORDERBOOK_DEFAULT_EXPIRY` / `ORDERBOOK_MAX_ENDURANCE` (no users left); `docs/Hearth/HEARTH_LIMIT_ORDER_GUIDE.md` band and expiry sections rewritten | Claude | 2026-11-11 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j4` full build rc=0 |
+| Tests pass | DONE — core_tests 332/332, test_hearth_amm 38/38 |
+| Mutation check | DONE — 5 breaks (min size, expiry, per-block cap, pruning, pop restore) each fail a test |
+| All tasks done | DONE |
+
+Not covered:
+- Wallet expiry and size pre-checks have no automated test (no wallet test harness built).
+- Expired-but-unclaimed deposits stay in the set; their number is bounded by the minimum size each one locks.
+- The template's per-block deposit cap has no test (`tests/UnitTests/TransactionPool.cpp` not built).

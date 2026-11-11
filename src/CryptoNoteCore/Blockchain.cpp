@@ -76,7 +76,7 @@ bool operator<(const Crypto::KeyImage& keyImage1, const Crypto::KeyImage& keyIma
 }
 }
 
-#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 18  // v18: orderbook auction state and its rollback records are cached (forces replay: a v17 cache has none, and a node restarted from one re-entered bootstrap and forked)
+#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 19  // v19: limit deposits carry withdrawnHeight; orderbook snapshots carry pruned deposits. v18: v18: orderbook auction state and its rollback records are cached (forces replay: a v17 cache has none, and a node restarted from one re-entered bootstrap and forked)
 #define CURRENT_BLOCKCHAININDICES_STORAGE_ARCHIVE_VER 1
 
 namespace CryptoNote {
@@ -270,6 +270,7 @@ void serialize(Blockchain::LimitDepositInfo& value, ISerializer& s) {
   s(value.depositedAmount, "depositedAmount");
   s(value.withdrawnAmount, "withdrawnAmount");
   s(value.createdHeight, "createdHeight");
+  s(value.withdrawnHeight, "withdrawnHeight");
   s(value.withdrawn, "withdrawn");
   s(value.expired, "expired");
 }
@@ -709,6 +710,44 @@ namespace {
   uint64_t g_poolBandFilledLastBlock = 0;
 
 } // namespace
+
+// A withdrawn deposit only answers "is this orderId taken" and a pop of its
+// withdraw. Past the rollback window no pop can reach it, so it leaves the set
+// every block scans; the block's snapshot keeps it for a pop of this block.
+std::vector<std::pair<Crypto::Hash, CryptoNote::Blockchain::LimitDepositInfo>>
+CryptoNote::Blockchain::pruneSettledLimitDeposits(uint32_t height) {
+  std::vector<std::pair<Crypto::Hash, LimitDepositInfo>> pruned;
+  for (auto it = m_limitDeposits.begin(); it != m_limitDeposits.end();) {
+    const LimitDepositInfo& dep = it->second;
+    if (dep.withdrawn && dep.withdrawnHeight + MAX_ROLLBACK_HISTORY < height) {
+      pruned.push_back(*it);
+      it = m_limitDeposits.erase(it);
+    } else {
+      ++it;
+    }
+  }
+  return pruned;
+}
+
+void CryptoNote::Blockchain::restoreOrderbookSnapshotFor(uint32_t poppedHeight) {
+  if (!m_orderbookSnapshots.empty() && m_orderbookSnapshots.back().first == poppedHeight) {
+    const auto& snap = m_orderbookSnapshots.back().second;
+    g_orderbookLastClearingPrice = snap.lastClearingPrice;
+    g_orderbookIsInBootstrap = snap.isInBootstrap;
+    g_orderbookBootstrapBlocksRemaining = snap.bootstrapBlocksRemaining;
+    g_orderbookLastNumMatches = snap.lastNumMatches;
+    g_poolBandFilledLastBlock = snap.poolBandFilledLastBlock;
+    g_poolOrchestrator.restorePriceHistory(snap.priceHistory);
+    g_orderbookMempool.clear();
+    // Restore user orders
+    for (const auto& o : snap.orders)
+      g_orderbookMempool.addOrder(o);
+    // Restore pool orders
+    g_orderbookMempool.setPoolOrders(snap.poolOrders);
+    for (const auto& pruned : snap.prunedDeposits) m_limitDeposits.insert(pruned);
+    m_orderbookSnapshots.pop_back();
+  }
+}
 
 void CryptoNote::Blockchain::serializeOrderbookState(ISerializer& s) {
   const bool loading = s.type() == ISerializer::INPUT;
@@ -4426,6 +4465,8 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
   // Shared per-block fill record (auction + backstop); pushed once below.
   std::vector<OrderFillRecord> fillsThisBlock;
 
+  m_orderbookSnapshots.back().second.prunedDeposits = pruneSettledLimitDeposits(height);
+
   // Height-based expiry pass (v11+): expired deposits become claimable via
   // withdraw and do NOT participate in the auction or the backstop in their
   // expiry block (expiry at height H means no fills at H).
@@ -6209,25 +6250,7 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
   // mints and W-3 claim change UTXOs both index above the popped height).
   m_vault.removeAboveIndex(uint64_t(poppedHeight) << 32);
 
-  // Restore orderbook state if the popped block was v11+
-  {
-    if (!m_orderbookSnapshots.empty() && m_orderbookSnapshots.back().first == poppedHeight) {
-      const auto& snap = m_orderbookSnapshots.back().second;
-      g_orderbookLastClearingPrice = snap.lastClearingPrice;
-      g_orderbookIsInBootstrap = snap.isInBootstrap;
-      g_orderbookBootstrapBlocksRemaining = snap.bootstrapBlocksRemaining;
-      g_orderbookLastNumMatches = snap.lastNumMatches;
-      g_poolBandFilledLastBlock = snap.poolBandFilledLastBlock;
-      g_poolOrchestrator.restorePriceHistory(snap.priceHistory);
-      g_orderbookMempool.clear();
-      // Restore user orders
-      for (const auto& o : snap.orders)
-        g_orderbookMempool.addOrder(o);
-      // Restore pool orders
-      g_orderbookMempool.setPoolOrders(snap.poolOrders);
-      m_orderbookSnapshots.pop_back();
-    }
-  }
+  restoreOrderbookSnapshotFor(poppedHeight);
 
   // Reverse per-block TWAP contribution.
   // Epoch-boundary blocks: snapshot already restored correct accumulator — just pop the deque.
@@ -6948,6 +6971,7 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
             }
             depIt->second.withdrawnAmount = depIt->second.amount;
             depIt->second.withdrawn = true;
+            depIt->second.withdrawnHeight = block.height;
             g_orderbookMempool.cancelOrder(wd.orderId);
           }
         }
@@ -7388,6 +7412,7 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
           }
           depIt->second.withdrawnAmount = 0;
           depIt->second.withdrawn = false;
+          depIt->second.withdrawnHeight = 0;
         }
       }
     }
@@ -8222,6 +8247,18 @@ bool CryptoNote::Blockchain::validateSettlement(const Transaction& tx, uint32_t 
     }
     if (d.targetPrice == 0 || d.targetPrice % parameters::ORDER_PRICE_TICK != 0) {
       error = "limit deposit: price violates the tick";
+      return false;
+    }
+    if (d.amount < limitOrderMinAmount(d.side)) {
+      error = "limit deposit: below the minimum order size";
+      return false;
+    }
+    if (!limitOrderExpiryValid(d.expiration, height)) {
+      error = "limit deposit: expiry must be after this block and within LIMIT_ORDER_MAX_TTL_BLOCKS";
+      return false;
+    }
+    if (scratch.limitDepositIds.size() >= parameters::LIMIT_DEPOSITS_MAX_PER_BLOCK) {
+      error = "limit deposit: block deposit cap reached";
       return false;
     }
     // 0xF0 is the reserved pool-order prefix (OrderbookAuction.h). Without this

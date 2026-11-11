@@ -1026,7 +1026,7 @@ void serialize(CryptoNote::ISerializer& s) {
       uint8_t side;           // 0=BUY_XFG, 1=SELL_XFG
       uint64_t amount;        // XFG for sells, HEAT for buys
       uint64_t target_price;  // HEAT/XFG ratio × COIN
-      uint32_t expiration;    // 0 = no expiry, else block height
+      uint32_t expiration;    // 0 = LIMIT_ORDER_DEFAULT_TTL_BLOCKS from now, else block height
       uint64_t fee;
       uint64_t mixin;
 

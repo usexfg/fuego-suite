@@ -451,6 +451,11 @@ const uint64_t HEARTH_MINT_MAX_BPS_PER_BLOCK =
 const uint64_t HEARTH_AUNTPOL_MAX_SPOT_DEVIATION_BPS =
     200; // AuntPoL pairs only while pool spot is within 2% of the oracle price
 const uint64_t HEARTH_ORACLE_SHORT_WINDOW = 8; // blocks in the short median
+const uint64_t LIMIT_ORDER_MIN_XFG = COIN;          // smallest SELL_XFG deposit (1 XFG)
+const uint64_t LIMIT_ORDER_MIN_HEAT = COIN / 10;    // smallest BUY_XFG deposit (0.1 HEAT)
+const uint32_t LIMIT_ORDER_MAX_TTL_BLOCKS = 5400;   // ~30 days: expiry required, at most this far out
+const uint32_t LIMIT_ORDER_DEFAULT_TTL_BLOCKS = 1260; // ~7 days when a wallet caller names no expiry
+const uint32_t LIMIT_DEPOSITS_MAX_PER_BLOCK = 100;
 const uint64_t HEARTH_BACKSTOP_MAX_BPS =
     500; // backstop fills ≤ 5× auction volume per block
 constexpr uint64_t HEARTH_POOL_SEED_XFG =
@@ -654,6 +659,21 @@ inline uint64_t hearthMakerRebatePct(uint8_t blockMajorVersion) {
   return 100 - hearthCdSharePct(blockMajorVersion);
 }
 
+// Limit-order deposit bounds. Every resting order is scanned in every block,
+// so the set must stay bounded: a minimum size, a required expiry, a cap on
+// new deposits per block.
+inline uint64_t limitOrderMinAmount(uint8_t side) {
+  return side == 1 ? parameters::LIMIT_ORDER_MIN_XFG : parameters::LIMIT_ORDER_MIN_HEAT;
+}
+inline bool limitOrderExpiryValid(uint32_t expiration, uint32_t height) {
+  return expiration > height && expiration - height <= parameters::LIMIT_ORDER_MAX_TTL_BLOCKS;
+}
+// Wallet side: the absolute expiry height for an order a caller asked to expire
+// at `requested` (0 = default TTL) when the next block is `nextHeight`.
+inline uint32_t limitOrderExpiryFor(uint32_t requested, uint32_t nextHeight) {
+  return requested == 0 ? nextHeight + parameters::LIMIT_ORDER_DEFAULT_TTL_BLOCKS : requested;
+}
+
 // HEAT one block may mint, from the pool's HEAT reserve at block open.
 inline uint64_t hearthMintCapHeat(uint64_t reserveHeat) {
   return (reserveHeat / 10000) * parameters::HEARTH_MINT_MAX_BPS_PER_BLOCK;
@@ -705,9 +725,6 @@ const uint32_t MAX_MARKET_ORDER_LEVELS = 5;
 const uint32_t MIN_DISTINCT_PARTIES = 2;
 const uint32_t DEFAULT_ORDER_EXPIRATION_BLOCKS = 12600; // ~1 week
 const uint32_t HEARTH_DEPTH_BAND_PCT = 10;
-const uint32_t ORDERBOOK_DEFAULT_EXPIRY =
-    4320; // ~3 days at 1-min blocks — prevents stale P2P orders
-const uint32_t ORDERBOOK_MAX_ENDURANCE = 20160; // ~14 days absolute max
 // Mint premium funds treasury reserves.
 
 const uint8_t BLOCK_MINOR_VERSION_0 = 0;

@@ -924,6 +924,11 @@ TransactionId WalletLegacy::placeOrderV13(uint8_t side, uint64_t amount, uint64_
   fee = m_currency.minimumFee();
   {
     std::unique_lock<std::mutex> lock(m_cacheMutex);
+    const uint32_t nextHeight = m_node.getLastKnownBlockHeight() + 1;
+    expiration = limitOrderExpiryFor(expiration, nextHeight);
+    if (amount < limitOrderMinAmount(side) || !limitOrderExpiryValid(expiration, nextHeight)) {
+      throw std::system_error(make_error_code(error::WRONG_PARAMETERS));
+    }
     request = m_sender->makePlaceOrderV13Request(txId, events, side, amount, price, expiration, fee, mixIn);
     if (request != nullptr) pushBalanceUpdatedEvents(events);
   }

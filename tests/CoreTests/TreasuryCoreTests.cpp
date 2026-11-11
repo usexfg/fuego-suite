@@ -1843,6 +1843,14 @@ void testHearthMintCapPerBlock() {
   }
   TEST(accepted == 4);
   TEST(err.find("mint cap") != std::string::npos);
+
+  // Audit 2026-11-11 L2: the minimum mint was enforced by wallets only.
+  std::vector<uint8_t> dust;
+  addHeatMintAuthToExtra(dust, 1 * C, parameters::HEAT_MINT_MIN_HEAT - 1);
+  Blockchain::SettlementScratch dustScratch;
+  TEST(!t.chain.validateSettlement(
+      settlementTx({2 * C}, {commitmentOut(parameters::HEAT_MINT_MIN_HEAT - 1, parameters::HEAT_TERM)}, dust),
+      100, dustScratch, flows, fee, err) && err.find("minimum") != std::string::npos);
   TEST(t.chain.blockMintCapHeat() == 50 * C);
 }
 

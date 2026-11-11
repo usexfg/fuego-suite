@@ -6459,3 +6459,25 @@ Sign-off table:
 Not covered:
 - The wiring that skips the auction when `auctionFillsSettle` is false is not exercised by a test: no input reachable through validated deposits makes it false.
 - The per-fill `continue` guards inside the apply loop remain; after the pre-check they cannot fire.
+
+## Minimum HEAT mint in consensus (audit 2026-11-11: L2, part)
+
+**Feature name**: Consensus minimum mint
+**Agent**: Claude
+**Start date**: 2026-11-11
+**Consensus impact**: v11+ only (not live).
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `validateSettlement` rejects mints below `HEAT_MINT_MIN_HEAT` (testnet: `TESTNET_HEAT_MINT_MIN_HEAT`); was wallet-only | Claude | 2026-11-11 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — core_tests target rc=0 |
+| Tests pass | DONE — core_tests 354/354 |
+| Mutation check | DONE — disabling the check fails the dust-mint test |
+| All tasks done | DONE |
+
+Not done (other half of L2): bill denominations stay wallet-only. Enforcing them on every HEAT output would also bind limit-withdraw, LP-remove and swap outputs, which wallets build as single exact amounts today; that needs wallet changes on every HEAT output path first.

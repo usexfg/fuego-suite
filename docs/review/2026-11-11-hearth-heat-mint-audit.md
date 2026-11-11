@@ -23,7 +23,8 @@ Line numbers are `src/CryptoNoteCore/Blockchain.cpp` unless another file is name
 | H5 | Fixed: per-order one-time keys (wallet-only) |
 | M3 | Fixed: supply counts only XFG-valued CD fees as new HEAT |
 | M1, M2 | Fixed: 0.00001 tick; auction settles whole or not at all |
-| M4-M7, L* | Open |
+| L2 (minimum mint) | Fixed in consensus; bill denominations still wallet-only |
+| M4-M7, L1, L3-L5 | Open |
 
 Details and test evidence: `CHANGELOG.agent.md`, section "Hearth critical fixes".
 

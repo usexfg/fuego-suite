@@ -8220,6 +8220,11 @@ bool CryptoNote::Blockchain::validateSettlement(const Transaction& tx, uint32_t 
       error = "HEAT mint: minted HEAT exceeds the burn at the oracle price";
       return false;
     }
+    const uint64_t minMint = m_currency.isTestnet() ? TESTNET_HEAT_MINT_MIN_HEAT : parameters::HEAT_MINT_MIN_HEAT;
+    if (a.heatMinted < minMint) {
+      error = "HEAT mint: below the minimum mint";
+      return false;
+    }
     if (a.heatMinted > scratch.mintCapHeatLeft) {
       error = "HEAT mint: exceeds the block's mint cap";
       return false;

@@ -6656,3 +6656,34 @@ Sign-off table:
 | All tasks done | DONE |
 
 Not covered: the burn tally on pop (`popFromBankingIndex` path) is not asserted.
+
+## Quarterly alias re-mint to the dev fund
+
+**Feature name**: Alias-burn total re-minted to the dev fund each quarter
+**Agent**: Claude
+**Start date**: 2026-11-12
+**Decision**: owner, 2026-11-12 — quarterly.
+**Consensus impact**: v11+ coinbase rule (not live). Cache archive 21 -> 22.
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `aliasRemintDue(height, version)`: at each FCI quarter boundary from v11, `m_aliasBurnedXfg − m_aliasRemintedXfg`, read from the parent state | Claude | 2026-11-12 | DONE |
+| 2 | `validate_miner_transaction`: when due, the last coinbase output must pay exactly it to the dev fund (dev view key derivation); it is excluded from the reward comparison and from emission | Claude | 2026-11-12 | DONE |
+| 3 | `recordAliasRemint` after a block connects (push path and cache replay); `unrecordAliasRemint` in popBlock; per-height record cached | Claude | 2026-11-12 | DONE |
+| 4 | `Currency::constructMinerTx(..., aliasRemint)` appends the dev-fund output; `get_block_template` passes the due amount | Claude | 2026-11-12 | DONE |
+| 5 | `alias_reminted_xfg` in `/heat_metrics` | Claude | 2026-11-12 | DONE |
+| 6 | Test harness fix: synthetic transactions carried no signature slot, so they did not serialize and all hashed to zero; now each has one and the helper asserts a real hash | Claude | 2026-11-12 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j4` full build rc=0 |
+| Tests pass | DONE — core_tests 439/439, test_hearth_amm 45/45 |
+| Mutation check | DONE — 5 breaks (validator check off, boundary ignored, unrecord kept, template omits output, output key ignored) each fail a test |
+| All tasks done | DONE |
+
+Not covered:
+- No test mines a full block through `pushBlock` / `popBlock`, so the calls to `recordAliasRemint` / `unrecordAliasRemint` from those functions are verified by reading.
+- The re-mint output sits under the coinbase unlock window like the miner outputs.
+- Testnet registers aliases free, so it never accrues a re-mint.

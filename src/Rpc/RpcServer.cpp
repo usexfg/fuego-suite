@@ -3023,6 +3023,7 @@ bool RpcServer::on_get_heat_metrics(const COMMAND_RPC_GET_HEAT_METRICS::request&
   auto metrics = m_core.getHeatMetrics();
   res.heat_supply = metrics.heatSupply;
   res.alias_burned_xfg = metrics.aliasBurnedXfg;
+  res.alias_reminted_xfg = metrics.aliasRemintedXfg;
   res.heat_on_deposit = metrics.heatOnDeposit;
   res.burned_xfg = metrics.burnedXfg;
   res.total_burned_xfg = metrics.totalBurnedXfg;

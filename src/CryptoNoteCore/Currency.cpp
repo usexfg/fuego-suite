@@ -712,9 +712,23 @@ double Currency::getBurnPercentage() const {
     return maxSize;
   }
 
+	bool Currency::appendDevFundOutput(Transaction& tx, const Crypto::SecretKey& txSecretKey, size_t outputIndex,
+	                                   uint64_t amount) const {
+    AccountPublicAddress devFund;
+    Crypto::KeyDerivation derivation;
+    KeyOutput out;
+    if (!parseAccountAddressString(FUEGO_DEV_FUND_ADDRESS, devFund) ||
+        !Crypto::generate_key_derivation(devFund.viewPublicKey, txSecretKey, derivation) ||
+        !Crypto::derive_public_key(derivation, outputIndex, devFund.spendPublicKey, out.key)) {
+      return false;
+    }
+    tx.outputs.push_back(TransactionOutput{amount, out});
+    return true;
+  }
+
 	bool Currency::constructMinerTx(uint8_t blockMajorVersion, uint32_t height, size_t medianSize, uint64_t alreadyGeneratedCoins, size_t currentBlockSize,
 		uint64_t fee, const AccountPublicAddress& minerAddress, Transaction& tx, const BinaryArray& extraNonce/* = BinaryArray()*/, size_t maxOuts/* = 1*/, uint64_t burnedCoinsOverride/* = UINT64_MAX*/,
-		uint64_t bankingFeesInBlock/* = 0*/) const {
+		uint64_t bankingFeesInBlock/* = 0*/, uint64_t aliasRemint/* = 0*/) const {
 
 		tx.inputs.clear();
 		tx.outputs.clear();
@@ -807,6 +821,11 @@ double Currency::getBurnPercentage() const {
       out.target = tk;
       tx.outputs.push_back(out);
       outputIndex++;
+    }
+
+    if (aliasRemint > 0 && !appendDevFundOutput(tx, txkey.secretKey, outputIndex, aliasRemint)) {
+      logger(ERROR, BRIGHT_RED) << "Failed to add the alias re-mint output to the dev fund";
+      return false;
     }
 
     // Validate: miner outputs sum to the miner reward.

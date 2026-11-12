@@ -76,7 +76,7 @@ bool operator<(const Crypto::KeyImage& keyImage1, const Crypto::KeyImage& keyIma
 }
 }
 
-#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 21  // v21: alias registration fees burned from v11 (alias_burned_xfg). v20: HEAT supply counts only XFG-valued CD fees as new (cd_fee_heat_from_xfg). v19: limit deposits carry withdrawnHeight; orderbook snapshots carry pruned deposits. v18: v18: orderbook auction state and its rollback records are cached (forces replay: a v17 cache has none, and a node restarted from one re-entered bootstrap and forked)
+#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 22  // v22: quarterly alias re-mint to the dev fund (alias_reminted_xfg, alias_remint_by_height). v21: alias registration fees burned from v11 (alias_burned_xfg). v20: HEAT supply counts only XFG-valued CD fees as new (cd_fee_heat_from_xfg). v19: limit deposits carry withdrawnHeight; orderbook snapshots carry pruned deposits. v18: v18: orderbook auction state and its rollback records are cached (forces replay: a v17 cache has none, and a node restarted from one re-entered bootstrap and forked)
 #define CURRENT_BLOCKCHAININDICES_STORAGE_ARCHIVE_VER 1
 
 namespace CryptoNote {
@@ -454,6 +454,8 @@ public:
       s(m_bs.m_heatSupply, "heat_supply");
       s(m_bs.m_cdFeeHeatFromXfg, "cd_fee_heat_from_xfg");
       s(m_bs.m_aliasBurnedXfg, "alias_burned_xfg");
+      s(m_bs.m_aliasRemintedXfg, "alias_reminted_xfg");
+      s(m_bs.m_aliasRemintByHeight, "alias_remint_by_height");
       s(m_bs.m_heatOnDeposit, "heat_on_deposit");
       s(m_bs.m_cdExpiryByEpoch, "cd_expiry_by_epoch");
       s(m_bs.m_digmSupply, "digm_supply");
@@ -1305,6 +1307,8 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
     m_heatSupply = 0;
     m_cdFeeHeatFromXfg = 0;
     m_aliasBurnedXfg = 0;
+    m_aliasRemintedXfg = 0;
+    m_aliasRemintByHeight.clear();
     m_heatOnDeposit = 0;
     m_cdExpiryByEpoch.clear();
     m_blockCdCreatedHeat = 0;
@@ -1384,6 +1388,7 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
       Crypto::Hash blockHash = get_block_hash(block.bl);
 
       Crypto::Hash minerTransactionHash = getObjectHash(block.bl.baseTransaction);
+      const uint64_t aliasRemint = aliasRemintDue(b, block.bl.majorVersion);
       if (!pushTransaction(block, minerTransactionHash, TxIndex{b, static_cast<uint16_t>(0)})) {
         logger(ERROR, BRIGHT_RED) << "Cache rebuild replay failed at miner tx, height " << b;
         return;
@@ -1451,6 +1456,7 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
       pushToBankingIndex(block, interest);
 
       accumulateTwap(block.bl, block.height);
+      recordAliasRemint(b, aliasRemint);
     }
 
     m_indexManager.setReady(true);
@@ -2024,11 +2030,22 @@ bool CryptoNote::Blockchain::prevalidate_miner_transaction(const Block& b, uint3
 }
 
 bool CryptoNote::Blockchain::validate_miner_transaction(const Block& b, uint32_t height, size_t cumulativeBlockSize,
-  uint64_t alreadyGeneratedCoins, uint64_t fee, uint64_t& reward, int64_t& emissionChange, const std::vector<Transaction>& blockTransactions) {
+  uint64_t alreadyGeneratedCoins, uint64_t fee, uint64_t& reward, int64_t& emissionChange, const std::vector<Transaction>& blockTransactions,
+  uint64_t aliasRemint) {
 
   uint64_t coinbaseTotal = 0;
   for (auto& o : b.baseTransaction.outputs) {
     coinbaseTotal += o.amount;
+  }
+  // The quarterly alias re-mint returns coins generated once already: it is
+  // outside the block reward and outside emission.
+  if (aliasRemint > 0) {
+    if (!coinbasePaysAliasRemint(b.baseTransaction, aliasRemint)) {
+      logger(ERROR, BRIGHT_RED) << "Coinbase at height " << height << " does not re-mint the "
+                                << m_currency.formatAmount(aliasRemint) << " XFG of alias burns to the dev fund";
+      return false;
+    }
+    coinbaseTotal -= aliasRemint;
   }
 
   // For blocks in the checkpoint zone, the checkpoint hash already guarantees the block
@@ -3825,6 +3842,7 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
   }
 
   Crypto::Hash minerTransactionHash = getObjectHash(blockData.baseTransaction);
+  const uint64_t aliasRemint = aliasRemintDue(static_cast<uint32_t>(m_blocks.size()), blockData.majorVersion);
 
   BlockEntry block;
   block.bl = blockData;
@@ -4286,7 +4304,7 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
   uint64_t reward = 0;
   uint64_t already_generated_coins = m_blocks.empty() ? 0 : m_blocks.back().already_generated_coins;
 
-  if (!validate_miner_transaction(blockData, static_cast<uint32_t>(m_blocks.size()), cumulative_block_size, already_generated_coins, fee_summary, reward, emissionChange, transactions)) {
+  if (!validate_miner_transaction(blockData, static_cast<uint32_t>(m_blocks.size()), cumulative_block_size, already_generated_coins, fee_summary, reward, emissionChange, transactions, aliasRemint)) {
     logger(INFO, BRIGHT_WHITE) << "Block " << blockHash << " has invalid miner transaction";
     bvc.m_verification_failed = true;
     popTransactions(block, minerTransactionHash);
@@ -4311,6 +4329,7 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
     pushToBankingIndex(block, interestSummary);
 
     accumulateTwap(block.bl, block.height);
+    recordAliasRemint(block.height, aliasRemint);
   } catch (const std::exception& e) {
     logger(ERROR, BRIGHT_RED) << "Exception during block commit/apply for block " << blockHash << ": " << e.what();
     bvc.m_verification_failed = true;
@@ -6146,6 +6165,7 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
 
   uint32_t poppedHeight = m_blocks.back().height;
   rollbackFciBlock(poppedHeight);
+  unrecordAliasRemint(poppedHeight);
 
   // Reverse OOB limit-order fills BEFORE reversing settlement. The push path
   // settles transactions first and executes fills second, so rollback must
@@ -8613,6 +8633,43 @@ CryptoNote::HearthState CryptoNote::Blockchain::currentHearthState() const {
   state.hearthstoneCents = m_fuegoCostIndex.hearthstoneCents();
   state.fciIndexCents = m_fuegoCostIndex.indexCents();
   return state;
+}
+
+uint64_t CryptoNote::Blockchain::aliasRemintDue(uint32_t height, uint8_t blockMajorVersion) const {
+  if (blockMajorVersion < BLOCK_MAJOR_VERSION_11 || height == 0) return 0;
+  const uint64_t epochBlocks = m_currency.isTestnet()
+      ? parameters::TESTNET_EPOCH_DURATION_BLOCKS : parameters::EPOCH_DURATION_BLOCKS;
+  if (height % (parameters::FCI_EPOCHS_PER_QUARTER * epochBlocks) != 0) return 0;
+  return m_aliasBurnedXfg > m_aliasRemintedXfg ? m_aliasBurnedXfg - m_aliasRemintedXfg : 0;
+}
+
+bool CryptoNote::Blockchain::coinbasePaysAliasRemint(const Transaction& coinbase, uint64_t amount) const {
+  if (coinbase.outputs.empty()) return false;
+  const size_t index = coinbase.outputs.size() - 1;
+  const TransactionOutput& out = coinbase.outputs[index];
+  if (out.amount != amount || out.target.type() != typeid(KeyOutput)) return false;
+  AccountPublicAddress devFund;
+  Crypto::SecretKey devViewSecret;
+  Crypto::KeyDerivation derivation;
+  Crypto::PublicKey expected;
+  return m_currency.parseAccountAddressString(std::string(FUEGO_DEV_FUND_ADDRESS), devFund) &&
+         Common::podFromHex(std::string(FUEGO_DEV_FUND_VIEW_SECRET_KEY_HEX), devViewSecret) &&
+         Crypto::generate_key_derivation(getTransactionPublicKeyFromExtra(coinbase.extra), devViewSecret, derivation) &&
+         Crypto::derive_public_key(derivation, index, devFund.spendPublicKey, expected) &&
+         expected == boost::get<KeyOutput>(out.target).key;
+}
+
+void CryptoNote::Blockchain::recordAliasRemint(uint32_t height, uint64_t amount) {
+  if (amount == 0) return;
+  m_aliasRemintedXfg += amount;
+  m_aliasRemintByHeight[height] = amount;
+}
+
+void CryptoNote::Blockchain::unrecordAliasRemint(uint32_t height) {
+  auto it = m_aliasRemintByHeight.find(height);
+  if (it == m_aliasRemintByHeight.end()) return;
+  m_aliasRemintedXfg = m_aliasRemintedXfg >= it->second ? m_aliasRemintedXfg - it->second : 0;
+  m_aliasRemintByHeight.erase(it);
 }
 
 uint64_t CryptoNote::Blockchain::blockMintCapHeat() {

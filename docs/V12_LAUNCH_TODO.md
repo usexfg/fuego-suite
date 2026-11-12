@@ -16,8 +16,8 @@ Needed:
 ### 2. Review the Bonus Vault before CDs go live
 The loyalty multipliers (2.5× at 72 epochs, 2× at 36, 1.5× at 18, 1.25× at 6) pull HEAT into long locks. The stated goal is liquid HEAT that prices XFG well. Decide whether to flatten or cut the multipliers, together with the CD creation fee schedule (0.25% at 6 epochs to 1% at 72; per year of lock that is 3.0%/1.55%/1.18%/1.0%, so long locks are still the cheapest per year).
 
-### 3. Alias registration fee: re-mint the burned total to the dev fund
-From v11 the alias registration fee is burned and counted in its own total (not the Eternal Flame), so no alias transaction carries an output to the dev wallet. Re-minting that total to the dev fund needs a consensus rule (for example: at each quarter boundary the coinbase must carry one output to `FUEGO_DEV_FUND_ADDRESS` equal to the pending alias-burn total, verified with the dev view key as the old per-alias check was, then the total resets). Decide the period and implement before the first re-mint is due.
+### 3. Alias registration fee re-mint — DONE (2026-11-12)
+Quarterly (every `FCI_EPOCHS_PER_QUARTER` epochs, from v11): the coinbase must end with one output paying the not-yet-re-minted alias-burn total to the dev fund. See `Blockchain::aliasRemintDue` / `coinbasePaysAliasRemint`. Open: no test mines a full block through `pushBlock` / `popBlock` with the re-mint (the hooks are verified by reading).
 
 ## Should do
 

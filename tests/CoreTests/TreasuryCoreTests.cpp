@@ -1227,6 +1227,16 @@ public:
     chain.popTransaction(block.transactions[1].tx, getObjectHash(block.transactions[1].tx),
                          block.height, block.bl.majorVersion);
   }
+  static void recordAliasRemint(Blockchain& chain, uint32_t height, uint64_t amount) {
+    chain.recordAliasRemint(height, amount);
+  }
+  static void unrecordAliasRemint(Blockchain& chain, uint32_t height) { chain.unrecordAliasRemint(height); }
+  static bool validateCoinbase(Blockchain& chain, const Block& b, uint32_t height, uint64_t alreadyGenerated,
+                               uint64_t aliasRemint) {
+    uint64_t reward = 0;
+    int64_t emissionChange = 0;
+    return chain.validate_miner_transaction(b, height, 0, alreadyGenerated, 0, reward, emissionChange, {}, aliasRemint);
+  }
   static void bankBlock(Blockchain& chain, const Blockchain::BlockEntry& block) {
     chain.pushToBankingIndex(block, 0);
   }
@@ -2288,6 +2298,7 @@ Transaction auntPolTx(uint64_t xfgIn, const std::vector<TransactionOutput>& outp
   tx.inputs.push_back(freshKeyInput(xfgIn));
   tx.outputs = outputs;
   tx.extra = extra;
+  tx.signatures.assign(1, std::vector<Crypto::Signature>(1));
   return tx;
 }
 
@@ -2368,6 +2379,67 @@ void testAliasBurnTotalPushPop() {
   TEST(t.chain.getAliasBurnedXfg() == 0);
 }
 
+// Owner decision 2026-11-12: alias burns are re-minted to the dev fund once a
+// quarter (every FCI_EPOCHS_PER_QUARTER epochs, from v11), in one coinbase
+// output, so no alias transaction pays the dev wallet. The re-mint is outside
+// the block reward and is reversed on pop.
+void testAliasBurnsRemintedQuarterly() {
+  TestChain t("alias_remint");
+  TEST(t.ok);
+  const uint64_t fee = parameters::ALIAS_REGISTRATION_FEE;
+  const uint32_t quarter = static_cast<uint32_t>(parameters::FCI_EPOCHS_PER_QUARTER *
+                                                 VaultCoreTestAccess::epochDuration(t.chain));
+  auto registerAlias = [&](const std::string& name, uint32_t height) {
+    TransactionExtraAliasRegistration reg;
+    reg.alias = name;
+    reg.ownerAddress = "owner-address";
+    reg.aliasType = 1;
+    std::vector<uint8_t> extra;
+    addAliasToExtra(extra, reg);
+    auto block = VaultCoreTestAccess::blockWith(auntPolTx(2 * parameters::COIN, {keyOut(parameters::COIN / 2)}, extra),
+                                                height, BLOCK_MAJOR_VERSION_11);
+    return getObjectHash(block.transactions[1].tx) != NULL_HASH && VaultCoreTestAccess::pushTx(t.chain, block);
+  };
+  TEST(registerAlias("remint01", 100));
+  TEST(t.chain.aliasRemintDue(quarter, BLOCK_MAJOR_VERSION_11) == fee);
+  TEST(t.chain.aliasRemintDue(quarter + 1, BLOCK_MAJOR_VERSION_11) == 0);
+  TEST(t.chain.aliasRemintDue(quarter, BLOCK_MAJOR_VERSION_10) == 0);
+
+  VaultCoreTestAccess::recordAliasRemint(t.chain, quarter, fee);
+  TEST(t.chain.getAliasRemintedXfg() == fee);
+  TEST(t.chain.aliasRemintDue(2 * quarter, BLOCK_MAJOR_VERSION_11) == 0);
+  TEST(registerAlias("remint02", quarter + 5));
+  TEST(t.chain.aliasRemintDue(2 * quarter, BLOCK_MAJOR_VERSION_11) == fee);
+  VaultCoreTestAccess::unrecordAliasRemint(t.chain, quarter);
+  TEST(t.chain.getAliasRemintedXfg() == 0);
+  TEST(t.chain.aliasRemintDue(2 * quarter, BLOCK_MAJOR_VERSION_11) == 2 * fee);
+
+  // The template's coinbase ends with the re-mint, provably to the dev fund.
+  AccountPublicAddress miner;
+  KeyPair minerSpend = generateKeyPair(), minerView = generateKeyPair();
+  miner.spendPublicKey = minerSpend.publicKey;
+  miner.viewPublicKey = minerView.publicKey;
+  const uint64_t generated = t.chain.getCoinsInCirculation();
+  Block b = boost::value_initialized<Block>();
+  b.majorVersion = BLOCK_MAJOR_VERSION_1;
+  TEST(t.currency.constructMinerTx(BLOCK_MAJOR_VERSION_1, 1, 0, generated, 0, 0, miner, b.baseTransaction,
+                                   BinaryArray(), 1, UINT64_MAX, 0, 2 * fee));
+  TEST(t.chain.coinbasePaysAliasRemint(b.baseTransaction, 2 * fee));
+  TEST(!t.chain.coinbasePaysAliasRemint(b.baseTransaction, fee));
+  TEST(VaultCoreTestAccess::validateCoinbase(t.chain, b, 1, generated, 2 * fee));
+
+  Block withoutRemint = boost::value_initialized<Block>();
+  withoutRemint.majorVersion = BLOCK_MAJOR_VERSION_1;
+  TEST(t.currency.constructMinerTx(BLOCK_MAJOR_VERSION_1, 1, 0, generated, 0, 0, miner, withoutRemint.baseTransaction));
+  TEST(!t.chain.coinbasePaysAliasRemint(withoutRemint.baseTransaction, 2 * fee));
+  TEST(!VaultCoreTestAccess::validateCoinbase(t.chain, withoutRemint, 1, generated, 2 * fee));
+
+  // A re-mint to the miner's own address in the dev fund's place is refused.
+  Block toMiner = withoutRemint;
+  toMiner.baseTransaction.outputs.back().amount = 2 * fee;
+  TEST(!t.chain.coinbasePaysAliasRemint(toMiner.baseTransaction, 2 * fee));
+}
+
 int main() {
   testCdInterestCompounding();
   testLegacyDepositWithdrawsForPrincipal();
@@ -2429,6 +2501,7 @@ int main() {
   testAuntPolCdCreationFeePushPop();
   testAuntPolMintPremiumPushPop();
   testAliasBurnTotalPushPop();
+  testAliasBurnsRemintedQuarterly();
   fprintf(stderr, "=== Treasury/Core Tests ===\nPassed: %d / %d\n", tests_passed, tests_run);
   return tests_passed == tests_run ? 0 : 1;
 }

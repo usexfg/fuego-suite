@@ -148,6 +148,13 @@ namespace CryptoNote {
     uint64_t getTotalCdLocked() const { return m_totalCdLocked; }
     uint64_t getHeatSupply() const { return m_heatSupply; }
     uint64_t getAliasBurnedXfg() const { return m_aliasBurnedXfg; }
+    uint64_t getAliasRemintedXfg() const { return m_aliasRemintedXfg; }
+    // XFG the coinbase of the block at `height` must re-mint to the dev fund:
+    // every alias burn not yet re-minted, at each FCI quarter boundary from v11.
+    // Read from the parent state, before the block's transactions apply.
+    uint64_t aliasRemintDue(uint32_t height, uint8_t blockMajorVersion) const;
+    // The coinbase's last output pays exactly `amount` to the dev fund.
+    bool coinbasePaysAliasRemint(const Transaction& coinbase, uint64_t amount) const;
     uint64_t getHearthstoneCents() const;
     uint64_t getHeatOnDeposit() const { return m_heatOnDeposit; }
     uint64_t getDigmSupply() const { return m_digmSupply; }
@@ -600,6 +607,10 @@ namespace CryptoNote {
     // the total a later rule re-mints to the dev fund in one output, so no
     // alias transaction pays the dev wallet directly.
     uint64_t m_aliasBurnedXfg = 0;
+    // Alias burns re-minted to the dev fund so far, and the amount each
+    // quarter-boundary block re-minted (for popBlock).
+    uint64_t m_aliasRemintedXfg = 0;
+    std::map<uint32_t, uint64_t> m_aliasRemintByHeight;
     // HEAT in CDs still earning: added at creation, dropped at the boundary
     // closing the CD's last credited epoch. The v11+ epoch-rate denominator.
     uint64_t m_heatOnDeposit = 0;
@@ -856,7 +867,9 @@ namespace CryptoNote {
     difficulty_type get_next_difficulty_for_alternative_chain(const std::list<blocks_ext_by_hash::iterator> &alt_chain, BlockEntry &bei);
     void pushToBankingIndex(const BlockEntry &block, uint64_t interest);
     bool prevalidate_miner_transaction(const Block &b, uint32_t height);
-    bool validate_miner_transaction(const Block &b, uint32_t height, size_t cumulativeBlockSize, uint64_t alreadyGeneratedCoins, uint64_t fee, uint64_t &reward, int64_t &emissionChange, const std::vector<Transaction>& blockTransactions = {});
+    bool validate_miner_transaction(const Block &b, uint32_t height, size_t cumulativeBlockSize, uint64_t alreadyGeneratedCoins, uint64_t fee, uint64_t &reward, int64_t &emissionChange, const std::vector<Transaction>& blockTransactions = {}, uint64_t aliasRemint = 0);
+    void recordAliasRemint(uint32_t height, uint64_t amount);
+    void unrecordAliasRemint(uint32_t height);
     bool rollback_blockchain_switching(std::list<Block> &original_chain, size_t rollback_height);
     bool get_last_n_blocks_sizes(std::vector<size_t> &sz, size_t count);
     bool add_out_to_get_random_outs(std::vector<std::pair<TxIndex, uint16_t>> &amount_outs, COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS_outs_for_amount &result_outs, uint64_t amount, size_t i);

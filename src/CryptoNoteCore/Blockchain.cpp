@@ -167,6 +167,7 @@ bool isHeatwaveTag(const TransactionExtraField& f) {
          f.type() == typeid(TransactionExtraLimitDeposit) ||
          f.type() == typeid(TransactionExtraLimitWithdraw) ||
          f.type() == typeid(TransactionExtraTreasuryFund) ||
+         f.type() == typeid(TransactionExtraCdCreationFee) ||
          f.type() == typeid(TransactionExtraCdBonusClaim);
 }
 
@@ -214,6 +215,16 @@ bool isCdOutputTerm(uint32_t term) {
          term != parameters::DEPOSIT_TERM_POOL_HEAT &&
          term != parameters::DEPOSIT_TERM_LP &&
          term != parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG;
+}
+
+uint64_t declaredCdCreationFee(const CryptoNote::Transaction& tx) {
+  using namespace CryptoNote;
+  std::vector<TransactionExtraField> fields;
+  if (!parseTransactionExtra(tx.extra, fields)) return 0;
+  for (const auto& f : fields) {
+    if (f.type() == typeid(TransactionExtraCdCreationFee)) return boost::get<TransactionExtraCdCreationFee>(f).amountXfg;
+  }
+  return 0;
 }
 
 bool isSettlementTag(const CryptoNote::TransactionExtraField& f) {
@@ -6735,8 +6746,7 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
   }
 
   if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11) {
-    bool createsCd = false;
-    const uint64_t cdFee = cdCreationFeeXfgFor(transaction.tx, block.height, createsCd);
+    const uint64_t cdFee = declaredCdCreationFee(transaction.tx);
     m_treasuryLpPendingXfg = m_treasuryLpPendingXfg > UINT64_MAX - cdFee ? UINT64_MAX : m_treasuryLpPendingXfg + cdFee;
   }
 
@@ -7359,8 +7369,7 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
   }
 
   if (majorVersion >= BLOCK_MAJOR_VERSION_11) {
-    bool createsCd = false;
-    const uint64_t cdFee = cdCreationFeeXfgFor(transaction, height, createsCd);
+    const uint64_t cdFee = declaredCdCreationFee(transaction);
     m_treasuryLpPendingXfg = m_treasuryLpPendingXfg >= cdFee ? m_treasuryLpPendingXfg - cdFee : 0;
   }
 
@@ -8237,26 +8246,42 @@ bool CryptoNote::Blockchain::validateSettlement(const Transaction& tx, uint32_t 
     return false;
   }
 
-  // CD creation fee: withheld from the miner's XFG fee, credited to the
-  // AuntPoL XFG leg at settlement.
+  // CD creation fee: declared in its own tag, withheld whole from the miner's
+  // XFG fee and credited whole to the AuntPoL XFG leg at settlement.
   {
+    const TransactionExtraCdCreationFee* declared = nullptr;
+    for (const auto& f : fields) {
+      if (f.type() != typeid(TransactionExtraCdCreationFee)) continue;
+      if (declared) {
+        error = "CD creation fee declared twice";
+        return false;
+      }
+      declared = &boost::get<TransactionExtraCdCreationFee>(f);
+    }
     bool createsCd = false;
-    const uint64_t cdFee = cdCreationFeeXfgFor(tx, height, createsCd);
+    const uint64_t requiredFee = cdCreationFeeXfgFor(tx, height, createsCd);
+    if (!createsCd && declared) {
+      error = "CD creation fee declared without a CD output";
+      return false;
+    }
     if (createsCd) {
-      if (cdFee == 0) {
+      if (requiredFee == 0) {
         error = "CD creation: no oracle price to value the fee";
         return false;
       }
-      if (xfgFee < cdFee) {
-        error = "CD creation: XFG fee " + std::to_string(xfgFee) + " below the CD creation fee " +
-                std::to_string(cdFee);
+      if (!declared || declared->amountXfg < requiredFee) {
+        error = "CD creation: declared CD creation fee below the required " + std::to_string(requiredFee);
         return false;
       }
-      if (m_treasuryLpPendingXfg > UINT64_MAX - cdFee) {
+      if (xfgFee < declared->amountXfg) {
+        error = "CD creation: XFG surplus does not cover the declared CD creation fee";
+        return false;
+      }
+      if (m_treasuryLpPendingXfg > UINT64_MAX - declared->amountXfg) {
         error = "CD creation: AuntPoL XFG leg overflow";
         return false;
       }
-      xfgFee -= cdFee;
+      xfgFee -= declared->amountXfg;
     }
   }
 

@@ -1929,9 +1929,9 @@ namespace CryptoNote
     if (cdTermBlocks == 0) {
       throw std::system_error(make_error_code(error::WRONG_PARAMETERS), "CD term blocks underflow");
     }
-    // CD creation fee: consensus withholds it from the XFG fee for the AuntPoL
-    // XFG leg. Pad it like a mint, so the oracle moving before inclusion does
-    // not leave it short; a caller may pay more, never less.
+    // CD creation fee: declared in its own tag and paid whole to the AuntPoL XFG
+    // leg, on top of the network fee. Pad it like a mint, so the oracle moving
+    // before inclusion does not leave it short; the padding goes to AuntPoL too.
     const uint64_t requiredCdFee = cdCreationFeeXfg(amount, cdTermBlocks, epochBlocks, m_node.getHearthTwap());
     if (requiredCdFee == 0) {
       throw std::system_error(make_error_code(error::WRONG_STATE), "No Hearth oracle price yet to value the CD creation fee");
@@ -1980,7 +1980,9 @@ namespace CryptoNote
     }
 
     transaction->setUnlockTime(0);
-
+    std::vector<uint8_t> cdFeeExtra;
+    addCdCreationFeeToExtra(cdFeeExtra, bankingFee);
+    transaction->appendExtra(CryptoNote::BinaryArray(cdFeeExtra.begin(), cdFeeExtra.end()));
 
     // XFG pays the network fee and the CD creation fee — HEAT must balance
     // exactly — and every input goes in before any is signed.

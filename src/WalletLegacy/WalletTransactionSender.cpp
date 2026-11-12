@@ -2876,6 +2876,9 @@ namespace CryptoNote
         transaction->addOutput(changeAmount, chOut);
       }
 
+      std::vector<uint8_t> cdFeeExtra;
+      addCdCreationFeeToExtra(cdFeeExtra, bankingFee);
+      transaction->appendExtra(CryptoNote::BinaryArray(cdFeeExtra.begin(), cdFeeExtra.end()));
       transaction->setUnlockTime(0);
 
       // HEAT commitment spend inputs

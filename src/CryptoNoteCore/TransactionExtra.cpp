@@ -424,6 +424,16 @@ namespace CryptoNote
               break;
             }
 
+            case TX_EXTRA_CD_CREATION_FEE:
+            {
+              TransactionExtraCdCreationFee cdFee;
+              cdFee.amountXfg = 0;
+              for (int i = 0; i < 8; ++i)
+                cdFee.amountXfg |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+              transactionExtraFields.push_back(cdFee);
+              break;
+            }
+
             case TX_EXTRA_TREASURY_FUND:
             {
               TransactionExtraTreasuryFund fund;
@@ -677,6 +687,11 @@ namespace CryptoNote
     bool operator()(const TransactionExtraTreasuryFund &t)
     {
       return addTreasuryFundToExtra(extra, t.asset, t.amount);
+    }
+
+    bool operator()(const TransactionExtraCdCreationFee &t)
+    {
+      return addCdCreationFeeToExtra(extra, t.amountXfg);
     }
 
   };
@@ -1657,6 +1672,12 @@ namespace CryptoNote
     tx_extra.insert(tx_extra.end(), spendPublicKey.data, spendPublicKey.data + sizeof(spendPublicKey.data));
     tx_extra.insert(tx_extra.end(), viewPublicKey.data, viewPublicKey.data + sizeof(viewPublicKey.data));
     tx_extra.insert(tx_extra.end(), proof.data, proof.data + sizeof(proof.data));
+    return true;
+  }
+
+  bool addCdCreationFeeToExtra(std::vector<uint8_t>& tx_extra, uint64_t amountXfg) {
+    tx_extra.push_back(TX_EXTRA_CD_CREATION_FEE);
+    for (int i = 0; i < 8; ++i) { tx_extra.push_back(static_cast<uint8_t>(amountXfg & 0xFF)); amountXfg >>= 8; }
     return true;
   }
 

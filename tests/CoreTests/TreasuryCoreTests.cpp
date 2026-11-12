@@ -2113,8 +2113,10 @@ void testCdCreationFeeWithheldForAuntPol() {
   VaultCoreTestAccess::addHeatRingMember(t.chain, 100 * C);
   const uint64_t epochBlocks = VaultCoreTestAccess::epochDuration(t.chain);
 
-  auto createCd = [&](uint64_t xfgIn, uint32_t epochs, uint64_t& fee, std::string& err) {
-    Transaction tx = settlementTx({xfgIn}, {commitmentOut(100 * C, static_cast<uint32_t>(epochs * epochBlocks))}, {});
+  auto createCd = [&](uint64_t xfgIn, uint32_t epochs, uint64_t declaredFee, uint64_t& fee, std::string& err) {
+    std::vector<uint8_t> extra;
+    if (declaredFee > 0) addCdCreationFeeToExtra(extra, declaredFee);
+    Transaction tx = settlementTx({xfgIn}, {commitmentOut(100 * C, static_cast<uint32_t>(epochs * epochBlocks))}, extra);
     TransactionInputCommitmentSpend heatIn{};
     heatIn.amount = 100 * C;
     heatIn.outputIndexes = {0};
@@ -2126,10 +2128,22 @@ void testCdCreationFeeWithheldForAuntPol() {
   uint64_t fee = 0;
   std::string err;
   // 100 HEAT at 0.125 HEAT/XFG is 800 XFG of value: 0.25% → 2 XFG, 1% → 8 XFG.
-  TEST(createCd(3 * C, 6, fee, err) && fee == 1 * C);
-  TEST(!createCd(2 * C - 1, 6, fee, err) && err.find("CD creation fee") != std::string::npos);
-  TEST(createCd(9 * C, 72, fee, err) && fee == 1 * C);
-  TEST(!createCd(8 * C - 1, 72, fee, err));
+  // The declared fee goes whole to AuntPoL; only the surplus beyond it is the
+  // miner's network fee.
+  TEST(createCd(3 * C, 6, 2 * C, fee, err) && fee == 1 * C);
+  TEST(createCd(4 * C, 6, 3 * C, fee, err) && fee == 1 * C);
+  TEST(!createCd(3 * C, 6, 2 * C - 1, fee, err) && err.find("below the required") != std::string::npos);
+  TEST(!createCd(3 * C, 6, 0, fee, err));
+  TEST(!createCd(2 * C, 6, 3 * C, fee, err) && err.find("does not cover") != std::string::npos);
+  TEST(createCd(9 * C, 72, 8 * C, fee, err) && fee == 1 * C);
+  TEST(!createCd(9 * C, 72, 8 * C - 1, fee, err));
+
+  std::vector<uint8_t> strayFee;
+  addCdCreationFeeToExtra(strayFee, 1 * C);
+  Blockchain::SettlementScratch scratch;
+  AssetFlows flows;
+  TEST(!t.chain.validateSettlement(settlementTx({3 * C}, {keyOut(1 * C)}, strayFee), 100, scratch, flows, fee, err) &&
+       err.find("without a CD output") != std::string::npos);
 }
 
 // Audit 2026-11-11 M6: the Hearth price fields in a block were outside the

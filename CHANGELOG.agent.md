@@ -6540,7 +6540,7 @@ Sign-off table:
 Not covered:
 - **SimpleWallet / WalletLegacy CD deposits cannot produce a valid transaction**, before and after this change: `doSendHeatDepositV10Transaction` adds no XFG inputs, so it pays neither the network fee nor the CD fee. This change fixed what it touched there (the fee was selected as HEAT, which unbalanced HEAT; the term used the testnet epoch length on every network) but the XFG input selection is still missing. WalletGreen (walletd) builds them correctly.
 - push/pop crediting of `m_treasuryLpPendingXfg` and the v12 premium burn are verified by reading; no test drives pushTransaction/popTransaction.
-- The v12 premium burn raises the burn tally and with it the Eternal Flame, which feeds the block-reward calculation.
+- Correction (2026-11-12): from v12 a mint counts its whole declared burn, exactly as a mint without a premium would; the premium only redirects 1% of the HEAT minted. v11 is the exception: it withholds 1% of the XFG from the burn as the AuntPoL XFG leg.
 - Tests reuse the shared prior-block oracle; a wallet pays a 0.5% margin (`WALLET_MINT_TWAP_MARGIN_BPS`) over the computed fee, which the miner keeps.
 
 ## PoW-committed Hearth state (audit 2026-11-11: M6)
@@ -6572,3 +6572,28 @@ Not covered:
 - The `pushBlock` rejection of a mismatched state has no test (no harness mines a valid v11 block); it is verified by reading.
 - The older unhashed v11 block fields (`orderbookClearingPrice`, `hearthPoolRatio`, depth) remain; nodes overwrite them locally and nothing should trust them over `hearthState`.
 - The commitment describes the parent's state: the price committed in block H is the one H's mints use, not the post-auction price of H.
+
+## Declared CD creation fee (whole fee to AuntPoL)
+
+**Feature name**: `TransactionExtraCdCreationFee` (tag 0x0E)
+**Agent**: Claude
+**Start date**: 2026-11-12
+**Reason**: the wallet pads the computed fee for oracle movement; withholding only the computed fee sent that padding to the miner. The network fee must be its own fee.
+**Consensus impact**: v11+ (CD outputs from v12). Not live.
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Tag 0x0E `{amountXfg}`; parse/serialize; rejected before v11 (heatwave tag list) | Claude | 2026-11-12 | DONE |
+| 2 | Settlement: a CD-creating tx must declare a fee ≥ `cdCreationFeeXfg`, covered by its XFG surplus; the whole declared amount is withheld from the miner; a declaration without a CD output, or two declarations, are refused | Claude | 2026-11-12 | DONE |
+| 3 | Push credits / pop debits the declared amount to `m_treasuryLpPendingXfg` | Claude | 2026-11-12 | DONE |
+| 4 | WalletGreen and WalletLegacy declare the padded fee | Claude | 2026-11-12 | DONE |
+| 5 | `docs/V12_LAUNCH_TODO.md` (CLI XFG inputs, Bonus Vault review, alias re-mint); AGENTS.md notes | Claude | 2026-11-12 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j4` full build rc=0 |
+| Tests pass | DONE — core_tests 384/384, test_hearth_amm 45/45 |
+| Mutation check | DONE — withholding only the required fee fails the over-declared case |
+| All tasks done | DONE |

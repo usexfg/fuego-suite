@@ -6687,3 +6687,32 @@ Not covered:
 - No test mines a full block through `pushBlock` / `popBlock`, so the calls to `recordAliasRemint` / `unrecordAliasRemint` from those functions are verified by reading.
 - The re-mint output sits under the coinbase unlock window like the miner outputs.
 - Testnet registers aliases free, so it never accrues a re-mint.
+
+## Generic re-mint burn (replaces the alias-specific burn)
+
+**Feature name**: `TX_EXTRA_REMINT_BURN` (0x0D) with its own counter
+**Agent**: Claude
+**Start date**: 2026-11-12
+**Decision**: owner, 2026-11-12 — the burn must be its own transaction type with its own counter, not associated with HEAT, the SWF or the Eternal Flame, so alias transactions are not traceable to the dev wallet.
+**Consensus impact**: v11+ (not live). Cache archive 22 -> 23.
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Tag 0x0D `{amountXfg}`; rejected before v11 and in the coinbase (heatwave tag list); one per transaction; non-zero | Claude | 2026-11-12 | DONE |
+| 2 | Settlement withholds the declared burn from the miner; an alias registration must carry a burn ≥ its fees; any transaction may burn | Claude | 2026-11-12 | DONE |
+| 3 | Counter and re-mint renamed to neutral names (`m_remintBurnedXfg`, `m_remintedXfg`, `remintDue`, `coinbasePaysRemint`); RPC `remint_burned_xfg`, `reminted_xfg` | Claude | 2026-11-12 | DONE |
+| 4 | WalletGreen and SimpleWallet add the burn tag to alias registrations from v11 | Claude | 2026-11-12 | DONE |
+| 5 | Tests: alias without/short burn refused, standalone burn accepted, double burn refused, coinbase burn refused, push/pop of alias and standalone burns | Claude | 2026-11-12 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j4` full build rc=0 |
+| Tests pass | DONE — core_tests 448/448, test_hearth_amm 45/45 |
+| Mutation check | DONE — 4 breaks (alias fee requirement, push count, miner withholding, coinbase guard) each fail a test |
+| All tasks done | DONE |
+
+Not covered:
+- No wallet command sends a standalone re-mint burn yet, so in practice the quarterly re-mint still equals 1 XFG × aliases registered that quarter (`docs/V12_LAUNCH_TODO.md`).
+- An alias registration and its burn sit in the same transaction: consensus can only verify a fee it can see.

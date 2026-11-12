@@ -2573,8 +2573,8 @@ struct COMMAND_RPC_GET_HEAT_METRICS {
 
   struct response {
     uint64_t heat_supply;
-    uint64_t alias_burned_xfg = 0;
-    uint64_t alias_reminted_xfg = 0;
+    uint64_t remint_burned_xfg = 0;
+    uint64_t reminted_xfg = 0;
     uint64_t heat_on_deposit;
     uint64_t burned_xfg;
     uint64_t total_burned_xfg;
@@ -2597,8 +2597,8 @@ struct COMMAND_RPC_GET_HEAT_METRICS {
 
     void serialize(ISerializer &s) {
       KV_MEMBER(heat_supply)
-      KV_MEMBER(alias_burned_xfg)
-      KV_MEMBER(alias_reminted_xfg)
+      KV_MEMBER(remint_burned_xfg)
+      KV_MEMBER(reminted_xfg)
       KV_MEMBER(heat_on_deposit)
       KV_MEMBER(burned_xfg)
       KV_MEMBER(total_burned_xfg)

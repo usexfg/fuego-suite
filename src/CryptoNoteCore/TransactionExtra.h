@@ -85,6 +85,7 @@
 // 0xFA: Orderbook limit order placement (v11+)
 #define TX_EXTRA_ORDER_PLACE                0xFA
 #define TX_EXTRA_LIMIT_DEPOSIT              0xFB
+#define TX_EXTRA_REMINT_BURN                0x0D
 #define TX_EXTRA_CD_CREATION_FEE            0x0E
 #define TX_EXTRA_ORDER_CANCEL               0x0F
 #define TX_EXTRA_MARKET_BUY_AUTH            0xFC
@@ -381,6 +382,13 @@ struct TransactionExtraCdCreationFee {
   uint64_t amountXfg;
 };
 
+// XFG destroyed into its own counter, apart from HEAT, the SWF and the Eternal
+// Flame, and re-minted to the dev fund once a quarter in one coinbase output.
+// Any transaction may carry one; an alias registration must, to pay its fee.
+struct TransactionExtraRemintBurn {
+  uint64_t amountXfg;
+};
+
 struct DepositCommitmentKeys {
   Crypto::PublicKey           commitKey;
   Crypto::SecretKey           keyScalar;
@@ -545,7 +553,7 @@ bool addDepositSecretToExtra(std::vector<uint8_t>& tx_extra,
 bool getDepositSecretFromExtra(const std::vector<uint8_t>& tx_extra,
                                 TransactionExtraDepositSecret& out);
 
-typedef boost::variant<CryptoNote::TransactionExtraPadding, CryptoNote::TransactionExtraPublicKey, CryptoNote::TransactionExtraNonce, CryptoNote::TransactionExtraMergeMiningTag, CryptoNote::tx_extra_message, CryptoNote::TransactionExtraTTL, CryptoNote::TransactionExtraMinerBasketVote, CryptoNote::TransactionExtraMinerParadioVote, CryptoNote::TransactionExtraAliasRegistration, CryptoNote::TransactionExtraAliasRelease, CryptoNote::TransactionExtraAliasTransfer, CryptoNote::TransactionExtraHeatCommitment, /* TransactionExtraSimpleCD REMOVED */ /* TransactionExtraColdCommitment REMOVED */ /* TransactionExtraColdMigration REMOVED */ /* TransactionExtraDepositReceipt REMOVED */ CryptoNote::TransactionExtraBurnReceipt, /* TransactionExtraLegacyBond REMOVED */ /* TransactionExtraLegacyBondClaim REMOVED */ CryptoNote::TransactionExtraCdBonusClaim, CryptoNote::TransactionExtraAmmSwap, CryptoNote::TransactionExtraAmmAddLiquidity, CryptoNote::TransactionExtraAmmRemoveLiquidity, CryptoNote::TransactionExtraAmmCompound, CryptoNote::TransactionExtraAmmClaim, CryptoNote::TransactionExtraHeatMintAuth, CryptoNote::TransactionExtraHeatSendAuth, CryptoNote::TransactionExtraAmmSwapAuth, CryptoNote::TransactionExtraLpAddAuth, CryptoNote::TransactionExtraLpRemoveAuth, CryptoNote::TransactionExtraOrderPlace, CryptoNote::TransactionExtraOrderCancel, CryptoNote::TransactionExtraMarketBuyAuth, CryptoNote::TransactionExtraMarketSellAuth, CryptoNote::TransactionExtraLimitDeposit, CryptoNote::TransactionExtraLimitWithdraw, CryptoNote::TransactionExtraTreasuryFund, CryptoNote::TransactionExtraCdCreationFee> TransactionExtraField;
+typedef boost::variant<CryptoNote::TransactionExtraPadding, CryptoNote::TransactionExtraPublicKey, CryptoNote::TransactionExtraNonce, CryptoNote::TransactionExtraMergeMiningTag, CryptoNote::tx_extra_message, CryptoNote::TransactionExtraTTL, CryptoNote::TransactionExtraMinerBasketVote, CryptoNote::TransactionExtraMinerParadioVote, CryptoNote::TransactionExtraAliasRegistration, CryptoNote::TransactionExtraAliasRelease, CryptoNote::TransactionExtraAliasTransfer, CryptoNote::TransactionExtraHeatCommitment, /* TransactionExtraSimpleCD REMOVED */ /* TransactionExtraColdCommitment REMOVED */ /* TransactionExtraColdMigration REMOVED */ /* TransactionExtraDepositReceipt REMOVED */ CryptoNote::TransactionExtraBurnReceipt, /* TransactionExtraLegacyBond REMOVED */ /* TransactionExtraLegacyBondClaim REMOVED */ CryptoNote::TransactionExtraCdBonusClaim, CryptoNote::TransactionExtraAmmSwap, CryptoNote::TransactionExtraAmmAddLiquidity, CryptoNote::TransactionExtraAmmRemoveLiquidity, CryptoNote::TransactionExtraAmmCompound, CryptoNote::TransactionExtraAmmClaim, CryptoNote::TransactionExtraHeatMintAuth, CryptoNote::TransactionExtraHeatSendAuth, CryptoNote::TransactionExtraAmmSwapAuth, CryptoNote::TransactionExtraLpAddAuth, CryptoNote::TransactionExtraLpRemoveAuth, CryptoNote::TransactionExtraOrderPlace, CryptoNote::TransactionExtraOrderCancel, CryptoNote::TransactionExtraMarketBuyAuth, CryptoNote::TransactionExtraMarketSellAuth, CryptoNote::TransactionExtraLimitDeposit, CryptoNote::TransactionExtraLimitWithdraw, CryptoNote::TransactionExtraTreasuryFund, CryptoNote::TransactionExtraCdCreationFee, CryptoNote::TransactionExtraRemintBurn> TransactionExtraField;
 
 template<typename T>
 bool findTransactionExtraFieldByType(const std::vector<TransactionExtraField>& tx_extra_fields, T& field) {
@@ -607,6 +615,7 @@ bool addOrderCancelToExtra(std::vector<uint8_t>& tx_extra, const Crypto::Hash& o
                            const Crypto::PublicKey& spendPublicKey, const Crypto::PublicKey& viewPublicKey,
                            const Crypto::Signature& proof);
 bool addCdCreationFeeToExtra(std::vector<uint8_t>& tx_extra, uint64_t amountXfg);
+bool addRemintBurnToExtra(std::vector<uint8_t>& tx_extra, uint64_t amountXfg);
 Crypto::Hash getLimitCancelAuthHash(const Crypto::Hash& orderId, const Crypto::Hash& addressHash);
 // The order key pair hashes to the deposit's addressHash and signed `authHash`.
 bool limitOrderKeysProve(const Crypto::Hash& addressHash, const Crypto::PublicKey& spendPublicKey,

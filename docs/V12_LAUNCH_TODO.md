@@ -16,10 +16,12 @@ Needed:
 ### 2. Review the Bonus Vault before CDs go live
 The loyalty multipliers (2.5× at 72 epochs, 2× at 36, 1.5× at 18, 1.25× at 6) pull HEAT into long locks. The stated goal is liquid HEAT that prices XFG well. Decide whether to flatten or cut the multipliers, together with the CD creation fee schedule (0.25% at 6 epochs to 1% at 72; per year of lock that is 3.0%/1.55%/1.18%/1.0%, so long locks are still the cheapest per year).
 
-### 3. Alias registration fee re-mint — DONE (2026-11-12)
-Quarterly (every `FCI_EPOCHS_PER_QUARTER` epochs, from v11): the coinbase must end with one output paying the not-yet-re-minted alias-burn total to the dev fund. See `Blockchain::aliasRemintDue` / `coinbasePaysAliasRemint`. Open: no test mines a full block through `pushBlock` / `popBlock` with the re-mint (the hooks are verified by reading).
+### 3. Re-mint burn and quarterly re-mint — DONE (2026-11-12)
+`TX_EXTRA_REMINT_BURN` is its own burn type and counter; alias registrations pay their fee with one. Each FCI quarter boundary (from v11) the coinbase must end with one output paying the not-yet-re-minted total to the dev fund (`Blockchain::remintDue` / `coinbasePaysRemint`). Open: no test mines a full block through `pushBlock` / `popBlock` with the re-mint (the hooks are verified by reading).
 
 ## Should do
+
+- A wallet command (CLI and walletd) that sends a standalone re-mint burn. Until non-alias burns exist, the quarterly re-mint amount still equals 1 XFG × aliases registered that quarter.
 
 - Tests that drive `pushTransaction` / `popTransaction` for the limit-order stop tag (AuntPoL legs and the alias-burn total are covered).
 - A test harness that mines a valid v11 block, to cover `pushBlock` rejecting a mismatched `HearthState`.

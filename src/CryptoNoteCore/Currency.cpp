@@ -728,7 +728,7 @@ double Currency::getBurnPercentage() const {
 
 	bool Currency::constructMinerTx(uint8_t blockMajorVersion, uint32_t height, size_t medianSize, uint64_t alreadyGeneratedCoins, size_t currentBlockSize,
 		uint64_t fee, const AccountPublicAddress& minerAddress, Transaction& tx, const BinaryArray& extraNonce/* = BinaryArray()*/, size_t maxOuts/* = 1*/, uint64_t burnedCoinsOverride/* = UINT64_MAX*/,
-		uint64_t bankingFeesInBlock/* = 0*/, uint64_t aliasRemint/* = 0*/) const {
+		uint64_t bankingFeesInBlock/* = 0*/, uint64_t remint/* = 0*/) const {
 
 		tx.inputs.clear();
 		tx.outputs.clear();
@@ -823,7 +823,7 @@ double Currency::getBurnPercentage() const {
       outputIndex++;
     }
 
-    if (aliasRemint > 0 && !appendDevFundOutput(tx, txkey.secretKey, outputIndex, aliasRemint)) {
+    if (remint > 0 && !appendDevFundOutput(tx, txkey.secretKey, outputIndex, remint)) {
       logger(ERROR, BRIGHT_RED) << "Failed to add the alias re-mint output to the dev fund";
       return false;
     }

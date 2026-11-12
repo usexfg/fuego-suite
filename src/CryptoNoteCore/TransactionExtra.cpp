@@ -438,6 +438,16 @@ namespace CryptoNote
               break;
             }
 
+            case TX_EXTRA_REMINT_BURN:
+            {
+              TransactionExtraRemintBurn burn;
+              burn.amountXfg = 0;
+              for (int i = 0; i < 8; ++i)
+                burn.amountXfg |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+              transactionExtraFields.push_back(burn);
+              break;
+            }
+
             case TX_EXTRA_CD_CREATION_FEE:
             {
               TransactionExtraCdCreationFee cdFee;
@@ -706,6 +716,11 @@ namespace CryptoNote
     bool operator()(const TransactionExtraCdCreationFee &t)
     {
       return addCdCreationFeeToExtra(extra, t.amountXfg);
+    }
+
+    bool operator()(const TransactionExtraRemintBurn &t)
+    {
+      return addRemintBurnToExtra(extra, t.amountXfg);
     }
 
   };
@@ -1686,6 +1701,12 @@ namespace CryptoNote
     tx_extra.insert(tx_extra.end(), spendPublicKey.data, spendPublicKey.data + sizeof(spendPublicKey.data));
     tx_extra.insert(tx_extra.end(), viewPublicKey.data, viewPublicKey.data + sizeof(viewPublicKey.data));
     tx_extra.insert(tx_extra.end(), proof.data, proof.data + sizeof(proof.data));
+    return true;
+  }
+
+  bool addRemintBurnToExtra(std::vector<uint8_t>& tx_extra, uint64_t amountXfg) {
+    tx_extra.push_back(TX_EXTRA_REMINT_BURN);
+    for (int i = 0; i < 8; ++i) { tx_extra.push_back(static_cast<uint8_t>(amountXfg & 0xFF)); amountXfg >>= 8; }
     return true;
   }
 

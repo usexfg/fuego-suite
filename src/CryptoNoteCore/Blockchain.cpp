@@ -76,7 +76,7 @@ bool operator<(const Crypto::KeyImage& keyImage1, const Crypto::KeyImage& keyIma
 }
 }
 
-#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 22  // v22: quarterly alias re-mint to the dev fund (alias_reminted_xfg, alias_remint_by_height). v21: alias registration fees burned from v11 (alias_burned_xfg). v20: HEAT supply counts only XFG-valued CD fees as new (cd_fee_heat_from_xfg). v19: limit deposits carry withdrawnHeight; orderbook snapshots carry pruned deposits. v18: v18: orderbook auction state and its rollback records are cached (forces replay: a v17 cache has none, and a node restarted from one re-entered bootstrap and forked)
+#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 23  // v23: re-mint burns are a generic tag (remint_burned_xfg, reminted_xfg, remint_by_height). v22: quarterly alias re-mint to the dev fund (reminted_xfg, remint_by_height). v21: alias registration fees burned from v11 (remint_burned_xfg). v20: HEAT supply counts only XFG-valued CD fees as new (cd_fee_heat_from_xfg). v19: limit deposits carry withdrawnHeight; orderbook snapshots carry pruned deposits. v18: v18: orderbook auction state and its rollback records are cached (forces replay: a v17 cache has none, and a node restarted from one re-entered bootstrap and forked)
 #define CURRENT_BLOCKCHAININDICES_STORAGE_ARCHIVE_VER 1
 
 namespace CryptoNote {
@@ -168,6 +168,7 @@ bool isHeatwaveTag(const TransactionExtraField& f) {
          f.type() == typeid(TransactionExtraLimitWithdraw) ||
          f.type() == typeid(TransactionExtraTreasuryFund) ||
          f.type() == typeid(TransactionExtraCdCreationFee) ||
+         f.type() == typeid(TransactionExtraRemintBurn) ||
          f.type() == typeid(TransactionExtraCdBonusClaim);
 }
 
@@ -217,10 +218,11 @@ bool isCdOutputTerm(uint32_t term) {
          term != parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG;
 }
 
-// XFG a transaction's alias registrations burn from v11: the fee for every
-// registration except reserved ones (aliasType 0). Testnet registers free, as
-// it did when the fee went to the dev fund.
-uint64_t aliasRegistrationBurn(const std::vector<CryptoNote::TransactionExtraField>& fields, bool testnet) {
+// XFG a transaction's alias registrations owe from v11: the fee for every
+// registration except reserved ones (aliasType 0), paid by a re-mint burn in
+// the same transaction. Testnet registers free, as it did when the fee went to
+// the dev fund.
+uint64_t aliasRegistrationFees(const std::vector<CryptoNote::TransactionExtraField>& fields, bool testnet) {
   using namespace CryptoNote;
   if (testnet) return 0;
   uint64_t burn = 0;
@@ -232,10 +234,14 @@ uint64_t aliasRegistrationBurn(const std::vector<CryptoNote::TransactionExtraFie
   return burn;
 }
 
-uint64_t aliasRegistrationBurn(const CryptoNote::Transaction& tx, bool testnet) {
-  std::vector<CryptoNote::TransactionExtraField> fields;
-  if (!CryptoNote::parseTransactionExtra(tx.extra, fields)) return 0;
-  return aliasRegistrationBurn(fields, testnet);
+uint64_t declaredRemintBurn(const CryptoNote::Transaction& tx) {
+  using namespace CryptoNote;
+  std::vector<TransactionExtraField> fields;
+  if (!parseTransactionExtra(tx.extra, fields)) return 0;
+  for (const auto& f : fields) {
+    if (f.type() == typeid(TransactionExtraRemintBurn)) return boost::get<TransactionExtraRemintBurn>(f).amountXfg;
+  }
+  return 0;
 }
 
 uint64_t declaredCdCreationFee(const CryptoNote::Transaction& tx) {
@@ -453,9 +459,9 @@ public:
       logger(INFO) << operation << "HEAT/AMM/PI state";
       s(m_bs.m_heatSupply, "heat_supply");
       s(m_bs.m_cdFeeHeatFromXfg, "cd_fee_heat_from_xfg");
-      s(m_bs.m_aliasBurnedXfg, "alias_burned_xfg");
-      s(m_bs.m_aliasRemintedXfg, "alias_reminted_xfg");
-      s(m_bs.m_aliasRemintByHeight, "alias_remint_by_height");
+      s(m_bs.m_remintBurnedXfg, "remint_burned_xfg");
+      s(m_bs.m_remintedXfg, "reminted_xfg");
+      s(m_bs.m_remintByHeight, "remint_by_height");
       s(m_bs.m_heatOnDeposit, "heat_on_deposit");
       s(m_bs.m_cdExpiryByEpoch, "cd_expiry_by_epoch");
       s(m_bs.m_digmSupply, "digm_supply");
@@ -1306,9 +1312,9 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
     m_totalCdLocked = 0;
     m_heatSupply = 0;
     m_cdFeeHeatFromXfg = 0;
-    m_aliasBurnedXfg = 0;
-    m_aliasRemintedXfg = 0;
-    m_aliasRemintByHeight.clear();
+    m_remintBurnedXfg = 0;
+    m_remintedXfg = 0;
+    m_remintByHeight.clear();
     m_heatOnDeposit = 0;
     m_cdExpiryByEpoch.clear();
     m_blockCdCreatedHeat = 0;
@@ -1388,7 +1394,7 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
       Crypto::Hash blockHash = get_block_hash(block.bl);
 
       Crypto::Hash minerTransactionHash = getObjectHash(block.bl.baseTransaction);
-      const uint64_t aliasRemint = aliasRemintDue(b, block.bl.majorVersion);
+      const uint64_t remint = remintDue(b, block.bl.majorVersion);
       if (!pushTransaction(block, minerTransactionHash, TxIndex{b, static_cast<uint16_t>(0)})) {
         logger(ERROR, BRIGHT_RED) << "Cache rebuild replay failed at miner tx, height " << b;
         return;
@@ -1456,7 +1462,7 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
       pushToBankingIndex(block, interest);
 
       accumulateTwap(block.bl, block.height);
-      recordAliasRemint(b, aliasRemint);
+      recordRemint(b, remint);
     }
 
     m_indexManager.setReady(true);
@@ -2031,21 +2037,21 @@ bool CryptoNote::Blockchain::prevalidate_miner_transaction(const Block& b, uint3
 
 bool CryptoNote::Blockchain::validate_miner_transaction(const Block& b, uint32_t height, size_t cumulativeBlockSize,
   uint64_t alreadyGeneratedCoins, uint64_t fee, uint64_t& reward, int64_t& emissionChange, const std::vector<Transaction>& blockTransactions,
-  uint64_t aliasRemint) {
+  uint64_t remint) {
 
   uint64_t coinbaseTotal = 0;
   for (auto& o : b.baseTransaction.outputs) {
     coinbaseTotal += o.amount;
   }
-  // The quarterly alias re-mint returns coins generated once already: it is
+  // The quarterly re-mint returns coins generated once already: it is
   // outside the block reward and outside emission.
-  if (aliasRemint > 0) {
-    if (!coinbasePaysAliasRemint(b.baseTransaction, aliasRemint)) {
+  if (remint > 0) {
+    if (!coinbasePaysRemint(b.baseTransaction, remint)) {
       logger(ERROR, BRIGHT_RED) << "Coinbase at height " << height << " does not re-mint the "
-                                << m_currency.formatAmount(aliasRemint) << " XFG of alias burns to the dev fund";
+                                << m_currency.formatAmount(remint) << " XFG of re-mint burns to the dev fund";
       return false;
     }
-    coinbaseTotal -= aliasRemint;
+    coinbaseTotal -= remint;
   }
 
   // For blocks in the checkpoint zone, the checkpoint hash already guarantees the block
@@ -3842,7 +3848,7 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
   }
 
   Crypto::Hash minerTransactionHash = getObjectHash(blockData.baseTransaction);
-  const uint64_t aliasRemint = aliasRemintDue(static_cast<uint32_t>(m_blocks.size()), blockData.majorVersion);
+  const uint64_t remint = remintDue(static_cast<uint32_t>(m_blocks.size()), blockData.majorVersion);
 
   BlockEntry block;
   block.bl = blockData;
@@ -4304,7 +4310,7 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
   uint64_t reward = 0;
   uint64_t already_generated_coins = m_blocks.empty() ? 0 : m_blocks.back().already_generated_coins;
 
-  if (!validate_miner_transaction(blockData, static_cast<uint32_t>(m_blocks.size()), cumulative_block_size, already_generated_coins, fee_summary, reward, emissionChange, transactions, aliasRemint)) {
+  if (!validate_miner_transaction(blockData, static_cast<uint32_t>(m_blocks.size()), cumulative_block_size, already_generated_coins, fee_summary, reward, emissionChange, transactions, remint)) {
     logger(INFO, BRIGHT_WHITE) << "Block " << blockHash << " has invalid miner transaction";
     bvc.m_verification_failed = true;
     popTransactions(block, minerTransactionHash);
@@ -4329,7 +4335,7 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
     pushToBankingIndex(block, interestSummary);
 
     accumulateTwap(block.bl, block.height);
-    recordAliasRemint(block.height, aliasRemint);
+    recordRemint(block.height, remint);
   } catch (const std::exception& e) {
     logger(ERROR, BRIGHT_RED) << "Exception during block commit/apply for block " << blockHash << ": " << e.what();
     bvc.m_verification_failed = true;
@@ -6165,7 +6171,7 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
 
   uint32_t poppedHeight = m_blocks.back().height;
   rollbackFciBlock(poppedHeight);
-  unrecordAliasRemint(poppedHeight);
+  unrecordRemint(poppedHeight);
 
   // Reverse OOB limit-order fills BEFORE reversing settlement. The push path
   // settles transactions first and executes fills second, so rollback must
@@ -6797,7 +6803,7 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
   }
 
   if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11) {
-    m_aliasBurnedXfg += aliasRegistrationBurn(transaction.tx, m_currency.isTestnet());
+    m_remintBurnedXfg += declaredRemintBurn(transaction.tx);
     const uint64_t cdFee = declaredCdCreationFee(transaction.tx);
     m_treasuryLpPendingXfg = m_treasuryLpPendingXfg > UINT64_MAX - cdFee ? UINT64_MAX : m_treasuryLpPendingXfg + cdFee;
   }
@@ -7421,8 +7427,8 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
   }
 
   if (majorVersion >= BLOCK_MAJOR_VERSION_11) {
-    const uint64_t aliasBurn = aliasRegistrationBurn(transaction, m_currency.isTestnet());
-    m_aliasBurnedXfg = m_aliasBurnedXfg >= aliasBurn ? m_aliasBurnedXfg - aliasBurn : 0;
+    const uint64_t remintBurn = declaredRemintBurn(transaction);
+    m_remintBurnedXfg = m_remintBurnedXfg >= remintBurn ? m_remintBurnedXfg - remintBurn : 0;
     const uint64_t cdFee = declaredCdCreationFee(transaction);
     m_treasuryLpPendingXfg = m_treasuryLpPendingXfg >= cdFee ? m_treasuryLpPendingXfg - cdFee : 0;
   }
@@ -8339,18 +8345,36 @@ bool CryptoNote::Blockchain::validateSettlement(const Transaction& tx, uint32_t 
     }
   }
 
-  // Alias registration fee: burned, not paid to the miner or to any wallet.
+  // Re-mint burn: withheld from the miner, counted in its own total. Alias
+  // registrations pay their fee with one.
   {
-    const uint64_t aliasBurn = aliasRegistrationBurn(fields, m_currency.isTestnet());
-    if (xfgFee < aliasBurn) {
-      error = "alias registration: XFG surplus does not cover the registration fee";
+    const TransactionExtraRemintBurn* burn = nullptr;
+    for (const auto& f : fields) {
+      if (f.type() != typeid(TransactionExtraRemintBurn)) continue;
+      if (burn) {
+        error = "re-mint burn declared twice";
+        return false;
+      }
+      burn = &boost::get<TransactionExtraRemintBurn>(f);
+    }
+    const uint64_t burnAmount = burn ? burn->amountXfg : 0;
+    if (burn && burnAmount == 0) {
+      error = "re-mint burn of zero";
       return false;
     }
-    if (m_aliasBurnedXfg > UINT64_MAX - aliasBurn) {
-      error = "alias registration: alias-burn total overflow";
+    if (burnAmount < aliasRegistrationFees(fields, m_currency.isTestnet())) {
+      error = "alias registration: re-mint burn below the registration fee";
       return false;
     }
-    xfgFee -= aliasBurn;
+    if (xfgFee < burnAmount) {
+      error = "re-mint burn: XFG surplus does not cover it";
+      return false;
+    }
+    if (m_remintBurnedXfg > UINT64_MAX - burnAmount) {
+      error = "re-mint burn: total overflow";
+      return false;
+    }
+    xfgFee -= burnAmount;
   }
 
   // Each tag's own rules, including every condition its settlement in
@@ -8635,15 +8659,15 @@ CryptoNote::HearthState CryptoNote::Blockchain::currentHearthState() const {
   return state;
 }
 
-uint64_t CryptoNote::Blockchain::aliasRemintDue(uint32_t height, uint8_t blockMajorVersion) const {
+uint64_t CryptoNote::Blockchain::remintDue(uint32_t height, uint8_t blockMajorVersion) const {
   if (blockMajorVersion < BLOCK_MAJOR_VERSION_11 || height == 0) return 0;
   const uint64_t epochBlocks = m_currency.isTestnet()
       ? parameters::TESTNET_EPOCH_DURATION_BLOCKS : parameters::EPOCH_DURATION_BLOCKS;
   if (height % (parameters::FCI_EPOCHS_PER_QUARTER * epochBlocks) != 0) return 0;
-  return m_aliasBurnedXfg > m_aliasRemintedXfg ? m_aliasBurnedXfg - m_aliasRemintedXfg : 0;
+  return m_remintBurnedXfg > m_remintedXfg ? m_remintBurnedXfg - m_remintedXfg : 0;
 }
 
-bool CryptoNote::Blockchain::coinbasePaysAliasRemint(const Transaction& coinbase, uint64_t amount) const {
+bool CryptoNote::Blockchain::coinbasePaysRemint(const Transaction& coinbase, uint64_t amount) const {
   if (coinbase.outputs.empty()) return false;
   const size_t index = coinbase.outputs.size() - 1;
   const TransactionOutput& out = coinbase.outputs[index];
@@ -8659,17 +8683,17 @@ bool CryptoNote::Blockchain::coinbasePaysAliasRemint(const Transaction& coinbase
          expected == boost::get<KeyOutput>(out.target).key;
 }
 
-void CryptoNote::Blockchain::recordAliasRemint(uint32_t height, uint64_t amount) {
+void CryptoNote::Blockchain::recordRemint(uint32_t height, uint64_t amount) {
   if (amount == 0) return;
-  m_aliasRemintedXfg += amount;
-  m_aliasRemintByHeight[height] = amount;
+  m_remintedXfg += amount;
+  m_remintByHeight[height] = amount;
 }
 
-void CryptoNote::Blockchain::unrecordAliasRemint(uint32_t height) {
-  auto it = m_aliasRemintByHeight.find(height);
-  if (it == m_aliasRemintByHeight.end()) return;
-  m_aliasRemintedXfg = m_aliasRemintedXfg >= it->second ? m_aliasRemintedXfg - it->second : 0;
-  m_aliasRemintByHeight.erase(it);
+void CryptoNote::Blockchain::unrecordRemint(uint32_t height) {
+  auto it = m_remintByHeight.find(height);
+  if (it == m_remintByHeight.end()) return;
+  m_remintedXfg = m_remintedXfg >= it->second ? m_remintedXfg - it->second : 0;
+  m_remintByHeight.erase(it);
 }
 
 uint64_t CryptoNote::Blockchain::blockMintCapHeat() {

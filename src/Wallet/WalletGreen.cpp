@@ -6757,13 +6757,17 @@ namespace CryptoNote
       return make_error_code(std::errc::invalid_argument);
     }
 
+    // From v11 the registration fee is a re-mint burn: it rides in the
+    // transaction fee and consensus withholds it, so no output pays the dev
+    // wallet.
+    const bool burnsFee = !m_currency.isTestnet() &&
+        m_node.getLastKnownBlockHeight() + 1 >= m_currency.upgradeHeight(CryptoNote::BLOCK_MAJOR_VERSION_11);
+    if (burnsFee) {
+      CryptoNote::addRemintBurnToExtra(extraVec, CryptoNote::parameters::ALIAS_REGISTRATION_FEE);
+    }
     std::string extra(extraVec.begin(), extraVec.end());
 
     TransactionParameters params;
-    // From v11 the registration fee is burned: it rides in the transaction fee
-    // and consensus withholds it, so no output pays the dev wallet.
-    const bool burnsFee = !m_currency.isTestnet() &&
-        m_node.getLastKnownBlockHeight() + 1 >= m_currency.upgradeHeight(CryptoNote::BLOCK_MAJOR_VERSION_11);
     if (burnsFee) {
       WalletOrder selfOutput;
       selfOutput.address = aliasReg.ownerAddress;

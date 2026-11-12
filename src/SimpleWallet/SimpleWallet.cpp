@@ -3648,6 +3648,13 @@ bool simple_wallet::register_alias(const std::vector<std::string> &args) {
       return true;
     }
 
+    // From v11 the mainnet fee is a re-mint burn: it rides in the transaction
+    // fee and consensus withholds it, so no output pays the dev wallet.
+    const bool burnsFee = !m_currency.isTestnet() &&
+        m_node->getLastKnownBlockHeight() + 1 >= m_currency.upgradeHeight(CryptoNote::BLOCK_MAJOR_VERSION_11);
+    if (burnsFee) {
+      CryptoNote::addRemintBurnToExtra(extra, CryptoNote::parameters::ALIAS_REGISTRATION_FEE);
+    }
     std::string extraString(extra.begin(), extra.end());
 
     CryptoNote::WalletHelper::SendCompleteResultObserver sent;
@@ -3655,10 +3662,6 @@ bool simple_wallet::register_alias(const std::vector<std::string> &args) {
 
     std::vector<CryptoNote::WalletLegacyTransfer> transfers;
 
-    // From v11 the mainnet fee is burned: it rides in the transaction fee and
-    // consensus withholds it, so no output pays the dev wallet.
-    const bool burnsFee = !m_currency.isTestnet() &&
-        m_node->getLastKnownBlockHeight() + 1 >= m_currency.upgradeHeight(CryptoNote::BLOCK_MAJOR_VERSION_11);
     if (m_currency.isTestnet() || burnsFee) {
       CryptoNote::WalletLegacyTransfer selfTransfer;
       selfTransfer.address = walletAddress;

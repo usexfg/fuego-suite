@@ -144,7 +144,7 @@ Rollout: BTC, then LTC and BCH (same client family), then KMD, DOGE, DASH, ZEC f
 | R7 | Daemon: done (encrypted keystore). Valise: open until the suite pin carries the keystore |
 | R9 | UTXO transport gate (1.9) in CI; EVM gate against anvil passes 19/19 (CI run 42406472393). Open: Solana (`solana-test-validator`), and two-daemon runs with an XFG testnet |
 | R11 | Done: `src/SwapDaemon/CLV/` deleted (owner approved 2026-11-08). It was a 32-line header-only `EthChainClient` subclass that no build target, registry or catalog id used, and it mislabelled CLV as Robinhood Chain (catalog id 13, chain id 4663) |
-| F29 | Open: consensus fee split; owner decision |
+| F29 | Fixed 2026-11-12 (owner): CD share floored on the cumulative taker fee; split percentages unchanged |
 | F33, R12 | In implementation: owner chose (a) on 2026-11-08; hash-locked pairs stay ACTIVE until their point lock ships. Work items X1-X10 in `CROSS_CURVE_PLAN.md` |
 | F30-F32 | F30, F31 fixed. F32 fixed: fill results carry the claim key and are signed by the offer's maker (they were unsigned gossip); AFK itself stays disabled by `AFK_SOFT_ORDER_EXECUTION_ENABLED` |
 

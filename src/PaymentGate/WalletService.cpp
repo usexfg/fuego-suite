@@ -2805,7 +2805,7 @@ namespace PaymentService
     return std::error_code();
   }
 
-  std::error_code WalletService::remintBurn(uint64_t amount, std::string &transactionHash)
+  std::error_code WalletService::devFundBurn(uint64_t amount, std::string &transactionHash)
   {
     try
     {
@@ -2815,7 +2815,7 @@ namespace PaymentService
         return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
       }
       Crypto::Hash txHash{};
-      std::error_code ec = green->remintBurn(amount, txHash);
+      std::error_code ec = green->devFundBurn(amount, txHash);
       if (ec) {
         return ec;
       }
@@ -2823,7 +2823,7 @@ namespace PaymentService
     }
     catch (std::system_error &x)
     {
-      logger(Logging::WARNING) << "remint_burn: " << x.what();
+      logger(Logging::WARNING) << "dev_fund_burn: " << x.what();
       return x.code();
     }
     return std::error_code();

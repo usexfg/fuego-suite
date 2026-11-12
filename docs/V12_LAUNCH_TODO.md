@@ -21,7 +21,7 @@ The loyalty multipliers (2.5× at 72 epochs, 2× at 36, 1.5× at 18, 1.25× at 6
 
 ## Should do
 
-- Standalone re-mint burn command: DONE 2026-11-12 (`remint_burn` in SimpleWallet; `remint_burn` JSON-RPC in walletd). The quarterly re-mint amount is only uninformative about alias count once people actually send standalone burns.
+- Standalone dev fund burn command: DONE 2026-11-12 (`dev_fund_burn` in SimpleWallet; `dev_fund_burn` JSON-RPC in walletd). The quarterly re-mint amount is only uninformative about alias count once people actually send standalone burns.
 
 - Tests that drive `pushTransaction` / `popTransaction` for the limit-order stop tag (AuntPoL legs and the alias-burn total are covered).
 - A test harness that mines a valid v11 block, to cover `pushBlock` rejecting a mismatched `HearthState`.

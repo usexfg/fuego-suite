@@ -390,7 +390,7 @@ struct GetLimitOrders
   };
 };
 
-struct RemintBurn
+struct DevFundBurn
 {
   struct Request
   {

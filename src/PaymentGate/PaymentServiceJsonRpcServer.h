@@ -116,7 +116,7 @@ private:
   std::error_code handleCancelLimitOrder(const CancelLimitOrder::Request& request, CancelLimitOrder::Response& response);
   std::error_code handleGetLimitOrders(const GetLimitOrders::Request& request, GetLimitOrders::Response& response);
   std::error_code handleRegisterAlias(const RegisterAlias::Request& request, RegisterAlias::Response& response);
-  std::error_code handleRemintBurn(const RemintBurn::Request& request, RemintBurn::Response& response);
+  std::error_code handleDevFundBurn(const DevFundBurn::Request& request, DevFundBurn::Response& response);
 
 };
 

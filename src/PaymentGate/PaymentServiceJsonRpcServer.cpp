@@ -95,7 +95,7 @@ PaymentServiceJsonRpcServer::PaymentServiceJsonRpcServer(System::Dispatcher& sys
   handlers.emplace("cancel_limit_order", jsonHandler<CancelLimitOrder::Request, CancelLimitOrder::Response>(std::bind(&PaymentServiceJsonRpcServer::handleCancelLimitOrder, this, std::placeholders::_1, std::placeholders::_2)));
   handlers.emplace("get_limit_orders", jsonHandler<GetLimitOrders::Request, GetLimitOrders::Response>(std::bind(&PaymentServiceJsonRpcServer::handleGetLimitOrders, this, std::placeholders::_1, std::placeholders::_2)));
   handlers.emplace("register_alias", jsonHandler<RegisterAlias::Request, RegisterAlias::Response>(std::bind(&PaymentServiceJsonRpcServer::handleRegisterAlias, this, std::placeholders::_1, std::placeholders::_2)));
-  handlers.emplace("remint_burn", jsonHandler<RemintBurn::Request, RemintBurn::Response>(std::bind(&PaymentServiceJsonRpcServer::handleRemintBurn, this, std::placeholders::_1, std::placeholders::_2)));
+  handlers.emplace("dev_fund_burn", jsonHandler<DevFundBurn::Request, DevFundBurn::Response>(std::bind(&PaymentServiceJsonRpcServer::handleDevFundBurn, this, std::placeholders::_1, std::placeholders::_2)));
 }
 
 void PaymentServiceJsonRpcServer::processJsonRpcRequest(const Common::JsonValue& req, Common::JsonValue& resp) {
@@ -432,9 +432,9 @@ std::error_code PaymentServiceJsonRpcServer::handleGetLimitOrders(const GetLimit
   return ec;
 }
 
-std::error_code PaymentServiceJsonRpcServer::handleRemintBurn(const RemintBurn::Request& request, RemintBurn::Response& response)
+std::error_code PaymentServiceJsonRpcServer::handleDevFundBurn(const DevFundBurn::Request& request, DevFundBurn::Response& response)
 {
-  auto ec = service.remintBurn(request.amount, response.tx_hash);
+  auto ec = service.devFundBurn(request.amount, response.tx_hash);
   if (!ec) {
     response.status = "OK";
   }

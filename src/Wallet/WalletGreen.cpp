@@ -6684,7 +6684,7 @@ namespace CryptoNote
   // Alias methods
   // ============================================================================
 
-  std::error_code WalletGreen::remintBurn(uint64_t amount, Crypto::Hash& txHashOut) {
+  std::error_code WalletGreen::devFundBurn(uint64_t amount, Crypto::Hash& txHashOut) {
     throwIfNotInitialized();
     throwIfTrackingMode();
     throwIfStopped();

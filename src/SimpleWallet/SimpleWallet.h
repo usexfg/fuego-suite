@@ -83,7 +83,7 @@ namespace CryptoNote
 
     // @ Alias system commands
     bool register_alias(const std::vector<std::string> &args);
-    bool remint_burn(const std::vector<std::string> &args);
+    bool dev_fund_burn(const std::vector<std::string> &args);
     bool lookup_alias(const std::vector<std::string> &args);
     bool list_aliases(const std::vector<std::string> &args);
     void printConnectionError() const;

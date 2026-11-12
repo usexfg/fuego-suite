@@ -6738,3 +6738,22 @@ Sign-off table:
 | Build compiles | DONE — `make -j4` full build rc=0 |
 | Tests pass | Consensus side covered by `testAliasRegistrationFeeBurned` (standalone burn accepted, counted, withheld from the miner) and `testAliasBurnTotalPushPop`. The wallet commands have no automated test (no wallet harness; live RPC hangs per AGENTS.md Known Issues) |
 | All tasks done | DONE |
+
+## Dev fund burn command name
+
+**Feature name**: `remint_burn` → `dev_fund_burn` (CLI command and walletd JSON-RPC method)
+**Agent**: Claude
+**Start date**: 2026-11-12
+**Decision**: owner, 2026-11-12 — the command is a dev fund burn; consensus names (`TX_EXTRA_REMINT_BURN`, re-mint counter) unchanged.
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | SimpleWallet `dev_fund_burn <amount>`; walletd `dev_fund_burn` `{amount}`; `WalletGreen::devFundBurn`; docs | Claude | 2026-11-12 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j4` full build rc=0 |
+| Tests pass | DONE — core_tests 448/448 (wallet/API rename only) |
+| All tasks done | DONE |

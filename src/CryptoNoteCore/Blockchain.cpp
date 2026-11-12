@@ -76,7 +76,7 @@ bool operator<(const Crypto::KeyImage& keyImage1, const Crypto::KeyImage& keyIma
 }
 }
 
-#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 17  // v17: genesis Hearth seed is 8,000 XFG / 1,000 HEAT (forces replay so no cache can carry the old 10,000 / 1,250 reserves)
+#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 18  // v18: orderbook state and every per-block rollback journal persisted (forces replay so no restarted node resumes the auction in bootstrap or loses reorg reversal)
 #define CURRENT_BLOCKCHAININDICES_STORAGE_ARCHIVE_VER 1
 
 namespace CryptoNote {
@@ -272,6 +272,76 @@ void serialize(Blockchain::LimitDepositInfo& value, ISerializer& s) {
   s(value.createdHeight, "createdHeight");
   s(value.withdrawn, "withdrawn");
   s(value.expired, "expired");
+}
+
+static void serializePoolOrders(ISerializer& s, std::vector<Order>& poolOrders) {
+  std::vector<uint32_t> sides;
+  std::vector<uint64_t> amounts, prices, targetPrices;
+  std::vector<Crypto::Hash> orderIds;
+  for (const auto& order : poolOrders) {
+    sides.push_back(order.side);
+    amounts.push_back(order.amount);
+    prices.push_back(order.price);
+    targetPrices.push_back(order.targetPrice);
+    orderIds.push_back(order.orderId);
+  }
+  s(sides, "pool_order_sides");
+  s(amounts, "pool_order_amounts");
+  s(prices, "pool_order_prices");
+  s(targetPrices, "pool_order_target_prices");
+  serializeAsBinary(orderIds, "pool_order_ids", s);
+  if (s.type() != ISerializer::INPUT) {
+    return;
+  }
+  const size_t count = sides.size();
+  if (amounts.size() != count || prices.size() != count || targetPrices.size() != count ||
+      orderIds.size() != count) {
+    throw std::runtime_error("Invalid orderbook pool order cache");
+  }
+  poolOrders.clear();
+  for (size_t i = 0; i < count; ++i) {
+    Order order{};
+    order.side = static_cast<uint8_t>(sides[i]);
+    order.amount = amounts[i];
+    order.price = prices[i];
+    order.targetPrice = targetPrices[i];
+    order.orderId = orderIds[i];
+    poolOrders.push_back(order);
+  }
+}
+
+void CryptoNote::Blockchain::OrderbookRollbackSnapshot::serialize(ISerializer& s) {
+  s(lastClearingPrice, "last_clearing_price");
+  s(isInBootstrap, "is_in_bootstrap");
+  s(bootstrapBlocksRemaining, "bootstrap_blocks_remaining");
+  s(lastNumMatches, "last_num_matches");
+  s(blocksSinceLastPoolRegen, "blocks_since_pool_regen");
+  s(priorPoolRegenPclear, "prior_pool_regen_pclear");
+  s(priorPoolXfgReserve, "prior_pool_xfg_reserve");
+  s(priorPoolHeatReserve, "prior_pool_heat_reserve");
+  s(poolBandFilledLastBlock, "pool_band_filled_last_block");
+  s(lastRegenPclear, "last_regen_pclear");
+  std::vector<uint64_t> history(priceHistory.begin(), priceHistory.end());
+  s(history, "price_history");
+  if (s.type() == ISerializer::INPUT) {
+    priceHistory.assign(history.begin(), history.end());
+  }
+  serializePoolOrders(s, poolOrders);
+}
+
+void CryptoNote::Blockchain::OrderFillRecord::serialize(ISerializer& s) {
+  s(orderId, "order_id");
+  s(side, "side");
+  s(xfg, "xfg");
+  s(heat, "heat");
+  s(feeHeat, "fee_heat");
+  s(netXfg, "net_xfg");
+  s(newlyExpired, "newly_expired");
+  s(isAuction, "is_auction");
+  s(isPoolFill, "is_pool_fill");
+  s(isTaker, "is_taker");
+  s(rebateHeat, "rebate_heat");
+  s(priceHeat, "price_heat");
 }
 
 class BlockCacheSerializer {
@@ -533,6 +603,9 @@ public:
         }
       }
 
+      serializeOrderbookState(s);
+      serializeRollbackJournals(s);
+
     auto dur = std::chrono::steady_clock::now() - start;
 
     logger(INFO) << "Serialization time: " << std::chrono::duration_cast<std::chrono::milliseconds>(dur).count() << "ms";
@@ -545,6 +618,83 @@ public:
   }
 
 private:
+
+  // The call auction's state (P_clear, bootstrap countdown, regeneration
+  // inputs, spread history, live pool band) is consensus state that lived only
+  // in process globals: a clean restart resumed in bootstrap and skipped the
+  // auctions every other node ran.
+  void serializeOrderbookState(ISerializer& s) {
+    Blockchain::OrderbookRollbackSnapshot state;
+    if (s.type() != ISerializer::INPUT) {
+      state = m_bs.captureOrderbookState();
+    }
+    state.serialize(s);
+    if (s.type() == ISerializer::INPUT) {
+      m_bs.restoreOrderbookState(state);
+    }
+  }
+
+  // Every journal popBlock / popTransaction reverses a block from. In memory
+  // only, a reorg after a clean restart left the popped block's fills, LP
+  // removals, swap fees, epoch distributions, TWAP sums and orderbook state
+  // applied. Position-keyed journals keep their newest MAX_ROLLBACK_HISTORY
+  // entries, the depth every height-keyed journal is already capped at.
+  void serializeRollbackJournals(ISerializer& s) {
+    serializeHeightKeyed(s, m_bs.m_blockOrderFills, "order_fill_heights", "order_fills");
+    serializeHeightKeyed(s, m_bs.m_blockLpRemoveAmounts, "lp_remove_heights", "lp_remove_amounts");
+    serializeHeightKeyed(s, m_bs.m_orderbookSnapshots, "orderbook_snapshot_heights", "orderbook_snapshots");
+    serializeNewestEntries(s, m_bs.m_blockSwapFeeContributions, "swap_fee_contributions");
+    serializeNewestEntries(s, m_bs.m_blockEpochDistributions, "epoch_distributions");
+    serializeTwapContributions(s);
+  }
+
+  template <typename Entry>
+  static void serializeHeightKeyed(ISerializer& s, std::deque<std::pair<uint32_t, Entry>>& journal,
+                                   Common::StringView heightsName, Common::StringView entriesName) {
+    std::vector<uint32_t> heights;
+    std::vector<Entry> entries;
+    for (const auto& kv : journal) {
+      heights.push_back(kv.first);
+      entries.push_back(kv.second);
+    }
+    s(heights, heightsName);
+    s(entries, entriesName);
+    if (s.type() != ISerializer::INPUT) {
+      return;
+    }
+    if (heights.size() != entries.size()) {
+      throw std::runtime_error("Invalid rollback journal cache");
+    }
+    journal.clear();
+    for (size_t i = 0; i < heights.size(); ++i) {
+      journal.emplace_back(heights[i], std::move(entries[i]));
+    }
+  }
+
+  template <typename Entry>
+  static void serializeNewestEntries(ISerializer& s, std::deque<Entry>& journal, Common::StringView name) {
+    const size_t kept = std::min(journal.size(), Blockchain::MAX_ROLLBACK_HISTORY);
+    std::vector<Entry> newest(journal.end() - static_cast<std::ptrdiff_t>(kept), journal.end());
+    s(newest, name);
+    if (s.type() == ISerializer::INPUT) {
+      journal.assign(newest.begin(), newest.end());
+    }
+  }
+
+  void serializeTwapContributions(ISerializer& s) {
+    std::deque<std::pair<uint64_t, uint64_t>> halves;
+    for (const uint128_t contribution : m_bs.m_blockTwapContributions) {
+      halves.emplace_back(static_cast<uint64_t>(contribution), static_cast<uint64_t>(contribution >> 64));
+    }
+    serializeNewestEntries(s, halves, "twap_contributions");
+    if (s.type() != ISerializer::INPUT) {
+      return;
+    }
+    m_bs.m_blockTwapContributions.clear();
+    for (const auto& half : halves) {
+      m_bs.m_blockTwapContributions.push_back((static_cast<uint128_t>(half.second) << 64) | half.first);
+    }
+  }
 
   LoggerRef logger;
   bool m_loaded;
@@ -1780,6 +1930,12 @@ difficulty_type CryptoNote::Blockchain::get_next_difficulty_for_alternative_chai
   return m_currency.nextDifficulty(static_cast<uint32_t>(m_blocks.size()), BlockMajorVersion, timestamps, cumulative_difficulties);
 }
 
+static bool paysOnlyKeyOutputs(const CryptoNote::Transaction& tx) {
+  return std::all_of(tx.outputs.begin(), tx.outputs.end(), [](const CryptoNote::TransactionOutput& out) {
+    return out.target.type() == typeid(CryptoNote::KeyOutput);
+  });
+}
+
 bool CryptoNote::Blockchain::prevalidate_miner_transaction(const Block& b, uint32_t height) {
 
   if (!(b.baseTransaction.inputs.size() == 1)) {
@@ -1822,6 +1978,12 @@ bool CryptoNote::Blockchain::prevalidate_miner_transaction(const Block& b, uint3
   // Reject all v11 settlement tags here so a miner cannot create treasury,
   // pool, or orderbook state without a spendable input backing it.
   if (b.majorVersion >= BLOCK_MAJOR_VERSION_11) {
+    // The coinbase skips check_tx_outputs and validateSettlement, so any other
+    // output type would be HEAT, CD principal or LP shares with nothing burned.
+    if (!paysOnlyKeyOutputs(b.baseTransaction)) {
+      logger(INFO, BRIGHT_RED) << "coinbase transaction pays a non-key output";
+      return false;
+    }
     std::vector<TransactionExtraField> extraFields;
     if (!parseTransactionExtra(b.baseTransaction.extra, extraFields)) {
       logger(INFO, BRIGHT_RED) << "coinbase transaction has malformed extra";
@@ -2718,7 +2880,7 @@ bool CryptoNote::Blockchain::checkTransactionInputs(const Transaction& tx, const
         }
 
         if (!isInCheckpointZone(getCurrentBlockchainHeight())) {
-          if (!checkCommitmentTransferInput(xfer, tx_prefix_hash, tx.signatures[inputIndex], pmax_used_block_height)) {
+          if (!checkCommitmentTransferInput(xfer, tx_prefix_hash, tx.signatures[inputIndex], pmax_used_block_height, blockMajorVersion)) {
             logger(INFO, BRIGHT_WHITE) << "CommitmentTransfer ring signature check failed in tx " << transactionHash;
             return false;
           }
@@ -2872,6 +3034,7 @@ bool CryptoNote::Blockchain::checkCommitmentSpendInput(const TransactionInputCom
   uint32_t youngestRingMemberTerm = 0;
   bool youngestRingMemberRolled = false;
   bool youngestTermInitialized = false;
+  const uint8_t validatingBlockVersion = resolveValidatingBlockVersion(blockMajorVersion, currentHeight);
   for (uint64_t absIdx : absoluteIndexes) {
     if (absIdx >= amountRefs.size()) {
       logger(INFO) << "CommitmentSpend: global index " << absIdx << " out of range (" << amountRefs.size() << " commitment outputs at this amount)";
@@ -2887,9 +3050,7 @@ bool CryptoNote::Blockchain::checkCommitmentSpendInput(const TransactionInputCom
       return false;
     }
 
-    const bool finiteCd = ref.term > 0 && ref.term != CryptoNote::parameters::HEAT_TERM &&
-                          ref.term != parameters::DEPOSIT_TERM_POOL_XFG &&
-                          ref.term != parameters::DEPOSIT_TERM_POOL_HEAT;
+    const bool finiteCd = isFiniteCdTerm(ref.term);
     if (!finiteCd) {
       ringHasNonCdMember = true;
     }
@@ -2925,7 +3086,7 @@ bool CryptoNote::Blockchain::checkCommitmentSpendInput(const TransactionInputCom
 
       // All non-FOREVER ring members must be mature — prevents early withdrawal.
       // Auto-rolled CDs have doubled maturity (one-time extension at first roll).
-      if (ref.term > 0) {
+      if (hasMaturityLock(ref.term, validatingBlockVersion)) {
         uint32_t maturityHeight = rolled
             ? memberHeight + 2 * ref.term
             : memberHeight + ref.term;
@@ -2953,11 +3114,16 @@ bool CryptoNote::Blockchain::checkCommitmentSpendInput(const TransactionInputCom
     }
 
     // Pool-term unspendability guard: pool-owned outputs cannot be spent
-    if (ref.term == parameters::DEPOSIT_TERM_POOL_XFG ||
-        ref.term == parameters::DEPOSIT_TERM_POOL_HEAT) {
+    if (isPoolOwnedTerm(ref.term)) {
       logger(INFO) << "CommitmentSpend: ring member at index " << absIdx
                    << " is pool-owned (term 0x" << std::hex << ref.term
                    << std::dec << ") — tx rejected";
+      return false;
+    }
+
+    if (validatingBlockVersion >= BLOCK_MAJOR_VERSION_11 && isMintedByCoinbase(ref)) {
+      logger(INFO) << "CommitmentSpend: ring member at index " << absIdx
+                   << " was minted by a coinbase — tx rejected";
       return false;
     }
 
@@ -3028,15 +3194,6 @@ bool CryptoNote::Blockchain::checkCommitmentSpendInput(const TransactionInputCom
     // Paths with no block in hand (mempool, block template) pass 0 and fall back to
     // the height-derived version, which is correct there because they are judging a
     // transaction against the chain tip rather than against a specific block.
-    uint8_t validatingBlockVersion = blockMajorVersion;
-    if (validatingBlockVersion == 0) {
-      // Mempool / block-template: the block a tx would land in is the NEXT one, at
-      // height m_blocks.size(). This must match checkTransactionSettlement, which
-      // resolves the same block's version as getBlockMajorVersionForHeight(
-      // m_blocks.size()) with NO +1. Using +1 here made the mempool internally
-      // inconsistent at an upgrade height -- lax settlement, strict input caps.
-      validatingBlockVersion = getBlockMajorVersionForHeight(currentHeight);
-    }
     if (validatingBlockVersion >= BLOCK_MAJOR_VERSION_11 &&
         youngestRingMemberHeight < cdStartHeight) {
       logger(INFO) << "CommitmentSpend: interest claim on a pre-CD deposit (youngest ring member at height "
@@ -3132,7 +3289,8 @@ bool CryptoNote::Blockchain::checkCommitmentTransferInput(
     const TransactionInputCommitmentTransfer& txin,
     const Crypto::Hash& tx_prefix_hash,
     const std::vector<Crypto::Signature>& sig,
-    uint32_t* pmax_related_block_height) {
+    uint32_t* pmax_related_block_height,
+    uint8_t blockMajorVersion) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
 
   // Subgroup check (same as CommitmentSpend)
@@ -3187,6 +3345,7 @@ bool CryptoNote::Blockchain::checkCommitmentTransferInput(
   ringKeys.reserve(absoluteIndexes.size());
   bool hasNonForever = false;
   uint32_t currentHeight = getCurrentBlockchainHeight();
+  const uint8_t validatingBlockVersion = resolveValidatingBlockVersion(blockMajorVersion, currentHeight);
   for (uint64_t absIdx : absoluteIndexes) {
     if (absIdx >= amountRefs.size()) {
       logger(INFO) << "CommitmentTransfer: global index " << absIdx << " out of range";
@@ -3202,9 +3361,19 @@ bool CryptoNote::Blockchain::checkCommitmentTransferInput(
       return false;
     }
 
+    if (isPoolOwnedTerm(ref.term)) {
+      logger(INFO) << "CommitmentTransfer: ring member at index " << absIdx << " is pool-owned — rejected";
+      return false;
+    }
+
+    if (validatingBlockVersion >= BLOCK_MAJOR_VERSION_11 && isMintedByCoinbase(ref)) {
+      logger(INFO) << "CommitmentTransfer: ring member at index " << absIdx << " was minted by a coinbase — rejected";
+      return false;
+    }
+
     if (ref.term != CryptoNote::parameters::HEAT_TERM) {
       hasNonForever = true;
-      if (ref.term > 0) {
+      if (hasMaturityLock(ref.term, validatingBlockVersion)) {
         uint32_t memberHeight = ref.transactionIndex.block;
         uint32_t maturityHeight = memberHeight + ref.term;
         if (maturityHeight < memberHeight || currentHeight < maturityHeight) {
@@ -3246,6 +3415,37 @@ bool CryptoNote::Blockchain::checkCommitmentTransferInput(
     logger(DEBUGGING) << "CommitmentTransfer ring signature check failed for keyImage: " << Common::podToHex(txin.keyImage);
   }
   return valid;
+}
+
+// Mempool and block-template paths pass 0: the block a transaction would land
+// in is the next one, at height m_blocks.size(), with no +1 (matches
+// checkTransactionSettlement).
+uint8_t CryptoNote::Blockchain::resolveValidatingBlockVersion(uint8_t blockMajorVersion,
+                                                              uint32_t currentHeight) const {
+  return blockMajorVersion != 0 ? blockMajorVersion : getBlockMajorVersionForHeight(currentHeight);
+}
+
+bool CryptoNote::Blockchain::isFiniteCdTerm(uint32_t term) const {
+  return term >= m_currency.depositMinTerm() && term <= m_currency.depositMaxTerm();
+}
+
+// From v11 only a finite CD term is a lock length. LP, swap-receive and DIGM
+// terms are asset markers: read as lengths, LP wrapped uint32 and swap-receive
+// matured ~1.4e9 blocks out, so neither could ever be spent. Pre-v11 replay
+// keeps the original rule.
+bool CryptoNote::Blockchain::hasMaturityLock(uint32_t term, uint8_t validatingBlockVersion) const {
+  if (validatingBlockVersion >= BLOCK_MAJOR_VERSION_11) {
+    return isFiniteCdTerm(term);
+  }
+  return term > 0;
+}
+
+bool CryptoNote::Blockchain::isPoolOwnedTerm(uint32_t term) {
+  return term == parameters::DEPOSIT_TERM_POOL_XFG || term == parameters::DEPOSIT_TERM_POOL_HEAT;
+}
+
+bool CryptoNote::Blockchain::isMintedByCoinbase(const CommitmentOutputRef& ref) {
+  return ref.transactionIndex.transaction == 0;
 }
 
 uint64_t CryptoNote::Blockchain::get_adjusted_time() {
@@ -4295,27 +4495,49 @@ uint64_t CryptoNote::Blockchain::depositAmountAtHeight(size_t height) const {
   return m_bankingIndex.depositAmountAtHeight(static_cast<BankingIndex::DepositHeight>(height));
 }
 
+CryptoNote::Blockchain::OrderbookRollbackSnapshot CryptoNote::Blockchain::captureOrderbookState() const {
+  OrderbookRollbackSnapshot state;
+  state.lastClearingPrice = g_orderbookLastClearingPrice;
+  state.isInBootstrap = g_orderbookIsInBootstrap;
+  state.bootstrapBlocksRemaining = g_orderbookBootstrapBlocksRemaining;
+  state.lastNumMatches = g_orderbookLastNumMatches;
+  state.blocksSinceLastPoolRegen = g_blocksSinceLastPoolRegen;
+  state.priorPoolRegenPclear = g_priorPoolRegenPclear;
+  state.priorPoolXfgReserve = g_priorPoolXfgReserve;
+  state.priorPoolHeatReserve = g_priorPoolHeatReserve;
+  state.poolBandFilledLastBlock = g_poolBandFilledLastBlock;
+  state.priceHistory = g_poolOrchestrator.priceHistory();
+  state.lastRegenPclear = g_poolOrchestrator.lastRegenPclear();
+  state.orders = g_orderbookMempool.getAllUserOrders();
+  state.poolOrders = g_orderbookMempool.getAllPoolOrders();
+  return state;
+}
+
+void CryptoNote::Blockchain::restoreOrderbookState(const OrderbookRollbackSnapshot& state) {
+  g_orderbookLastClearingPrice = state.lastClearingPrice;
+  g_orderbookIsInBootstrap = state.isInBootstrap;
+  g_orderbookBootstrapBlocksRemaining = state.bootstrapBlocksRemaining;
+  g_orderbookLastNumMatches = state.lastNumMatches;
+  g_blocksSinceLastPoolRegen = state.blocksSinceLastPoolRegen;
+  g_priorPoolRegenPclear = state.priorPoolRegenPclear;
+  g_priorPoolXfgReserve = state.priorPoolXfgReserve;
+  g_priorPoolHeatReserve = state.priorPoolHeatReserve;
+  g_poolBandFilledLastBlock = state.poolBandFilledLastBlock;
+  g_poolOrchestrator.restorePriceHistory(state.priceHistory);
+  g_poolOrchestrator.restoreLastRegenPclear(state.lastRegenPclear);
+  g_orderbookMempool.clear();
+  for (const auto& o : state.orders)
+    g_orderbookMempool.addOrder(o);
+  g_orderbookMempool.setPoolOrders(state.poolOrders);
+}
+
 void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::vector<Transaction>& transactions, uint32_t height) {
   if (height < m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11))
     return;
 
   // Save pre-block orderbook snapshot for popBlock rollback
   {
-    OrderbookRollbackSnapshot snap;
-    snap.lastClearingPrice = g_orderbookLastClearingPrice;
-    snap.isInBootstrap = g_orderbookIsInBootstrap;
-    snap.bootstrapBlocksRemaining = g_orderbookBootstrapBlocksRemaining;
-    snap.lastNumMatches = g_orderbookLastNumMatches;
-    snap.blocksSinceLastPoolRegen = g_blocksSinceLastPoolRegen;
-    snap.priorPoolRegenPclear = g_priorPoolRegenPclear;
-    snap.priorPoolXfgReserve = g_priorPoolXfgReserve;
-    snap.priorPoolHeatReserve = g_priorPoolHeatReserve;
-    snap.poolBandFilledLastBlock = g_poolBandFilledLastBlock;
-    snap.priceHistory = g_poolOrchestrator.priceHistory();
-    snap.lastRegenPclear = g_poolOrchestrator.lastRegenPclear();
-    snap.orders = g_orderbookMempool.getAllUserOrders();
-    snap.poolOrders = g_orderbookMempool.getAllPoolOrders();
-    m_orderbookSnapshots.push_back({height, std::move(snap)});
+    m_orderbookSnapshots.push_back({height, captureOrderbookState()});
     while (m_orderbookSnapshots.size() > MAX_ROLLBACK_HISTORY)
       m_orderbookSnapshots.pop_front();
   }
@@ -6217,24 +6439,7 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
   // Restore orderbook state if the popped block was v11+
   {
     if (!m_orderbookSnapshots.empty() && m_orderbookSnapshots.back().first == poppedHeight) {
-      const auto& snap = m_orderbookSnapshots.back().second;
-      g_orderbookLastClearingPrice = snap.lastClearingPrice;
-      g_orderbookIsInBootstrap = snap.isInBootstrap;
-      g_orderbookBootstrapBlocksRemaining = snap.bootstrapBlocksRemaining;
-      g_orderbookLastNumMatches = snap.lastNumMatches;
-      g_blocksSinceLastPoolRegen = snap.blocksSinceLastPoolRegen;
-      g_priorPoolRegenPclear = snap.priorPoolRegenPclear;
-      g_priorPoolXfgReserve = snap.priorPoolXfgReserve;
-      g_priorPoolHeatReserve = snap.priorPoolHeatReserve;
-      g_poolBandFilledLastBlock = snap.poolBandFilledLastBlock;
-      g_poolOrchestrator.restorePriceHistory(snap.priceHistory);
-      g_poolOrchestrator.restoreLastRegenPclear(snap.lastRegenPclear);
-      g_orderbookMempool.clear();
-      // Restore user orders
-      for (const auto& o : snap.orders)
-        g_orderbookMempool.addOrder(o);
-      // Restore pool orders
-      g_orderbookMempool.setPoolOrders(snap.poolOrders);
+      restoreOrderbookState(m_orderbookSnapshots.back().second);
       m_orderbookSnapshots.pop_back();
     }
   }

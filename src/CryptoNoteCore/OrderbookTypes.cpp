@@ -50,7 +50,8 @@ std::vector<Order> generatePoolOrders(const PoolOrderParams& params) {
   auto makePoolId = [&](int tier, uint8_t side, uint64_t price) -> Crypto::Hash {
     // Deterministic but unique ID: hash of (P_clear || reserveXfg || reserveHeat || tier || side || price)
     // Prefix 0xF0 marks pool-generated; aggressive collision rejection in addOrder().
-    uint8_t seed[56];
+    constexpr size_t SEED_FIELD_COUNT = 6;
+    uint8_t seed[SEED_FIELD_COUNT * sizeof(uint64_t)];
     for (int i = 0; i < 8; i++) {
       seed[i]      = static_cast<uint8_t>((params.P_clear      >> (8*i)) & 0xFF);
       seed[8 + i]  = static_cast<uint8_t>((params.reserveXfg   >> (8*i)) & 0xFF);
@@ -74,10 +75,11 @@ std::vector<Order> generatePoolOrders(const PoolOrderParams& params) {
     uint64_t tierAmount = std::min(chunkSize, remainingSell);
     if (tierAmount == 0) break;
 
-    Order o;
+    Order o{};
     o.side = 1;
     o.amount = tierAmount;
     o.price = sellPrice;
+    o.targetPrice = sellPrice;
     o.expiration = 0;
     o.addressHash = Crypto::Hash{};
     o.orderId = makePoolId(tier, 1, sellPrice);
@@ -96,10 +98,11 @@ std::vector<Order> generatePoolOrders(const PoolOrderParams& params) {
     uint64_t tierAmount = std::min(chunkSize, remainingBuy);
     if (tierAmount == 0 || bidPrice == 0) break;
 
-    Order o;
+    Order o{};
     o.side = 0;
     o.amount = tierAmount;
     o.price = bidPrice;
+    o.targetPrice = bidPrice;
     o.expiration = 0;
     o.addressHash = Crypto::Hash{};
     o.orderId = makePoolId(10 + tier, 0, bidPrice);

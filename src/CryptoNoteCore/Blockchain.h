@@ -691,6 +691,8 @@ namespace CryptoNote {
       bool isTaker = false;    // auction: this fill is on the fee-paying side
       uint64_t rebateHeat = 0; // auction maker fills: rebate credited to proceedsHeat
       uint64_t priceHeat = 0;  // auction: fill's price value (fillXfg × p*/COIN)
+
+      void serialize(ISerializer& s);
     };
     std::deque<std::pair<uint32_t, std::vector<OrderFillRecord>>> m_blockOrderFills;
     // Per-block alias register/release/transfer undo journal for popBlock
@@ -742,8 +744,13 @@ namespace CryptoNote {
       // survives popBlock and reorged nodes compute a different spread for the
       // same height.
       std::deque<uint64_t> priceHistory;
+
+      // Consensus fields only: user gossip orders re-gossip and are not persisted.
+      void serialize(ISerializer& s);
     };
     std::deque<std::pair<uint32_t, OrderbookRollbackSnapshot>> m_orderbookSnapshots;
+    OrderbookRollbackSnapshot captureOrderbookState() const;
+    void restoreOrderbookState(const OrderbookRollbackSnapshot& state);
 
     // Cumulative fee pool accounting (lifetime totals, never reset)
     uint64_t m_totalSwapFeesCollected = 0;    // all swap fees ever entering the pool
@@ -860,7 +867,12 @@ namespace CryptoNote {
     // block being validated, so a +1 there applied the next height's rules to this
     // block.
     bool checkCommitmentSpendInput(const TransactionInputCommitmentSpend& txin, const Crypto::Hash& tx_prefix_hash, const std::vector<Crypto::Signature>& sig, uint32_t* pmax_related_block_height = nullptr, uint8_t blockMajorVersion = 0);
-    bool checkCommitmentTransferInput(const TransactionInputCommitmentTransfer& txin, const Crypto::Hash& tx_prefix_hash, const std::vector<Crypto::Signature>& sig, uint32_t* pmax_related_block_height = nullptr);
+    bool checkCommitmentTransferInput(const TransactionInputCommitmentTransfer& txin, const Crypto::Hash& tx_prefix_hash, const std::vector<Crypto::Signature>& sig, uint32_t* pmax_related_block_height = nullptr, uint8_t blockMajorVersion = 0);
+    uint8_t resolveValidatingBlockVersion(uint8_t blockMajorVersion, uint32_t currentHeight) const;
+    bool isFiniteCdTerm(uint32_t term) const;
+    bool hasMaturityLock(uint32_t term, uint8_t validatingBlockVersion) const;
+    static bool isPoolOwnedTerm(uint32_t term);
+    static bool isMintedByCoinbase(const CommitmentOutputRef& ref);
     bool removeLastBlock();
     bool checkCheckpoints(uint32_t &lastValidCheckpointHeight);
     bool checkUpgradeHeight(const UpgradeDetector& upgradeDetector);

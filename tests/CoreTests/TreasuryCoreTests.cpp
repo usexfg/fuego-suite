@@ -30,6 +30,7 @@
 #include <limits>
 #include <string>
 #include <vector>
+#include <algorithm>
 #include <filesystem>
 #ifdef _WIN32
 #include <process.h>
@@ -1166,8 +1167,406 @@ public:
     return chain.m_currency.isTestnet() ? parameters::TESTNET_EPOCH_DURATION_BLOCKS
                                         : parameters::EPOCH_DURATION_BLOCKS;
   }
+  static CommitmentOutputIndex& commitmentOutputs(Blockchain& chain) {
+    return chain.m_indexManager.commitmentOutputs();
+  }
+  static bool checkCommitmentSpend(Blockchain& chain, const TransactionInputCommitmentSpend& in,
+                                   const Crypto::Hash& prefix, const std::vector<Crypto::Signature>& sigs,
+                                   uint8_t blockMajorVersion) {
+    return chain.checkCommitmentSpendInput(in, prefix, sigs, nullptr, blockMajorVersion);
+  }
+  static bool checkCommitmentTransfer(Blockchain& chain, const TransactionInputCommitmentTransfer& in,
+                                      const Crypto::Hash& prefix, const std::vector<Crypto::Signature>& sigs,
+                                      uint8_t blockMajorVersion) {
+    return chain.checkCommitmentTransferInput(in, prefix, sigs, nullptr, blockMajorVersion);
+  }
+  using OrderbookState = Blockchain::OrderbookRollbackSnapshot;
+  static OrderbookState orderbookState(const Blockchain& chain) { return chain.captureOrderbookState(); }
+  static void setOrderbookState(Blockchain& chain, const OrderbookState& state) {
+    chain.restoreOrderbookState(state);
+  }
+  static void resetOrderbookStateToProcessStart(Blockchain& chain) {
+    chain.restoreOrderbookState(OrderbookState{});
+  }
+  using OrderFillRecord = Blockchain::OrderFillRecord;
+  static constexpr size_t maxRollbackHistory() { return Blockchain::MAX_ROLLBACK_HISTORY; }
+  static auto& blockOrderFills(Blockchain& chain) { return chain.m_blockOrderFills; }
+  static auto& blockLpRemoveAmounts(Blockchain& chain) { return chain.m_blockLpRemoveAmounts; }
+  static auto& blockSwapFeeContributions(Blockchain& chain) { return chain.m_blockSwapFeeContributions; }
+  static auto& blockEpochDistributions(Blockchain& chain) { return chain.m_blockEpochDistributions; }
+  static auto& blockTwapContributions(Blockchain& chain) { return chain.m_blockTwapContributions; }
+  static auto& orderbookSnapshots(Blockchain& chain) { return chain.m_orderbookSnapshots; }
 };
 } // namespace CryptoNote
+
+namespace {
+
+struct RingMember {
+  uint32_t term;
+  TxIndex origin;
+};
+
+struct SignedRing {
+  uint64_t amount;
+  std::vector<uint32_t> outputIndexes;
+  Crypto::KeyImage keyImage;
+  Crypto::Hash prefix;
+  std::vector<Crypto::Signature> sigs;
+};
+
+// Indexes one commitment output per member at a single fresh amount, each
+// owned by its own key, and signs a ring over all of them with the key of
+// members[realIndex]. The signature is always valid, so the verdict is decided
+// by the ring-member rules (maturity, burn guard, pool ownership, coinbase
+// origin, interest) and never by the signature.
+SignedRing signRing(Blockchain& chain, const std::vector<RingMember>& members, size_t realIndex) {
+  static uint64_t nextUniqueAmount = 7770001;
+  SignedRing ring;
+  ring.amount = nextUniqueAmount++;
+
+  std::vector<Crypto::PublicKey> keys(members.size());
+  std::vector<Crypto::SecretKey> secrets(members.size());
+  auto& refs = VaultCoreTestAccess::commitmentOutputs(chain)[ring.amount];
+  uint32_t previousIndex = 0;
+  for (size_t i = 0; i < members.size(); ++i) {
+    Crypto::generate_keys(keys[i], secrets[i]);
+    CommitmentOutputRef ref{};
+    ref.transactionIndex = members[i].origin;
+    ref.outputInTransaction = 0;
+    ref.commitKey = keys[i];
+    ref.term = members[i].term;
+    refs.push_back(ref);
+    const uint32_t absoluteIndex = static_cast<uint32_t>(refs.size() - 1);
+    ring.outputIndexes.push_back(absoluteIndex - previousIndex);
+    previousIndex = absoluteIndex;
+  }
+  Crypto::generate_key_image(keys[realIndex], secrets[realIndex], ring.keyImage);
+
+  ring.prefix = Crypto::cn_fast_hash(&ring.amount, sizeof(ring.amount));
+  ring.sigs.resize(members.size());
+  std::vector<const Crypto::PublicKey*> ringKeys;
+  for (const auto& key : keys) ringKeys.push_back(&key);
+  Crypto::generate_ring_signature(ring.prefix, ring.keyImage, ringKeys.data(), ringKeys.size(),
+                                  secrets[realIndex], realIndex, ring.sigs.data());
+  return ring;
+}
+
+bool spendRing(Blockchain& chain, const std::vector<RingMember>& members, size_t realIndex,
+               uint8_t blockMajorVersion, uint64_t claimedInterest = 0) {
+  const SignedRing ring = signRing(chain, members, realIndex);
+  TransactionInputCommitmentSpend in;
+  in.amount = ring.amount;
+  in.outputIndexes = ring.outputIndexes;
+  in.keyImage = ring.keyImage;
+  in.claimedInterest = claimedInterest;
+  return VaultCoreTestAccess::checkCommitmentSpend(chain, in, ring.prefix, ring.sigs, blockMajorVersion);
+}
+
+bool transferRing(Blockchain& chain, const std::vector<RingMember>& members, size_t realIndex,
+                  uint8_t blockMajorVersion) {
+  const SignedRing ring = signRing(chain, members, realIndex);
+  TransactionInputCommitmentTransfer in;
+  in.amount = ring.amount;
+  in.outputIndexes = ring.outputIndexes;
+  in.keyImage = ring.keyImage;
+  in.newTerm = parameters::CD_TRANSFER_MIN_REMAINING_TERM;
+  return VaultCoreTestAccess::checkCommitmentTransfer(chain, in, ring.prefix, ring.sigs, blockMajorVersion);
+}
+
+bool spendSingleMemberRing(Blockchain& chain, uint32_t term, TxIndex origin,
+                           uint8_t blockMajorVersion, uint64_t claimedInterest = 0) {
+  return spendRing(chain, {{term, origin}}, 0, blockMajorVersion, claimedInterest);
+}
+
+const TxIndex REGULAR_TX_AT_HEIGHT_3{3, 1};
+const TxIndex COINBASE_AT_GENESIS{0, 0};
+const TxIndex REGULAR_TX_AT_GENESIS{0, 1};
+
+} // namespace
+
+// A v11+ coinbase may only pay KeyOutputs. A commitment output in the coinbase
+// skipped check_tx_outputs and validateSettlement, so a miner could take the
+// reward as HEAT (HEAT_TERM / CD term) or LP shares with nothing burned.
+void testCoinbaseMintsOnlyKeyOutputsFromV11() {
+  TestChain t("coinbase_outputs");
+  TEST(t.ok);
+  auto coinbaseWithOutput = [&](uint8_t majorVersion, const TransactionOutput& out) {
+    const uint32_t h = 1;
+    Block b{};
+    b.majorVersion = majorVersion;
+    b.minorVersion = BLOCK_MINOR_VERSION_1;
+    b.timestamp = 1;
+    b.baseTransaction.version = TRANSACTION_VERSION_2;
+    b.baseTransaction.inputs.push_back(BaseInput{h});
+    b.baseTransaction.unlockTime = h + VaultCoreTestAccess::coinbaseUnlockWindow(t.chain);
+    b.baseTransaction.outputs.push_back(out);
+    return b;
+  };
+  auto commitmentOut = [](uint32_t term) {
+    Crypto::PublicKey key;
+    Crypto::SecretKey unused;
+    Crypto::generate_keys(key, unused);
+    TransactionOutputCommitment target{};
+    target.commitKey = key;
+    target.term = term;
+    TransactionOutput out;
+    out.amount = 50 * parameters::COIN;
+    out.target = target;
+    return out;
+  };
+
+  TEST(VaultCoreTestAccess::prevalidateCoinbase(
+      t.chain, coinbaseWithOutput(BLOCK_MAJOR_VERSION_11, keyOut(50 * parameters::COIN)), 1));
+  TEST(!VaultCoreTestAccess::prevalidateCoinbase(
+      t.chain, coinbaseWithOutput(BLOCK_MAJOR_VERSION_11, commitmentOut(parameters::HEAT_TERM)), 1));
+  TEST(!VaultCoreTestAccess::prevalidateCoinbase(
+      t.chain, coinbaseWithOutput(BLOCK_MAJOR_VERSION_11, commitmentOut(parameters::DEPOSIT_MIN_TERM)), 1));
+  TEST(!VaultCoreTestAccess::prevalidateCoinbase(
+      t.chain, coinbaseWithOutput(BLOCK_MAJOR_VERSION_11, commitmentOut(parameters::DEPOSIT_TERM_LP)), 1));
+  // Pre-v11 replay keeps its original rule.
+  TEST(VaultCoreTestAccess::prevalidateCoinbase(
+      t.chain, coinbaseWithOutput(BLOCK_MAJOR_VERSION_10, commitmentOut(parameters::HEAT_TERM)), 1));
+}
+
+// v11+ commitment spends: marker terms (LP, swap-receive) are not lock lengths,
+// pool-owned outputs stay unspendable, finite CDs keep their maturity, and a
+// commitment minted by a coinbase can never be spent.
+void testCommitmentSpendRingMemberRulesFromV11() {
+  TestChain t("commitment_spend");
+  TEST(t.ok);
+  const uint8_t V11 = BLOCK_MAJOR_VERSION_11;
+  const uint8_t V10 = BLOCK_MAJOR_VERSION_10;
+
+  const uint32_t LP = parameters::DEPOSIT_TERM_LP;
+  const uint32_t PLAIN_HEAT = 0;
+  const TxIndex COINBASE_AT_HEIGHT_3{3, 0};
+
+  TEST(spendSingleMemberRing(t.chain, LP, REGULAR_TX_AT_HEIGHT_3, V11));
+  TEST(spendSingleMemberRing(t.chain, parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG, REGULAR_TX_AT_HEIGHT_3, V11));
+  TEST(!spendSingleMemberRing(t.chain, LP, COINBASE_AT_HEIGHT_3, V11));
+
+  TEST(!spendSingleMemberRing(t.chain, parameters::DEPOSIT_TERM_POOL_XFG, REGULAR_TX_AT_HEIGHT_3, V11));
+  TEST(!spendSingleMemberRing(t.chain, parameters::DEPOSIT_TERM_POOL_HEAT, REGULAR_TX_AT_HEIGHT_3, V11));
+  TEST(!spendSingleMemberRing(t.chain, parameters::DEPOSIT_MIN_TERM, REGULAR_TX_AT_GENESIS, V11));
+  TEST(!spendSingleMemberRing(t.chain, LP, REGULAR_TX_AT_HEIGHT_3, V11, 1));
+  TEST(!spendSingleMemberRing(t.chain, parameters::HEAT_TERM, REGULAR_TX_AT_GENESIS, V11));
+
+  // A coinbase HEAT_TERM output is a burn marker the miner holds the key to.
+  // Alone it trips the burn guard; ringed with any spendable HEAT decoy it was
+  // spendable as HEAT that nothing paid for.
+  const std::vector<RingMember> coinbaseHeatWithDecoy{{parameters::HEAT_TERM, COINBASE_AT_GENESIS},
+                                                      {PLAIN_HEAT, REGULAR_TX_AT_GENESIS}};
+  const std::vector<RingMember> regularHeatWithDecoy{{parameters::HEAT_TERM, REGULAR_TX_AT_GENESIS},
+                                                     {PLAIN_HEAT, REGULAR_TX_AT_GENESIS}};
+  TEST(!spendRing(t.chain, coinbaseHeatWithDecoy, 0, V11));
+  TEST(spendRing(t.chain, regularHeatWithDecoy, 1, V11));
+
+  // Pre-v11 replay keeps its original rule.
+  TEST(!spendSingleMemberRing(t.chain, LP, REGULAR_TX_AT_HEIGHT_3, V10));
+  TEST(spendRing(t.chain, coinbaseHeatWithDecoy, 0, V10));
+
+  // CommitmentTransfer is a second spend path and must apply the same rules.
+  TEST(transferRing(t.chain, {{LP, REGULAR_TX_AT_HEIGHT_3}}, 0, V11));
+  TEST(!transferRing(t.chain, {{LP, COINBASE_AT_HEIGHT_3}}, 0, V11));
+  TEST(!transferRing(t.chain, {{parameters::DEPOSIT_TERM_POOL_XFG, REGULAR_TX_AT_HEIGHT_3}}, 0, V11));
+  TEST(!transferRing(t.chain, {{parameters::DEPOSIT_TERM_POOL_HEAT, REGULAR_TX_AT_HEIGHT_3}}, 0, V11));
+  TEST(!transferRing(t.chain, coinbaseHeatWithDecoy, 0, V11));
+  TEST(transferRing(t.chain, regularHeatWithDecoy, 1, V11));
+  TEST(!transferRing(t.chain, {{LP, REGULAR_TX_AT_HEIGHT_3}}, 0, V10));
+}
+
+namespace {
+// A daemon's Blockchain over a data directory it does not own: started with
+// loadExisting=true it loads the block cache the way a restarted daemon does.
+struct DaemonChain {
+  Logging::LoggerGroup log;
+  Currency currency;
+  RealTimeProvider timeProvider;
+  tx_memory_pool pool;
+  Blockchain chain;
+  bool ok = false;
+
+  DaemonChain(const std::filesystem::path& dir, bool loadExisting)
+      : currency(CurrencyBuilder(log).currency()),
+        pool(currency, chain, timeProvider, log),
+        chain(currency, pool, log, false, false) {
+    ok = chain.init(dir.string(), loadExisting);
+  }
+};
+
+bool samePoolOrders(const std::vector<Order>& a, const std::vector<Order>& b) {
+  auto byId = [](std::vector<Order> orders) {
+    std::sort(orders.begin(), orders.end(), [](const Order& x, const Order& y) {
+      return memcmp(x.orderId.data, y.orderId.data, sizeof(x.orderId.data)) < 0;
+    });
+    return orders;
+  };
+  const auto left = byId(a), right = byId(b);
+  if (left.size() != right.size()) return false;
+  for (size_t i = 0; i < left.size(); ++i) {
+    if (left[i].orderId != right[i].orderId || left[i].side != right[i].side ||
+        left[i].amount != right[i].amount || left[i].price != right[i].price ||
+        left[i].targetPrice != right[i].targetPrice) {
+      return false;
+    }
+  }
+  return true;
+}
+} // namespace
+
+// A clean restart loads the block cache instead of replaying the chain. The
+// orderbook state lived only in process globals, so a restarted node re-entered
+// the bootstrap and skipped auctions every other node still ran.
+void testOrderbookStateSurvivesCacheReload() {
+  const auto dir = std::filesystem::temp_directory_path() /
+                   ("fuego_core_tests_orderbook_reload_" + std::to_string(currentProcessId()));
+  std::filesystem::remove_all(dir);
+  std::filesystem::create_directories(dir);
+
+  VaultCoreTestAccess::OrderbookState persisted;
+  {
+    DaemonChain first(dir, false);
+    TEST(first.ok);
+    persisted = VaultCoreTestAccess::orderbookState(first.chain);
+    persisted.lastClearingPrice = 1234567;
+    persisted.isInBootstrap = false;
+    persisted.bootstrapBlocksRemaining = 7;
+    persisted.lastNumMatches = 3;
+    persisted.blocksSinceLastPoolRegen = 4;
+    persisted.priorPoolRegenPclear = 1230000;
+    persisted.priorPoolXfgReserve = 8000 * parameters::COIN;
+    persisted.priorPoolHeatReserve = 1000 * parameters::COIN;
+    persisted.poolBandFilledLastBlock = 5;
+    persisted.lastRegenPclear = 1230000;
+    persisted.priceHistory = {1250000, 1240000, 1234567};
+    persisted.poolOrders = generatePoolOrders({1234567, HEARTH_DEPTH_BAND_PCT, 8000 * parameters::COIN,
+                                               1000 * parameters::COIN, 30});
+    VaultCoreTestAccess::setOrderbookState(first.chain, persisted);
+    TEST(first.chain.deinit());
+    VaultCoreTestAccess::resetOrderbookStateToProcessStart(first.chain);
+  }
+
+  {
+    DaemonChain restarted(dir, true);
+    TEST(restarted.ok);
+    const auto loaded = VaultCoreTestAccess::orderbookState(restarted.chain);
+    TEST(loaded.lastClearingPrice == persisted.lastClearingPrice);
+    TEST(loaded.isInBootstrap == persisted.isInBootstrap);
+    TEST(loaded.bootstrapBlocksRemaining == persisted.bootstrapBlocksRemaining);
+    TEST(loaded.lastNumMatches == persisted.lastNumMatches);
+    TEST(loaded.blocksSinceLastPoolRegen == persisted.blocksSinceLastPoolRegen);
+    TEST(loaded.priorPoolRegenPclear == persisted.priorPoolRegenPclear);
+    TEST(loaded.priorPoolXfgReserve == persisted.priorPoolXfgReserve);
+    TEST(loaded.priorPoolHeatReserve == persisted.priorPoolHeatReserve);
+    TEST(loaded.poolBandFilledLastBlock == persisted.poolBandFilledLastBlock);
+    TEST(loaded.lastRegenPclear == persisted.lastRegenPclear);
+    TEST(loaded.priceHistory == persisted.priceHistory);
+    TEST(!persisted.poolOrders.empty() && samePoolOrders(loaded.poolOrders, persisted.poolOrders));
+  }
+  std::error_code ec;
+  std::filesystem::remove_all(dir, ec);
+}
+
+bool sameFillRecord(const VaultCoreTestAccess::OrderFillRecord& a, const VaultCoreTestAccess::OrderFillRecord& b) {
+  return a.orderId == b.orderId && a.side == b.side && a.xfg == b.xfg && a.heat == b.heat &&
+         a.feeHeat == b.feeHeat && a.netXfg == b.netXfg && a.newlyExpired == b.newlyExpired &&
+         a.isAuction == b.isAuction && a.isPoolFill == b.isPoolFill && a.isTaker == b.isTaker &&
+         a.rebateHeat == b.rebateHeat && a.priceHeat == b.priceHeat;
+}
+
+// popBlock and popTransaction reverse a block from per-block journals. They
+// lived only in memory, so after a clean restart a reorg could not reverse a
+// block mined before it: auction fills, LP removals, swap fees, epoch
+// distributions, TWAP sums and orderbook state stayed applied.
+void testRollbackHistoriesSurviveCacheReload() {
+  const auto dir = std::filesystem::temp_directory_path() /
+                   ("fuego_core_tests_rollback_reload_" + std::to_string(currentProcessId()));
+  std::filesystem::remove_all(dir);
+  std::filesystem::create_directories(dir);
+  const size_t maxHistory = VaultCoreTestAccess::maxRollbackHistory();
+
+  VaultCoreTestAccess::OrderFillRecord fill{};
+  fill.orderId = Crypto::cn_fast_hash("fill", 4);
+  fill.side = 1;
+  fill.xfg = 11; fill.heat = 12; fill.feeHeat = 13; fill.netXfg = 14;
+  fill.newlyExpired = true; fill.isAuction = true; fill.isPoolFill = true; fill.isTaker = true;
+  fill.rebateHeat = 15; fill.priceHeat = 16;
+  const uint128_t twap = (static_cast<uint128_t>(0xABCDEF) << 64) | 0x123456789ULL;
+  VaultCoreTestAccess::OrderbookState snapshot;
+  snapshot.lastClearingPrice = 4242;
+  snapshot.isInBootstrap = false;
+  snapshot.poolOrders = generatePoolOrders({4242, HEARTH_DEPTH_BAND_PCT, 8000 * parameters::COIN,
+                                            1000 * parameters::COIN, 30});
+  {
+    DaemonChain first(dir, false);
+    TEST(first.ok);
+    VaultCoreTestAccess::blockOrderFills(first.chain).push_back({1, {fill}});
+    VaultCoreTestAccess::blockLpRemoveAmounts(first.chain).push_back({1, {{21, 22}}});
+    for (size_t i = 0; i < maxHistory + 5; ++i) {
+      VaultCoreTestAccess::blockSwapFeeContributions(first.chain).push_back(i);
+      VaultCoreTestAccess::blockEpochDistributions(first.chain).push_back({i, i + 1});
+    }
+    VaultCoreTestAccess::blockTwapContributions(first.chain).push_back(twap);
+    VaultCoreTestAccess::orderbookSnapshots(first.chain).push_back({1, snapshot});
+    TEST(first.chain.deinit());
+  }
+
+  {
+    DaemonChain restarted(dir, true);
+    TEST(restarted.ok);
+    const auto& fills = VaultCoreTestAccess::blockOrderFills(restarted.chain);
+    TEST(fills.size() == 1 && fills.back().first == 1 && fills.back().second.size() == 1 &&
+         sameFillRecord(fills.back().second[0], fill));
+    const auto& lpRemovals = VaultCoreTestAccess::blockLpRemoveAmounts(restarted.chain);
+    const std::vector<std::pair<uint64_t, uint64_t>> expectedLpRemoval{{21, 22}};
+    TEST(lpRemovals.size() == 1 && lpRemovals.back().first == 1 &&
+         lpRemovals.back().second == expectedLpRemoval);
+    const auto& swapFees = VaultCoreTestAccess::blockSwapFeeContributions(restarted.chain);
+    TEST(swapFees.size() == maxHistory && swapFees.front() == 5 && swapFees.back() == maxHistory + 4);
+    const auto& distributions = VaultCoreTestAccess::blockEpochDistributions(restarted.chain);
+    TEST(distributions.size() == maxHistory && distributions.back().first == maxHistory + 4 &&
+         distributions.back().second == maxHistory + 5);
+    const auto& twaps = VaultCoreTestAccess::blockTwapContributions(restarted.chain);
+    TEST(twaps.size() == 1 && twaps.back() == twap);
+    const auto& snapshots = VaultCoreTestAccess::orderbookSnapshots(restarted.chain);
+    TEST(snapshots.size() == 1 && snapshots.back().first == 1 &&
+         snapshots.back().second.lastClearingPrice == 4242 && !snapshots.back().second.isInBootstrap &&
+         samePoolOrders(snapshots.back().second.poolOrders, snapshot.poolOrders));
+  }
+  std::error_code ec;
+  std::filesystem::remove_all(dir, ec);
+}
+
+namespace {
+__attribute__((noinline)) void paintStack(uint8_t pattern) {
+  volatile uint8_t scratch[16384];
+  for (size_t i = 0; i < sizeof(scratch); ++i) scratch[i] = pattern;
+}
+
+std::vector<Order> poolOrdersOverPaintedStack(const PoolOrderParams& params, uint8_t pattern) {
+  paintStack(pattern);
+  return generatePoolOrders(params);
+}
+} // namespace
+
+// The auction prices pool orders by targetPrice and orders them by orderId;
+// both must come only from the parameters, never from stack contents.
+void testPoolOrdersAreFullyDeterministic() {
+  const PoolOrderParams params{1250000, HEARTH_DEPTH_BAND_PCT, 8000 * parameters::COIN,
+                               1000 * parameters::COIN, 30};
+  const auto first = poolOrdersOverPaintedStack(params, 0x11);
+  const auto second = poolOrdersOverPaintedStack(params, 0xEE);
+  TEST(!first.empty() && first.size() == second.size());
+  bool targetPriceIsPrice = true;
+  bool sameIds = true;
+  for (size_t i = 0; i < first.size() && i < second.size(); ++i) {
+    targetPriceIsPrice = targetPriceIsPrice && first[i].targetPrice == first[i].price &&
+                         second[i].targetPrice == second[i].price;
+    sameIds = sameIds && first[i].orderId == second[i].orderId;
+  }
+  TEST(targetPriceIsPrice);
+  TEST(sameIds);
+}
 
 // Regression: the v11+ Treasury LP Manager (AuntPoL) must run at the epoch
 // boundary. It was nested inside the pre-v11 GENERAL_RESERVE convert branch
@@ -1629,6 +2028,11 @@ int main() {
   testVaultSetSpendKeyRebuildsKeyImageIndex();
   testVaultAllBalancesSaturate();
   testVaultSelectUtxosDeterministicTies();
+  testCoinbaseMintsOnlyKeyOutputsFromV11();
+  testCommitmentSpendRingMemberRulesFromV11();
+  testPoolOrdersAreFullyDeterministic();
+  testOrderbookStateSurvivesCacheReload();
+  testRollbackHistoriesSurviveCacheReload();
   fprintf(stderr, "=== Treasury/Core Tests ===\nPassed: %d / %d\n", tests_passed, tests_run);
   return tests_passed == tests_run ? 0 : 1;
 }

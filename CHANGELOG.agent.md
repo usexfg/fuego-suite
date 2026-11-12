@@ -6714,3 +6714,39 @@ Sign-off table:
 | Build compiles | PENDING — rebuild required |
 | Tests pass | PENDING — rebuild required |
 | All tasks done | DONE (code changes) |
+
+## Fix: v11 consensus defects from adversarial review (D, A, E, B, B2, C)
+
+**Feature name**: v11 pre-activation consensus fixes, by priority
+**Agent**: Claude Code (claude-opus-5-5)
+**Start date**: 2026-11-12
+**Activation context**: mainnet `UPGRADE_HEIGHT_V11 = 1111111`; every validation-rule change is gated on `BLOCK_MAJOR_VERSION_11` so pre-v11 replay is unchanged.
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | D — v11+ coinbase outputs must be `KeyOutput` (`prevalidate_miner_transaction`); v11+ commitment spends and transfers reject ring members minted by a coinbase (`isMintedByCoinbase`). Closes unbacked HEAT/CD/LP minting by miners: a miner-keyed coinbase `HEAT_TERM` output ringed with any spendable HEAT decoy was accepted as a spend. | Claude Code (claude-opus-5-5) | 2026-11-12 | DONE |
+| 2 | A — `generatePoolOrders` value-initializes each `Order` and sets `targetPrice`; the auction reads `targetPrice`, which was indeterminate (77 at -O2, 139849386448320 at -O0: build-dependent prices on the protocol market maker). | Claude Code (claude-opus-5-5) | 2026-11-12 | DONE |
+| 3 | E — v11+ maturity applies only to finite CD terms (`hasMaturityLock`, `isFiniteCdTerm`); LP / swap-receive / DIGM marker terms no longer read as lock lengths (LP wrapped `uint32`, swap-receive matured ~1.4e9 blocks out). Pool-owned terms stay unspendable in spend and now explicitly in transfer; interest claims require finite-CD rings. DIGM outputs become spendable at v11 (HEAT-class, settlement-balanced). | Claude Code (claude-opus-5-5) | 2026-11-12 | DONE |
+| 4 | B — orderbook consensus state (P_clear, bootstrap counters, regen state, spread history, pool band) persisted in the block cache via shared `captureOrderbookState` / `restoreOrderbookState`; `CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER` 17→18 forces one full replay on upgrade. | Claude Code (claude-opus-5-5) | 2026-11-12 | DONE |
+| 5 | C — `makePoolId` hashes only the 48 bytes it writes (8 bytes were uninitialized). | Claude Code (claude-opus-5-5) | 2026-11-12 | DONE |
+| 6 | Regression tests for 1–5 and 7 in `tests/CoreTests/TreasuryCoreTests.cpp` (red before fix, green after, mutation-checked). | Claude Code (claude-opus-5-5) | 2026-11-12 | DONE |
+| 7 | B2 — persist every per-block journal `popBlock` / `popTransaction` reverses from (order fills, LP-remove deltas, orderbook snapshots, swap-fee contributions, epoch distributions, TWAP contributions). Position-keyed journals keep their newest `MAX_ROLLBACK_HISTORY` entries. FCI is excluded: `rebuildFciState` re-derives it at init. | Claude Code (claude-opus-5-5) | 2026-11-12 | DONE |
+
+Evidence:
+- Red phase (pre-fix): `core_tests` 295/303 — coinbase commitment outputs accepted at v11 (×3), LP and swap-receive spends rejected (×2), coinbase HEAT mixed-ring spend accepted, pool `targetPrice` ≠ price, pool ids differ across painted stacks. B: 306/318 (12 fields lost on reload). B2: 328/334 (6 journals lost on reload).
+- Mutations (each restored byte-identical): serialization of orderbook state removed → 12 failures; rollback journals not serialized → 6 failures; transfer legacy maturity + no coinbase guard → 2 failures.
+- Pool-order harness on fixed sources: 0/20 orders with `targetPrice != price` at -O0 and -O2; valgrind 0 errors (was 478 errors / 48 contexts).
+
+Not fixed (open, need decisions):
+- Exact-size fill against a pool level and exact-tie user crosses pay no 1% fee (`OrderbookAuction.cpp` "no taker, no fee").
+- `m_blockEpochDistributions` is pushed every block but popped only on epoch-boundary pops, so after non-boundary pops a boundary pop reverses the wrong entry (treasury reversal skipped).
+- Mint priced only from the pool's own 8-block TWAP; commitment-index RPCs serve a never-written index; cache rebuild replays without `validateSettlement`; docs/code drift (VWAP, spot fallback, CPI peg, 10:1 ratio).
+- `graphify update .` not run: graphify is not installed in this environment.
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — full `make -j4` exit 0 (Claude Code, 2026-11-12) |
+| Tests pass | DONE — core_tests 334/334, test_orderbook_auction 66/66, test_orderbook 44/44, test_p2p_orderbook 115/115, test_hearth_amm 31/31; test_orderbook_phase3 / phase5 exit 0 with no assertions printed (Claude Code, 2026-11-12) |
+| All tasks done | DONE (Claude Code, 2026-11-12) |

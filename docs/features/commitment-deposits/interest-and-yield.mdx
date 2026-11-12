@@ -22,7 +22,7 @@ More swap + Hearth volume → more yield. Quiet periods → lower yield. No fixe
 ## Not protocol earnings
 
 - **Mint premium** — 1% of each mint's burn (`HEAT_MINT_PREMIUM_BPS = 100`, v11+). A haircut inside the burn: the withheld premium XFG is the AuntPoL XFG leg and the premium HEAT it buys is the AuntPoL HEAT leg, not paid out.
-- **CD creation fee** — 0.1% of the HEAT being deposited, charged in **XFG** to `FUEGO_DEV_FUND_ADDRESS`. Not CD yield, not treasury.
+- **CD creation fee** — from v12, 0.25% (6-epoch CD) to 1% (72-epoch CD) of the HEAT being deposited, valued at the mint oracle price and paid in **XFG** to the AuntPoL XFG leg. Not CD yield, not protocol revenue.
 
 ## Epoch distribution (conceptual)
 

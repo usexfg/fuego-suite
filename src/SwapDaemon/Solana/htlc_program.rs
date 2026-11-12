@@ -46,8 +46,6 @@
 
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::keccak::hash as keccak256;
-use curve25519_dalek::constants::ED25519_BASEPOINT_POINT;
-use curve25519_dalek::edwards::{CompressedEdwardsY, EdwardsPoint};
 use curve25519_dalek::scalar::Scalar;
 
 declare_id!("J4H9vUpp5CtJF9x4iPAMj7fqp5fpH9KTGcRzRC8e72ig");
@@ -138,7 +136,7 @@ pub mod xfg_htlc {
 
         // Reject identity / small-order / non-decodable points up front so a
         // malformed T can never be funded (it would be unclaimable).
-        decode_ed25519_point(&ptlc_point)?;
+        require_prime_order_point(&ptlc_point)?;
 
         // Transfer SOL from sender to vault PDA
         let ix = anchor_lang::solana_program::system_instruction::transfer(
@@ -263,31 +261,28 @@ pub mod xfg_htlc {
             require!(!htlc.claimed, HtlcError::AlreadyClaimed);
             require!(!htlc.refunded, HtlcError::AlreadyRefunded);
 
-            // 1. Bound adaptor point T — validated again here (defense in depth
-            //    vs any future writer of HtlcState).
-            let t_point = decode_ed25519_point(&htlc.ptlc_point)?;
-
-            // Nonce point N from the pre-signature.
-            let n_point = decode_ed25519_point(&presig_r)?;
+            // 1. Bound adaptor point T, validated again here (defense in depth
+            //    against any future writer of HtlcState).
+            let adaptor_point = htlc.ptlc_point;
+            require_prime_order_point(&adaptor_point)?;
 
             // 2. Challenge recomputation.
             let context =
                 claim_context(&htlc.key(), &ctx.accounts.recipient.key(), htlc.amount);
             let mut challenge_buf = [0u8; 96];
             challenge_buf[..32].copy_from_slice(&presig_r);
-            challenge_buf[32..64].copy_from_slice(&htlc.ptlc_point);
+            challenge_buf[32..64].copy_from_slice(&adaptor_point);
             challenge_buf[64..].copy_from_slice(&context);
             let e = Scalar::from_bytes_mod_order(keccak256(&challenge_buf).to_bytes());
 
-            // 3. Completed response s (low-level scalar reduction mod L).
+            // 3. N == s*G + e*T, compared as canonical encodings.
             let mut s_bytes = [0u8; 32];
             s_bytes.copy_from_slice(&adaptor_sig[32..]);
             let s = Scalar::from_bytes_mod_order(s_bytes);
-
-            // N == s·G + e·P   (⇔ s·G == N − e·P)
-            let lhs = n_point.compress();
-            let rhs_point = &s * &ED25519_BASEPOINT_POINT + &e * &t_point;
-            if lhs != rhs_point.compress() {
+            let expected_nonce =
+                curve::double_scalar_mul(&s, &curve::BASEPOINT, &e, &adaptor_point)
+                    .ok_or_else(|| error!(HtlcError::MalformedCurvePoint))?;
+            if expected_nonce != presig_r {
                 return Err(error!(HtlcError::AdaptorVerifyFailed));
             }
 
@@ -297,8 +292,9 @@ pub mod xfg_htlc {
             if t_scalar == Scalar::zero() {
                 return Err(error!(HtlcError::SecretMismatch));
             }
-            let recovered = (&t_scalar * &ED25519_BASEPOINT_POINT).compress();
-            if recovered != t_point.compress() {
+            let recovered = curve::scalar_mul(&t_scalar, &curve::BASEPOINT)
+                .ok_or_else(|| error!(HtlcError::MalformedCurvePoint))?;
+            if recovered != adaptor_point {
                 return Err(error!(HtlcError::SecretMismatch));
             }
 
@@ -367,21 +363,93 @@ pub mod xfg_htlc {
 
 // ─── Curve helpers ────────────────────────────────────────────────────
 
-/// Decode a compressed ed25519 point, rejecting the identity and all
-/// small-order points (anything whose cofactor multiple is the identity).
-/// Small-order inputs would otherwise allow degenerate equations to pass.
-fn decode_ed25519_point(bytes: &[u8; 32]) -> Result<EdwardsPoint> {
-    let point = CompressedEdwardsY(*bytes)
-        .decompress()
-        .ok_or_else(|| error!(HtlcError::MalformedCurvePoint))?;
-    // Canonical identity encoding: sign byte 0x00, y = 1.
-    let mut identity_bytes = [0u8; 32];
-    identity_bytes[0] = 1;
-    let cofactor_multiple = point.mul_by_cofactor().compress().to_bytes();
-    if cofactor_multiple == identity_bytes {
-        return Err(error!(HtlcError::MalformedCurvePoint));
+/// ed25519 group operations on compressed points. On chain they are the
+/// runtime's curve25519 syscalls: the same arithmetic in program code costs
+/// far more than a transaction's compute budget. Off chain (tests, tooling)
+/// curve25519-dalek computes the same results.
+mod curve {
+    use super::Scalar;
+
+    pub const BASEPOINT: [u8; 32] = [
+        0x58, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66,
+        0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66,
+        0x66, 0x66,
+    ];
+    pub const IDENTITY: [u8; 32] = [
+        1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    ];
+
+    #[cfg(target_os = "solana")]
+    mod backend {
+        use anchor_lang::solana_program::syscalls::{sol_curve_group_op, sol_curve_multiscalar_mul};
+
+        const CURVE25519_EDWARDS: u64 = 0;
+        const MULTIPLY: u64 = 2;
+
+        pub fn scalar_mul(scalar: &[u8; 32], point: &[u8; 32]) -> Option<[u8; 32]> {
+            let mut result = [0u8; 32];
+            let status = unsafe {
+                sol_curve_group_op(CURVE25519_EDWARDS, MULTIPLY, scalar.as_ptr(), point.as_ptr(), result.as_mut_ptr())
+            };
+            (status == 0).then_some(result)
+        }
+
+        pub fn double_scalar_mul(scalars: &[[u8; 32]; 2], points: &[[u8; 32]; 2]) -> Option<[u8; 32]> {
+            let mut result = [0u8; 32];
+            let status = unsafe {
+                sol_curve_multiscalar_mul(
+                    CURVE25519_EDWARDS,
+                    scalars.as_ptr() as *const u8,
+                    points.as_ptr() as *const u8,
+                    2,
+                    result.as_mut_ptr(),
+                )
+            };
+            (status == 0).then_some(result)
+        }
     }
-    Ok(point)
+
+    #[cfg(not(target_os = "solana"))]
+    mod backend {
+        use curve25519_dalek::edwards::CompressedEdwardsY;
+        use curve25519_dalek::scalar::Scalar;
+
+        fn times(scalar: &[u8; 32], point: &[u8; 32]) -> Option<curve25519_dalek::edwards::EdwardsPoint> {
+            Some(Scalar::from_canonical_bytes(*scalar)? * CompressedEdwardsY(*point).decompress()?)
+        }
+
+        pub fn scalar_mul(scalar: &[u8; 32], point: &[u8; 32]) -> Option<[u8; 32]> {
+            Some(times(scalar, point)?.compress().to_bytes())
+        }
+
+        pub fn double_scalar_mul(scalars: &[[u8; 32]; 2], points: &[[u8; 32]; 2]) -> Option<[u8; 32]> {
+            Some((times(&scalars[0], &points[0])? + times(&scalars[1], &points[1])?).compress().to_bytes())
+        }
+    }
+
+    /// `scalar * point`, or None when `point` is not a curve point.
+    pub fn scalar_mul(scalar: &Scalar, point: &[u8; 32]) -> Option<[u8; 32]> {
+        backend::scalar_mul(&scalar.to_bytes(), point)
+    }
+
+    /// `a * p + b * q`, or None when either is not a curve point.
+    pub fn double_scalar_mul(a: &Scalar, p: &[u8; 32], b: &Scalar, q: &[u8; 32]) -> Option<[u8; 32]> {
+        backend::double_scalar_mul(&[a.to_bytes(), b.to_bytes()], &[*p, *q])
+    }
+}
+
+/// Accepts only the canonical encoding of a curve point that is not of small
+/// order (its cofactor multiple is not the identity). A point that still
+/// carries a torsion component can be funded but never claimed, since the
+/// claim requires t*G to equal it; such an escrow refunds after its timeout.
+fn require_prime_order_point(bytes: &[u8; 32]) -> Result<()> {
+    let malformed = || error!(HtlcError::MalformedCurvePoint);
+    let canonical = curve::scalar_mul(&Scalar::one(), bytes).ok_or_else(malformed)?;
+    let cofactor_multiple = curve::scalar_mul(&Scalar::from(8u8), bytes).ok_or_else(malformed)?;
+    if canonical != *bytes || cofactor_multiple == curve::IDENTITY {
+        return Err(malformed());
+    }
+    Ok(())
 }
 
 /// Claim context binding a completion to THIS escrow:

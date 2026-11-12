@@ -65,6 +65,8 @@ contrib/
 
 contracts/*
 !contracts/point-timelock/
+!contracts/artifacts-build/
+contracts/artifacts-build/node_modules/
 mcp/
 sim_out/
 fuego_rag/

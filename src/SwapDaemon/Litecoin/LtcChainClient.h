@@ -3,6 +3,8 @@
 #include "../IChainClient.h"
 #include "../Spv/ISpvClient.h"
 #include "LtcRpcClient.h"
+#include "../Utxo/UtxoHtlcFullNode.h"
+#include "../Utxo/UtxoHtlcSpv.h"
 #include <string>
 #include <memory>
 
@@ -11,23 +13,29 @@ namespace XfgSwap {
 class LtcChainClient : public IChainClient {
 public:
   // Full-node mode
-  LtcChainClient(std::unique_ptr<LtcRpcClient> rpc, const std::string& wif);
+  LtcChainClient(std::unique_ptr<LtcRpcClient> rpc, const std::string& wif,
+                 UtxoNetwork network = UtxoNetwork::MAINNET);
 
-  // SPV mode (no RPC client required)
-  LtcChainClient(std::shared_ptr<ISpvClient> spvClient, const std::string& wif);
+  // SPV mode (no RPC client): Bob's verification and claim; no lock funding.
+  LtcChainClient(std::shared_ptr<ISpvClient> spvClient, const std::string& wif,
+                 UtxoNetwork network = UtxoNetwork::MAINNET);
 
   std::string chainName() const override { return "LTC"; }
   bool usesSpvVerification() const override { return m_spvClient != nullptr; }
-  bool isReadyForNewSwap() override { return false; } // Neither transport has a complete safe swap path
+  bool isReadyForNewSwap() override;
+  std::string readinessError() override;
+  std::string readinessErrorFor(SwapRole role) override;
+  std::string claimDeadlineError(const SwapParams& params) override;
+  std::string getClaimPubKey() const override;
+  bool hasConfirmedClaim(const SwapParams& params) override;
+  ChainClientResult bumpClaim(const SwapParams& params) override;
   bool supportsPtlc() const override { return true; }
-  // Pure PTLC (P2TR key-path, no H(t)) per PTLC_PURE_PLAN P2.3 (mirror of BTC).
-  bool supportsPurePtlc() const override { return true; }
+  // Taproot point locks (UtxoPointLock) over the full node or, for Bob, SPV.
+  bool supportsPurePtlc() const override;
 
   std::string getReceiveAddress() const override;
   ChainClientResult lock(const SwapParams& params) override;
-  ChainClientResult lockPtlc(const SwapParams& params) override;
   ChainClientResult verifyLock(const SwapParams& params) override;
-  ChainClientResult verifyPtlcLock(const SwapParams& params) override;
   ChainClientResult claim(const SwapParams& params) override;
   ChainClientResult refund(const SwapParams& params) override;
   ChainClientResult verifyReserveProof(const std::string& expectedMessage,
@@ -39,31 +47,14 @@ public:
 
   std::string tryExtractClaimedSecret(const SwapParams& params) override;
 
-  // Extract the HTLC claim preimage from a spending transaction.
-  // In SPV mode, fetches the raw tx via the SPV client.
-  // In full-node mode, uses the RPC client.
-  // Returns empty string on failure.
-  std::string extractSecret(const std::string& spendingTxid,
-                            const std::string& htlcRedeemScriptHex);
-
 private:
-  // SPV-mode verifyLock: fetch raw tx, parse outputs, verify amount and inclusion
-  ChainClientResult verifyLockSpv(const SwapParams& params);
 
-  // SPV-mode extractSecret: fetch raw spending tx, parse witness stack
-  std::string extractSecretSpv(const std::string& spendingTxid,
-                               const std::vector<uint8_t>& htlcP2wshScriptPubKey);
-
-  // Pure-PTLC funding (P2.3): BtcTaprootPtlc output with hrp "ltc", funded
-  // via wallet sendtoaddress. chainState "p2tr:<tweaked>|ptlc:<point>".
-  ChainClientResult lockPtlcPureP2tr(const SwapParams& params);
-
-  // Pure-PTLC P2TR key-path spend shared by claim + refund.
-  ChainClientResult claimOrRefundPtlcP2tr(const SwapParams& params);
 
   std::unique_ptr<LtcRpcClient> m_rpc;    // null in SPV mode
+  std::unique_ptr<UtxoHtlcFullNode> m_fullNode;  // HTLC swap path over m_rpc
   std::string m_wif;                       // empty in SPV mode
   std::shared_ptr<ISpvClient> m_spvClient; // null in full-node mode
+  std::unique_ptr<UtxoHtlcSpv> m_spvHtlc;  // HTLC swap path over m_spvClient
 };
 
 } // namespace XfgSwap

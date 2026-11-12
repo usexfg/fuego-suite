@@ -80,21 +80,33 @@ std::string EthChainClient::readinessError() {
   if (!EthRpcClient::isValidEvmAddress(m_rpc->htlcRegistry()))
     return "HTLC registry address is not configured";
   if (!m_rpc->hasDeployedHtlcRegistry())
-    return "HTLC registry code or ABI probe failed";
+    return "HTLC registry runtime code does not match the pinned HashedTimelock hash, or its ABI probe failed";
+  if (pointLockSupport() == PointLockSupport::UNKNOWN)
+    return "PointTimelock registry " + m_rpc->ptlcRegistry() +
+           " is unreachable or holds code other than the pinned PointTimelock";
   return "";
 }
 
-void EthChainClient::setPtlcRegistry(const std::string& registryAddress) {
-  m_ptlcRegistry = registryAddress;
-  if (m_rpc) m_rpc->setPtlcRegistry(registryAddress);
-}
 
 bool EthChainClient::hasDeployedHtlcRegistry() {
   return m_rpc && m_rpc->hasDeployedHtlcRegistry();
 }
 
-bool EthChainClient::supportsPurePtlc() const {
-  return !m_ptlcRegistry.empty();
+IChainClient::PointLockSupport EthChainClient::pointLockSupport() const {
+  if (!m_rpc || !EthRpcClient::isValidEvmAddress(m_rpc->ptlcRegistry())) return PointLockSupport::NONE;
+  std::lock_guard<std::mutex> lock(m_pointLockMutex);
+  if (m_pointLockConfirmed) return PointLockSupport::AVAILABLE;
+  switch (m_rpc->ptlcRegistryCode()) {
+    case EthRpcClient::RegistryCode::PINNED:
+      m_pointLockConfirmed = true;
+      return PointLockSupport::AVAILABLE;
+    case EthRpcClient::RegistryCode::NO_CODE:
+      return PointLockSupport::NONE;
+    case EthRpcClient::RegistryCode::OTHER_CODE:
+    case EthRpcClient::RegistryCode::UNREACHABLE:
+      break;
+  }
+  return PointLockSupport::UNKNOWN;
 }
 
 ChainClientResult EthChainClient::lock(const SwapParams& params) {
@@ -105,9 +117,9 @@ ChainClientResult EthChainClient::lock(const SwapParams& params) {
     // is missing we must NOT silently fall back to an HTLC deploy — the
     // counterparty verified a point lock and the adaptor equation binds to it.
     if (ptlcNegotiated(params)) {
-      if (m_ptlcRegistry.empty())
+      if (!supportsPurePtlc())
         return ChainClientResult::fail(m_chainName +
-            " pure PTLC negotiated but PointTimelock registry not configured");
+            " point lock negotiated but the pinned PointTimelock is not available");
       Crypto::SecpPubKey secpPub;
       if (!Crypto::hexToSecpPubKey(params.secpPubHex, secpPub))
         return ChainClientResult::fail(m_chainName + " lock: malformed secpPubHex");
@@ -154,50 +166,30 @@ ChainClientResult EthChainClient::lock(const SwapParams& params) {
   }
 }
 
-ChainClientResult EthChainClient::verifyLock(const SwapParams& params) {
-  // ctrLockTxId holds the registry contractId (not a tx hash).
-
-  // The counterparty timeout must leave enough blocks to observe the lock,
-  // wait confirmations, and claim.  Use the catalog's fastest credible block
-  // interval here (ceil division); using an average or slow interval makes the
-  // runway dangerously short on sub-second chains.  Tip lookup is fail-closed:
-  // a lock whose remaining runway cannot be measured must not advance a swap.
-  uint64_t ethTip = 0;
-  if (!m_rpc->getBlockNumber(ethTip))
-    return ChainClientResult::fail(m_chainName +
-        " verifyLock: chain tip unavailable for timeout safety check");
-  const uint64_t conf = params.requiredConfirmations
-      ? params.requiredConfirmations : 6;
-  uint64_t minimumBlocks = 0;
-  if (!minimumCounterpartyWindowBlocks(params.pair, conf, minimumBlocks))
-    return ChainClientResult::fail(m_chainName +
-        " verifyLock: invalid catalog block-time bound");
-  const uint64_t max = std::numeric_limits<uint64_t>::max();
-  if (ethTip > max - minimumBlocks)
-    return ChainClientResult::fail(m_chainName +
-        " verifyLock: timeout safety calculation overflow");
-  const uint64_t minTimeoutBlock = ethTip + minimumBlocks;
-
+// True when the lock is open on chain with exactly the agreed amount,
+// recipient and hash (or point) and a timeout no earlier than minTimeoutBlock.
+bool EthChainClient::lockOpenUntil(const SwapParams& params, uint64_t minTimeoutBlock, std::string& error) {
   // Pure PTLC: verify amount + recipient + pointAddress + not claimed/refunded
   // against the PointTimelock registry. Fail-closed on missing registry.
   if (ptlcNegotiated(params)) {
-    if (m_ptlcRegistry.empty())
-      return ChainClientResult::fail(m_chainName +
-          " pure PTLC negotiated but PointTimelock registry not configured");
+    if (!supportsPurePtlc()) {
+      error = "point lock negotiated but the pinned PointTimelock is not available";
+      return false;
+    }
     Crypto::SecpPubKey secpPub;
-    if (!Crypto::hexToSecpPubKey(params.secpPubHex, secpPub))
-      return ChainClientResult::fail(m_chainName + " verifyLock: malformed secpPubHex");
-    std::string expectedPointAddress =
+    if (!Crypto::hexToSecpPubKey(params.secpPubHex, secpPub)) {
+      error = "malformed secpPubHex";
+      return false;
+    }
+    const std::string expectedPointAddress =
         EthAbi::derivePointAddressFromSecpBytes(secpPub.data.data(), secpPub.data.size());
-    bool ok = m_rpc->verifyPointLock(params.ctrLockTxId, params.ctrAmount,
-                                     params.ctrAddress, expectedPointAddress,
-                                     minTimeoutBlock);
-    if (!ok) return ChainClientResult::fail(m_chainName +
-        " lock not verified (amount/recipient/point/timeout)");
-    return ChainClientResult::ok(params.ctrLockTxId);
+    if (m_rpc->verifyPointLock(params.ctrLockTxId, params.ctrAmount, params.ctrAddress,
+                               expectedPointAddress, minTimeoutBlock))
+      return true;
+    error = "lock not verified (amount/recipient/point/timeout)";
+    return false;
   }
 
-  // Verify amount + recipient + hashlock + not claimed/refunded via getContract.
   // Prefer H(t) from adaptorSecret; Alice has only published hashLock — use that.
   std::string expectedHash;
   if (!isZeroSecret(params.adaptorSecret)) {
@@ -209,13 +201,59 @@ ChainClientResult EthChainClient::verifyLock(const SwapParams& params) {
     if (nonzero)
       expectedHash = Common::podToHex(params.hashLock);
   }
-  if (expectedHash.empty())
-    return ChainClientResult::fail(m_chainName + " verifyLock: no hashLock or adaptorSecret");
-  bool ok = m_rpc->verifyLock(params.ctrLockTxId, params.ctrAmount,
-                              params.ctrAddress, expectedHash, minTimeoutBlock);
-  if (!ok) return ChainClientResult::fail(m_chainName +
-      " lock not verified (amount/recipient/hashlock/timeout)");
+  if (expectedHash.empty()) {
+    error = "no hashLock or adaptorSecret";
+    return false;
+  }
+  if (m_rpc->verifyLock(params.ctrLockTxId, params.ctrAmount, params.ctrAddress, expectedHash,
+                        minTimeoutBlock))
+    return true;
+  error = "lock not verified (amount/recipient/hashlock/timeout)";
+  return false;
+}
+
+// The earliest timeout a lock may have for this tip plus `blocks`; false on a
+// missing tip or an overflowing bound.
+bool EthChainClient::timeoutFloor(uint64_t blocks, uint64_t& floor, std::string& error) {
+  uint64_t tip = 0;
+  if (!m_rpc || !m_rpc->getBlockNumber(tip)) {
+    error = "chain tip unavailable for timeout safety check";
+    return false;
+  }
+  if (blocks == 0 || tip > std::numeric_limits<uint64_t>::max() - blocks) {
+    error = "invalid catalog block-time bound";
+    return false;
+  }
+  floor = tip + blocks;
+  return true;
+}
+
+ChainClientResult EthChainClient::verifyLock(const SwapParams& params) {
+  // ctrLockTxId holds the registry contractId (not a tx hash).
+  // The counterparty timeout must leave enough blocks to observe the lock,
+  // wait confirmations, and claim, at the catalog's fastest credible block
+  // interval. A lock whose remaining runway cannot be measured fails closed.
+  const uint64_t conf = params.requiredConfirmations ? params.requiredConfirmations : 6;
+  uint64_t window = 0;
+  uint64_t minTimeoutBlock = 0;
+  std::string error;
+  if (!minimumCounterpartyWindowBlocks(params.pair, conf, window) ||
+      !timeoutFloor(window, minTimeoutBlock, error) || !lockOpenUntil(params, minTimeoutBlock, error))
+    return ChainClientResult::fail(m_chainName + " verifyLock: " +
+                                   (error.empty() ? std::string("invalid catalog block-time bound") : error));
   return ChainClientResult::ok(params.ctrLockTxId);
+}
+
+std::string EthChainClient::claimDeadlineError(const SwapParams& params) {
+  uint64_t minTimeoutBlock = 0;
+  std::string error;
+  if (!timeoutFloor(claimRunwayBlocks(params.pair), minTimeoutBlock, error))
+    return m_chainName + " claim check: " + error;
+  if (!lockOpenUntil(params, minTimeoutBlock, error))
+    return m_chainName + " claim check: the lock is no longer open with a timeout beyond the " +
+           std::to_string(claimRunwayBlocks(params.pair)) + "-block claim runway (" + error +
+           "); publishing t now could let the locker refund and claim";
+  return "";
 }
 
 ChainClientResult EthChainClient::claim(const SwapParams& params) {
@@ -224,9 +262,9 @@ ChainClientResult EthChainClient::claim(const SwapParams& params) {
     // Pure PTLC: reveal the canonical BIG-endian scalar t via
     // claim(contractId, secret) on the PointTimelock registry.
     if (ptlcNegotiated(params)) {
-      if (m_ptlcRegistry.empty())
+      if (!supportsPurePtlc())
         return ChainClientResult::fail(m_chainName +
-            " pure PTLC negotiated but PointTimelock registry not configured");
+            " point lock negotiated but the pinned PointTimelock is not available");
       bool ok = m_rpc->claimPoint(
           m_address,
           params.ctrLockTxId,
@@ -255,11 +293,11 @@ ChainClientResult EthChainClient::refund(const SwapParams& params) {
     std::string refundTxHash;
     // Pure PTLC: refund(contractId) on the PointTimelock registry. Selector is
     // identical to the HTLC path (refund(bytes32) — verified in both .sol
-    // files), so we route to the shared encoding with m_ptlcRegistry as target.
+    // files), so we route to the shared encoding with the PointTimelock registry as target.
     if (ptlcNegotiated(params)) {
-      if (m_ptlcRegistry.empty())
+      if (!supportsPurePtlc())
         return ChainClientResult::fail(m_chainName +
-            " pure PTLC negotiated but PointTimelock registry not configured");
+            " point lock negotiated but the pinned PointTimelock is not available");
       bool ok = m_rpc->refundPoint(
           m_address,
           params.ctrLockTxId,
@@ -412,7 +450,7 @@ std::string EthChainClient::tryExtractClaimedSecret(const SwapParams& params) {
   // canonical BIG-endian scalar t is stored on-chain. Reverse it back to the
   // CryptoNote LITTLE-endian scalar our XFG adaptor consumes.
   if (ptlcNegotiated(params)) {
-    if (m_ptlcRegistry.empty()) return {};
+    if (!supportsPurePtlc()) return {};
     return secretLeHexFromBe(
         m_rpc->getClaimedPointSecret(params.ctrLockTxId, block_tag.str()));
   }

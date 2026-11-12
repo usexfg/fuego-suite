@@ -605,9 +605,11 @@ std::string BtcHtlcScript::witnessScriptToAddress(
     const std::vector<uint8_t>& witnessScript, const std::string& hrp) {
   auto hash = sha256(witnessScript);
   std::vector<uint8_t> witnessProgram;
-  witnessProgram.push_back(0x00);
+  // BIP173: the witness version is its own 5-bit value; only the program
+  // is regrouped from 8-bit to 5-bit.
   witnessProgram.insert(witnessProgram.end(), hash.begin(), hash.end());
   auto data5 = convertBits8to5(witnessProgram);
+  data5.insert(data5.begin(), 0x00);
   return bech32Encode(hrp, data5);
 }
 

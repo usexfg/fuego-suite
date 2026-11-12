@@ -146,7 +146,7 @@ int main() {
     }
     check(eth == 14, "fourteen pairs settle in ETH (Ethereum itself, ARB, BASE, ROBINHOOD, BOB, UNICHAIN, OPTIMISM "
                      "and the seven generic-adapter ETH chains)");
-    check(unpriced == 2, "exactly two assets are unpriced: GLEEC and PEAQ (no feed id serves either)");
+    check(unpriced == 1, "exactly one asset is unpriced: GLEEC (no feed id serves it)");
     check(unexec == 1, "exactly one asset is unexecutable (SC, 1e24)");
 
     const AssetDescriptor* sc = assetForSymbol("SC");
@@ -157,7 +157,9 @@ int main() {
     check(assetForSymbol("KMD") != nullptr && assetForSymbol("KMD")->priced,
           "KMD is priced via coingecko:komodo (intermittent, and observed 6.6h stale)");
     check(assetForSymbol("GLEEC") != nullptr && !assetForSymbol("GLEEC")->priced, "GLEEC unpriced");
-    check(assetForSymbol("PEAQ") != nullptr && !assetForSymbol("PEAQ")->priced, "PEAQ unpriced");
+    check(assetForSymbol("PEAQ") != nullptr && assetForSymbol("PEAQ")->priced &&
+              assetForSymbol("PEAQ")->defiLlamaId == "coingecko:peaq-2",
+          "PEAQ is priced off coingecko:peaq-2, peaq's native token");
     check(assetForSymbol("RBTC") != nullptr && assetForSymbol("RBTC")->defiLlamaId == "coingecko:rootstock",
           "RSK settles in RBTC, priced off Rootstock rather than BTC");
     check(assetForSymbol("XDAI") != nullptr && assetForSymbol("XDAI")->defiLlamaId == "coingecko:xdai",
@@ -168,7 +170,7 @@ int main() {
           "TON pair settles in GRAM via coingecko:the-open-network");
     check(assetForSymbol("NOPE") == nullptr, "unknown symbol returns nullptr");
 
-    check(distinctSymbolsForFeed("defillama").size() == 31, "31 distinct DeFiLlama assets");
+    check(distinctSymbolsForFeed("defillama").size() == 32, "32 distinct DeFiLlama assets");
     check(distinctSymbolsForFeed("pyth").size() == 23, "23 Pyth-corroborated assets");
   }
 
@@ -331,9 +333,12 @@ int main() {
     PairQuote hype = buildPairQuote(static_cast<uint8_t>(SwapPair::HYPEREVM), hypeFeed, nullptr, 0.158, pol, now);
     check(hype.settlementAsset == "HYPE" && hype.counterpartyUsdOk,
           "HYPEREVM prices in its own native HYPE, not ETH");
-    PairQuote peaq = buildPairQuote(static_cast<uint8_t>(SwapPair::PEAQ), primary, &secondary, 0.158, pol, now);
-    check(peaq.status == QuoteStatus::UNPRICED && !peaq.newSwapAllowed,
-          "PEAQ has no verified feed id and fails closed");
+    FeedResult peaqFeed = makeFeed("defillama", "PEAQ", 0.029, now - 5, now - 2, 0.999, true);
+    PairQuote peaq = buildPairQuote(static_cast<uint8_t>(SwapPair::PEAQ), peaqFeed, nullptr, 0.158, pol, now);
+    check(peaq.settlementAsset == "PEAQ" && peaq.counterpartyUsdOk,
+          "PEAQ prices in its own native PEAQ");
+    PairQuote peaqFromEth = buildPairQuote(static_cast<uint8_t>(SwapPair::PEAQ), primary, &secondary, 0.158, pol, now);
+    check(!peaqFromEth.newSwapAllowed, "an ETH observation never prices PEAQ");
     PairQuote linea = buildPairQuote(static_cast<uint8_t>(SwapPair::LINEA), primary, &secondary, 0.158, pol, now);
     check(linea.status == QuoteStatus::OK && linea.settlementAsset == "ETH",
           "LINEA settles in native ETH and prices off ETH");

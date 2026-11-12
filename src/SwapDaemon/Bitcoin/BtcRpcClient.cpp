@@ -524,94 +524,30 @@ bool BtcRpcClient::verifyLock(const std::string& htlcAddress,
   return false;
 }
 
-bool BtcRpcClient::claim(const std::string& claimerWif,
-                          const std::string& htlcTxid,
-                          uint32_t htlcVout,
-                          uint64_t htlcAmount,
-                          const std::string& redeemScriptHex,
-                          const std::string& preimageHex,
-                          const std::string& destAddress,
-                          std::string& claimTxId) {
-  std::array<uint8_t, 32> privKey{};
-  if (!BtcHtlcScript::wifToPrivKey(claimerWif, privKey)) return false;
-
-  auto witnessScript = BtcHtlcScript::hexToBytes(redeemScriptHex);
-  auto preimage      = BtcHtlcScript::hexToBytes(preimageHex);
-
-  uint8_t addrVersion = 0;
-  std::vector<uint8_t> pubKeyHash;
-  if (!BtcHtlcScript::base58CheckDecode(destAddress, addrVersion, pubKeyHash)) return false;
-  auto outputScript = BtcHtlcScript::buildP2pkhScriptPubKey(pubKeyHash);
-
-  uint64_t fee = 1000;
-  estimateFeeSatoshis(fee, /*confTarget=*/2);
-  if (htlcAmount <= fee) return false;
-  uint64_t outputAmount = htlcAmount - fee;
-
-  const uint32_t nSequence = 0xFFFFFFFD;
-
-  auto der = BtcHtlcScript::signInput(privKey, /*version=*/2, /*locktime=*/0,
-                                       nSequence,
-                                       htlcTxid, htlcVout,
-                                       witnessScript, htlcAmount,
-                                       outputScript, outputAmount);
-  if (der.empty()) return false;
-
-  // P2WSH: empty scriptSig, witness stack carries the data.
-  std::vector<uint8_t> emptyScriptSig;
-  auto witnessStack = BtcHtlcScript::createClaimWitness(der, preimage, witnessScript);
-
-  auto rawTx = BtcHtlcScript::buildRawSegWitTx(
-      htlcTxid, htlcVout, htlcAmount,
-      emptyScriptSig, witnessStack, destAddress, outputAmount, /*nLocktime=*/0);
-
-  (void)nSequence;
-
-  std::string txHex = BtcHtlcScript::bytesToHex(rawTx);
-  return sendRawTransaction(txHex, claimTxId);
+bool BtcRpcClient::callJson(const std::string& method, const std::string& params,
+                            Common::JsonValue& result, std::string& error) {
+  try {
+    const Common::JsonValue reply = Common::JsonValue::fromString(rpcCall(method, params));
+    if (reply.isObject() && reply.contains("error") && reply("error").isObject()) {
+      const Common::JsonValue& rpcError = reply("error");
+      error = rpcError.contains("message") && rpcError("message").isString()
+                  ? rpcError("message").getString()
+                  : "RPC error";
+      return false;
+    }
+    if (!reply.isObject() || !reply.contains("result")) {
+      error = "malformed RPC reply to " + method;
+      return false;
+    }
+    result = reply("result");
+    return true;
+  } catch (const std::exception& e) {
+    error = e.what();
+    return false;
+  }
 }
 
-bool BtcRpcClient::refundHtlc(const std::string& senderWif,
-                               const std::string& htlcTxid,
-                               uint32_t htlcVout,
-                               uint64_t htlcAmount,
-                               const std::string& redeemScriptHex,
-                               uint32_t timeoutBlock,
-                               const std::string& destAddress,
-                               std::string& refundTxId) {
-  std::array<uint8_t, 32> privKey{};
-  if (!BtcHtlcScript::wifToPrivKey(senderWif, privKey)) return false;
 
-  auto witnessScript = BtcHtlcScript::hexToBytes(redeemScriptHex);
-
-  uint32_t nLocktime = timeoutBlock;
-
-  uint8_t addrVersion = 0;
-  std::vector<uint8_t> pubKeyHash;
-  if (!BtcHtlcScript::base58CheckDecode(destAddress, addrVersion, pubKeyHash)) return false;
-  auto outputScript = BtcHtlcScript::buildP2pkhScriptPubKey(pubKeyHash);
-
-  const uint64_t fee = 1000;
-  if (htlcAmount <= fee) return false;
-  uint64_t outputAmount = htlcAmount - fee;
-
-  auto der = BtcHtlcScript::signInput(privKey, /*version=*/2, nLocktime,
-                                       /*nSequence=*/0xFFFFFFFE,
-                                       htlcTxid, htlcVout,
-                                       witnessScript, htlcAmount,
-                                       outputScript, outputAmount);
-  if (der.empty()) return false;
-
-  std::vector<uint8_t> emptyScriptSig;
-  auto witnessStack = BtcHtlcScript::createRefundWitness(der, witnessScript);
-
-  auto rawTx = BtcHtlcScript::buildRawSegWitTx(
-      htlcTxid, htlcVout, htlcAmount,
-      emptyScriptSig, witnessStack, destAddress, outputAmount, nLocktime);
-
-  std::string txHex = BtcHtlcScript::bytesToHex(rawTx);
-  return sendRawTransaction(txHex, refundTxId);
-}
 
 bool BtcRpcClient::verifyMessage(const std::string& address, const std::string& signature,
                                  const std::string& message, bool& valid) {

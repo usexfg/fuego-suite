@@ -28,6 +28,7 @@
 #include "PriceWorker.h"
 #include "DefiLlamaFeed.h"
 #include "CoinGeckoFeed.h"
+#include "PythFeed.h"
 #include "../Logging/ILogger.h"
 #include "../Logging/LoggerRef.h"
 #include "ChainRegistry.h"
@@ -59,6 +60,7 @@ struct EvmChainConfig {
   std::string privateKeyHex;
   std::string address;
   std::string htlcRegistry;
+  std::string htlcRegistryCodeHash;  // empty: the canonical HashedTimelock hash
   std::string ptlcRegistry;
   std::string htlcBinPath;
 };
@@ -72,9 +74,16 @@ struct ChainClientConfig {
   // mainnet default; testnet/dev profiles must state "testnet" explicitly.
   std::string network = "mainnet";
 
-  // Preferred EVM configuration. Entries are keyed by catalog key under the
-  // `evm_chains` JSON object and supersede legacy flat fields for that pair.
+  // Every EVM pair is configured here, keyed by catalog key under the
+  // `evm_chains` JSON object. The flat per-chain EVM fields are retired: the
+  // loader rejects them with a pointer to the matching evm_chains key.
   std::vector<EvmChainConfig> evmChains;
+
+  // Pyth on-chain price contract used as the corroborating price source.
+  // All three or none; there is no default endpoint or contract.
+  std::string pythRpcUrl;
+  std::string pythContract;
+  uint64_t    pythChainId = 0;
 
   // BCH
   std::string bchHost;
@@ -82,6 +91,7 @@ struct ChainClientConfig {
   std::string bchRpcUser;
   std::string bchRpcPass;
   std::string bchWif;          // WIF-encoded private key for HTLC signing
+  std::string bchNetwork;       // main | test | signet | regtest (full-node mode)
 
   // BCH SPV mode — when bchMode == "spv", use ElectrumSpvClient instead of RPC
   std::string bchMode;                         // "rpc" (default) or "spv"
@@ -89,10 +99,6 @@ struct ChainClientConfig {
   size_t    bchSpvMinServers  = 1;             // min servers for cross-check
   uint64_t  bchSpvCheckpointHeight = 0;        // checkpoint anchor height
   std::string bchSpvCheckpointHash;            // checkpoint hash (display hex)
-
-  // ETH
-  std::string ethHost;
-  uint16_t    ethPort     = 8545;
 
   // SOL
   std::string solHost;
@@ -105,45 +111,6 @@ struct ChainClientConfig {
   std::string xmrWalletHost;
   uint16_t    xmrWalletPort = 18082;
 
-  // ── Signer credentials ────────────────────────────────────────────────────
-  // ETH private key (64 hex chars, 32 bytes) and derived address ("0x...")
-  std::string ethPrivKeyHex;
-  std::string ethAddress;
-  uint64_t    ethChainId = 1;  // EIP-155 chain ID (1=mainnet, 11155111=Sepolia)
-  // Optional: path to the pre-compiled HashedTimelock .bin file
-  std::string ethHtlcBinPath;
-  // Pre-deployed HashedTimelock registry address ("0x...")
-  std::string ethHtlcRegistry;
-  // Pre-deployed PointTimelock registry address ("0x..."). Enables pure PTLC
-  // routing on all EVM chains; empty => BRIDGE (HTLC) — unchanged behavior.
-  std::string ethPtlcRegistry;
-
-  // ARB
-  std::string arbHost;
-  uint16_t    arbPort     = 8547;
-
-  // ARB signer credentials (reuses ETH private key derivation; separate key optional)
-  std::string arbPrivKeyHex;
-  std::string arbAddress;
-  uint64_t    arbChainId = 42161;
-  std::string arbHtlcBinPath;
-
-  // BASE (Base L2 — EVM, EIP-1559)
-  std::string baseHost;
-  uint16_t    basePort     = 8545;
-  std::string basePrivKeyHex;
-  std::string baseAddress;
-  uint64_t    baseChainId  = 8453;
-  std::string baseHtlcBinPath;
-
-  // POLYGON (Polygon PoS — EVM, EIP-1559)
-  std::string polyHost;
-  uint16_t    polyPort     = 8545;
-  std::string polyPrivKeyHex;
-  std::string polyAddress;
-  uint64_t    polyChainId  = 137;
-  std::string polyHtlcBinPath;
-
   // XMR spend/view keys (64 hex chars each)
   std::string xmrSpendKeyHex;
   std::string xmrViewKeyHex;
@@ -151,14 +118,6 @@ struct ChainClientConfig {
   // Solana keypair JSON file path (as produced by `solana-keygen new`)
   std::string solKeypairPath;
   std::string solKeypairBase58;
-
-  // BNB (Binance Smart Chain — EVM)
-  std::string bscHost;
-  uint16_t    bscPort     = 8545;
-  std::string bscPrivKeyHex;
-  std::string bscAddress;
-  uint64_t    bscChainId  = 56;
-  std::string bscHtlcBinPath;
 
   // DCR (Decred — hybrid PoW/PoS UTXO)
   std::string dcrHost;
@@ -180,6 +139,7 @@ struct ChainClientConfig {
   std::string btcRpcUser;
   std::string btcRpcPass;
   std::string btcWif;
+  std::string btcNetwork;       // main | test | signet | regtest (full-node mode)
 
   // BTC SPV mode — when btcMode == "spv", use ElectrumSpvClient instead of RPC
   std::string btcMode;                         // "rpc" (default) or "spv"
@@ -194,6 +154,7 @@ struct ChainClientConfig {
   std::string ltcRpcUser;
   std::string ltcRpcPass;
   std::string ltcWif;
+  std::string ltcNetwork;       // main | test | signet | regtest (full-node mode)
 
   // LTC SPV mode — when ltcMode == "spv", use ElectrumSpvClient instead of RPC
   std::string ltcMode;                         // "rpc" (default) or "spv"
@@ -216,67 +177,10 @@ struct ChainClientConfig {
   uint64_t  kmdSpvCheckpointHeight = 0;        // checkpoint anchor height
   std::string kmdSpvCheckpointHash;            // checkpoint hash (display hex)
 
-  // GLEEC (Evmos fork)
-  std::string gleecHost;
-  uint16_t    gleecPort     = 8545;
-  std::string gleecPrivKeyHex;
-  std::string gleecAddress;
-  uint64_t    gleecChainId  = 11169;
-  std::string gleecHtlcBinPath;
-  std::string gleecHtlcRegistry;  // pre-deployed HTLC registry on Gleec
-
-  // ROBINHOOD (Robinhood Chain — EVM L1)
-  std::string rhHost;
-  uint16_t    rhPort     = 8545;
-  std::string rhPrivKeyHex;
-  std::string rhAddress;
-  uint64_t    rhChainId  = 4663;
-  std::string rhHtlcBinPath;
-
-  // AVAX (Avalanche C-Chain — EVM, EIP-1559)
-  std::string avaxHost;
-  uint16_t    avaxPort     = 8545;
-  std::string avaxPrivKeyHex;
-  std::string avaxAddress;
-  uint64_t    avaxChainId  = 43114;
-  std::string avaxHtlcBinPath;
-
-  // CRO (Cronos — EVM)
-  std::string croHost;
-  uint16_t    croPort     = 8545;
-  std::string croPrivKeyHex;
-  std::string croAddress;
-  uint64_t    croChainId  = 25;
-  std::string croHtlcBinPath;
-
-  // BOB (Bob — OP Stack BTC rollup, EVM)
-  std::string bobHost;
-  uint16_t    bobPort     = 8545;
-  std::string bobPrivKeyHex;
-  std::string bobAddress;
-  uint64_t    bobChainId  = 60808;
-  std::string bobHtlcBinPath;
-
   // Sia (SC) — siad / walletd
   std::string siaHost;
   uint16_t    siaPort = 9980;
   std::string siaApiPassword;
-
-  // UNICHAIN (Unichain — OP Stack EVM)
-  std::string uniHost;
-  uint16_t    uniPort     = 8545;
-  std::string uniPrivKeyHex;
-  std::string uniAddress;
-  uint64_t    uniChainId  = 130;
-  std::string uniHtlcBinPath;
-
-  // PLASMA (Plasma — EVM)
-  std::string plasmaHost;
-  uint16_t    plasmaPort     = 8545;
-  std::string plasmaPrivKeyHex;
-  std::string plasmaAddress;
-  uint64_t    plasmaChainId  = 9745;
-  std::string plasmaHtlcBinPath;
 
   // DOGE (Dogecoin — pre-SegWit UTXO, P2SH + legacy sighash)
   std::string dogeHost;
@@ -301,14 +205,6 @@ struct ChainClientConfig {
   std::string zecWif;          // WIF-encoded private key (mainnet prefix 0x80)
   bool        zecTestnet = false;
 
-  // PULSECHAIN (PulseChain — EVM, chain id 369, native PLS 18 decimals)
-  std::string pulsechain_host;
-  uint16_t    pulsechain_port   = 8545;
-  std::string pulsechain_priv_key_hex;
-  std::string pulsechain_address;
-  uint64_t    pulsechain_chain_id = 369;
-  std::string pulsechain_htlc_bin_path;
-
   // ZANO (CryptoNote — shared 2-of-2 address via view-key adaptor scheme)
   std::string zanoDaemonHost;
   uint16_t    zanoDaemonPort = 11211;
@@ -325,22 +221,6 @@ struct ChainClientConfig {
   std::string tonWalletKey;           // hex-encoded Ed25519 seed
   std::string tonHtlcAddress;         // deployed HTLC contract address
   int         tonWorkchain   = 0;
-
-  // Monad (EVM L1, chain id 143)
-  std::string monadHost;
-  uint16_t    monadPort       = 8545;
-  std::string monadPrivKeyHex;
-  std::string monadAddress;
-  uint64_t    monadChainId    = 143;
-  std::string monadHtlcBinPath;
-
-  // Optimism (EVM L2, OP Stack, chain id 10)
-  std::string opHost;
-  uint16_t    opPort       = 8545;
-  std::string opPrivKeyHex;
-  std::string opAddress;
-  uint64_t    opChainId    = 10;
-  std::string opHtlcBinPath;
 
   // DOT (Polkadot Relay — Substrate, SS58 prefix 0)
   std::string dotHost;
@@ -394,6 +274,13 @@ public:
   // Send a signed PeerMessage to the swap's peerEndpoint over SwapP2P.
   // Returns false if P2P is down, peerEndpoint empty, or send fails.
   bool deliverPeerMessage(const PeerMessage& msg);
+  // The corroborating price source: Pyth when configured, because DeFiLlama
+  // and CoinGecko resolve the same CoinGecko ids; CoinGecko otherwise.
+  PriceFeed* corroboratingFeed(const ChainClientConfig& chainCfg);
+  // Alice → Bob: signed notice of where the counterparty lock is (F22).
+  void announceCounterpartyLock(const SwapParams& params);
+  // Bob: bind the first lock notice; reject a conflicting one.
+  bool acceptCounterpartyLockNotice(SwapStateMachine& sm, const MsgCtrLocked& notice);
 
   // Configure wallet RPC endpoint for escrow funding.
   // Must be called before processSwap() can fund escrow.
@@ -429,7 +316,7 @@ public:
     bool ready = false;
     std::string error;
   };
-  ChainReadiness getChainReadiness(SwapPair pair, bool refresh = false);
+  ChainReadiness getChainReadiness(SwapPair pair, SwapRole role, bool refresh = false);
 
   // Gate A: can this node actually fund an escrow right now?
   // Fails CLOSED -- an unreachable or unparseable wallet RPC means "cannot prove
@@ -519,6 +406,11 @@ public:
   bool handleCtrLocked(SwapStateMachine& sm);
   bool handleEscrowFunded(SwapStateMachine& sm, uint32_t currentHeight);
   bool handleWaitingSpv(SwapStateMachine& sm);
+  void replaceStalledClaim(SwapStateMachine& sm, IChainClient* client);
+  bool withdrawUnsentClaimIntent(SwapStateMachine& sm, const std::string& chainName,
+                                 const std::string& reason);
+  IChainClient::PointLockSupport pointLockSupport(SwapPair pair) const;
+  bool pointLockAvailable(SwapPair pair) const;
   bool handleSecretConfirmedSpv(SwapStateMachine& sm);
   bool handleAfkAccepted(SwapStateMachine& sm);
 
@@ -592,7 +484,7 @@ public:
 
   // Applies only to creating/offering/accepting new swaps. Existing records
   // keep their client for claim/refund even when current readiness fails.
-  bool canStartNewSwap(SwapPair pair, std::string* reason = nullptr,
+  bool canStartNewSwap(SwapPair pair, SwapRole role, std::string* reason = nullptr,
                        bool refresh = true);
 
   // Build an unsigned escrow-spend tx, run collaborative ring sig rounds
@@ -627,6 +519,7 @@ public:
   PricePolicy   m_pricePolicy;
   DefiLlamaFeed m_defiLlamaFeed;
   CoinGeckoFeed m_coinGeckoFeed;
+  PythFeed      m_pythFeed;
   PriceWorker   m_priceWorker;
    Logging::LoggerRef m_logger;
    ChainRegistry m_chainRegistry;
@@ -650,7 +543,7 @@ public:
     std::chrono::steady_clock::time_point checkedAt{};
   };
   FundingCacheEntry m_fundingCache;
-   std::map<SwapPair, ReadinessCacheEntry> m_readinessCache;
+   std::map<std::pair<SwapPair, SwapRole>, ReadinessCacheEntry> m_readinessCache;
    std::unique_ptr<SwapP2P> m_p2p;
 
     CryptoNote::SwapOfferRelay* m_swapRelay = nullptr;

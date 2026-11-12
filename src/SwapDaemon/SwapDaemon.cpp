@@ -22,6 +22,7 @@
 #include "SwapTxBuilder.h"
 #include "../Treasury/VaultKeys.h"
 #include "SwapPeerProtocol.h"
+#include "Utxo/UtxoHtlcFullNode.h"
 #include "Common/StringTools.h"
 #include "Common/JsonValue.h"
 #include "CryptoNoteCore/CryptoNoteTools.h"
@@ -42,20 +43,10 @@
 #include "Komodo/KmdChainClient.h"
 #include "Ethereum/EthChainClient.h"
 #include "Solana/SolChainClient.h"
+#include "Utxo/BchPointLock.h"
+#include "Utxo/UtxoPointLock.h"
 #include "Monero/XmrChainClient.h"
-#include "BSC/BscChainClient.h"
-#include "Polygon/PolygonChainClient.h"
 #include "Decred/DcrChainClient.h"
-#include "Gleec/GleecChainClient.h"
-#include "Avalanche/AvalancheChainClient.h"
-#include "Cronos/CronosChainClient.h"
-#include "Bob/BobChainClient.h"
-#include "Monad/MonadChainClient.h"
-#include "Optimism/OptimismChainClient.h"
-#include "Plasma/PlasmaChainClient.h"
-#include "PulseChain/pulse_chain_client.h"
-#include "Unichain/UnichainChainClient.h"
-#include "RobinhoodChain/RobinhoodChainClient.h"
 #include "Doge/DogeChainClient.h"
 #include "Doge/DogeRpcClient.h"
 #include "Dash/DashChainClient.h"
@@ -132,22 +123,64 @@ void applyHtlcConfig(XfgSwap::EthRpcClient& rpc, const std::string& binPath,
     }
   }
 }
-// Wire PointTimelock (pure PTLC) registry on the EVM client. Empty address
-// leaves the client BRIDGE-only (HTLC) — unchanged default behavior.
+// Point locks use the PointTimelock at `ptlcRegistry`; the client offers them
+// once that address holds the pinned runtime code.
 void applyPtlcConfig(XfgSwap::EthRpcClient& rpc, const std::string& ptlcRegistry,
                      Logging::LoggerRef& logger, const char* chainLabel) {
-  if (!ptlcRegistry.empty()) {
-    rpc.setPtlcRegistry(ptlcRegistry);
-    logger(Logging::INFO) << chainLabel
-      << " PointTimelock (pure PTLC) registry set: " << ptlcRegistry;
-  } else {
-    logger(Logging::INFO) << chainLabel
-      << " eth_ptlc_registry not set — pure PTLC disabled (BRIDGE)";
-  }
+  rpc.setPtlcRegistry(ptlcRegistry);
+  logger(Logging::INFO) << chainLabel << " PointTimelock registry: "
+                        << (ptlcRegistry.empty() ? std::string("none (hash locks only)") : ptlcRegistry);
 }
 } // namespace
 
 namespace XfgSwap {
+
+namespace {
+// ChainClientConfig validation already rejected unknown names.
+UtxoNetwork utxoNetworkFromConfig(const std::string& name) {
+  UtxoNetwork network = UtxoNetwork::MAINNET;
+  parseUtxoNetwork(name, network);
+  return network;
+}
+
+// Header rules exist for mainnet and regtest; any other network (testnet's
+// minimum-difficulty exception, signet's block signatures) gets none, so its
+// SPV client reports itself untrusted instead of skipping header validation.
+bool spvRulesFor(SwapPair pair, UtxoNetwork network, SpvChainRules& rules) {
+  const bool mainnet = network == UtxoNetwork::MAINNET;
+  const bool regtest = network == UtxoNetwork::REGTEST;
+  if (pair == SwapPair::BTC && (mainnet || regtest))
+    rules = mainnet ? SpvChainRules::bitcoinMainnet() : SpvChainRules::bitcoinRegtest();
+  else if (pair == SwapPair::LTC && (mainnet || regtest))
+    rules = mainnet ? SpvChainRules::litecoinMainnet() : SpvChainRules::litecoinRegtest();
+  else if (pair == SwapPair::BCH && mainnet)
+    rules = SpvChainRules::bitcoinCashMainnet();
+  else
+    return false;
+  return true;
+}
+
+std::shared_ptr<ElectrumSpvClient> makeElectrumClient(SwapPair pair, UtxoNetwork network,
+                                                      const std::vector<std::string>& servers,
+                                                      size_t minServers, uint64_t checkpointHeight,
+                                                      const std::string& checkpointHash) {
+  SpvChainRules rules;
+  if (spvRulesFor(pair, network, rules))
+    return std::make_shared<ElectrumSpvClient>(servers, minServers, checkpointHeight, checkpointHash, rules);
+  return std::make_shared<ElectrumSpvClient>(servers, minServers, checkpointHeight, checkpointHash);
+}
+
+}  // namespace
+
+IChainClient::PointLockSupport SwapDaemon::pointLockSupport(SwapPair pair) const {
+  IChainClient* client = m_chainRegistry.getClient(pair);
+  if (isPtlcNativePair(pair) || client == nullptr) return IChainClient::PointLockSupport::NONE;
+  return client->pointLockSupport();
+}
+
+bool SwapDaemon::pointLockAvailable(SwapPair pair) const {
+  return pointLockSupport(pair) == IChainClient::PointLockSupport::AVAILABLE;
+}
 
 // ── Base58 encode (Bitcoin alphabet, matches SolRpcClient) ───────────────
 namespace {
@@ -231,20 +264,19 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
                         const std::string& profile)
   : m_rpc(fuegodHost, fuegodPort)
   , m_db(dataDir)
-  , m_priceWorker(&m_defiLlamaFeed, &m_coinGeckoFeed, m_pricePolicy)
+  , m_priceWorker(&m_defiLlamaFeed, corroboratingFeed(chainCfg), m_pricePolicy)
   , m_logger(logger, "SwapDaemon")
   , m_network(network)
   , m_profile(profile) {
   if (!chainCfg.bchHost.empty() || chainCfg.bchMode == "spv") {
     if (chainCfg.bchMode == "spv" && !chainCfg.bchSpvServers.empty()) {
       // SPV mode: create ElectrumSpvClient with BCH checkpoints
-      auto spvClient = std::make_shared<ElectrumSpvClient>(
-          chainCfg.bchSpvServers,
-          chainCfg.bchSpvMinServers,
-          chainCfg.bchSpvCheckpointHeight,
-          chainCfg.bchSpvCheckpointHash);
+      const UtxoNetwork network = utxoNetworkFromConfig(chainCfg.bchNetwork);
+      auto spvClient = makeElectrumClient(SwapPair::BCH, network, chainCfg.bchSpvServers,
+                                          chainCfg.bchSpvMinServers, chainCfg.bchSpvCheckpointHeight,
+                                          chainCfg.bchSpvCheckpointHash);
       m_chainRegistry.registerChain(SwapPair::BCH,
-          std::make_unique<BchChainClient>(spvClient, chainCfg.bchWif));
+          std::make_unique<BchChainClient>(spvClient, chainCfg.bchWif, network));
       m_logger(Logging::INFO) << "BCH chain client registered: SPV mode ("
         << chainCfg.bchSpvServers.size() << " server(s))";
     } else if (!chainCfg.bchHost.empty()) {
@@ -253,67 +285,11 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
           chainCfg.bchHost, chainCfg.bchPort,
           chainCfg.bchRpcUser, chainCfg.bchRpcPass);
       m_chainRegistry.registerChain(SwapPair::BCH,
-          std::make_unique<BchChainClient>(std::move(rpc), chainCfg.bchWif));
+          std::make_unique<BchChainClient>(std::move(rpc), chainCfg.bchWif,
+                                           utxoNetworkFromConfig(chainCfg.bchNetwork)));
       m_logger(Logging::INFO) << "BCH chain client registered: "
         << chainCfg.bchHost << ":" << chainCfg.bchPort;
     }
-  }
-  if (!chainCfg.ethHost.empty()) {
-    std::unique_ptr<EthRpcClient> rpc;
-    if (!chainCfg.ethPrivKeyHex.empty() && !chainCfg.ethAddress.empty()) {
-      rpc = std::make_unique<EthRpcClient>(
-          chainCfg.ethHost, chainCfg.ethPort,
-          chainCfg.ethPrivKeyHex, chainCfg.ethAddress, chainCfg.ethChainId);
-    } else {
-      rpc = std::make_unique<EthRpcClient>(
-          chainCfg.ethHost, chainCfg.ethPort);
-    }
-    applyHtlcConfig(*rpc, chainCfg.ethHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "ETH");
-    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "ETH");
-    m_chainRegistry.registerChain(SwapPair::ETH,
-        std::make_unique<EthChainClient>(std::move(rpc), chainCfg.ethAddress));
-    m_logger(Logging::INFO) << "ETH chain client registered: "
-      << chainCfg.ethHost << ":" << chainCfg.ethPort;
-  }
-  if (!chainCfg.arbHost.empty()) {
-    std::unique_ptr<EthRpcClient> rpc;
-    if (!chainCfg.arbPrivKeyHex.empty() && !chainCfg.arbAddress.empty()) {
-      rpc = std::make_unique<EthRpcClient>(
-          chainCfg.arbHost, chainCfg.arbPort,
-          chainCfg.arbPrivKeyHex, chainCfg.arbAddress, chainCfg.arbChainId,
-          EthTxType::Eip1559);
-    } else {
-      rpc = std::make_unique<EthRpcClient>(chainCfg.arbHost, chainCfg.arbPort);
-    }
-    applyHtlcConfig(*rpc,
-                    chainCfg.arbHtlcBinPath.empty() ? chainCfg.ethHtlcBinPath : chainCfg.arbHtlcBinPath,
-                    chainCfg.ethHtlcRegistry, m_logger, "ARB");
-    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "ARB");
-    m_chainRegistry.registerChain(SwapPair::ARB,
-        std::make_unique<EthChainClient>(std::move(rpc), chainCfg.arbAddress, "ARB"));
-    m_logger(Logging::INFO) << "ARB chain client registered: "
-      << chainCfg.arbHost << ":" << chainCfg.arbPort
-      << " (chainId=" << chainCfg.arbChainId << ")";
-  }
-  if (!chainCfg.baseHost.empty()) {
-    std::unique_ptr<EthRpcClient> rpc;
-    if (!chainCfg.basePrivKeyHex.empty() && !chainCfg.baseAddress.empty()) {
-      rpc = std::make_unique<EthRpcClient>(
-          chainCfg.baseHost, chainCfg.basePort,
-          chainCfg.basePrivKeyHex, chainCfg.baseAddress, chainCfg.baseChainId,
-          EthTxType::Eip1559);
-    } else {
-      rpc = std::make_unique<EthRpcClient>(chainCfg.baseHost, chainCfg.basePort);
-    }
-    applyHtlcConfig(*rpc,
-                    chainCfg.baseHtlcBinPath.empty() ? chainCfg.ethHtlcBinPath : chainCfg.baseHtlcBinPath,
-                    chainCfg.ethHtlcRegistry, m_logger, "BASE");
-    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "BASE");
-    m_chainRegistry.registerChain(SwapPair::BASE,
-        std::make_unique<EthChainClient>(std::move(rpc), chainCfg.baseAddress, "BASE"));
-    m_logger(Logging::INFO) << "BASE chain client registered: "
-      << chainCfg.baseHost << ":" << chainCfg.basePort
-      << " (chainId=" << chainCfg.baseChainId << ")";
   }
   if (!chainCfg.solHost.empty()) {
     auto rpc = std::make_unique<SolRpcClient>(
@@ -342,162 +318,12 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
     m_logger(Logging::INFO) << "XMR chain client registered: "
       << chainCfg.xmrDaemonHost << ":" << chainCfg.xmrDaemonPort;
   }
-  if (!chainCfg.bscHost.empty()) {
-    std::unique_ptr<EthRpcClient> rpc;
-    if (!chainCfg.bscPrivKeyHex.empty() && !chainCfg.bscAddress.empty()) {
-      rpc = std::make_unique<EthRpcClient>(
-          chainCfg.bscHost, chainCfg.bscPort,
-          chainCfg.bscPrivKeyHex, chainCfg.bscAddress, chainCfg.bscChainId,
-          EthTxType::Eip1559);
-    } else {
-      rpc = std::make_unique<EthRpcClient>(chainCfg.bscHost, chainCfg.bscPort);
-    }
-    applyHtlcConfig(*rpc,
-                    chainCfg.bscHtlcBinPath.empty() ? chainCfg.ethHtlcBinPath : chainCfg.bscHtlcBinPath,
-                    chainCfg.ethHtlcRegistry, m_logger, "BSC");
-    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "BSC");
-    m_chainRegistry.registerChain(SwapPair::BNB,
-        std::make_unique<BscChainClient>(std::move(rpc), chainCfg.bscAddress));
-    m_logger(Logging::INFO) << "BSC (BNB) chain client registered: "
-      << chainCfg.bscHost << ":" << chainCfg.bscPort
-      << " (chainId=" << chainCfg.bscChainId << ")";
-  }
-  if (!chainCfg.polyHost.empty()) {
-    std::unique_ptr<EthRpcClient> rpc;
-    if (!chainCfg.polyPrivKeyHex.empty() && !chainCfg.polyAddress.empty()) {
-      rpc = std::make_unique<EthRpcClient>(
-          chainCfg.polyHost, chainCfg.polyPort,
-          chainCfg.polyPrivKeyHex, chainCfg.polyAddress, chainCfg.polyChainId,
-          EthTxType::Eip1559);
-    } else {
-      rpc = std::make_unique<EthRpcClient>(chainCfg.polyHost, chainCfg.polyPort);
-    }
-    applyHtlcConfig(*rpc,
-                    chainCfg.polyHtlcBinPath.empty() ? chainCfg.ethHtlcBinPath : chainCfg.polyHtlcBinPath,
-                    chainCfg.ethHtlcRegistry, m_logger, "POLYGON");
-    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "POLYGON");
-    m_chainRegistry.registerChain(SwapPair::POLYGON,
-        std::make_unique<PolygonChainClient>(std::move(rpc), chainCfg.polyAddress));
-    m_logger(Logging::INFO) << "Polygon chain client registered: "
-      << chainCfg.polyHost << ":" << chainCfg.polyPort
-      << " (chainId=" << chainCfg.polyChainId << ")";
-  }
 
-  // GLEEC (Evmos fork) — EVM-compatible
-  if (!chainCfg.gleecHost.empty()) {
-    auto rpc = std::make_unique<EthRpcClient>(chainCfg.gleecHost, chainCfg.gleecPort,
-        chainCfg.gleecPrivKeyHex, chainCfg.gleecAddress,
-        chainCfg.gleecChainId);
-    // Registry must be GLEEC's own: the shared ethHtlcRegistry address is only
-    // valid where CREATE2 put the contract at the same address, which an
-    // Evmos fork does not guarantee.
-    if (chainCfg.gleecHtlcRegistry.empty()) {
-      m_logger(Logging::WARNING) << "GLEEC: gleec_htlc_registry not set — HTLC registry left unconfigured";
-    } else {
-      applyHtlcConfig(*rpc, chainCfg.gleecHtlcBinPath, chainCfg.gleecHtlcRegistry, m_logger, "GLEEC");
-    }
-    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "GLEEC");
-    m_chainRegistry.registerChain(SwapPair::GLEEC,
-        std::make_unique<GleecChainClient>(std::move(rpc), chainCfg.gleecAddress));
-    m_logger(Logging::INFO) << "GLEEC chain client registered: "
-      << chainCfg.gleecHost << ":" << chainCfg.gleecPort
-      << " (chainId=" << chainCfg.gleecChainId << ")";
-  }
-  // ROBINHOOD (Robinhood Chain — EVM L1)
-  if (!chainCfg.rhHost.empty()) {
-    auto rpc = std::make_unique<EthRpcClient>(chainCfg.rhHost, chainCfg.rhPort,
-        chainCfg.rhPrivKeyHex, chainCfg.rhAddress, chainCfg.rhChainId);
-    applyHtlcConfig(*rpc, chainCfg.rhHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "ROBINHOOD");
-    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "ROBINHOOD");
-    m_chainRegistry.registerChain(SwapPair::ROBINHOOD,
-        std::make_unique<RobinhoodChainClient>(std::move(rpc), chainCfg.rhAddress));
-    m_logger(Logging::INFO) << "ROBINHOOD chain client registered: "
-      << chainCfg.rhHost << ":" << chainCfg.rhPort << " (chainId=" << chainCfg.rhChainId << ")";
-  }
-  // AVAX (Avalanche C-Chain)
-  if (!chainCfg.avaxHost.empty()) {
-    auto rpc = std::make_unique<EthRpcClient>(chainCfg.avaxHost, chainCfg.avaxPort,
-        chainCfg.avaxPrivKeyHex, chainCfg.avaxAddress, chainCfg.avaxChainId);
-    applyHtlcConfig(*rpc, chainCfg.avaxHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "AVAX");
-    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "AVAX");
-    m_chainRegistry.registerChain(SwapPair::AVAX,
-        std::make_unique<AvalancheChainClient>(std::move(rpc), chainCfg.avaxAddress));
-    m_logger(Logging::INFO) << "AVAX chain client registered: " << chainCfg.avaxHost << ":" << chainCfg.avaxPort;
-  }
-  // CRO (Cronos)
-  if (!chainCfg.croHost.empty()) {
-    auto rpc = std::make_unique<EthRpcClient>(chainCfg.croHost, chainCfg.croPort,
-        chainCfg.croPrivKeyHex, chainCfg.croAddress, chainCfg.croChainId);
-    applyHtlcConfig(*rpc, chainCfg.croHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "CRO");
-    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "CRO");
-    m_chainRegistry.registerChain(SwapPair::CRO,
-        std::make_unique<CronosChainClient>(std::move(rpc), chainCfg.croAddress));
-    m_logger(Logging::INFO) << "CRO chain client registered: " << chainCfg.croHost << ":" << chainCfg.croPort;
-  }
-  // BOB (Bob — OP Stack BTC rollup)
-  if (!chainCfg.bobHost.empty()) {
-    auto rpc = std::make_unique<EthRpcClient>(chainCfg.bobHost, chainCfg.bobPort,
-        chainCfg.bobPrivKeyHex, chainCfg.bobAddress, chainCfg.bobChainId);
-    applyHtlcConfig(*rpc, chainCfg.bobHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "BOB");
-    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "BOB");
-    m_chainRegistry.registerChain(SwapPair::BOB,
-        std::make_unique<BobChainClient>(std::move(rpc), chainCfg.bobAddress));
-    m_logger(Logging::INFO) << "BOB chain client registered: " << chainCfg.bobHost << ":" << chainCfg.bobPort;
-  }
-  // UNICHAIN
-  if (!chainCfg.uniHost.empty()) {
-    auto rpc = std::make_unique<EthRpcClient>(chainCfg.uniHost, chainCfg.uniPort,
-        chainCfg.uniPrivKeyHex, chainCfg.uniAddress, chainCfg.uniChainId);
-    applyHtlcConfig(*rpc, chainCfg.uniHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "UNICHAIN");
-    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "UNICHAIN");
-    m_chainRegistry.registerChain(SwapPair::UNICHAIN,
-        std::make_unique<UnichainChainClient>(std::move(rpc), chainCfg.uniAddress));
-    m_logger(Logging::INFO) << "UNICHAIN chain client registered: " << chainCfg.uniHost << ":" << chainCfg.uniPort;
-  }
-  // PLASMA
-  if (!chainCfg.plasmaHost.empty()) {
-    auto rpc = std::make_unique<EthRpcClient>(chainCfg.plasmaHost, chainCfg.plasmaPort,
-        chainCfg.plasmaPrivKeyHex, chainCfg.plasmaAddress, chainCfg.plasmaChainId);
-    applyHtlcConfig(*rpc, chainCfg.plasmaHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "PLASMA");
-    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "PLASMA");
-    m_chainRegistry.registerChain(SwapPair::PLASMA,
-        std::make_unique<PlasmaChainClient>(std::move(rpc), chainCfg.plasmaAddress));
-    m_logger(Logging::INFO) << "PLASMA chain client registered: " << chainCfg.plasmaHost << ":" << chainCfg.plasmaPort;
-  }
-  // PULSECHAIN (native PLS — EVM, chain id 369)
-  if (!chainCfg.pulsechain_host.empty()) {
-    auto rpc = std::make_unique<EthRpcClient>(chainCfg.pulsechain_host, chainCfg.pulsechain_port,
-        chainCfg.pulsechain_priv_key_hex, chainCfg.pulsechain_address, chainCfg.pulsechain_chain_id);
-    applyHtlcConfig(*rpc, chainCfg.pulsechain_htlc_bin_path, chainCfg.ethHtlcRegistry, m_logger, "PULSECHAIN");
-    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "PULSECHAIN");
-    m_chainRegistry.registerChain(SwapPair::PULSECHAIN,
-        std::make_unique<PulseChainClient>(std::move(rpc), chainCfg.pulsechain_address));
-    m_logger(Logging::INFO) << "PULSECHAIN chain client registered: " << chainCfg.pulsechain_host << ":" << chainCfg.pulsechain_port;
-  }
-  // MONAD
-  if (!chainCfg.monadHost.empty()) {
-    auto rpc = std::make_unique<EthRpcClient>(chainCfg.monadHost, chainCfg.monadPort,
-        chainCfg.monadPrivKeyHex, chainCfg.monadAddress, chainCfg.monadChainId);
-    applyHtlcConfig(*rpc, chainCfg.monadHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "MONAD");
-    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "MONAD");
-    m_chainRegistry.registerChain(SwapPair::MONAD,
-        std::make_unique<MonadChainClient>(std::move(rpc), chainCfg.monadAddress));
-    m_logger(Logging::INFO) << "MONAD chain client registered: " << chainCfg.monadHost << ":" << chainCfg.monadPort;
-  }
-  // OPTIMISM
-  if (!chainCfg.opHost.empty()) {
-    auto rpc = std::make_unique<EthRpcClient>(chainCfg.opHost, chainCfg.opPort,
-        chainCfg.opPrivKeyHex, chainCfg.opAddress, chainCfg.opChainId);
-    applyHtlcConfig(*rpc, chainCfg.opHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "OPTIMISM");
-    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "OPTIMISM");
-    m_chainRegistry.registerChain(SwapPair::OPTIMISM,
-        std::make_unique<OptimismChainClient>(std::move(rpc), chainCfg.opAddress));
-    m_logger(Logging::INFO) << "OPTIMISM chain client registered: " << chainCfg.opHost << ":" << chainCfg.opPort;
-  }
 
-  // Data-driven EVM registrations. These entries deliberately run after the
-  // legacy flat fields so a catalog-keyed entry supersedes an old per-chain
-  // stanza without adding another subclass or another field cluster.
+  // Every EVM pair is registered from its evm_chains entry. Without an
+  // explicit htlc_registry the canonical CREATE2 address applies, except on
+  // EraVM chains (zkSync Era, Abstract), whose CREATE2 derivation and
+  // bytecode differ; readiness still requires the pinned code at the address.
   for (const auto& evmCfg : chainCfg.evmChains) {
     const auto* descriptor = swapPairDescriptor(evmCfg.pair);
     if (!descriptor || descriptor->family != SwapChainFamily::EVM ||
@@ -518,9 +344,15 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
     } else {
       rpc = std::make_unique<EthRpcClient>(evmCfg.rpcUrl, 0);
     }
-    applyHtlcConfig(*rpc, evmCfg.htlcBinPath, evmCfg.htlcRegistry,
-                    m_logger, descriptor->symbol);
-    applyPtlcConfig(*rpc, evmCfg.ptlcRegistry, m_logger, descriptor->symbol);
+    if (!evmCfg.htlcRegistryCodeHash.empty())
+      rpc->setHtlcRegistryCodeHash(evmCfg.htlcRegistryCodeHash);
+    const bool eraVm = evmCfg.pair == SwapPair::ZKSYNC || evmCfg.pair == SwapPair::ABSTRACT;
+    const std::string registry = !evmCfg.htlcRegistry.empty() || eraVm
+        ? evmCfg.htlcRegistry : std::string(CANONICAL_HTLC_REGISTRY_ADDRESS);
+    applyHtlcConfig(*rpc, evmCfg.htlcBinPath, registry, m_logger, descriptor->symbol);
+    const std::string pointRegistry = !evmCfg.ptlcRegistry.empty() || eraVm
+        ? evmCfg.ptlcRegistry : std::string(CANONICAL_PTLC_REGISTRY_ADDRESS);
+    applyPtlcConfig(*rpc, pointRegistry, m_logger, descriptor->symbol);
     m_chainRegistry.registerChain(evmCfg.pair,
         std::make_unique<EthChainClient>(std::move(rpc), evmCfg.address,
                                          descriptor->symbol));
@@ -597,13 +429,12 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
   if (!chainCfg.btcHost.empty() || chainCfg.btcMode == "spv") {
     if (chainCfg.btcMode == "spv" && !chainCfg.btcSpvServers.empty()) {
       // SPV mode: create ElectrumSpvClient with BTC checkpoints
-      auto spvClient = std::make_shared<ElectrumSpvClient>(
-          chainCfg.btcSpvServers,
-          chainCfg.btcSpvMinServers,
-          chainCfg.btcSpvCheckpointHeight,
-          chainCfg.btcSpvCheckpointHash);
+      const UtxoNetwork network = utxoNetworkFromConfig(chainCfg.btcNetwork);
+      auto spvClient = makeElectrumClient(SwapPair::BTC, network, chainCfg.btcSpvServers,
+                                          chainCfg.btcSpvMinServers, chainCfg.btcSpvCheckpointHeight,
+                                          chainCfg.btcSpvCheckpointHash);
       m_chainRegistry.registerChain(SwapPair::BTC,
-          std::make_unique<BtcChainClient>(spvClient, chainCfg.btcWif));
+          std::make_unique<BtcChainClient>(spvClient, chainCfg.btcWif, network));
       m_logger(Logging::INFO) << "BTC chain client registered: SPV mode ("
         << chainCfg.btcSpvServers.size() << " server(s))";
     } else if (!chainCfg.btcHost.empty()) {
@@ -612,7 +443,8 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
           chainCfg.btcHost, chainCfg.btcPort,
           chainCfg.btcRpcUser, chainCfg.btcRpcPass);
       m_chainRegistry.registerChain(SwapPair::BTC,
-          std::make_unique<BtcChainClient>(std::move(rpc), chainCfg.btcWif));
+          std::make_unique<BtcChainClient>(std::move(rpc), chainCfg.btcWif,
+                                           utxoNetworkFromConfig(chainCfg.btcNetwork)));
       m_logger(Logging::INFO) << "BTC chain client registered: "
         << chainCfg.btcHost << ":" << chainCfg.btcPort;
     }
@@ -622,13 +454,12 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
   if (!chainCfg.ltcHost.empty() || chainCfg.ltcMode == "spv") {
     if (chainCfg.ltcMode == "spv" && !chainCfg.ltcSpvServers.empty()) {
       // SPV mode: create ElectrumSpvClient with LTC checkpoints
-      auto spvClient = std::make_shared<ElectrumSpvClient>(
-          chainCfg.ltcSpvServers,
-          chainCfg.ltcSpvMinServers,
-          chainCfg.ltcSpvCheckpointHeight,
-          chainCfg.ltcSpvCheckpointHash);
+      const UtxoNetwork network = utxoNetworkFromConfig(chainCfg.ltcNetwork);
+      auto spvClient = makeElectrumClient(SwapPair::LTC, network, chainCfg.ltcSpvServers,
+                                          chainCfg.ltcSpvMinServers, chainCfg.ltcSpvCheckpointHeight,
+                                          chainCfg.ltcSpvCheckpointHash);
       m_chainRegistry.registerChain(SwapPair::LTC,
-          std::make_unique<LtcChainClient>(spvClient, chainCfg.ltcWif));
+          std::make_unique<LtcChainClient>(spvClient, chainCfg.ltcWif, network));
       m_logger(Logging::INFO) << "LTC chain client registered: SPV mode ("
         << chainCfg.ltcSpvServers.size() << " server(s))";
     } else if (!chainCfg.ltcHost.empty()) {
@@ -637,7 +468,8 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
           chainCfg.ltcHost, chainCfg.ltcPort,
           chainCfg.ltcRpcUser, chainCfg.ltcRpcPass);
       m_chainRegistry.registerChain(SwapPair::LTC,
-          std::make_unique<LtcChainClient>(std::move(rpc), chainCfg.ltcWif));
+          std::make_unique<LtcChainClient>(std::move(rpc), chainCfg.ltcWif,
+                                           utxoNetworkFromConfig(chainCfg.ltcNetwork)));
       m_logger(Logging::INFO) << "LTC chain client registered: "
         << chainCfg.ltcHost << ":" << chainCfg.ltcPort;
     }
@@ -1004,7 +836,7 @@ std::string SwapDaemon::resolveAddressOrAlias(const std::string& input) {
   return input; // treat as raw address
 }
 
-SwapDaemon::ChainReadiness SwapDaemon::getChainReadiness(SwapPair pair, bool refresh) {
+SwapDaemon::ChainReadiness SwapDaemon::getChainReadiness(SwapPair pair, SwapRole role, bool refresh) {
   ChainReadiness result;
   const auto* descriptor = swapPairDescriptor(pair);
   if (!descriptor) {
@@ -1012,8 +844,8 @@ SwapDaemon::ChainReadiness SwapDaemon::getChainReadiness(SwapPair pair, bool ref
     return result;
   }
   if (!CryptoNote::SwapOfferRelay::isExecutablePair(descriptor->id)) {
-    result.error = descriptor->support == SwapPairSupport::STAGED
-        ? "implementation is staged" : "pair is not executable";
+    result.error = descriptor->support == SwapPairSupport::GATED
+        ? "transport awaits its end-to-end gate" : "implementation is staged";
     return result;
   }
   if (m_network == "testnet" && descriptor->family != SwapChainFamily::EVM) {
@@ -1029,28 +861,25 @@ SwapDaemon::ChainReadiness SwapDaemon::getChainReadiness(SwapPair pair, bool ref
   result.configured = true;
 
   const auto now = std::chrono::steady_clock::now();
+  const auto cacheKey = std::make_pair(pair, role);
   {
     std::lock_guard<std::mutex> lock(m_readinessMutex);
-    auto it = m_readinessCache.find(pair);
+    auto it = m_readinessCache.find(cacheKey);
     if (!refresh && it != m_readinessCache.end() &&
         now - it->second.checkedAt < std::chrono::seconds(60))
       return it->second.value;
   }
 
-  result.error = client->readinessError();
+  result.error = client->readinessErrorFor(role);
   if (result.error.empty() && descriptor->family != SwapChainFamily::EVM) {
-    if (!client->isReadyForNewSwap())
-      result.error = "chain client is not ready for new swaps";
-    else {
-      uint64_t height = 0;
-      if (!client->getCurrentHeight(height) || height == 0)
-        result.error = "chain height query failed";
-    }
+    uint64_t height = 0;
+    if (!client->getCurrentHeight(height) || height == 0)
+      result.error = "chain height query failed";
   }
   result.ready = result.error.empty();
   {
     std::lock_guard<std::mutex> lock(m_readinessMutex);
-    m_readinessCache[pair] = {result, now};
+    m_readinessCache[cacheKey] = {result, now};
   }
   return result;
 }
@@ -1113,8 +942,8 @@ SwapDaemon::FundingReadiness SwapDaemon::getFundingReadiness(uint64_t requiredAt
   return result;
 }
 
-bool SwapDaemon::canStartNewSwap(SwapPair pair, std::string* reason, bool refresh) {
-  const ChainReadiness readiness = getChainReadiness(pair, refresh);
+bool SwapDaemon::canStartNewSwap(SwapPair pair, SwapRole role, std::string* reason, bool refresh) {
+  const ChainReadiness readiness = getChainReadiness(pair, role, refresh);
   if (!readiness.ready) {
     if (reason) *reason = readiness.error;
     return false;
@@ -1250,7 +1079,7 @@ bool SwapDaemon::initiate(SwapParams& params) {
     m_logger(Logging::ERROR) << "XFG amount is too small to fund the refund treasury output";
     return false;
   }
-  if (!canStartNewSwap(params.pair, nullptr, true)) {
+  if (!canStartNewSwap(params.pair, params.role, nullptr, true)) {
     m_logger(Logging::ERROR) << "Cannot initiate new swap for "
       << swapPairToString(params.pair) << ": chain client unavailable or not ready";
     return false;
@@ -1390,42 +1219,24 @@ bool SwapDaemon::initiate(SwapParams& params) {
 
   // ── PTLC negotiation ──
   {
-    // FEATURE_PURE_PTLC (PTLC_PURE_PLAN P4.2): read once per process, cached.
-    // Unset/0/false/off => pure PTLC disabled, negotiation stays exactly as before.
-    static const bool kPurePtlcEnabled = [] {
-      const char* v = std::getenv("FEATURE_PURE_PTLC");
-      if (v == nullptr) return false;
-      std::string s(v);
-      std::transform(s.begin(), s.end(), s.begin(),
-                     [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-      return !(s.empty() || s == "0" || s == "false" || s == "off");
-    }();
-
     IChainClient* ctrClient = m_chainRegistry.getClient(params.pair);
     bool localPtlc = ctrClient && ctrClient->supportsPtlc();
 
-    // AUDIT 3.9 — fail-closed: the pure-secp PTLC path binds an Ed25519 adaptor
-    // secret to a secp256k1 point (params.secpPubHex) but there is no genuine
-    // cross-curve DLEQ proving the two points share the same discrete log —
-    // crypto/dleq.cpp is same-curve only. Until a reviewed Ed25519<->secp256k1
-    // DLEQ lands, pure PTLC must stay disabled regardless of FEATURE_PURE_PTLC,
-    // so no swap can be locked to an unprovable cross-curve point. The
-    // PTLC_HTLC_BRIDGE path (on-chain hashlock) is unaffected.
-    static constexpr bool kCrossCurveDleqAvailable = false;
-
-    // Pure PTLC gate: env flag + local PURE capability. The peer half arrives
-    // later via MsgAdaptorExchange caps; initiate gates on local only — an
-    // HTLC-only peer still downgrades/aborts on wire negotiation
-    // (requirePtlc abort path unchanged).
-    bool localPure =
-      kPurePtlcEnabled && kCrossCurveDleqAvailable &&
-      ctrClient != nullptr && ctrClient->supportsPurePtlc();
+    // A pair this node can lock by point never uses a hash lock (F33); the
+    // peer's ADAPTOR_EXCHANGE is held to the same rule.
+    const IChainClient::PointLockSupport pointSupport = pointLockSupport(params.pair);
+    if (pointSupport == IChainClient::PointLockSupport::UNKNOWN) {
+      m_logger(Logging::ERROR) << "Cannot tell whether " << swapPairToString(params.pair)
+                               << " has its point lock; not starting a swap that might fall back to a hash lock";
+      return false;
+    }
+    bool localPure = pointSupport == IChainClient::PointLockSupport::AVAILABLE;
     if (isPtlcNativePair(params.pair)) localPtlc = true;
-    if (params.lockType == SwapLockType::HTLC) {
-      if (localPure) {
-        params.lockType = SwapLockType::PTLC;
-        m_logger(Logging::INFO) << "PTLC negotiation: pure enabled → PTLC";
-      } else if (localPtlc) {
+    if (localPure) {
+      params.lockType = SwapLockType::PTLC;
+      m_logger(Logging::INFO) << "PTLC negotiation: point lock available → PTLC";
+    } else if (params.lockType == SwapLockType::HTLC) {
+      if (localPtlc) {
         // Phase 1: bridge mode (point off-chain + hash on-chain) preserves privacy via DLEQ decorrelation.
         // Pure PTLC (scriptless Taproot with adaptor verify) lands in Phase 2/4 behind flag.
         params.lockType = SwapLockType::PTLC_HTLC_BRIDGE;
@@ -1537,7 +1348,7 @@ SwapDaemon::AcceptResult SwapDaemon::accept(const std::string& swapId) {
     return {false, msg};
   }
 
-  if (!canStartNewSwap(sm.params().pair, nullptr, true)) {
+  if (!canStartNewSwap(sm.params().pair, sm.params().role, nullptr, true)) {
     const std::string msg = "Counterparty chain is unavailable or not ready for new swaps";
     m_logger(Logging::ERROR) << msg;
     return {false, msg};
@@ -1666,7 +1477,8 @@ SwapDaemon::AcceptResult SwapDaemon::accept(const std::string& swapId) {
     ax.adaptorExchange.adaptorPoint = params.adaptorPoint;
     ax.adaptorExchange.adaptorDleqQ = params.adaptorDleqQ;
     ax.adaptorExchange.dleqProof = params.adaptorDleqProof;
-    ax.adaptorExchange.htlcHashLock = params.hashLock;
+    const bool pointLocked = params.lockType == SwapLockType::PTLC && !isPtlcNativePair(params.pair);
+    ax.adaptorExchange.htlcHashLock = pointLocked ? Crypto::Hash{} : params.hashLock;
     ax.adaptorExchange.lockType = params.lockType;
     // ptlcPoint duplicates T for pure PTLC; keep zero for HTLC.
     if (params.lockType == SwapLockType::PTLC || params.lockType == SwapLockType::PTLC_HTLC_BRIDGE) {
@@ -1680,6 +1492,12 @@ SwapDaemon::AcceptResult SwapDaemon::accept(const std::string& swapId) {
     ax.adaptorExchange.requirePtlc = params.requirePtlc;
     // Cross-curve secp point T_secp = t·G_secp for counterparty-chain PTLC
     ax.adaptorExchange.secpPubHex = params.secpPubHex;
+    if (IChainClient* ctrClient = m_chainRegistry.getClient(params.pair))
+      ax.adaptorExchange.ctrClaimPubKeyHex = ctrClient->getClaimPubKey();
+    if (pointLocked && !adaptor_prove_cross_curve(params, ax.adaptorExchange.crossCurveProof)) {
+      m_logger(Logging::ERROR) << "Cannot prove the cross-curve binding of T; ADAPTOR_EXCHANGE not sent";
+      return {false, "cross-curve proof failed"};
+    }
     signPeerMessage(ax, params.ourSwapPubKey, params.ourSwapSecKey);
     if (deliverPeerMessage(ax)) {
       m_logger(Logging::INFO) << "Delivered ADAPTOR_EXCHANGE (T + H(t)) to peer";
@@ -2300,7 +2118,13 @@ bool SwapDaemon::handlePreSigsReady(SwapStateMachine& sm) {
           << "  Refusing CTR lock: adaptor point not set (DLEQ exchange incomplete)";
         return false;
       }
-      if (params.pair != SwapPair::XMR &&
+      const bool pointLocked = params.lockType == SwapLockType::PTLC && !isPtlcNativePair(params.pair);
+      if (pointLocked && !params.crossCurveProofVerified) {
+        m_logger(Logging::ERROR)
+          << "  Refusing CTR lock: the cross-curve proof for T_secp has not been verified";
+        return false;
+      }
+      if (!pointLocked && params.pair != SwapPair::XMR &&
           std::memcmp(&params.hashLock, &ZERO_H, sizeof(ZERO_H)) == 0) {
         m_logger(Logging::ERROR)
           << "  Refusing CTR lock: hashLock not set (DLEQ exchange incomplete)";
@@ -2331,11 +2155,13 @@ bool SwapDaemon::handlePreSigsReady(SwapStateMachine& sm) {
       m_logger(Logging::INFO) << "  " << client->chainName()
         << " locked, ref: " << result.txId;
       params.ctrLockTxId = result.txId;
+      params.ctrLockVout = result.outputIndex;
       if (!result.chainState.empty()) {
         params.chainState = result.chainState;
       }
       sm.transition(SwapState::ADAPTOR_CTR_LOCKED);
       m_db.saveSwap(sm);
+      announceCounterpartyLock(params);
       return true;
     }
     m_logger(Logging::ERROR) << "  " << client->chainName()
@@ -2503,6 +2329,7 @@ bool SwapDaemon::handleCtrLocked(SwapStateMachine& sm) {
         return false;
       }
       if (!hasConfirmedCounterpartyClaim(params, client)) {
+        replaceStalledClaim(sm, client);
         m_logger(Logging::INFO) << "  CTR claim awaiting chain confirmations";
         return false;
       }
@@ -2517,6 +2344,11 @@ bool SwapDaemon::handleCtrLocked(SwapStateMachine& sm) {
       if (signPeerMessage(rev, params.ourSwapPubKey, params.ourSwapSecKey))
         deliverPeerMessage(rev);
       return true;
+    }
+    const std::string lateClaim = client->claimDeadlineError(params);
+    if (!lateClaim.empty()) {
+      m_logger(Logging::ERROR) << "  Not claiming " << client->chainName() << ": " << lateClaim;
+      return false;
     }
     params.ctrClaimAttempted = true;
     if (!m_db.saveSwap(sm)) {
@@ -2546,6 +2378,7 @@ bool SwapDaemon::handleCtrLocked(SwapStateMachine& sm) {
       m_logger(Logging::INFO) << "  CTR claim submitted; waiting before revealing secret or paying XFG";
       return true;
     }
+    if (result.nothingSent) return withdrawUnsentClaimIntent(sm, client->chainName(), result.error);
     m_logger(Logging::ERROR) << "  " << client->chainName()
       << " claim outcome unresolved: " << result.error
       << "; keeping swap active for reconciliation";
@@ -2575,6 +2408,7 @@ bool SwapDaemon::handleCtrLocked(SwapStateMachine& sm) {
 
   std::string claimedHex = client->tryExtractClaimedSecret(params);
   if (claimedHex.empty() || claimedHex.size() != 64) {
+    announceCounterpartyLock(params);
     m_logger(Logging::INFO) << "  " << swapPairToString(params.pair)
       << " locked. Waiting for Bob to claim (on-chain preimage)...";
     return false;
@@ -2916,6 +2750,48 @@ bool SwapDaemon::finalizeEscrowSpend(SwapStateMachine& sm, const std::string& lo
   return true;
 }
 
+static std::string describeClaimFeeBump(const ChainClientResult& bump) {
+  return bump.feeChildTxId.empty() ? "replacement " + bump.txId
+                                   : "child " + bump.feeChildTxId + " paying for claim " + bump.txId;
+}
+
+void SwapDaemon::replaceStalledClaim(SwapStateMachine& sm, IChainClient* client) {
+  static constexpr uint64_t CLAIM_REPLACEMENT_INTERVAL_BLOCKS = 3;
+  const SwapParams& params = sm.params();
+  uint64_t tip = 0;
+  if (params.lockType != SwapLockType::PTLC || params.ctrClaimTxId.empty() || !client->getCurrentHeight(tip)) return;
+  if (params.ctrClaimSubmittedHeight == 0) {
+    saveSwapMerged(sm, [tip](SwapStateMachine& latest) { latest.params().ctrClaimSubmittedHeight = tip; });
+    return;
+  }
+  if (tip < params.ctrClaimSubmittedHeight + CLAIM_REPLACEMENT_INTERVAL_BLOCKS) return;
+  const ChainClientResult replaced = client->bumpClaim(params);
+  if (!replaced.success || replaced.txId.empty()) {
+    if (!replaced.nothingSent)
+      m_logger(Logging::WARNING) << "  Raising the claim fee may have reached the network: " << replaced.error;
+    return;
+  }
+  const std::string claimTxId = replaced.txId;
+  if (!saveSwapMerged(sm, [claimTxId, tip](SwapStateMachine& latest) {
+        latest.params().ctrClaimTxId = claimTxId;
+        latest.params().ctrClaimSubmittedHeight = tip;
+      }))
+    m_logger(Logging::ERROR) << "  Claim fee raised by " << describeClaimFeeBump(replaced)
+                             << " but persistence failed";
+  else
+    m_logger(Logging::INFO) << "  Stalled claim fee raised by " << describeClaimFeeBump(replaced);
+}
+
+bool SwapDaemon::withdrawUnsentClaimIntent(SwapStateMachine& sm, const std::string& chainName,
+                                           const std::string& reason) {
+  m_logger(Logging::ERROR) << "  " << chainName << " claim not sent: " << reason;
+  if (!saveSwapMerged(sm, [](SwapStateMachine& latest) {
+        if (latest.params().ctrClaimTxId.empty()) latest.params().ctrClaimAttempted = false;
+      }))
+    m_logger(Logging::ERROR) << "  Cannot persist the withdrawn claim intent; XFG refund stays held";
+  return false;
+}
+
 bool SwapDaemon::handleWaitingSpv(SwapStateMachine& sm) {
   SwapParams& params = sm.params();
   const std::string& swapId = params.swapId;
@@ -2939,11 +2815,18 @@ bool SwapDaemon::handleWaitingSpv(SwapStateMachine& sm) {
   // Alice-locks + SPV: Bob claims with t; Alice waits for on-chain preimage.
   if (params.role == SwapRole::BOB && !isZeroSecret(params.adaptorSecret)) {
     if (!params.ctrClaimAttempted) {
+      const std::string lateClaim = client->claimDeadlineError(params);
+      if (!lateClaim.empty()) {
+        m_logger(Logging::ERROR) << "  Not claiming " << client->chainName() << ": " << lateClaim;
+        return false;
+      }
       // Save the intent before the external call: a lost RPC response does not
       // prove the claim failed and must not authorize an XFG refund later.
       params.ctrClaimAttempted = true;
       if (!m_db.saveSwap(sm)) return false;
       auto claimResult = client->claim(params);
+      if (!claimResult.success && claimResult.nothingSent)
+        return withdrawUnsentClaimIntent(sm, client->chainName(), claimResult.error);
       if (!claimResult.success || claimResult.txId.empty()) {
         m_logger(Logging::ERROR) << "  SPV claim outcome unresolved — "
           << claimResult.error << "; inspect CTR chain before refunding XFG";
@@ -3023,6 +2906,7 @@ bool SwapDaemon::handleWaitingSpv(SwapStateMachine& sm) {
       client->getTransactionDetails(params.ctrClaimTxId, claimStatus);
       if (!claimStatus.success || !claimStatus.confirmed || !claimStatus.spvVerified ||
           claimStatus.confirmations < required) {
+        replaceStalledClaim(sm, client);
         m_logger(Logging::INFO) << "  SPV CTR claim not confirmed ("
           << claimStatus.confirmations << "/" << required << "); holding XFG";
         return false;
@@ -3255,7 +3139,7 @@ bool SwapDaemon::processSwap(SwapStateMachine& sm) {
 
         if (params.role == SwapRole::BOB) {
           if (!escrowTxKnown) {
-            if (!canStartNewSwap(params.pair, nullptr, true)) {
+            if (!canStartNewSwap(params.pair, SwapRole::BOB, nullptr, true)) {
               m_logger(Logging::ERROR) << "Refusing to fund XFG escrow: "
                 << swapPairToString(params.pair) << " is not ready for a new swap";
               return false;
@@ -4338,6 +4222,81 @@ bool SwapDaemon::buildAndBroadcastEscrowTx(SwapParams& params,
   return true;
 }
 
+namespace {
+
+bool isLockReference(const std::string& ref) {
+  return !ref.empty() && std::all_of(ref.begin(), ref.end(), [](unsigned char c) {
+    return std::isalnum(c) != 0;
+  });
+}
+
+bool isLockState(const std::string& state) {
+  return std::all_of(state.begin(), state.end(), [](unsigned char c) {
+    return std::isalnum(c) != 0 || c == ':' || c == '|';
+  });
+}
+
+// The lock part of chainState: a point-lock state whole, an HTLC lock script
+// without the ":<claimTxid>" suffix appended later.
+bool isSolPointLockState(const std::string& state) { return state.rfind("ptlc:", 0) == 0; }
+
+std::string announcedLockState(const SwapParams& params) {
+  const bool pointLock = isPointLockState(params.chainState) || isBchPointLockState(params.chainState) ||
+                         isSolPointLockState(params.chainState);
+  return pointLock ? params.chainState : lockScriptHex(params.chainState);
+}
+
+}  // namespace
+
+PriceFeed* SwapDaemon::corroboratingFeed(const ChainClientConfig& chainCfg) {
+  if (chainCfg.pythRpcUrl.empty()) return &m_coinGeckoFeed;
+  m_pythFeed.setRpcUrl(chainCfg.pythRpcUrl);
+  m_pythFeed.setContract(chainCfg.pythContract);
+  m_pythFeed.setChainId(chainCfg.pythChainId);
+  return &m_pythFeed;
+}
+
+void SwapDaemon::announceCounterpartyLock(const SwapParams& params) {
+  if (params.role != SwapRole::ALICE || params.pair == SwapPair::XMR ||
+      params.peerEndpoint.empty() || params.ctrLockTxId.empty())
+    return;
+  PeerMessage notice;
+  notice.type = PeerMessageType::CTR_LOCKED;
+  notice.swapId = params.swapId;
+  notice.ctrLocked.lockRef = params.ctrLockTxId;
+  notice.ctrLocked.lockOutputIndex = params.ctrLockVout;
+  notice.ctrLocked.lockState = announcedLockState(params);
+  if (signPeerMessage(notice, params.ourSwapPubKey, params.ourSwapSecKey) &&
+      !deliverPeerMessage(notice))
+    m_logger(Logging::WARNING) << "  CTR_LOCKED delivery failed — will retry next tick";
+}
+
+bool SwapDaemon::acceptCounterpartyLockNotice(SwapStateMachine& sm, const MsgCtrLocked& notice) {
+  SwapParams& params = sm.params();
+  if (params.role != SwapRole::BOB || params.pair == SwapPair::XMR || sm.isTerminal()) {
+    m_logger(Logging::WARNING) << "CTR_LOCKED ignored for swap " << params.swapId;
+    return false;
+  }
+  if (!isLockReference(notice.lockRef) || !isLockState(notice.lockState)) {
+    m_logger(Logging::ERROR) << "CTR_LOCKED rejected: malformed lock reference or state";
+    return false;
+  }
+  if (!params.ctrLockTxId.empty() || !params.chainState.empty()) {
+    const bool identical = params.ctrLockTxId == notice.lockRef &&
+                           params.ctrLockVout == notice.lockOutputIndex &&
+                           announcedLockState(params) == notice.lockState;
+    if (!identical)
+      m_logger(Logging::ERROR) << "Conflicting CTR_LOCKED rejected for swap " << params.swapId;
+    return identical;
+  }
+  params.ctrLockTxId = notice.lockRef;
+  params.ctrLockVout = notice.lockOutputIndex;
+  params.chainState = notice.lockState;
+  m_logger(Logging::INFO) << "  Received CTR_LOCKED: " << notice.lockRef << ":"
+                          << notice.lockOutputIndex << " — verifying on chain";
+  return true;
+}
+
 bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
   // Dispatch incoming peer messages to the appropriate swap and phase.
   m_logger(Logging::INFO) << "Peer message for swap " << msg.swapId
@@ -4421,6 +4380,26 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
           m_logger(Logging::WARNING) << "ADAPTOR_EXCHANGE ignored (not Alice)";
           return true;
         }
+        const IChainClient::PointLockSupport pointSupport = pointLockSupport(params.pair);
+        if (pointSupport == IChainClient::PointLockSupport::UNKNOWN) {
+          m_logger(Logging::ERROR) << "ADAPTOR_EXCHANGE deferred: cannot tell whether "
+                                   << swapPairToString(params.pair) << " has its point lock";
+          return false;
+        }
+        const bool pointLock = pointSupport == IChainClient::PointLockSupport::AVAILABLE;
+        if (msg.adaptorExchange.lockType == SwapLockType::PTLC && !isPtlcNativePair(params.pair) && !pointLock) {
+          m_logger(Logging::ERROR) << "ADAPTOR_EXCHANGE rejected: this node has no point lock for "
+                                   << swapPairToString(params.pair);
+          return false;
+        }
+        if (pointLock && msg.adaptorExchange.lockType != SwapLockType::PTLC) {
+          m_logger(Logging::ERROR) << "ADAPTOR_EXCHANGE rejected: " << swapPairToString(params.pair)
+                                   << " is locked by point on this node; a hash lock is not bound to T (F33)";
+          return false;
+        }
+        // A point lock opens with t itself: Bob's hash, which nothing ties to
+        // t, must not be able to veto the true t after his claim.
+        const Crypto::Hash boundHashLock = pointLock ? Crypto::Hash{} : msg.adaptorExchange.htlcHashLock;
         // Cross-curve point format gate: fail closed on malformed secpPubHex
         // (66 hex chars, compressed prefix 02 or 03).
         if (!msg.adaptorExchange.secpPubHex.empty()) {
@@ -4431,6 +4410,14 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
               (secpProbe.data[0] == 0x02 || secpProbe.data[0] == 0x03);
           if (!secpFormatOk) {
             m_logger(Logging::ERROR) << "ADAPTOR_EXCHANGE rejected: malformed secpPubHex";
+            return false;
+          }
+        }
+        if (!msg.adaptorExchange.ctrClaimPubKeyHex.empty()) {
+          std::vector<uint8_t> claimKey;
+          if (!decodeHex(msg.adaptorExchange.ctrClaimPubKeyHex, claimKey) ||
+              !isCompressedPublicKey(claimKey)) {
+            m_logger(Logging::ERROR) << "ADAPTOR_EXCHANGE rejected: malformed claim key";
             return false;
           }
         }
@@ -4447,9 +4434,9 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
                           sizeof(ZERO_PK)) != 0 ||
               std::memcmp(&params.adaptorDleqQ, &msg.adaptorExchange.adaptorDleqQ,
                           sizeof(ZERO_PK)) != 0 ||
-              std::memcmp(&params.hashLock, &msg.adaptorExchange.htlcHashLock,
-                          sizeof(Crypto::Hash)) != 0 ||
-              secpConflict) {
+              std::memcmp(&params.hashLock, &boundHashLock, sizeof(Crypto::Hash)) != 0 ||
+              secpConflict ||
+              params.ctrPubKey != msg.adaptorExchange.ctrClaimPubKeyHex) {
             m_logger(Logging::ERROR) << "Conflicting duplicate ADAPTOR_EXCHANGE rejected";
             return false;
           }
@@ -4459,10 +4446,11 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
         params.adaptorPoint = msg.adaptorExchange.adaptorPoint;
         params.adaptorDleqQ = msg.adaptorExchange.adaptorDleqQ;
         params.adaptorDleqProof = msg.adaptorExchange.dleqProof;
-        params.hashLock = msg.adaptorExchange.htlcHashLock;
+        params.hashLock = boundHashLock;
         params.lockType = msg.adaptorExchange.lockType;
         params.ptlcPoint = msg.adaptorExchange.ptlcPoint;
         params.secpPubHex = msg.adaptorExchange.secpPubHex;
+        params.ctrPubKey = msg.adaptorExchange.ctrClaimPubKeyHex;
         // Preserve local requirePtlc OR with peer's (if either requires, enforce)
         params.requirePtlc = localRequire || msg.adaptorExchange.requirePtlc;
         // Downgrade check: if we require PTLC but peer sent HTLC, abort
@@ -4487,7 +4475,15 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
           std::memset(&params.adaptorDleqProof, 0, sizeof(params.adaptorDleqProof));
           std::memset(&params.hashLock, 0, sizeof(params.hashLock));
           params.secpPubHex.clear();
+          params.ctrPubKey.clear();
           return false;
+        }
+        if (pointLock) {
+          if (!adaptor_verify_cross_curve(params, msg.adaptorExchange.crossCurveProof)) {
+            m_logger(Logging::ERROR) << "ADAPTOR_EXCHANGE rejected: no valid cross-curve proof that T_secp opens with t";
+            return false;
+          }
+          params.crossCurveProofVerified = true;
         }
         return true;
       }
@@ -4722,6 +4718,9 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
         return true;
       }
 
+      case PeerMessageType::CTR_LOCKED:
+        return acceptCounterpartyLockNotice(sm, msg.ctrLocked);
+
       case PeerMessageType::SECRET_REVEAL: {
         // Alice receives adaptor preimage t from Bob.
         // Verify T = t*G matches the negotiated adaptorPoint before accepting.
@@ -4923,7 +4922,7 @@ bool SwapDaemon::handleSwapRequest(const std::string& offerId, uint64_t amount,
   }
 
   SwapPair pair = static_cast<SwapPair>(targetOffer.pair);
-  if (!canStartNewSwap(pair, nullptr, true)) {
+  if (!canStartNewSwap(pair, SwapRole::BOB, nullptr, true)) {
     m_logger(Logging::ERROR) << "Chain not ready for new offer fills: " << (int)targetOffer.pair;
     return false;
   }
@@ -5008,7 +5007,12 @@ bool SwapDaemon::handleSwapRequest(const std::string& offerId, uint64_t amount,
           result.hashLock = hashLock;
           result.preSig = preSig;
           result.ctrAddress = ctrAddress;
+          result.ctrClaimPubKey = client->getClaimPubKey();
           result.createdAt = std::time(nullptr);
+          Crypto::Signature makerSignature;
+          Crypto::generate_signature(CryptoNote::swapRequestResultHash(takerPubKey, result),
+                                     m_makerPublicKey, m_makerSecretKey, makerSignature);
+          result.makerSignature = Common::podToHex(makerSignature);
           m_swapRelay->recordSwapRequestResult(takerPubKey, result);
           m_logger(Logging::INFO) << "AFK fill result published for taker "
             << takerPubKey.substr(0, 16) << "...";
@@ -5130,7 +5134,9 @@ bool SwapDaemon::loadOfferConfig(const std::string& jsonPath) {
     // readiness cache and the 30s funding cache, putting two RPCs per offer on the tick
     // thread. Every other call site is an explicit action (initiate, accept, AFK lock)
     // and keeps its fresh check.
-    [this](uint8_t pair) { return canStartNewSwap(static_cast<SwapPair>(pair), nullptr, false); },
+    [this](uint8_t pair) {
+      return canStartNewSwap(static_cast<SwapPair>(pair), SwapRole::BOB, nullptr, false);
+    },
     [this](uint8_t pair) {
       const PairQuote quote = currentPairQuote(static_cast<SwapPair>(pair), true);
       return quote.managedOffersAllowed ? quote.rateNum : uint64_t{0};
@@ -5185,12 +5191,13 @@ std::string SwapDaemon::buildPriceStatusJson() {
   Common::JsonValue feeds(Common::JsonValue::OBJECT);
   if (haveSnapshot) {
     feeds.insert("defillama", feedToJson(snapshot.primary));
-    feeds.insert("coingecko", feedToJson(snapshot.secondary));
+    feeds.insert(snapshot.secondary.feedName.empty() ? "secondary" : snapshot.secondary.feedName,
+                 feedToJson(snapshot.secondary));
   } else {
     FeedResult none;
     none.transportReason = "no snapshot yet";
     feeds.insert("defillama", feedToJson(none));
-    feeds.insert("coingecko", feedToJson(none));
+    feeds.insert("secondary", feedToJson(none));
   }
   out.insert("feeds", feeds);
 
@@ -5211,9 +5218,10 @@ std::string SwapDaemon::buildPriceStatusJson() {
     Common::JsonValue e(Common::JsonValue::OBJECT);
     e.insert("id", static_cast<int64_t>(descriptor.id));
     e.insert("symbol", std::string(descriptor.symbol));
-    e.insert("support", std::string(
-        descriptor.support == SwapPairSupport::ACTIVE ? "ACTIVE"
-        : descriptor.support == SwapPairSupport::STAGED ? "STAGED" : "ADAPTER"));
+    std::string support = swapPairSupportToString(descriptor.support);
+    std::transform(support.begin(), support.end(), support.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+    e.insert("support", support);
     e.insert("status", std::string(quoteStatusToString(q.status)));
     e.insert("referenceRate", Common::JsonValue(q.referenceRate));
     e.insert("rateNum", static_cast<int64_t>(q.rateNum));
@@ -5294,7 +5302,8 @@ std::string SwapDaemon::buildChainCatalogJson() {
   Common::JsonValue::Array chains;
   chains.reserve(SWAP_PAIR_COUNT);
   for (const auto& descriptor : SWAP_PAIR_CATALOG) {
-    const ChainReadiness readiness = getChainReadiness(descriptor.pair, false);
+    const ChainReadiness asAlice = getChainReadiness(descriptor.pair, SwapRole::ALICE, false);
+    const ChainReadiness asBob = getChainReadiness(descriptor.pair, SwapRole::BOB, false);
     Common::JsonValue entry(Common::JsonValue::OBJECT);
     entry.insert("id", static_cast<int64_t>(descriptor.id));
     entry.insert("key", std::string(descriptor.key));
@@ -5323,9 +5332,13 @@ std::string SwapDaemon::buildChainCatalogJson() {
     entry.insert("icon", std::string(descriptor.icon));
     entry.insert("color", std::string(descriptor.color));
     entry.insert("protocol", Common::JsonValue(isProtocolSwapPair(descriptor.id)));
-    entry.insert("configured", Common::JsonValue(readiness.configured));
-    entry.insert("ready", Common::JsonValue(readiness.ready));
-    entry.insert("readinessError", readiness.error);
+    entry.insert("configured", Common::JsonValue(asAlice.configured));
+    entry.insert("ready", Common::JsonValue(asAlice.ready && asBob.ready));
+    entry.insert("readinessError", asAlice.ready ? asBob.error : asAlice.error);
+    Common::JsonValue readyRoles(Common::JsonValue::ARRAY);
+    if (asAlice.ready) readyRoles.pushBack(Common::JsonValue(std::string("alice")));
+    if (asBob.ready) readyRoles.pushBack(Common::JsonValue(std::string("bob")));
+    entry.insert("readyRoles", readyRoles);
     chains.push_back(std::move(entry));
   }
   return Common::JsonValue(std::move(chains)).toString();

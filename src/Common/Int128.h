@@ -150,6 +150,7 @@ struct uint128_t {
     uint128_t operator-(uint64_t v) const { return *this - uint128_t(v); }
     uint128_t operator+(uint32_t v) const { return *this + uint128_t(static_cast<uint64_t>(v)); }
     uint128_t operator-(uint32_t v) const { return *this - uint128_t(static_cast<uint64_t>(v)); }
+    uint128_t operator-(int v) const { return *this - uint128_t(static_cast<uint64_t>(v)); }
 
     uint128_t operator~() const { return uint128_t(~hi, ~lo); }
     uint128_t operator-() const { return ~(*this) + uint128_t(1); }

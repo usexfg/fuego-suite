@@ -196,7 +196,7 @@ Phase 1         Phase 2          Phase 3          Phase 4          Phase 5
 
 ### 3.4 Treasury / Mint Premium Integration
 
-> **STATUS: FUTURE PROPOSAL — NOT ACTIVE.** `HEAT_MINT_PREMIUM_BPS = 0` today; mint premium goes nowhere and is NOT a protocol earnings stream. The only two protocol earnings streams are Hearth swap fees (1%) and atomic swap fees (2% = 1% + 1%). Re-enabling a premium would require a governance decision; do not assume it exists.
+> **STATUS: ACTIVE from v11.** `HEAT_MINT_PREMIUM_BPS = 100` (1% of the declared burn) — this doc previously said `0` / "NOT ACTIVE", which is stale. The premium is still **not** a protocol earnings stream: it is a haircut inside the burn that funds both AuntPoL legs (withheld `premiumXfg` → XFG leg, the `heat(premiumXfg)` it buys → HEAT leg), so total HEAT created still equals `heat(xfgBurned)`. Protocol earnings implemented today are Hearth swap fees (1%) and atomic swap fees (2% = 1% + 1%); that is not a closed list, but no earnings stream may fund yield out of burn-derived value, the CD creation fee, or newly minted HEAT.
 
 - [ ] Mint premium (2-3%) diverted to treasury rebalance fund
 - [ ] Modify `HeatMintEngine::validateMint()`:

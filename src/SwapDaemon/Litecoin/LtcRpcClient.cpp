@@ -570,9 +570,11 @@ static std::string ltcWitnessScriptToAddress(
     const std::vector<uint8_t>& witnessScript, const std::string& hrp = "ltc") {
   auto hash = LtcHtlcScript::sha256(witnessScript);
   std::vector<uint8_t> witnessProgram;
-  witnessProgram.push_back(0x00);
+  // BIP173: the witness version is its own 5-bit value; only the program
+  // is regrouped from 8-bit to 5-bit.
   witnessProgram.insert(witnessProgram.end(), hash.begin(), hash.end());
   auto data5 = convertBits8to5(witnessProgram);
+  data5.insert(data5.begin(), 0x00);
   return bech32Encode(hrp, data5);
 }
 
@@ -771,94 +773,30 @@ static std::vector<uint8_t> buildRawSegWitTx(
   return tx;
 }
 
-bool LtcRpcClient::claim(const std::string& claimerWif,
-                          const std::string& htlcTxid,
-                          uint32_t htlcVout,
-                          uint64_t htlcAmount,
-                          const std::string& redeemScriptHex,
-                          const std::string& preimageHex,
-                          const std::string& destAddress,
-                          std::string& claimTxId) {
-  std::array<uint8_t, 32> privKey{};
-  if (!LtcHtlcScript::wifToPrivKey(claimerWif, privKey)) return false;
-
-  auto witnessScript = LtcHtlcScript::hexToBytes(redeemScriptHex);
-  auto preimage      = LtcHtlcScript::hexToBytes(preimageHex);
-
-  uint8_t addrVersion = 0;
-  std::vector<uint8_t> pubKeyHash;
-  if (!LtcHtlcScript::base58CheckDecode(destAddress, addrVersion, pubKeyHash)) return false;
-  auto outputScript = LtcHtlcScript::buildP2pkhScriptPubKey(pubKeyHash);
-
-  uint64_t fee = 1000;
-  estimateFeeLitoshis(fee, /*confTarget=*/2);
-  if (htlcAmount <= fee) return false;
-  uint64_t outputAmount = htlcAmount - fee;
-
-  const uint32_t nSequence = 0xFFFFFFFD;
-
-  auto der = LtcHtlcScript::signInput(privKey, /*version=*/2, /*locktime=*/0,
-                                       nSequence,
-                                       htlcTxid, htlcVout,
-                                       witnessScript, htlcAmount,
-                                       outputScript, outputAmount);
-  if (der.empty()) return false;
-
-  // P2WSH: empty scriptSig, witness stack carries the data.
-  std::vector<uint8_t> emptyScriptSig;
-  auto witnessStack = createClaimWitness(der, preimage, witnessScript);
-
-  auto rawTx = buildRawSegWitTx(
-      htlcTxid, htlcVout, htlcAmount,
-      emptyScriptSig, witnessStack, destAddress, outputAmount, /*nLocktime=*/0);
-
-  (void)nSequence;
-
-  std::string txHex = LtcHtlcScript::bytesToHex(rawTx);
-  return sendRawTransaction(txHex, claimTxId);
+bool LtcRpcClient::callJson(const std::string& method, const std::string& params,
+                            Common::JsonValue& result, std::string& error) {
+  try {
+    const Common::JsonValue reply = Common::JsonValue::fromString(rpcCall(method, params));
+    if (reply.isObject() && reply.contains("error") && reply("error").isObject()) {
+      const Common::JsonValue& rpcError = reply("error");
+      error = rpcError.contains("message") && rpcError("message").isString()
+                  ? rpcError("message").getString()
+                  : "RPC error";
+      return false;
+    }
+    if (!reply.isObject() || !reply.contains("result")) {
+      error = "malformed RPC reply to " + method;
+      return false;
+    }
+    result = reply("result");
+    return true;
+  } catch (const std::exception& e) {
+    error = e.what();
+    return false;
+  }
 }
 
-bool LtcRpcClient::refundHtlc(const std::string& senderWif,
-                               const std::string& htlcTxid,
-                               uint32_t htlcVout,
-                               uint64_t htlcAmount,
-                               const std::string& redeemScriptHex,
-                               uint32_t timeoutBlock,
-                               const std::string& destAddress,
-                               std::string& refundTxId) {
-  std::array<uint8_t, 32> privKey{};
-  if (!LtcHtlcScript::wifToPrivKey(senderWif, privKey)) return false;
 
-  auto witnessScript = LtcHtlcScript::hexToBytes(redeemScriptHex);
-
-  uint32_t nLocktime = timeoutBlock;
-
-  uint8_t addrVersion = 0;
-  std::vector<uint8_t> pubKeyHash;
-  if (!LtcHtlcScript::base58CheckDecode(destAddress, addrVersion, pubKeyHash)) return false;
-  auto outputScript = LtcHtlcScript::buildP2pkhScriptPubKey(pubKeyHash);
-
-  const uint64_t fee = 1000;
-  if (htlcAmount <= fee) return false;
-  uint64_t outputAmount = htlcAmount - fee;
-
-  auto der = LtcHtlcScript::signInput(privKey, /*version=*/2, nLocktime,
-                                       /*nSequence=*/0xFFFFFFFE,
-                                       htlcTxid, htlcVout,
-                                       witnessScript, htlcAmount,
-                                       outputScript, outputAmount);
-  if (der.empty()) return false;
-
-  std::vector<uint8_t> emptyScriptSig;
-  auto witnessStack = createRefundWitness(der, witnessScript);
-
-  auto rawTx = buildRawSegWitTx(
-      htlcTxid, htlcVout, htlcAmount,
-      emptyScriptSig, witnessStack, destAddress, outputAmount, nLocktime);
-
-  std::string txHex = LtcHtlcScript::bytesToHex(rawTx);
-  return sendRawTransaction(txHex, refundTxId);
-}
 
 bool LtcRpcClient::verifyMessage(const std::string& address, const std::string& signature,
                                   const std::string& message, bool& valid) {

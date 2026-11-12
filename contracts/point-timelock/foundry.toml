@@ -5,8 +5,6 @@ libs = ["lib"]
 solc_version = "0.8.20"
 test = "test"
 
-# PointTimelock.sol lives in the daemon tree; remap so forge can compile it.
+# src/PointTimelock.sol is a copy of src/SwapDaemon/Ethereum/PointTimelock.sol;
+# CI fails if the two differ.
 remappings = ["forge-std/=lib/forge-std/src/"]
-
-[profile.default.fuzz]
-runs = 0

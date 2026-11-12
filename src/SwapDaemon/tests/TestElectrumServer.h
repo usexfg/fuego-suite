@@ -1,7 +1,8 @@
 // Copyright (c) 2017-2026 Fuego Developers
 //
-// In-process test Electrum server. Binds to 127.0.0.1:0 (ephemeral port),
-// accepts one connection on a background thread, reads newline-delimited
+// In-process test Electrum server. Binds to a loopback address on an
+// ephemeral port, serves connections one after another on a background
+// thread, reads newline-delimited
 // JSON-RPC requests, replies with caller-registered canned responses keyed
 // by JSON "method". Named Test… per repo convention (not "mock").
 
@@ -48,7 +49,8 @@ public:
     m_handler = std::move(h);
   }
 
-  uint16_t start() {
+  // Any 127.x.y.z address is local on Linux; other systems configure 127.0.0.1 only.
+  uint16_t start(const char* bindAddress = "127.0.0.1") {
     m_listenFd = socket(AF_INET, SOCK_STREAM, 0);
     if (m_listenFd < 0) {
       return 0;
@@ -59,7 +61,11 @@ public:
 
     struct sockaddr_in addr {};
     addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    if (inet_pton(AF_INET, bindAddress, &addr.sin_addr) != 1) {
+      ::close(m_listenFd);
+      m_listenFd = -1;
+      return 0;
+    }
     addr.sin_port = 0; // ephemeral
 
     if (bind(m_listenFd, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) < 0) {
@@ -72,7 +78,7 @@ public:
     getsockname(m_listenFd, reinterpret_cast<struct sockaddr*>(&addr), &addrLen);
     m_port.store(ntohs(addr.sin_port));
 
-    if (listen(m_listenFd, 1) < 0) {
+    if (listen(m_listenFd, 4) < 0) {
       ::close(m_listenFd);
       m_listenFd = -1;
       m_port.store(0);
@@ -131,12 +137,10 @@ private:
         continue;
       }
 
-      // Handle exactly one connection then exit
       m_clientFd.store(clientFd);
       handleClient(clientFd);
       m_clientFd.store(-1);
       ::close(clientFd);
-      break;
     }
   }
 

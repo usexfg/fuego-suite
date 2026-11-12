@@ -170,8 +170,14 @@ struct SwapRequestResult {
   std::string hashLock;       // hex, H(t) — counterparty-family hash
   std::string preSig;         // hex, maker's adaptor pre-signature
   std::string ctrAddress;     // maker's counterparty-chain receive address
+  std::string ctrClaimPubKey; // hex, maker's UTXO claim key (compressed secp256k1); empty elsewhere
   time_t      createdAt = 0;
+  std::string makerSignature; // hex, offer maker's signature over swapRequestResultHash
 };
+
+// Digest the offer's maker signs over a fill result: every field the taker
+// locks against, bound to the taker it answers. Each field is length-prefixed.
+Crypto::Hash swapRequestResultHash(const std::string& takerPubKey, const SwapRequestResult& result);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SwapOfferRelay — unified relay for legacy v1 + v2 orderbook
@@ -213,17 +219,10 @@ public:
   void submitSwapRequest(const std::string& offerId, uint64_t amount,
                          const std::string& takerPubKey, const std::string& proofOfFunds);
 
-  // P2P-received fill result (gossiped by the maker's node). Stored locally,
-  // keyed by takerPubKey, so the taker can poll its own fuegod.
-  void handleSwapRequestResult(const std::string& takerPubKey,
-                               const std::string& offerId,
-                               const std::string& lockId,
-                               const std::string& makerEndpoint,
-                               const std::string& adaptorPoint,
-                               const std::string& hashLock,
-                               const std::string& preSig,
-                               const std::string& ctrAddress,
-                               uint64_t createdAt);
+  // P2P-received fill result (gossiped by the maker's node). Kept only while
+  // AFK execution is enabled and only when the maker of the offer it names
+  // signed it; stored keyed by takerPubKey so the taker can poll its fuegod.
+  void handleSwapRequestResult(const std::string& takerPubKey, const SwapRequestResult& result);
 
   // Called by the maker's SwapDaemon once the AFK lock is created.
   // Stores locally AND gossips the result to all peers.
@@ -253,7 +252,6 @@ public:
   NativeXfgPriceRange getNativeXfgPrice() const;
   std::vector<SwapTradeRecord> getRecentTrades(uint8_t pair, uint32_t limit) const;
 
-  static double getSeedRate(uint8_t pair);
 
   std::vector<PendingSwapRequest> getPendingSwapRequests();
 
@@ -298,16 +296,11 @@ public:
     return XfgSwap::isProtocolSwapPair(pair);
   }
 
-  // Order-book capacity includes reserved SwapPair values, but offers and
-  // orders require an end-to-end executable chain path. The UTXO SPV clients
-  // cannot submit locks and do not validate chain-specific difficulty; their
-  // full-node modes lack independent claim discovery. Keep the numeric gates
-  // in sync with SwapPairCatalog.h. Client readiness adds a per-config gate.
+  // Offers and orders require an end-to-end executable chain path; the
+  // catalog's support level decides (GATED and STAGED pairs are refused).
+  // Client readiness adds a per-config gate.
   static constexpr bool isExecutablePair(uint8_t pair) {
-    return isProtocolPair(pair) && pair != 2 && pair != 3 &&
-           pair != 6 && pair != 8 && pair != 9 && pair != 10 &&
-           pair != 17 && pair != 20 && pair != 21 && pair != 22 &&
-           pair != 24 && pair != 27 && pair != 28;
+    return XfgSwap::isExecutableSwapPair(pair);
   }
 
 private:
@@ -357,6 +350,8 @@ private:
   static constexpr size_t MAX_PENDING_REQUESTS = 256;
   static constexpr size_t MAX_REQUEST_RESULTS_PER_TAKER = 64;
   std::map<std::string, std::vector<SwapRequestResult>> m_requestResults;  // takerPubKey → results
+  bool isSignedByOfferMaker(const std::string& takerPubKey, const SwapRequestResult& result) const;
+  void storeSwapRequestResult(const std::string& takerPubKey, const SwapRequestResult& result);
 
   // TWAP state per pair
   struct TwapState {

@@ -8,8 +8,13 @@
 #include "../Crypto/Base58Std.h"
 #include "../Crypto/Ed25519Verify.h"
 #include "../SwapHashLock.h"
+#include "../SwapTimelock.h"
+#include "SolPointClaim.h"
 
 namespace XfgSwap {
+
+static bool isZeroPub(const Crypto::PublicKey& k);
+static std::string lowerHex(std::string s);
 
 static bool isZeroSecret(const Crypto::SecretKey& s) {
   const uint8_t* p = reinterpret_cast<const uint8_t*>(&s);
@@ -69,6 +74,7 @@ std::string SolChainClient::getReceiveAddress() const {
 }
 
 ChainClientResult SolChainClient::lock(const SwapParams& params) {
+  if (params.lockType == SwapLockType::PTLC) return lockPtlc(params);
   // The Solana xfg_htlc program verifies keccak256(preimage) == hash_lock, and
   // claim() reveals the adaptor secret t as the preimage. So the hashlock MUST
   // be keccak256(t) — NOT the adaptor point T = t*G. Committing T (the old bug)
@@ -107,11 +113,14 @@ ChainClientResult SolChainClient::lockPtlc(const SwapParams& params) {
   // via the on-chain `lock_ptlc` instruction (lock_type = 1). There is NO
   // hash commitment anywhere — the secret is only revealed by adaptor-sig
   // completion (scriptless scripts), not by preimage disclosure.
-  Crypto::PublicKey pt = params.ptlcPoint; Crypto::PublicKey zero{}; std::memset(&zero,0,sizeof(zero));
-  if (std::memcmp(&pt,&zero,sizeof(zero))==0) pt=params.adaptorPoint;
-  if (std::memcmp(&pt,&zero,sizeof(zero))==0)
-    return ChainClientResult::fail("SOL lockPtlc: no PTLC point (ptlcPoint/adaptorPoint zero)");
+  // The escrow opens with the t behind the XFG adaptor point itself: SOL is
+  // ed25519, so binding the lock to T needs no cross-curve proof.
+  const Crypto::PublicKey& pt = params.adaptorPoint;
+  if (isZeroPub(pt)) return ChainClientResult::fail("SOL lockPtlc: no adaptor point");
   std::string ptHex = Common::podToHex(pt);
+
+  const std::string fundedEscrow = openPointEscrowFor(params, ptHex);
+  if (!fundedEscrow.empty()) return ChainClientResult::okWithState(fundedEscrow, "ptlc:" + ptHex);
 
   SolTxResult solResult;
   bool ok = m_rpc->lockPtlc(
@@ -143,45 +152,90 @@ static bool isZeroPub(const Crypto::PublicKey& k) {
   return true;
 }
 
-// Pure PTLC path of verifyLock: chainState "ptlc:<pointHex>". Fetch the
-// HtlcState PDA and bind it to the negotiated POINT (not any hash).
-static ChainClientResult verifyPtlcAccount(SolRpcClient* rpc,
-                                           const SwapParams& params) {
+static bool decodeAccountKey(const std::string& base58, std::array<uint8_t, 32>& key) {
+  try {
+    const std::vector<uint8_t> bytes = Base58Std::decode(base58);
+    if (bytes.size() != key.size()) return false;
+    std::copy(bytes.begin(), bytes.end(), key.begin());
+    return true;
+  } catch (const std::exception&) {
+    return false;
+  }
+}
+
+// Escrow state carries account keys as hex; swap parameters carry base58 addresses.
+static bool isAccount(const std::string& stateKeyHex, const std::string& base58Address) {
+  std::array<uint8_t, 32> key{};
+  return decodeAccountKey(base58Address, key) && lowerHex(stateKeyHex) == Common::toHex(key.data(), key.size());
+}
+
+static bool isPointLockState(const std::string& chainState) { return chainState.rfind("ptlc:", 0) == 0; }
+
+// A swap negotiated as a point lock never takes the hash paths, whatever the
+// lock notice says.
+static bool usesPointLock(const SwapParams& params) {
+  return params.lockType == SwapLockType::PTLC || isPointLockState(params.chainState);
+}
+
+// The escrow address is fixed by our key and T. If a lock whose confirmation
+// was lost already funded it with these terms, reuse it: a second lock_ptlc
+// would fail on the existing account and strand the first.
+std::string SolChainClient::openPointEscrowFor(const SwapParams& params, const std::string& pointHex) {
+  const std::string ownAddress = getReceiveAddress();
+  const std::string escrow = m_rpc->deriveHtlcAddress(ownAddress, pointHex);
   SolHtlcInfo info;
-  if (!rpc->getHtlcState(params.ctrLockTxId, info))
+  const bool ours = !escrow.empty() && m_rpc->getHtlcState(escrow, info) && info.lockType == 1 &&
+                    !info.claimed && !info.refunded && isAccount(info.sender, ownAddress) &&
+                    isAccount(info.recipient, params.ctrAddress) && lowerHex(info.ptlcPoint) == lowerHex(pointHex) &&
+                    info.timeoutSlot == params.ctrTimeoutBlock && info.amount == params.ctrAmount64();
+  return ours ? escrow : std::string();
+}
+
+bool SolChainClient::escrowOpenThroughRunway(const SolHtlcInfo& info, const SwapParams& params,
+                                             std::string& error) {
+  uint64_t tip = 0;
+  uint64_t window = 0;
+  if (info.claimed || info.refunded) {
+    error = "the escrow is already settled";
+    return false;
+  }
+  if (!m_rpc->getSlot(tip)) {
+    error = "current slot unavailable";
+    return false;
+  }
+  if (!minimumCounterpartyWindowBlocks(SwapPair::SOL, params.requiredConfirmations, window) ||
+      tip > UINT64_MAX - window || info.timeoutSlot < tip + window) {
+    error = "timeout slot " + std::to_string(info.timeoutSlot) + " leaves fewer than " +
+            std::to_string(window) + " slots to claim from slot " + std::to_string(tip);
+    return false;
+  }
+  return true;
+}
+
+// The escrow is a point lock to our swap's XFG adaptor point, pays the
+// address we claim to, holds the amount and leaves the claim runway.
+ChainClientResult SolChainClient::verifyPointLock(const SwapParams& params) {
+  SolHtlcInfo info;
+  std::string error;
+  if (!m_rpc->getHtlcState(params.ctrLockTxId, info))
     return ChainClientResult::fail("SOL verifyLock: cannot read HTLC account state");
-  if (info.claimed || info.refunded)
-    return ChainClientResult::fail("SOL verifyLock: HTLC already claimed/refunded");
-  if (info.amount < params.ctrAmount64())
-    return ChainClientResult::fail("SOL verifyLock: amount too low");
   if (info.lockType != 1)
     return ChainClientResult::fail("SOL verifyLock: state is not a PTLC lock (lock_type != 1)");
-
-  Crypto::PublicKey expected = params.ptlcPoint;
-  Crypto::PublicKey zero{}; std::memset(&zero, 0, sizeof(zero));
-  if (std::memcmp(&expected, &zero, sizeof(zero)) == 0) expected = params.adaptorPoint;
-  if (std::memcmp(&expected, &zero, sizeof(zero)) == 0)
-    return ChainClientResult::fail("SOL verifyLock: no ptlcPoint/adaptorPoint to compare");
-
-  if (lowerHex(info.ptlcPoint) != lowerHex(Common::podToHex(expected)))
-    return ChainClientResult::fail("SOL verifyLock: ptlc_point mismatch");
-
-  if (params.ctrTimeoutBlock > 0 && info.timeoutSlot != 0 &&
-      info.timeoutSlot != params.ctrTimeoutBlock)
+  if (info.amount < params.ctrAmount64()) return ChainClientResult::fail("SOL verifyLock: amount too low");
+  if (isZeroPub(params.adaptorPoint) || lowerHex(info.ptlcPoint) != lowerHex(Common::podToHex(params.adaptorPoint)))
+    return ChainClientResult::fail("SOL verifyLock: the escrow is not locked to this swap's adaptor point");
+  if (!isAccount(info.recipient, params.ctrAddress))
+    return ChainClientResult::fail("SOL verifyLock: the escrow does not pay our claim address");
+  if (params.ctrTimeoutBlock > 0 && info.timeoutSlot != params.ctrTimeoutBlock)
     return ChainClientResult::fail("SOL verifyLock: timeout_slot mismatch");
-  if (!params.ctrAddress.empty() && !info.recipient.empty() &&
-      lowerHex(info.recipient) != lowerHex(params.ctrAddress)) {
-    if (info.recipient != params.ctrAddress)
-      return ChainClientResult::fail("SOL verifyLock: recipient mismatch");
-  }
+  if (!escrowOpenThroughRunway(info, params, error)) return ChainClientResult::fail("SOL verifyLock: " + error);
   return ChainClientResult::ok(params.ctrLockTxId);
 }
 
 ChainClientResult SolChainClient::verifyLock(const SwapParams& params) {
   // Pure PTLC locks announce themselves via chainState prefix "ptlc:" and are
   // verified against the bound adaptor point; legacy HTLC keeps the hash path.
-  if (params.chainState.rfind("ptlc:", 0) == 0)
-    return verifyPtlcAccount(m_rpc.get(), params);
+  if (usesPointLock(params)) return verifyPointLock(params);
 
   SolHtlcInfo info;
   if (!m_rpc->getHtlcState(params.ctrLockTxId, info))
@@ -215,8 +269,7 @@ ChainClientResult SolChainClient::verifyLock(const SwapParams& params) {
       info.timeoutSlot != params.ctrTimeoutBlock) {
     return ChainClientResult::fail("SOL verifyLock: timeout_slot mismatch");
   }
-  if (!params.ctrAddress.empty() && !info.recipient.empty() &&
-      lowerHex(info.recipient) != lowerHex(params.ctrAddress)) {
+  if (!params.ctrAddress.empty() && !info.recipient.empty() && !isAccount(info.recipient, params.ctrAddress)) {
     // Recipient may be base58; case-sensitive compare preferred for base58
     if (info.recipient != params.ctrAddress)
       return ChainClientResult::fail("SOL verifyLock: recipient mismatch");
@@ -225,6 +278,7 @@ ChainClientResult SolChainClient::verifyLock(const SwapParams& params) {
 }
 
 ChainClientResult SolChainClient::claim(const SwapParams& params) {
+  if (usesPointLock(params)) return claimPoint(params);
   // Legacy HTLC fallback ONLY (plan task: keep untouched). The on-chain
   // program rejects this for lock_type == 1 — pure PTLC claims go through
   // SolRpcClient::claimPtlc (completed adaptor signature, no preimage).
@@ -247,7 +301,7 @@ std::string SolChainClient::tryExtractClaimedSecret(const SwapParams& params) {
   // e*P, t*G == T enforced) and the recovered secret t is stored in
   // state.preimage exactly like an HTLC preimage — same read-back contract,
   // different verification upstream.
-  if (params.chainState.rfind("ptlc:", 0) == 0) {
+  if (usesPointLock(params)) {
     SolHtlcInfo ptlcInfo;
     if (!m_rpc->getHtlcState(params.ctrLockTxId, ptlcInfo)) return {};
     if (!ptlcInfo.claimed || ptlcInfo.lockType != 1) return {};
@@ -344,6 +398,64 @@ ChainClientResult SolChainClient::verifyReserveProof(const std::string& expected
 
 bool SolChainClient::getCurrentHeight(uint64_t& height) {
   return m_rpc->getSlot(height);
+}
+
+
+// Bob claims by proving knowledge of t for this escrow; the program stores t
+// for Alice. Nothing is sent unless the escrow is ours, open through the
+// claim runway, and the proof passes the program's own rule.
+ChainClientResult SolChainClient::claimPoint(const SwapParams& params) {
+  SolHtlcInfo info;
+  SolEscrowBinding escrow;
+  SolPointClaimProof proof;
+  std::string error;
+  if (!m_rpc->getHtlcState(params.ctrLockTxId, info))
+    return ChainClientResult::notSent("SOL claim: cannot read the escrow");
+  if (info.lockType != 1 || lowerHex(info.ptlcPoint) != lowerHex(Common::podToHex(params.adaptorPoint)))
+    return ChainClientResult::notSent("SOL claim: the escrow is not locked to this swap's adaptor point");
+  if (!escrowOpenThroughRunway(info, params, error))
+    return ChainClientResult::notSent("SOL claim: " + error + "; publishing t now could let the locker refund");
+  if (!isAccount(info.recipient, getReceiveAddress()))
+    return ChainClientResult::notSent("SOL claim: the escrow pays " + info.recipient +
+                                      ", which this keypair cannot claim to");
+  escrow.amount = info.amount;
+  if (!decodeAccountKey(params.ctrLockTxId, escrow.htlc) || !decodeAccountKey(getReceiveAddress(), escrow.recipient))
+    return ChainClientResult::notSent("SOL claim: malformed escrow or recipient key");
+  if (isZeroSecret(params.adaptorSecret) ||
+      !proveSolPointClaim(params.adaptorSecret, params.adaptorPoint, escrow, proof) ||
+      !solPointClaimAccepted(params.adaptorPoint, escrow, proof))
+    return ChainClientResult::notSent("SOL claim: our secret does not open the adaptor point");
+  SolTxResult solResult;
+  const bool sent = m_rpc->claimPtlc(
+      m_keypairBase58, params.ctrLockTxId,
+      Common::toHex(proof.completedSignature.data(), proof.completedSignature.size()),
+      Common::toHex(proof.nonce.data(), proof.nonce.size()),
+      Common::toHex(proof.secretOffset.data(), proof.secretOffset.size()), solResult);
+  if (!sent || !solResult.confirmed) return ChainClientResult::fail("SOL claim_ptlc failed: " + solResult.error);
+  return ChainClientResult::ok(solResult.signature);
+}
+
+std::string SolChainClient::claimDeadlineError(const SwapParams& params) {
+  SolHtlcInfo info;
+  std::string error;
+  if (!m_rpc || params.ctrLockTxId.empty()) return "SOL claim check: no escrow";
+  if (!m_rpc->getHtlcState(params.ctrLockTxId, info)) return "SOL claim check: cannot read the escrow";
+  if (!escrowOpenThroughRunway(info, params, error))
+    return "SOL claim check: " + error + "; publishing t now could let the locker refund and claim";
+  return "";
+}
+
+IChainClient::PointLockSupport SolChainClient::pointLockSupport() const {
+  std::lock_guard<std::mutex> guard(m_pointLockSupportMutex);
+  if (m_pointLockSupportKnown) return m_pointLockSupport;
+  if (!m_rpc) return PointLockSupport::UNKNOWN;
+  switch (m_rpc->programPointLocks()) {
+    case SolRpcClient::ProgramPointLocks::PRESENT: m_pointLockSupport = PointLockSupport::AVAILABLE; break;
+    case SolRpcClient::ProgramPointLocks::ABSENT: m_pointLockSupport = PointLockSupport::NONE; break;
+    case SolRpcClient::ProgramPointLocks::UNREADABLE: return PointLockSupport::UNKNOWN;
+  }
+  m_pointLockSupportKnown = true;
+  return m_pointLockSupport;
 }
 
 } // namespace XfgSwap

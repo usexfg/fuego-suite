@@ -16,7 +16,10 @@
 #include "AdaptorSwap.h"
 #include "BitcoinCash/HtlcScript.h"
 #include "Sia/SiaHtlcScript.h"
+#include "crypto/cross_dleq.h"
+#include "Crypto/CrossCurveDleq.h"
 #include "crypto/secp_adaptor.h"
+#include <memory>
 #include <cstring>
 #include <vector>
 
@@ -91,8 +94,10 @@ bool dleqContextForSwap(const SwapParams& params, Crypto::Hash& out) {
 
 bool adaptor_generate_adaptor(SwapParams& params,
                               const Crypto::PublicKey& dleq_base_point) {
-  // Generate adaptor secret t, point T = t*G
-  Crypto::generate_keys(params.adaptorPoint, params.adaptorSecret);
+  // t below 2^252 is a scalar on ed25519 and secp256k1 alike, which the
+  // cross-curve proof needs.
+  Crypto::cross_dleq_generate_scalar(params.adaptorSecret);
+  if (!Crypto::secret_key_to_public_key(params.adaptorSecret, params.adaptorPoint)) return false;
 
   // Cross-curve binding: publish T_secp = t·G_secp (byte-reversed scalar).
   // Fail closed — a swap without a verifiable cross-curve point must not
@@ -147,6 +152,24 @@ bool adaptor_generate_adaptor(SwapParams& params,
       params.adaptorSecret,
       dleqCtx,
       params.adaptorDleqProof);
+}
+
+bool adaptor_prove_cross_curve(const SwapParams& params, std::vector<uint8_t>& proofBytes) {
+  Crypto::PublicKey edPoint;
+  Crypto::SecpPubKey secpPoint;
+  std::vector<uint8_t> proof;
+  if (!CrossCurveDleq::prove(params.adaptorSecret, edPoint, secpPoint, proof) ||
+      std::memcmp(&edPoint, &params.adaptorPoint, sizeof(edPoint)) != 0 ||
+      Crypto::secpPubKeyToHex(secpPoint) != params.secpPubHex)
+    return false;
+  proofBytes.swap(proof);
+  return true;
+}
+
+bool adaptor_verify_cross_curve(const SwapParams& params, const std::vector<uint8_t>& proofBytes) {
+  Crypto::SecpPubKey secpPoint;
+  return Crypto::hexToSecpPubKey(params.secpPubHex, secpPoint) &&
+         CrossCurveDleq::verify(params.adaptorPoint, secpPoint, proofBytes);
 }
 
 bool adaptor_verify_adaptor(const SwapParams& params,

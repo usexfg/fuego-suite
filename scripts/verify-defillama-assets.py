@@ -119,8 +119,9 @@ def parse_pair_catalog(path):
     """id -> {name, asset, decimals, support} from the append-only protocol catalog."""
     text = open(path, encoding="utf-8").read()
     found = {}
-    for (name, raw, _key, asset, _display, _family, _chain, _min, _max, decimals, support) in _CATALOG_ROW.findall(text):
-        found[int(raw)] = {"name": name, "asset": asset, "decimals": int(decimals), "support": support}
+    for (name, raw, _key, asset, _display, family, _chain, _min, _max, decimals, support) in _CATALOG_ROW.findall(text):
+        found[int(raw)] = {"name": name, "asset": asset, "decimals": int(decimals), "support": support,
+                           "family": family}
     return found
 
 
@@ -180,9 +181,15 @@ def parse_cpp_catalog(path):
     return assets, binds
 
 
-def parse_registered_pairs(path):
+def parse_registered_pairs(path, catalog):
+    """Pairs SwapDaemon.cpp registers: by name, plus every ACTIVE EVM pair when
+    the generic evm_chains loop registers entries by catalog pair."""
     text = open(path, encoding="utf-8").read()
-    return set(re.findall(r"registerChain\(SwapPair::([A-Z_0-9]+)", text))
+    registered = set(re.findall(r"registerChain\(SwapPair::([A-Z_0-9]+)", text))
+    if re.search(r"registerChain\(evmCfg\.pair", text):
+        registered |= {e["name"] for e in catalog.values()
+                       if e.get("family") == "EVM" and e["support"] == "ACTIVE"}
+    return registered
 
 
 def parse_feed_meta(path):
@@ -241,6 +248,9 @@ def main():
             continue
         if entry["name"] != p["enum"]:
             fail("pair %d: matrix says %s, C++ says %s" % (p["id"], p["enum"], entry["name"]))
+        if entry["support"] is not None and entry["support"] != p.get("support"):
+            fail("pair %d (%s): C++ catalog support is %s but the matrix says %s"
+                 % (p["id"], p["enum"], entry["support"], p.get("support")))
         if entry["asset"] is not None:
             want = settlement_alias.get(entry["asset"], entry["asset"])
             if want != p["settlementAsset"]:
@@ -294,7 +304,7 @@ def main():
     else:
         notes.append("AssetCatalog.cpp not found at %s, skipped feed metadata cross-check" % cat_path)
 
-    registered = parse_registered_pairs(os.path.join(XFGO, "src", "SwapDaemon", "SwapDaemon.cpp"))
+    registered = parse_registered_pairs(os.path.join(XFGO, "src", "SwapDaemon", "SwapDaemon.cpp"), cpp)
     matrix_registered = {p["enum"] for p in pairs if p.get("chainClient") == "wired-config-gated"}
     matrix_unwired = {p["enum"] for p in pairs if p.get("chainClient") == "implemented-not-wired"}
     matrix_absent = {p["enum"] for p in pairs if p.get("chainClient") == "no-client"}

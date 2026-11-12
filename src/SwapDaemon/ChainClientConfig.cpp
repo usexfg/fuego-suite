@@ -15,10 +15,13 @@
 
 #include "SwapDaemon.h"
 #include "Common/JsonValue.h"
+#include "Utxo/UtxoFullNode.h"
+#include "SwapKeystore.h"
 
 #include <fstream>
 #include <sstream>
 #include <cctype>
+#include <map>
 #include <set>
 #include <stdexcept>
 
@@ -202,6 +205,68 @@ static bool getOptionalUint(const Common::JsonValue& object,
 
 // ─── loadChainClientConfig ────────────────────────────────────────────────────
 
+namespace {
+
+// Flat per-chain EVM fields are retired (remediation plan R5): every EVM pair
+// is configured under evm_chains. A config still carrying one is refused so
+// an operator never runs with a chain silently unconfigured.
+const char* const RETIRED_EVM_PREFIXES[] = {
+  "eth", "arb", "base", "bsc", "poly", "gleec", "rh", "avax", "cro",
+  "bob", "uni", "plasma", "pulsechain", "monad", "op"};
+const char* const RETIRED_EVM_SUFFIXES[] = {
+  "_rpc_host", "_rpc_port", "_host", "_port", "_priv_key", "_wif", "_address",
+  "_chain_id", "_htlc_bin", "_htlc_bin_path", "_htlc_registry", "_ptlc_registry", "_mode"};
+
+bool retiredEvmKey(const std::string& key, std::string& prefix) {
+  for (const char* candidate : RETIRED_EVM_PREFIXES) {
+    for (const char* suffix : RETIRED_EVM_SUFFIXES) {
+      if (key == std::string(candidate) + suffix) {
+        prefix = candidate;
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+std::string evmChainsKeyFor(const std::string& retiredPrefix) {
+  static const std::map<std::string, std::string> renamed = {
+    {"plasma", "xpl"}, {"pulsechain", "pls"}};
+  const auto it = renamed.find(retiredPrefix);
+  return it == renamed.end() ? retiredPrefix : it->second;
+}
+
+bool rejectRetiredEvmKeys(const Common::JsonValue& json, std::string& errorMsg) {
+  for (const auto& field : json.getObject()) {
+    std::string prefix;
+    if (retiredEvmKey(field.first, prefix)) {
+      errorMsg = field.first + " is retired; configure evm_chains." + evmChainsKeyFor(prefix) +
+                 " with rpc_url, chain_id, private_key, address and htlc_registry";
+      return false;
+    }
+  }
+  return true;
+}
+
+// "keystore": "<path>" makes every "keystore:<name>" string in the config the
+// named secret from that encrypted file (remediation plan R7).
+static bool resolveConfigKeystore(std::string& json, std::string& errorMsg) {
+  const std::string keystorePath = jsonGetStr(json, "keystore", "");
+  if (keystorePath.empty()) {
+    if (!hasKeystoreReferences(json)) return true;
+    errorMsg = "config references keystore entries but sets no \"keystore\" path";
+    return false;
+  }
+  std::string passphrase;
+  KeystoreSecrets secrets;
+  if (!keystorePassphraseFromEnvironment(passphrase, errorMsg) ||
+      !loadKeystore(keystorePath, passphrase, secrets, errorMsg))
+    return false;
+  return resolveKeystoreReferences(json, secrets, errorMsg);
+}
+
+}  // namespace
+
 bool loadChainClientConfig(const std::string& path,
                             ChainClientConfig& out,
                             std::string& errorMsg) {
@@ -212,7 +277,8 @@ bool loadChainClientConfig(const std::string& path,
   }
   std::ostringstream ss;
   ss << f.rdbuf();
-  const std::string json = stripJsonComments(ss.str());
+  std::string json = stripJsonComments(ss.str());
+  if (!resolveConfigKeystore(json, errorMsg)) return false;
 
   // Validate the file is actually parseable JSON. Previously the loader used
   // `string::find()` lookups that silently treat malformed JSON as missing
@@ -230,6 +296,17 @@ bool loadChainClientConfig(const std::string& path,
     errorMsg = "Config root must be a JSON object";
     return false;
   }
+  if (!rejectRetiredEvmKeys(root, errorMsg)) return false;
+
+  out.pythRpcUrl = jsonGetStr(json, "pyth_rpc_url", "");
+  out.pythContract = jsonGetStr(json, "pyth_contract", "");
+  out.pythChainId = jsonGetUint(json, "pyth_chain_id", 0);
+  const bool anyPyth = !out.pythRpcUrl.empty() || !out.pythContract.empty() || out.pythChainId != 0;
+  if (anyPyth && (out.pythRpcUrl.empty() || out.pythContract.empty() || out.pythChainId == 0)) {
+    errorMsg = "pyth_rpc_url, pyth_contract and pyth_chain_id must be set together";
+    return false;
+  }
+  if (!validateEvmAddress(out.pythContract, "pyth_contract", errorMsg)) return false;
 
   out.network = "mainnet";
   if (root.contains("network")) {
@@ -256,7 +333,7 @@ bool loadChainClientConfig(const std::string& path,
     }
 
     static const std::set<std::string> allowedFields = {
-      "rpc_url", "private_key", "address", "htlc_registry",
+      "rpc_url", "private_key", "address", "htlc_registry", "htlc_registry_code_hash",
       "ptlc_registry", "htlc_bin_path", "chain_id"
     };
     std::set<SwapPair> seenPairs;
@@ -304,6 +381,7 @@ bool loadChainClientConfig(const std::string& path,
           !getOptionalString(entry, "private_key", cfg.privateKeyHex, context, errorMsg) ||
           !getOptionalString(entry, "address", cfg.address, context, errorMsg) ||
           !getOptionalString(entry, "htlc_registry", cfg.htlcRegistry, context, errorMsg) ||
+          !getOptionalString(entry, "htlc_registry_code_hash", cfg.htlcRegistryCodeHash, context, errorMsg) ||
           !getOptionalString(entry, "ptlc_registry", cfg.ptlcRegistry, context, errorMsg) ||
           !getOptionalString(entry, "htlc_bin_path", cfg.htlcBinPath, context, errorMsg) ||
           !getOptionalUint(entry, "chain_id", cfg.chainId, hasChainId, context, errorMsg)) {
@@ -322,6 +400,7 @@ bool loadChainClientConfig(const std::string& path,
         return false;
       }
       if (!validateHex(cfg.privateKeyHex, 32, context + ".private_key", errorMsg) ||
+          !validateHex(cfg.htlcRegistryCodeHash, 32, context + ".htlc_registry_code_hash", errorMsg) ||
           !validateEvmAddress(cfg.address, context + ".address", errorMsg) ||
           !validateEvmAddress(cfg.htlcRegistry, context + ".htlc_registry", errorMsg) ||
           !validateEvmAddress(cfg.ptlcRegistry, context + ".ptlc_registry", errorMsg)) {
@@ -340,8 +419,6 @@ bool loadChainClientConfig(const std::string& path,
   // Hostname defaults are deliberately EMPTY: the SwapDaemon constructor only
   // registers a chain client when the corresponding host is non-empty. Empty
   // means "this chain is not configured" — matches the existing BASE pattern.
-  out.ethHost    = jsonGetStr(json, "eth_rpc_host", "");
-  out.ethPort    = static_cast<uint16_t>(jsonGetUint(json, "eth_rpc_port", 8545));
 
   out.bchHost    = jsonGetStr(json, "bch_rpc_host", "");
   out.bchPort    = static_cast<uint16_t>(jsonGetUint(json, "bch_rpc_port", 8332));
@@ -382,99 +459,12 @@ bool loadChainClientConfig(const std::string& path,
   out.solKeypairPath = jsonGetStr(json, "sol_keypair_path");
   out.solKeypairBase58 = jsonGetStr(json, "sol_keypair");
   out.bchWif          = jsonGetStr(json, "bch_wif");
-
-  // ── Signer credentials ──
-  out.ethPrivKeyHex  = jsonGetStr(json, "eth_priv_key");
-  out.ethAddress     = jsonGetStr(json, "eth_address");
-  out.ethChainId     = jsonGetUint(json, "eth_chain_id", 1);
-  out.ethHtlcBinPath = jsonGetStr(json, "eth_htlc_bin_path");
-  out.ethHtlcRegistry = jsonGetStr(json, "eth_htlc_registry");
-
-  // ARB
-  out.arbHost       = jsonGetStr(json, "arb_rpc_host", "");
-  out.arbPort       = static_cast<uint16_t>(jsonGetUint(json, "arb_rpc_port", 8547));
-  out.arbPrivKeyHex = jsonGetStr(json, "arb_priv_key");
-  out.arbAddress    = jsonGetStr(json, "arb_address");
-  out.arbChainId    = jsonGetUint(json, "arb_chain_id", 42161);
-  out.arbHtlcBinPath = jsonGetStr(json, "arb_htlc_bin_path");
-
-  // BASE
-  out.baseHost       = jsonGetStr (json, "base_rpc_host", "");
-  out.basePort       = static_cast<uint16_t>(jsonGetUint(json, "base_rpc_port", 8545));
-  out.baseAddress    = jsonGetStr (json, "base_address",  out.ethAddress);
-  out.basePrivKeyHex = jsonGetStr (json, "base_priv_key", out.ethPrivKeyHex);
-  out.baseChainId    = jsonGetUint(json, "base_chain_id", 8453);
-  out.baseHtlcBinPath= jsonGetStr (json, "base_htlc_bin", out.ethHtlcBinPath);
-
-  // POLYGON (Polygon PoS — EVM, EIP-1559)
-  out.polyHost       = jsonGetStr (json, "poly_rpc_host", "");
-  out.polyPort       = static_cast<uint16_t>(jsonGetUint(json, "poly_rpc_port", 8545));
-  out.polyPrivKeyHex = jsonGetStr (json, "poly_priv_key");
-  out.polyAddress    = jsonGetStr (json, "poly_address");
-  out.polyChainId    = jsonGetUint(json, "poly_chain_id", 137);
-  out.polyHtlcBinPath= jsonGetStr (json, "poly_htlc_bin");
-
-  // GLEEC (Evmos fork — EVM)
-  out.gleecHost       = jsonGetStr (json, "gleec_rpc_host", "");
-  out.gleecPort       = static_cast<uint16_t>(jsonGetUint(json, "gleec_rpc_port", 8545));
-  out.gleecPrivKeyHex = jsonGetStr (json, "gleec_priv_key");
-  out.gleecAddress    = jsonGetStr (json, "gleec_address");
-  out.gleecChainId    = jsonGetUint(json, "gleec_chain_id", 11169);
-  out.gleecHtlcBinPath= jsonGetStr (json, "gleec_htlc_bin", out.ethHtlcBinPath);
-  out.gleecHtlcRegistry = jsonGetStr(json, "gleec_htlc_registry", "");
-
-  // ROBINHOOD (Robinhood Chain — EVM L1)
-  out.rhHost       = jsonGetStr (json, "rh_rpc_host", "");
-  out.rhPort       = static_cast<uint16_t>(jsonGetUint(json, "rh_rpc_port", 8545));
-  out.rhPrivKeyHex = jsonGetStr (json, "rh_priv_key");
-  out.rhAddress    = jsonGetStr (json, "rh_address");
-  out.rhChainId    = jsonGetUint(json, "rh_chain_id", 4663);
-  out.rhHtlcBinPath= jsonGetStr (json, "rh_htlc_bin", out.ethHtlcBinPath);
-
-  // AVAX (Avalanche C-Chain — EVM, EIP-1559)
-  out.avaxHost       = jsonGetStr (json, "avax_rpc_host", "");
-  out.avaxPort       = static_cast<uint16_t>(jsonGetUint(json, "avax_rpc_port", 8545));
-  out.avaxPrivKeyHex = jsonGetStr (json, "avax_priv_key");
-  out.avaxAddress    = jsonGetStr (json, "avax_address");
-  out.avaxChainId    = jsonGetUint(json, "avax_chain_id", 43114);
-  out.avaxHtlcBinPath= jsonGetStr (json, "avax_htlc_bin", out.ethHtlcBinPath);
-
-  // CRO (Cronos — EVM)
-  out.croHost       = jsonGetStr (json, "cro_rpc_host", "");
-  out.croPort       = static_cast<uint16_t>(jsonGetUint(json, "cro_rpc_port", 8545));
-  out.croPrivKeyHex = jsonGetStr (json, "cro_priv_key");
-  out.croAddress    = jsonGetStr (json, "cro_address");
-  out.croChainId    = jsonGetUint(json, "cro_chain_id", 25);
-  out.croHtlcBinPath= jsonGetStr (json, "cro_htlc_bin", out.ethHtlcBinPath);
-
-  // BOB (Bob — OP Stack BTC rollup, EVM)
-  out.bobHost       = jsonGetStr (json, "bob_rpc_host", "");
-  out.bobPort       = static_cast<uint16_t>(jsonGetUint(json, "bob_rpc_port", 8545));
-  out.bobPrivKeyHex = jsonGetStr (json, "bob_priv_key");
-  out.bobAddress    = jsonGetStr (json, "bob_address");
-  out.bobChainId    = jsonGetUint(json, "bob_chain_id", 60808);
-  out.bobHtlcBinPath= jsonGetStr (json, "bob_htlc_bin", out.ethHtlcBinPath);
+  out.bchNetwork = jsonGetStr(json, "bch_network", "main");
 
   // Sia (SC)
   out.siaHost         = jsonGetStr(json, "sia_rpc_host", "");
   out.siaPort         = static_cast<uint16_t>(jsonGetUint(json, "sia_rpc_port", 9980));
   out.siaApiPassword  = jsonGetStr(json, "sia_api_password", "");
-
-  // UNICHAIN (Unichain — OP Stack EVM)
-  out.uniHost       = jsonGetStr (json, "uni_rpc_host", "");
-  out.uniPort       = static_cast<uint16_t>(jsonGetUint(json, "uni_rpc_port", 8545));
-  out.uniPrivKeyHex = jsonGetStr (json, "uni_priv_key");
-  out.uniAddress    = jsonGetStr (json, "uni_address");
-  out.uniChainId    = jsonGetUint(json, "uni_chain_id", 130);
-  out.uniHtlcBinPath= jsonGetStr (json, "uni_htlc_bin", out.ethHtlcBinPath);
-
-  // PLASMA (Plasma — EVM)
-  out.plasmaHost       = jsonGetStr (json, "plasma_rpc_host", "");
-  out.plasmaPort       = static_cast<uint16_t>(jsonGetUint(json, "plasma_rpc_port", 8545));
-  out.plasmaPrivKeyHex = jsonGetStr (json, "plasma_priv_key");
-  out.plasmaAddress    = jsonGetStr (json, "plasma_address");
-  out.plasmaChainId    = jsonGetUint(json, "plasma_chain_id", 9745);
-  out.plasmaHtlcBinPath= jsonGetStr (json, "plasma_htlc_bin", out.ethHtlcBinPath);
 
   // DOGE (Dogecoin — pre-SegWit UTXO, P2SH + legacy sighash)
   out.dogeHost    = jsonGetStr(json, "doge_rpc_host", "");
@@ -499,14 +489,6 @@ bool loadChainClientConfig(const std::string& path,
   out.zecWif     = jsonGetStr(json, "zec_wif", "");
   out.zecTestnet = jsonGetBool(json, "zec_testnet", false);
 
-  // PULSECHAIN (PulseChain — EVM, chain id 369)
-  out.pulsechain_host       = jsonGetStr (json, "pulsechain_rpc_host", "");
-  out.pulsechain_port       = static_cast<uint16_t>(jsonGetUint(json, "pulsechain_rpc_port", 8545));
-  out.pulsechain_priv_key_hex = jsonGetStr (json, "pulsechain_priv_key");
-  out.pulsechain_address    = jsonGetStr (json, "pulsechain_address");
-  out.pulsechain_chain_id    = jsonGetUint(json, "pulsechain_chain_id", 369);
-  out.pulsechain_htlc_bin_path= jsonGetStr (json, "pulsechain_htlc_bin", out.ethHtlcBinPath);
-
   // ZANO (CryptoNote — shared 2-of-2 address via view-key adaptor scheme)
   out.zanoDaemonHost = jsonGetStr(json, "zano_daemon_host", "");
   out.zanoDaemonPort = static_cast<uint16_t>(jsonGetUint(json, "zano_daemon_port", 11211));
@@ -525,20 +507,8 @@ bool loadChainClientConfig(const std::string& path,
   out.tonWorkchain  = static_cast<int>(jsonGetUint(json, "ton_workchain", 0));
 
   // Monad (EVM L1, chain id 143)
-  out.monadHost       = jsonGetStr(json, "monad_rpc_host", "");
-  out.monadPort       = static_cast<uint16_t>(jsonGetUint(json, "monad_rpc_port", 8545));
-  out.monadPrivKeyHex = jsonGetStr(json, "monad_priv_key");
-  out.monadAddress    = jsonGetStr(json, "monad_address");
-  out.monadChainId    = jsonGetUint(json, "monad_chain_id", 143);
-  out.monadHtlcBinPath= jsonGetStr(json, "monad_htlc_bin", out.ethHtlcBinPath);
 
   // Optimism (EVM L2, OP Stack, chain id 10)
-  out.opHost       = jsonGetStr(json, "op_rpc_host", "");
-  out.opPort       = static_cast<uint16_t>(jsonGetUint(json, "op_rpc_port", 8545));
-  out.opPrivKeyHex = jsonGetStr(json, "op_priv_key");
-  out.opAddress    = jsonGetStr(json, "op_address");
-  out.opChainId    = jsonGetUint(json, "op_chain_id", 10);
-  out.opHtlcBinPath= jsonGetStr(json, "op_htlc_bin", out.ethHtlcBinPath);
 
   // DOT (Polkadot Relay — Substrate)
   out.dotHost       = jsonGetStr(json, "dot_rpc_host", "");
@@ -552,14 +522,6 @@ bool loadChainClientConfig(const std::string& path,
   // XFG wallet key for signing managed offers
   out.xfgSecretKeyHex = jsonGetStr(json, "xfg_secret_key");
   out.xfgViewKeyHex   = jsonGetStr(json, "xfg_view_key");
-
-  // BSC (Binance Smart Chain)
-  out.bscHost       = jsonGetStr(json, "bsc_rpc_host", "");
-  out.bscPort       = static_cast<uint16_t>(jsonGetUint(json, "bsc_rpc_port", 8545));
-  out.bscPrivKeyHex = jsonGetStr(json, "bsc_priv_key");
-  out.bscAddress    = jsonGetStr(json, "bsc_address");
-  out.bscChainId    = jsonGetUint(json, "bsc_chain_id", 56);
-  out.bscHtlcBinPath = jsonGetStr(json, "bsc_htlc_bin");
 
   // DCR (Decred)
   out.dcrHost    = jsonGetStr(json, "dcr_rpc_host", "");
@@ -588,6 +550,7 @@ bool loadChainClientConfig(const std::string& path,
   out.btcRpcUser = jsonGetStr(json, "btc_rpc_user");
   out.btcRpcPass = jsonGetStr(json, "btc_rpc_pass");
   out.btcWif     = jsonGetStr(json, "btc_wif");
+  out.btcNetwork = jsonGetStr(json, "btc_network", "main");
 
   // BTC SPV mode configuration
   out.btcMode = jsonGetStr(json, "btc_mode", "");
@@ -609,6 +572,7 @@ bool loadChainClientConfig(const std::string& path,
   out.ltcRpcUser = jsonGetStr(json, "ltc_rpc_user");
   out.ltcRpcPass = jsonGetStr(json, "ltc_rpc_pass");
   out.ltcWif     = jsonGetStr(json, "ltc_wif");
+  out.ltcNetwork = jsonGetStr(json, "ltc_network", "main");
 
   // LTC SPV mode configuration
   out.ltcMode = jsonGetStr(json, "ltc_mode", "");
@@ -650,16 +614,6 @@ bool loadChainClientConfig(const std::string& path,
   out.xfgWalletRpcUser = jsonGetStr(json, "xfg_wallet_rpc_user");
   out.xfgWalletRpcPass = jsonGetStr(json, "xfg_wallet_rpc_pass");
 
-  if (out.network == "testnet" &&
-      (!out.ethHost.empty() || !out.arbHost.empty() || !out.baseHost.empty() ||
-       !out.polyHost.empty() || !out.bscHost.empty() || !out.gleecHost.empty() ||
-       !out.rhHost.empty() || !out.avaxHost.empty() || !out.croHost.empty() ||
-       !out.bobHost.empty() || !out.uniHost.empty() || !out.plasmaHost.empty() ||
-       !out.pulsechain_host.empty() || !out.monadHost.empty() || !out.opHost.empty())) {
-    errorMsg = "testnet EVM chains must use evm_chains entries with explicit chain_id and per-chain htlc_registry";
-    return false;
-  }
-
   // ── SPV mode validation ──
   auto spvCheck = [&](const std::string& mode, const std::string& wif,
                        const std::vector<std::string>& servers,
@@ -682,57 +636,27 @@ bool loadChainClientConfig(const std::string& path,
   if (!spvCheck(out.bchMode, out.bchWif, out.bchSpvServers, "bch")) return false;
   if (!spvCheck(out.dcrMode, out.dcrWif, out.dcrSpvServers, "dcr")) return false;
 
+  for (const auto& network : {std::make_pair(std::string("btc"), out.btcNetwork),
+                              std::make_pair(std::string("ltc"), out.ltcNetwork),
+                              std::make_pair(std::string("bch"), out.bchNetwork)}) {
+    XfgSwap::UtxoNetwork parsed;
+    if (!XfgSwap::parseUtxoNetwork(network.second, parsed)) {
+      errorMsg = network.first + "_network must be main, test, signet or regtest";
+      return false;
+    }
+  }
+
   // ── Validate ──
-  if (!validateHex(out.ethPrivKeyHex, 32, "eth_priv_key", errorMsg)) return false;
-  if (!out.ethAddress.empty() && (out.ethAddress.size() < 2 || out.ethAddress.substr(0, 2) != "0x")) {
-    errorMsg = "eth_address must start with 0x";
-    return false;
-  }
-  if (!validateHex(out.arbPrivKeyHex, 32, "arb_priv_key", errorMsg)) return false;
-  if (!out.arbAddress.empty() && (out.arbAddress.size() < 2 || out.arbAddress.substr(0, 2) != "0x")) {
-    errorMsg = "arb_address must start with 0x";
-    return false;
-  }
-  if (!validateHex(out.basePrivKeyHex, 32, "base_priv_key", errorMsg)) return false;
-  if (!out.baseAddress.empty() && (out.baseAddress.size() < 2 || out.baseAddress.substr(0, 2) != "0x")) {
-    errorMsg = "base_address must start with 0x";
-    return false;
-  }
   if (!validateHex(out.xmrSpendKeyHex, 32, "xmr_spend_key", errorMsg)) return false;
   if (!validateHex(out.xmrViewKeyHex,  32, "xmr_view_key",  errorMsg)) return false;
 
-  if (!validateHex(out.pulsechain_priv_key_hex, 32, "pulsechain_priv_key", errorMsg)) return false;
-  if (!out.pulsechain_address.empty() && (out.pulsechain_address.size() < 2 || out.pulsechain_address.substr(0, 2) != "0x")) {
-    errorMsg = "pulsechain_address must start with 0x";
-    return false;
-  }
   if (!validateHex(out.zanoSpendKeyHex, 32, "zano_spend_key", errorMsg)) return false;
   if (!validateHex(out.zanoViewKeyHex,  32, "zano_view_key",  errorMsg)) return false;
 
   // Monad (EVM)
-  if (!validateHex(out.monadPrivKeyHex, 32, "monad_priv_key", errorMsg)) return false;
-  if (!out.monadAddress.empty() && (out.monadAddress.size() < 2 || out.monadAddress.substr(0, 2) != "0x")) {
-    errorMsg = "monad_address must start with 0x";
-    return false;
-  }
 
   // Optimism (EVM)
-  if (!validateHex(out.opPrivKeyHex, 32, "op_priv_key", errorMsg)) return false;
-  if (!out.opAddress.empty() && (out.opAddress.size() < 2 || out.opAddress.substr(0, 2) != "0x")) {
-    errorMsg = "op_address must start with 0x";
-    return false;
-  }
 
-  if (!validateHex(out.bscPrivKeyHex, 32, "bsc_priv_key", errorMsg)) return false;
-  if (!out.bscAddress.empty() && (out.bscAddress.size() < 2 || out.bscAddress.substr(0, 2) != "0x")) {
-    errorMsg = "bsc_address must start with 0x";
-    return false;
-  }
-  if (!validateHex(out.polyPrivKeyHex, 32, "poly_priv_key", errorMsg)) return false;
-  if (!out.polyAddress.empty() && (out.polyAddress.size() < 2 || out.polyAddress.substr(0, 2) != "0x")) {
-    errorMsg = "poly_address must start with 0x";
-    return false;
-  }
 
   return true;
 }

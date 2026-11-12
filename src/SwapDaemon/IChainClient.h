@@ -22,6 +22,14 @@ public:
   // Optional explanation surfaced by the daemon catalog. Subclasses with a
   // preflight (notably generic EVM) override this without changing recovery.
   virtual std::string readinessError() { return ""; }
+  // Readiness to start a new swap in `role`. A transport can serve one role
+  // only (SPV verifies and claims for Bob but cannot fund Alice's lock).
+  virtual std::string readinessErrorFor(SwapRole role) {
+    (void)role;
+    std::string error = readinessError();
+    if (error.empty() && !isReadyForNewSwap()) error = chainName() + " client is not ready for new swaps";
+    return error;
+  }
   virtual uint64_t configuredChainId() const { return 0; }
 
   // Derived from the live client mode when creating a swap, then persisted
@@ -38,6 +46,13 @@ public:
   // with no H(t) hashlock component (PTLC_PURE_PLAN P2.2/P2.3).
   // Clients that only do the PTLC_HTLC_BRIDGE hybrid keep the default false.
   virtual bool supportsPurePtlc() const { return false; }
+  // UNKNOWN: the client cannot tell right now whether its point lock exists
+  // (e.g. the registry's chain is unreachable); swaps on the pair must wait
+  // rather than fall back to a hash lock.
+  enum class PointLockSupport { NONE, AVAILABLE, UNKNOWN };
+  virtual PointLockSupport pointLockSupport() const {
+    return supportsPurePtlc() ? PointLockSupport::AVAILABLE : PointLockSupport::NONE;
+  }
   virtual ChainClientResult lockPtlc(const SwapParams& params) {
     (void)params;
     return ChainClientResult::fail("PTLC not supported on " + chainName());
@@ -51,6 +66,10 @@ public:
   // so the taker locks CTR to the maker's address. Empty when not
   // configured or not derivable.
   virtual std::string getReceiveAddress() const { return ""; }
+
+  // UTXO HTLC chains: the compressed secp256k1 key (hex) this daemon claims
+  // with. Bob sends it to Alice, whose lock script pays it. Empty elsewhere.
+  virtual std::string getClaimPubKey() const { return ""; }
 
   // Verify a counterparty reserve proof.
   // expectedMessage: the proof's signed message must equal this (binds the proof
@@ -87,8 +106,21 @@ public:
     return {};
   }
 
+  // Why Bob must not claim (publish t) now, before anything is broadcast;
+  // empty when the claim may proceed. Transports with a lock timeout check
+  // that the claim can confirm before the refund becomes valid.
+  virtual std::string claimDeadlineError(const SwapParams& params) {
+    (void)params;
+    return "";
+  }
+
   // Chain-state proof that this exact lock was claimed with sufficient
   // finality. Alice cannot depend on Bob sending a claim transaction ID.
+  // Replaces an unconfirmed claim with a higher pre-signed fee (point locks).
+  virtual ChainClientResult bumpClaim(const SwapParams& params) {
+    (void)params;
+    return ChainClientResult::notSent(chainName() + " has no higher pre-signed claim fee");
+  }
   virtual bool hasConfirmedClaim(const SwapParams& params) {
     (void)params;
     return false;

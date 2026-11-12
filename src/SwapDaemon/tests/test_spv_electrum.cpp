@@ -20,6 +20,14 @@
 
 using namespace XfgSwap;
 
+static ElectrumEndpoint loopback(uint16_t port) {
+  ElectrumEndpoint endpoint;
+  endpoint.host = "127.0.0.1";
+  endpoint.port = port;
+  endpoint.useTls = false;
+  return endpoint;
+}
+
 // =============================================================================
 // Helpers: synthetic regtest-difficulty headers (bits = 0x207fffff)
 // =============================================================================
@@ -85,7 +93,7 @@ static void test_connection_basic_call() {
   uint16_t port = server.start();
 
   ElectrumConnection conn;
-  assert(conn.connect("127.0.0.1", port));
+  assert(conn.connect(loopback(port)));
   assert(conn.isConnected());
 
   std::string result = conn.call("server.version", R"(["2.0.3","1.4"])");
@@ -103,7 +111,7 @@ static void test_connection_multiple_calls() {
   uint16_t port = server.start();
 
   ElectrumConnection conn;
-  assert(conn.connect("127.0.0.1", port));
+  assert(conn.connect(loopback(port)));
 
   std::string r1 = conn.call("server.version", R"(["2.0.3","1.4"])");
   assert(!r1.empty());
@@ -127,7 +135,7 @@ static void test_connection_custom_handler() {
   uint16_t port = server.start();
 
   ElectrumConnection conn;
-  assert(conn.connect("127.0.0.1", port));
+  assert(conn.connect(loopback(port)));
 
   std::string result = conn.call("server.ping", "[]");
   assert(result == "null");
@@ -145,7 +153,7 @@ static void test_connection_received_method_tracking() {
   assert(!server.receivedMethod("server.version"));
 
   ElectrumConnection conn;
-  assert(conn.connect("127.0.0.1", port));
+  assert(conn.connect(loopback(port)));
 
   conn.call("server.version", R"(["2.0","1.4"])");
   assert(server.receivedMethod("server.version"));
@@ -160,7 +168,7 @@ static void test_connection_received_method_tracking() {
 
 static void test_connection_nonexistent_server() {
   ElectrumConnection conn;
-  assert(!conn.connect("127.0.0.1", 1));
+  assert(!conn.connect(loopback(1)));
 }
 
 static void test_connection_disconnected_call() {

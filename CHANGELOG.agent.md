@@ -1,3 +1,433 @@
+## DeXFG remediation R11 and cross-curve plan
+
+**Started**: 2026-11-08
+**Agent**: Claude Code
+**Status**: DONE (R11, X1-X10). usexfg/fuego-suite pull request 78 carries the branch; its CI (run 42952840431) passes every job except Ubuntu's `test_orderbook_auction` (F29, owner decision; `master`'s workflow does not run tests, so it does not show there). Valise is pinned to this branch on ColinRitman/xfg_wallet and usexfg/fuego-valise
+**Scope**: `src/SwapDaemon/CLV/` (deleted), `src/SwapDaemon/chains-staging/polkadot-compat/README.md`, `docs/dexfg/CROSS_CURVE_PLAN.md` (new), `docs/dexfg/SWAP_REMEDIATION_PLAN.md`, `src/crypto/cross_dleq.{h,cpp}`, `src/SwapDaemon/tests/test_cross_dleq.cpp` (new), `src/CMakeLists.txt`, `AdaptorSwap.{h,cpp}`, `SwapPeerProtocol.{h,cpp}`, `SwapTypes.h`, `SwapStateMachine.cpp`, `SwapDaemon.{h,cpp}`, `Bitcoin/BtcChainClient.h`, `Litecoin/LtcChainClient.h`, `Solana/SolChainClient.h`, `CryptoNoteConfig.h` (unused `FEATURE_PURE_PTLC_DEFAULT` removed), `tests/test_swap_state_machine_spv.cpp`, `IChainClient.h`, `Ethereum/EthChainClient.{h,cpp}`, `Ethereum/EthRpcClient.{h,cpp}`, `Ethereum/*_sol_*.bin{,-runtime}`, `contracts/artifacts-build/` (new), `.gitignore`, `.github/workflows/check.yml`, `main.cpp`, `tests/test_htlc_registry_pin.cpp`, `tests/test_evm_anvil_gate.cpp`, `tests/test_evm_claim_deadline.cpp`, `docs/dexfg/DEXFG_SWAP_CHAINS.md`, `Crypto/Bip340Adaptor.{h,cpp}` (new), `tests/test_bip340_adaptor.cpp` (new), `Utxo/UtxoPointLock.{h,cpp}`, `Utxo/UtxoPointLockSwap.{h,cpp}`, `Utxo/UtxoPointLockFullNode.cpp` (new), `Utxo/UtxoHtlc.{h,cpp}`, `Utxo/UtxoHtlcFullNode.{h,cpp}`, `Utxo/UtxoHtlcSpv.{h,cpp}`, `Bitcoin/BtcChainClient.{h,cpp}`, `Litecoin/LtcChainClient.{h,cpp}`, `SwapPtlcLock.{h,cpp}`, `tests/test_utxo_point_lock.cpp` (new), `tests/test_utxo_regtest.cpp`, `contracts/point-timelock/foundry.toml`, `ChainClientResult.h`, `Utxo/UtxoFullNode.{h,cpp}`, `Crypto/Secp256k1Ops.{h,cpp}` (new), `Crypto/BchSchnorrAdaptor.{h,cpp}` (new), `tests/test_bch_schnorr_adaptor.cpp` (new), `src/CMakeLists.txt`, `Utxo/BchPointLock.{h,cpp}` (new), `Utxo/BchPointLockSwap.{h,cpp}` (new), `Utxo/UtxoBchPointLockFullNode.cpp` (new), `BitcoinCash/BchChainClient.{h,cpp}`, `tests/test_bch_point_lock.cpp` (new), `Solana/SolPointClaim.{h,cpp}` (new), `Solana/SolChainClient.{h,cpp}`, `Solana/SolRpcClient.{h,cpp}`, `tests/test_sol_point_claim.cpp` (new), `tests/test_sol_validator_gate.cpp` (new), `Crypto/cross_curve_dleq/` (new), `Crypto/CrossCurveDleq.{h,cpp}` (new), `README.md`, `SwapPairCatalog.h`, `tests/test_swap_pair_catalog.cpp`, `tests/CoreTests/SwapOrderbookTests.cpp`, `docs/dexfg/DEXFG_SWAP_CHAINS.md` (generated)
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| R11 | Deleted `src/SwapDaemon/CLV/` (owner approval 2026-11-08): a header-only `EthChainClient` subclass and README that nothing built, registered or cataloged; the staging README no longer calls CLV "Robinhood Chain" | Claude Code | 2026-11-08 | DONE |
+| X1 | Cross-curve DLEQ (`src/crypto/cross_dleq.cpp`) to the `cross_dleq.h` specification: 252 per-bit Pedersen commitments on ed25519 and secp256k1, each with a two-branch ring whose 128-bit challenges are shared by both curves, plus a Schnorr proof per curve tying the weighted commitment sums to A and B. Generators by hash-to-curve (`H_ed`: Keccak then `ge_fromfe_frombytes_vartime`, times 8; `H_secp`: SHA-256 try-and-increment). The prover is constant-time in the secret bits (ladder multiplication, byte-masked selection, both ring candidates computed); the verifier requires prime-order-subgroup ed25519 points and canonical scalars. 52,797-byte proof; about 0.5 s to prove and 0.35 s to verify | Claude Code | 2026-11-08 | DONE; `test_cross_dleq` 30/30 (completeness, statement and context binding, tampering, malformed encodings, scalar bounds, wire form). No independent review |
+| X2 | Protocol: Bob draws t below 2^252 and sends the cross-curve proof (signed digest segment 0xC2) in `ADAPTOR_EXCHANGE` for point-locked pairs. Alice refuses a hash lock for any pair her client can lock by point (no downgrade to F33), verifies the proof against T and T_secp in the swap's DLEQ context, records `crossCurveProofVerified`, and her lock gate funds a point lock only when it is set. A point-locked swap binds no hash lock, so Bob's unbound hash cannot veto the true t after his claim (found in review). `FEATURE_PURE_PTLC` is removed: point locks are used wherever the client supports them. BTC/LTC stop reporting point support until X6 replaces their P2TR lock, which Alice alone could spend at any time | Claude Code | 2026-11-08 | DONE; `test_swap_state_machine_spv` 22/22 (proven exchange accepted, downgrade, missing and foreign proofs, post-signature tampering, wire round trip, lock gate); each guard's test fails with the guard removed |
+| X3 | EVM point locks. Review found the daemon set the PointTimelock address only on the RPC client while `EthChainClient` checked its own never-set copy, so EVM point locks could not run; the RPC client is now the single source. The PointTimelock registry is pinned like the HTLC registry and defaults to its canonical CREATE2 address (not on EraVM). `pointLockSupport()` is three-state: AVAILABLE when the pinned code is there; NONE when there is no code (the chain keeps hash locks, owner decision); UNKNOWN for other code or an unreachable RPC, which refuses new swaps and exchanges on the pair instead of falling back to a hash lock. Anvil gate: both contracts deployed through the deterministic deployer; point-lock happy path (Alice reads a t that opens the XFG adaptor point, without the claim txid), lock to another point refused, claim with another scalar refused on chain, refund after the timeout, and the three support states | Claude Code | 2026-11-08 | DONE locally (build, `test_htlc_registry_pin` 22/22, suite); anvil gate in CI |
+| X5 | BIP340 adaptor signatures (`SwapDaemon/Crypto/Bip340Adaptor`) on libsecp256k1: pre-signature over R0 = k*G + T with the nonce sign folded in when R0 has odd y, pre-signature verification, completion and extraction (t checked against T), plain BIP340 sign/verify through `secp256k1_schnorrsig`. Completed signatures are checked with libsecp256k1's BIP340 verifier | Claude Code | 2026-11-08 | DONE; `test_bip340_adaptor` 203/203 (64 rounds over both nonce parities, wrong point, message, key, tampered pre-signature, wrong completion, foreign signature); the parity test fails (74 checks) when completion ignores the parity |
+| X6 | BTC/LTC Taproot point lock (`Utxo/UtxoPointLock`, `UtxoPointLockSwap`, `UtxoPointLockFullNode.cpp`, SPV paths in `UtxoHtlcSpv`): BIP341 unspendable internal key with a claim leaf `<A> CHECKSIGVERIFY <B> CHECKSIG` and a refund leaf `<timeout> CLTV DROP <A> CHECKSIG`, BIP341/342 script-path sighash, claim and refund transactions. Alice pre-signs Bob's claim (BIP340 adaptor, encrypted to T_secp) on a fee ladder (estimate x1, x3, x9, x27, capped at a tenth of the value); Bob refuses a lock whose top rung is below the current fee or any rung outside the ceiling, claims at the lowest adequate rung, and the engine replaces a claim still pending after 3 blocks with the next rung (RBF), so a fee spike cannot leave Bob's claim stuck until Alice's refund and her RBF replacement with t visible. Alice recovers t from her completed signature in the claim witness, any rung. The old P2TR construction (a key path Alice could spend at any time, a non-BIP340 challenge) is removed from both clients. Review fix: lock notices truncated a point-lock state at its first ":" (the claim-txid suffix rule), so Bob would have received "tr1" | Claude Code | 2026-11-08 | DONE locally: `test_utxo_point_lock` 33/33, `test_swap_state_machine_spv` 24/24 (notice and replacement tests fail with their fixes removed); regtest gate scenarios added for BTC and LTC (consensus acceptance in CI) |
+| X3 fix | CI run 42435268037: the anvil gate failed both refunds and the point claim. The EVM client sent with fixed gas caps (lock 200k, claim 150k, refund 80k) that the buffered estimate had to fit; the reentrancy guard and `call` payout of the pinned contracts need more (measured before refunds on the committed bytecode: lock 142k, claim 104k HTLC and 108k point, refund 85k). Transactions now carry the buffered estimate as their gas limit, bounded by named ceilings at about twice the measured use (lock 300k, claim 250k, refund 200k), so the balance check and fee exposure follow the estimate | Claude Code | 2026-11-09 | DONE locally; anvil gate in CI |
+| X6 fix | Same run: Bitcoin Core accepted all 49 BTC regtest checks, including Taproot claim, replacement and refund. Litecoin Core refused the claim replacement (`txn-mempool-conflict`): Litecoin Core 0.21.4 ships `DEFAULT_ENABLE_REPLACEMENT = false`, so the RBF fee ladder cannot raise an LTC claim. Each chain now carries its default-policy fee bump (`UtxoFeeBump`): BTC replaces with the next rung; LTC chains children onto the claim output (P2PKH back to Bob's key, legacy sighash), each tripling the package fee rate or meeting the estimate, capped at the swap's fee ceiling, at most 8; BCH has neither replacement nor ancestor-fee-rate mining (BCHN removed CPFP in v23.0.0), so a BCH claim cannot be raised after broadcast and Bob claims at the top rung. The package is traced from chain data (`getmempooldescendants` on a full node, spend lookups over SPV), so nothing new is persisted; the engine keeps the claim txid when a child pays for it. A claim paying a `ctr_address` other than Bob's key cannot be raised by a child | Claude Code | 2026-11-09 | DONE locally: `test_utxo_point_lock` 49/49 (child spends the claim output, pays the shortfall, carries a valid signature, chain walk and refusals, rung choice per policy), `test_swap_state_machine_spv` 25/25; LTC regtest scenario (two chained children held as one package) in CI |
+| X3 fix 2 | Run 441: the anvil gate's only remaining failure was the point claim. `EthRpcClient::claimPoint` hand-built its calldata with the file-local `bytesToHex`, whose default adds `0x`, so the calldata carried two stray `0x` strings and the call reverted at gas estimation (the HTLC claim used `EthAbi::encodeClaim`, whose helper has no prefix). Both claims now go through one `sendClaim` that uses `EthAbi::encodeClaim` | Claude Code | 2026-11-09 | DONE; run 442 (commit 20c8eed5): EVM anvil gate 34/34, BTC/LTC/BCH regtest gates, Windows, macOS-15 and sanitizers all pass; Ubuntu fails only on F29 (`test_orderbook_auction`, owner decision) |
+| X7 adaptor | BCH Schnorr adaptor signatures (`Crypto/BchSchnorrAdaptor`): e = SHA256(R.x, compressed P, m) mod n, R with a quadratic-residue y (Jacobi symbol 1 through OpenSSL `BN_kronecker`), pre-signature over R0 = kG + T folded by the residue of R0.y. The libsecp256k1 scalar and point helpers moved out of `Bip340Adaptor.cpp` into `Crypto/Secp256k1Ops` so both schemes share them (`test_bip340_adaptor` still 203/203) | Claude Code | 2026-11-09 | DONE; `test_bch_schnorr_adaptor` 29/29: the 13 published BCH Schnorr vectors (Bitcoin ABC secp256k1 module) verify or fail as specified, 64 adaptor rounds cover both residue cases, tampering and wrong-point cases refused; the rounds fail when `complete` ignores the residue; confirmed in run 442. The BCH P2SH lock, transports and regtest scenarios remain |
+| X7 lock | BCH P2SH point lock (`Utxo/BchPointLock`, `BchPointLockSwap`, `UtxoBchPointLockFullNode.cpp`, SPV paths in `UtxoHtlcSpv`): redeem script `OP_IF <A> OP_CHECKSIGVERIFY <B> OP_CHECKSIG OP_ELSE <timeout> OP_CHECKLOCKTIMEVERIFY OP_DROP <A> OP_CHECKSIG OP_ENDIF` with compressed keys, FORKID sighash over the whole script, 65-byte Schnorr signatures (64 bytes and the 0x41 type). Alice pre-signs the claim ladder with BCH Schnorr adaptor signatures encrypted to T_secp; Bob verifies every rung and claims at the top one, since a broadcast BCH claim cannot be raised; Alice reads t from the claim scriptSig (new `spendScriptSig`). State format `bs1:` (Taproot keeps `tr1:`). The transports' point methods hand P2SH_FORKID chains to the BCH paths; `BchChainClient` now reports point support and forwards `bumpClaim`, which refuses on chains with no fee bump. Review fix: lock notices kept only `tr1:` states whole, so a `bs1:` state would have been cut at its first colon (test fails with the fix removed). Spend sizes are exact: Schnorr signatures have a fixed length | Claude Code | 2026-11-10 | DONE locally: `test_bch_point_lock` 29/29 (script layout, P2SH output, claim scriptSig order, t recovered from the scriptSig, FORKID commits to the lock value, refund nLockTime, exact sizes at the largest timeout, state round trip and refusals), `test_swap_state_machine_spv` 26/26; BCHN 29.2.0 regtest gate 49/49 in run 444 (Schnorr claim accepted, t read from the scriptSig, no fee raise possible, refund through the timeout branch) |
+| X4 | SOL point locks. The xfg_htlc program already had `lock_ptlc` and `claim_ptlc` (claim checks t*G == T on chain and stores t), but nothing used them: `SolChainClient` reported no point support, `lock()` always hash-locked and `claim()` always sent the hash claim. Now a point-locked swap funds `lock_ptlc` to the XFG adaptor point itself (SOL is ed25519, so no cross-curve proof is involved), Bob verifies the escrow is locked to that point, pays his claim address and leaves the 9,000-slot claim runway, and claims with a Schnorr proof of knowledge of t bound to the escrow, amount and recipient (`SolPointClaim`); the program stores t for Alice. Point support is three-state from the deployed code: AVAILABLE when the program's ELF carries the `LockPtlc` and `ClaimPtlc` handlers, NONE when the program lacks them or nothing is deployed (hash lock stays), UNKNOWN when the RPC cannot be read (new swaps wait). Review fix: lock notices would have cut a `ptlc:` state at its colon. Also new: claim-deadline checks for SOL escrows, which had none | Claude Code | 2026-11-10 | DONE locally: `test_sol_point_claim` 10/10; 200 proofs from the C++ prover accepted by the program's own `claim_ptlc` arithmetic run on host with curve25519-dalek 3.2.1 and Keccak-256, changed amount or offset rejected; `test_swap_state_machine_spv` 27/27. CI gate builds the program with `cargo build-sbf` (agave 1.18.26, tarball sha256 pinned) and runs it in `solana-test-validator` at its declare_id |
+| X8 | BTC, LTC and BCH move from GATED to ACTIVE in the pair catalog (remediation 1.8, owner approval 2026-11-08), after their point-lock node gates passed: the relay now admits their offers and orders, the generated chain table lists them as live, and the catalog test pins them ACTIVE and executable. They swap by point lock whenever the daemon holds the chain key, so F33 does not apply to them. Not covered: no run of two daemons swapping XFG against a live counter-chain exists | Claude Code | 2026-11-10 | DONE: `test_swap_pair_catalog`, core relay tests (`isExecutablePair`) and `gen-dexfg-chain-table.py --check` pass; Valise catalog follows in X9 |
+| X1 revision | Owner direction 2026-11-10: use a production-used library for the cross-curve proof instead of the in-house one. No audited ed25519/secp256k1 implementation was found; `sigma_fun` 0.9.0 (the proof xmr-btc-swap and eigenwallet use) is now the proof, behind a small C interface (`Crypto/cross_curve_dleq`, Rust static library, exact dependency pins in a committed `Cargo.lock`, panics caught at the boundary) and a C++ wrapper (`Crypto/CrossCurveDleq`). CMake builds it with cargo and links it into `SwapDaemonLib`. The in-house proof code is removed from `src/crypto/cross_dleq.{h,cpp}`, which keep only `cross_dleq_generate_scalar`. The proof carries no swap context (the signed exchange covers its bytes); the wire parser bounds its size instead of fixing it. Review finding on the library's use: its two commitment generators must have unknown discrete logs. With the curves' base points as generators (as in the archived COMIT repository) a proof for unequal logarithms verifies; the generators here are hashed to the curves and the same forgery fails | Claude Code | 2026-11-10 | DONE locally: 9 Rust tests (incl. the forgery both ways, torsion point, one-size encoding), `test_cross_dleq` 20/20 through the C interface (points equal the swap's own derivations of T and T_secp; proof 56,623 bytes; prove 73 ms, verify 62 ms), `test_swap_state_machine_spv` 27/27; Windows and macOS linking in CI. Building the suite now needs a Rust toolchain |
+| X1 reference | Owner direction 2026-11-11: keep the in-house cross-curve proof as a backup while `sigma_fun` stays the proof in use. Restored from history as `src/crypto/cross_dleq_inhouse.{h,cpp}` in `Crypto::InHouseCrossDleq`, with its own test (`test_cross_dleq_inhouse`, in ctest). No swap code includes it and `xfg-swapd` carries none of its symbols. It has had no independent review; its 52,797-byte wire form is not `sigma_fun`'s | Claude Code | 2026-11-11 | DONE: `test_cross_dleq_inhouse` 30/30, `test_cross_dleq` 20/20, `nm xfg-swapd` shows 0 `InHouseCrossDleq` symbols |
+| F29 fix | Owner decision 2026-11-12: fix the Hearth CD share, percentages unchanged (v11 30/70, v12 70/30). `runAuction` floored each taker fill's CD share separately, so fills of one or two fee atoms paid CD holders 0 at v11, and fills of one atom paid 0 at v12 too. The CD share is now the difference of floors on the running fee total, as the fee and HEAT already were; per-version percentages only select the share. Consensus: changes v11 and v12 auction output, which needs no fork height: the owner confirmed 2026-11-12 that no mined block carries Hearth fills | Claude Code | 2026-11-12 | DONE: `test_orderbook_auction` 66/66 (new one-atom-fill case: CD 3 of 10 at v11, 7 of 10 at v12); against the old code the same test fails 3 checks; full `ctest -LE manual` 59/59 |
+| X4 fix | First runs of the SOL gate (CI runs 449 to 42911322616) showed the committed program could never run its point lock: it did not compile for the Solana target (curve25519-dalek's default features pull getrandom 0.1), and once it compiled, `lock_ptlc` ran out of compute on its first point decompression (200,000 units), because it did ed25519 arithmetic in program code. The point checks now use the runtime's curve25519 syscalls (`sol_curve_group_op`, `sol_curve_multiscalar_mul`), with curve25519-dalek as the off-chain fallback; instruction formats are unchanged. Client: a lost lock confirmation no longer strands the escrow (the escrow address is fixed by sender and T, so a funded one with the same terms is reused), and a swap negotiated as a point lock never takes the hash paths | Claude Code | 2026-11-11 | DONE: SOL gate 21/21 on solana-test-validator 1.18.26 (CI run 42951375235): lock, verify, wrong point and wrong recipient refused, claim by proof of t, Alice reads t from the escrow, refund after the timeout. The run also found the escrow's account keys were compared as hex against base58 addresses, so Bob's recipient check could never pass on either lock type (fixed) |
+| Review: claim readers | Adversarial review found that Alice read Bob's claim by position and by one encoding of the branch selector. Bob chooses that encoding: a BCH claim whose selector is OP_2, or with an extra item under the signatures, is valid on chain but was not recognised, so Alice would never learn t while Bob kept both coins. The same held for the hash-lock reader on BCH (any push-only selector) and, with a miner's help, on BTC/LTC P2WSH (MINIMALIF is policy there). Readers now find the secret by what it is: any 32-byte item hashing to the hash lock, or any FORKID Schnorr signature that opens a pre-signature to T; the scriptSig parser accepts every push-only encoding. Taproot claims are fixed by consensus (clean stack, signed annex bit) and unchanged | Claude Code | 2026-11-11 | DONE: `test_utxo_htlc` 73/73 (selectors OP_2, OP_16, OP_1NEGATE, non-minimal witness selector), `test_bch_point_lock` 32/32 (OP_2 selector, extra item) |
+| X9, X10 | X10: branch pushed to usexfg/fuego-suite with `master` merged in (twice, as it moved), one pull request (78). X9: Valise pins the pushed commit, regenerates its catalog and keeps swap keys in the daemon keystore (see the Valise changelog); pushed to both Valise remotes with usexfg/fuego-valise `master` merged in | Claude Code | 2026-11-11 | DONE. After the pull request merges, re-pin Valise to the merge commit: a squash merge or a deleted branch would leave its pin unreachable |
+| R3/R4 correction | The committed `HashedTimelock_sol_HashedTimelock.bin` predated commit 388d7faa: it lacked the reentrancy guard and the `call` payout of the reviewed source, so the pinned code hash `6ac1a8f2…`, the canonical address `0x13e6f8fb…` and the anvil gate covered an older contract (R3/R4 above were recorded DONE on that artifact). `contracts/artifacts-build` now compiles both contracts with exact-pinned solc 0.8.34 (optimizer, 200 runs, EVM `paris` so chains without PUSH0 run them), writes creation and runtime artifacts, and CI fails if they differ from a fresh build. New pins: HashedTimelock `8dfdda4b…` at `0xcef71d1a…`; PointTimelock `f6efcc40…` at `0x10e9f7e4…`. CI also runs the 15 Foundry tests of `PointTimelock` and checks its two source copies are identical | Claude Code | 2026-11-08 | DONE; `test_htlc_registry_pin` recomputes both pins from the artifacts |
+| R12 | `CROSS_CURVE_PLAN.md`: owner decisions, target protocol per chain family, work items X1-X10 with completion criteria, and the facts the owner should weigh (no independent review of the proof, no `PointTimelock` deployed, SOL redeploy, older peers fail closed) | Claude Code | 2026-11-08 | DONE |
+
+## DeXFG remediation 1.9 (BCH) and plan 1.2: duplicate-lock guard on BCHN; F33 recorded
+
+**Started**: 2026-11-07
+**Agent**: Claude Code
+**Status**: DONE for the guard (BCH gate 28/28, CI run 42408891349, commit 578c583); F33 open (owner decision)
+**Scope**: `Utxo/UtxoFullNode.{h,cpp}`, `Utxo/UtxoHtlcFullNode.{h,cpp}`, `tests/test_utxo_htlc.cpp`, `docs/dexfg/SWAP_REMEDIATION_PLAN.md`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1.9 | First BCH gate run on BCHN 29.2.0: 27 of 28 checks passed (CI run 42408064285). "A repeated lock reuses the funding" failed: BCHN's `listtransactions` reports CashAddr while the lock funds a base58 P2SH address, so the guard against a lost `sendtoaddress` response never matched and a retry would fund the lock twice. Prior sends are now matched by the wallet transaction's output script and exact value (`walletTransactionPays`), independent of address format | Claude Code | 2026-11-07 | DONE; `test_utxo_htlc` 69/69; BCH gate 28/28 (CI run 42408891349, commit 578c583) |
+| plan | F33 and R12 added: the hash lock Alice funds is not bound to the adaptor point, so a modified XFG-side daemon can take the counterparty coin on every hash-locked pair; R12 lists three bindings and the interim choice for the owner | Claude Code | 2026-11-07 | RECORDED; not implemented |
+
+## DeXFG review: a peer cannot select the disabled pure-PTLC lock
+
+**Started**: 2026-11-07
+**Agent**: Claude Code
+**Status**: DONE
+**Scope**: `SwapDaemon.{h,cpp}`, `SwapPtlcLock.{h,cpp}`, `Bitcoin/BtcChainClient.cpp`, `Litecoin/LtcChainClient.cpp`, `tests/test_swap_state_machine_spv.cpp`, `tests/test_utxo_htlc_spv.cpp`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| review | AUDIT 3.9 keeps pure PTLC off (no cross-curve DLEQ), but only the initiator's negotiation honoured that: Alice copied `lockType` from Bob's signed `ADAPTOR_EXCHANGE`, so a peer could put a BTC or LTC swap on the pure-PTLC path, where Alice funds a Taproot output to Bob's unprovable point and Bob's HTLC checks (H(t), key, runway) do not run. `ADAPTOR_EXCHANGE` now refuses `PTLC` for a non-native pair unless `purePtlcAllowed` (feature flag, cross-curve DLEQ, client capability), the same gate the initiator uses | Claude Code | 2026-11-07 | DONE; `test_swap_state_machine_spv` 20/20 (a valid signed bundle selecting PTLC is refused, the same bundle as BRIDGE accepted; the PTLC case fails with the gate removed) |
+| review | BTC/LTC routed any `p2tr:` chain state to the Taproot paths regardless of the negotiated lock type, and `verifyPtlcLock` fell back to `verifyLock` on an unparsable `p2tr:` state, which routed back: a malformed state from a peer recursed until the daemon crashed. The Taproot paths now need `lockType == PTLC` (`isPurePtlcP2trLock`), and a malformed `p2tr:` state on a PTLC swap is refused | Claude Code | 2026-11-07 | DONE; `test_utxo_htlc_spv` 160/160 (the previous BTC client segfaults on the new check) |
+
+## DeXFG remediation R9 (EVM part): transport gate against anvil
+
+**Started**: 2026-11-07
+**Agent**: Claude Code
+**Status**: DONE for EVM — Solana (`solana-test-validator`) and two-daemon runs not built
+**Scope**: `src/SwapDaemon/tests/test_evm_anvil_gate.cpp` (new), `src/CMakeLists.txt`, `.github/workflows/check.yml`, `docs/dexfg/SWAP_REMEDIATION_PLAN.md` (status: 0.1-0.5 Windows green, 1.9 BTC/LTC pass, R9)
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| R9 | CI job `evm-anvil-gate`: anvil (foundry-toolchain action, tag-pinned `v1`), the committed `HashedTimelock` artifact deployed through the deterministic deployer and checked at `0x13e6…73a4`, then the real `EthChainClient` for anvil dev accounts 0 and 1: lock one ether, Bob verifies; other hash, other recipient and one wei short refused; claim inside the runway; Alice reads t from the registry at six blocks without the claim txid; a claimed lock is not claimed again; short-timeout lock refused by Bob, refund refused before and accepted after the timeout, no secret revealed | Claude Code | 2026-11-07 | PASS 19/19 (CI run 42406472393, commit 070f476) |
+
+## DeXFG review: Bob never publishes t inside the claim runway
+
+**Started**: 2026-11-07
+**Agent**: Claude Code
+**Status**: DONE for BTC, LTC, BCH (full node and SPV) and EVM HashedTimelock/PointTimelock; DOGE, DASH, ZEC, KMD, DCR, SOL not changed (not executable today)
+**Scope**: `ChainClientResult.h`, `SwapDaemon.h`, `tests/test_swap_state_machine_spv.cpp`, `Ethereum/EthChainClient.{h,cpp}`, `tests/test_evm_claim_deadline.cpp` (new), `src/CMakeLists.txt`, `Utxo/UtxoHtlcSwap.{h,cpp}`, `Utxo/UtxoHtlcFullNode.{h,cpp}`, `Utxo/UtxoHtlcSpv.{h,cpp}`, `IChainClient.h`, `Bitcoin/BtcChainClient.*`, `Litecoin/LtcChainClient.*`, `BitcoinCash/BchChainClient.*`, `SwapDaemon.cpp`, `tests/test_utxo_htlc_spv.cpp`, `tests/test_utxo_regtest.cpp`, `scripts/regtest-node.sh`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| review | Nothing stopped Bob from claiming after the lock's runway had shrunk: a claim that reveals t but confirms after Alice's refund becomes valid lets Alice refund the coin and still take the XFG with t. Claims now require the claim runway (`claimRunwayBlocks`) between the tip and the lock timeout; the engine asks `claimDeadlineError` before it records a claim attempt, so a late claim leaves the swap on its refund path instead of in manual reconciliation | Claude Code | 2026-11-07 | DONE; `test_utxo_htlc_spv` 154/154; regtest gate extended |
+| gate | `regtest-node.sh`: under `pipefail` an unlisted tarball ended the BCH step without a message; the checksum check now strips CRLF, accepts upper-case hashes and prints the lines naming the tarball | Claude Code | 2026-11-07 | DONE; both BCHN signer files verify the tarball (CI run 42406275913) |
+| gate | BCHN 28.x expired at the May 15, 2026 BCH upgrade and disables its RPC ("This version of Bitcoin Cash Node is old"); the gate node is now BCHN 29.2.0, taken from its GitHub release (the download host has no 29.2.0 directory and the release has no checksum file) and checked against the SHA-256 GitHub lists for the asset, `23bbe9ff…5081bc`, which a separate download here reproduced. The v29.0.0 notes list four CHIPs (P2S, bounded loops, functions, bitwise) that add script features; the parts of the v29.0.0/v29.1.0 notes that could be read mention no change to the P2SH HTLC opcodes, headers, proof of work or ASERT, and v29.1.0 lists no network changes. The full notes were not read (truncated fetch), so the gate run is the evidence | Claude Code | 2026-11-07 | PASS; BCH gate 28/28 (CI run 42408891349, commit 578c583) |
+| review | A claim refused before anything was sent (claim runway reached between the engine's check and the build, unburied lock, no fee rate, no key) left `ctrClaimAttempted` set with no txid: the swap sat in manual reconciliation and the XFG refund stayed held although t was never published. Claim results now carry `nothingSent` (`ChainClientResult::notSent`) for every failure before the broadcast call; the engine then withdraws the claim intent (`withdrawUnsentClaimIntent`). A refused or failed broadcast is not `nothingSent`: a server may have seen t | Claude Code | 2026-11-07 | DONE; `test_swap_state_machine_spv` 19/19 (fails without the engine change), `test_utxo_htlc_spv` 154/154 |
+| review | EVM: `verifyLock` and the new `claimDeadlineError` share one on-chain check (`lockOpenUntil`: open lock, agreed amount, recipient and hash or point, timeout at least a floor); the claim check uses tip + claim runway as the floor | Claude Code | 2026-11-07 | DONE; `test_evm_claim_deadline` 4/4 against a scripted JSON-RPC node |
+
+Not changed: DOGE, DASH, ZEC, KMD, DCR and SOL clients have no claim-time check; none can start a swap today.
+
+Not changed: the BTC/LTC Taproot PTLC claim (`p2tr:` chain state) has no claim-runway check; `claimDeadlineError` returns empty for it. EVM claims that fail inside `claimHtlc`/`claimPoint` are not marked `nothingSent`, because the RPC client does not report whether the transaction was submitted.
+
+## DeXFG remediation 3.1-3.3: PEAQ and GLEEC feed identity, Tempo plan
+
+**Started**: 2026-11-07
+**Agent**: Claude Code
+**Status**: DONE — PEAQ priced, GLEEC has no feed, Tempo planned
+**Scope**: `scripts/probe-feed-ids.py` (new), `scripts/verify-defillama-assets.py`, `.github/workflows/docs.yml`, `docs/dexfg/TEMPO_PLAN.md` (new), `docs/dexfg/SWAP_REMEDIATION_PLAN.md`, `docs/dexfg/DEXFG_SWAP_CHAINS.md`, `docs/developer/defillama-asset-matrix.{json,md}`, `src/SwapDaemon/AssetCatalog.cpp`, `src/SwapDaemon/tests/test_price_policy.cpp`, `src/SwapDaemon/tests/test_coingecko_feed.cpp`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 3.3 | `docs/dexfg/TEMPO_PLAN.md`: why Tempo cannot be a pair (no native coin; TIP-20 value; fees in USD TIP-20 tokens), and the work to make it one: chain facts from a node, an issuer-verified settlement token and its feed, a `TokenHashedTimelock` escrow, TIP-403 policy risk, deployment pin, `EthRpcClient` token path with fee-token selection, catalog id 46, Valise, an end-to-end gate | Claude Code | 2026-11-07 | DONE (plan only) |
+| 3.1/3.2 | `probe-feed-ids.py` prints what DeFiLlama and CoinGecko return for candidate ids (symbol, price, age, confidence; CoinGecko name, homepage, platforms); the docs workflow runs it and the live matrix audit, both report-only | Claude Code | 2026-11-07 | DONE |
+| 3.1 | PEAQ priced from `coingecko:peaq-2`: CI run 42405279021 shows DeFiLlama symbol PEAQ, confidence 0.999, 10 s old, and CoinGecko `peaq-2` = "peaq", homepage peaq.xyz, platform peaq (native token 0x…0809 on peaq; OFT copies on Ethereum, BSC, Base, Solana). `peaq` and `peaq-network` do not exist. `AssetCatalog.cpp`, the matrix, `test_price_policy` and `test_coingecko_feed` updated | Claude Code | 2026-11-07 | DONE; `test_price_policy` 447/447 |
+| 3.2 | GLEEC stays unpriced: `coingecko:gleec-coin` resolves on neither DeFiLlama nor CoinGecko (404), and no source ties that coin to the native coin of the GLEEC EVM chain | Claude Code | 2026-11-07 | DONE (no feed exists) |
+| audit | The live audit failed on drift unrelated to prices: matrix names ZEC/RSK vs catalog ZCASH/ROOTSTOCK, support levels predating GATED, and a parser that missed EVM chains registered through `evm_chains`. Matrix synced to the catalog; the audit now checks support levels and counts ACTIVE EVM pairs as registered when the generic loop exists | Claude Code | 2026-11-07 | DONE |
+
+Known before the probe: peaq's documentation states PEAQ is the native token of chain 3338 with LayerZero OFT copies pegged 1:1. For GLEEC, CoinMarketCap describes a Komodo-smart-chain coin while chain 11169 is an EVM network with GLEEC as gas; no source found ties the two 1:1, so a `gleec-coin` price would be for an asset not shown to be the swap's settlement asset.
+
+## DeXFG remediation F32: signed AFK fill results carry the UTXO claim key
+
+**Started**: 2026-11-07
+**Agent**: Claude Code
+**Status**: DONE in code; AFK stays disabled (`AFK_SOFT_ORDER_EXECUTION_ENABLED = false`), so no AFK swap runs until the owner enables it
+**Scope**: `CryptoNoteCore/SwapOfferRelay.{h,cpp}`, `P2p/P2pProtocolDefinitions.h`, `CryptoNoteProtocol/CryptoNoteProtocolHandler.cpp`, `Rpc/CoreRpcServerCommandsDefinitions.h`, `Rpc/RpcServer.cpp`, `SwapDaemon/SwapDaemon.cpp`, `SwapDaemon/RpcServer.{h,cpp}`, `SwapDaemon/tests/test_afk_fill_result.cpp` (new), `src/CMakeLists.txt`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| F32 | The fill result carries `ctrClaimPubKey` (the maker's UTXO claim key) through the P2P message, the relay and `/getswaprequests`; the taker's `initiate_swap` sets it as Bob's claim key, so UTXO pairs can run AFK | Claude Code | 2026-11-07 | DONE |
+| review | Fill results were unsigned gossip: any peer could publish one for a taker key with its own hash lock and receive address, and the taker's xfg-swapd locked the counterparty coin against it. The maker now signs a length-prefixed digest of every field plus the taker key with the offer's key; fuegod keeps only results whose offer it knows and whose signature verifies; the taker's xfg-swapd refuses AFK material not signed by the pinned `expected_peer_pubkey`. While AFK is disabled, fuegod drops gossiped results and xfg-swapd refuses AFK initiation outright | Claude Code | 2026-11-07 | DONE; `test_afk_fill_result` 14/14 |
+
+Compatibility: the two new P2P fields are optional to the KV serializer; results from nodes without them carry no signature and are dropped.
+
+### Sign-off
+
+| Gate | Status | Signed | Date |
+|------|--------|--------|------|
+| Clang 18 build, `ctest -LE manual` | 50/51 (F29 only) | Claude Code | 2026-11-07 |
+| GCC build, AFK/SPV/UTXO tests | 9/9 | Claude Code | 2026-11-07 |
+
+## DeXFG remediation Phase 2: SPV for Bob (2.2-2.6); gate and CI fixes
+
+**Started**: 2026-11-07
+**Agent**: Claude Code
+**Status**: DONE in code and unit tests; no run against public Electrum servers (blocked from this session)
+**Scope**: `Spv/SpvChainRules.{h,cpp}` (new), `Spv/SpvHeaderStore.{h,cpp}`, `Spv/ElectrumSpvClient.{h,cpp}`, `tests/test_spv_quorum.cpp`, `Spv/ISpvClient.h`, `Utxo/UtxoHtlcSwap.{h,cpp}` (new), `Utxo/UtxoHtlcSpv.{h,cpp}` (new), `Utxo/UtxoHtlc.{h,cpp}`, `Utxo/UtxoHtlcFullNode.{h,cpp}`, `Utxo/UtxoFullNode.{h,cpp}`, `Bitcoin/BtcChainClient.*`, `Litecoin/LtcChainClient.*`, `BitcoinCash/BchChainClient.*`, `Komodo/KmdChainClient.h`, `Decred/DcrChainClient.h`, `IChainClient.h`, `Ethereum/EthChainClient.h`, `SwapDaemon.{h,cpp}`, `main.cpp`, `swap_config.example.json`, tests, `scripts/regtest-node.sh`, `scripts/gen-dexfg-chain-table.py`, `docs/dexfg/DEXFG_SWAP_CHAINS.md`, `tests/CoreTests/TreasuryCoreTests.cpp`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 2.2 | Per-chain header rules: BTC double-SHA256 + 2016-block retarget, LTC scrypt(1024,1,1) + Litecoin retarget, BCH ASERT (aserti3-2d, anchor 661647), regtest fixed difficulty; powLimit, compact-encoding validity, median time past, two-hour future limit. Rules are chosen per pair and network; testnet/signet get none and report untrusted. The checkpoint is fetched with the headers before it (one retarget window, or 11 for ASERT/regtest), authenticated by hash links back from the checkpoint hash, so the first retarget after it is computed exactly | Claude Code | 2026-11-07 | DONE; `test_spv_chain_rules` 58/58 (Core `pow_tests` vectors, 5 LTC scrypt vectors, BCHN ASERT table, real BTC/LTC headers) |
+| 2.3 | KMD and DCR: SPV refused for new swaps with the reason (no Equihash / BLAKE-256 validator); the example config and `--generate-spv-config` no longer configure KMD/DCR SPV | Claude Code | 2026-11-07 | DONE |
+| 2.4 | New-swap trust policy: at least 3 Electrum servers on distinct hosts, quorum 2..n, a checkpoint, header rules, BCH checkpoint at or above the ASERT anchor, and a completed sync. Headers come from one server at a time; a batch whose tip a strict majority does not serve (by block hash, not Merkle root) is undone and the next server is tried. Tip = median of server tips. Reorgs rewind to the common ancestor (within 100 blocks, never below the checkpoint) and switch only to more work. Inclusion needs a strict majority of servers proving the same height. Raw transactions and spends are read from every server (bytes authenticate against the txid); broadcasts go to every server. Fee rates are the medians of `relayfee` and `estimatefee` | Claude Code | 2026-11-07 | DONE; `test_spv_quorum` 34/34, `test_spv_electrum` |
+| 2.5 | Bob-only SPV (`UtxoHtlcSpv`): lock verified at the exact outpoint (script commitment, H(t), Bob's key, claim runway against the quorum tip, value, quorum Merkle proof at the required depth); the claim is broadcast only against a lock buried that deep, pays Bob's configured P2PKH address, fee from the median rates capped at a tenth of the value. Refund (to the refunder's own key) and claim discovery remain for existing swaps. Alice is refused over SPV ("cannot fund a lock"). Readiness is per role (`readinessErrorFor`), cached per pair and role; the status JSON adds `readyRoles` | Claude Code | 2026-11-07 | DONE; `test_utxo_htlc_spv` 142/142 over BTC, LTC, BCH |
+| 2.6 | Tests: low-difficulty chain refused under mainnet rules; real LTC header accepted under scrypt; one dishonest server outvoted by two honest ones (headers and proofs); reorg to more work followed, less work refused; certificate pinning (2.1, earlier) | Claude Code | 2026-11-07 | DONE |
+| review | The old SPV HTLC code is gone: it claimed vout 0 only, paid refunds to the counterparty address, used a fixed 1000-unit fee, accepted unconfirmed locks as success and broadcast to one server | Claude Code | 2026-11-07 | DONE |
+| review | Header store: no headers survive a refused quorum check (snapshot/restore); best-chain walks look up one height instead of scanning the store; public queries take the lock | Claude Code | 2026-11-07 | DONE |
+| review | `--generate-spv-config` wrote uncompressed-key WIFs the HTLC code refuses; it now writes compressed WIFs, three servers per chain from the Electrum, Electrum-LTC and Electron Cash server lists, quorum 2, and checkpoints from Bitcoin Core 28.1 / Litecoin Core 0.21.4 assume-valid blocks and a BCHN 28.0.1 checkpoint. The previous BTC checkpoint hash and two documentation links could not be verified and were removed | Claude Code | 2026-11-07 | DONE |
+| gate | Alice's lock reads only the H(t) Bob published (`agreedHashLock`), never a secret field; the regtest gate exposed it with an uninitialized fixture | Claude Code | 2026-11-07 | DONE; rerun in CI |
+| gate | BCHN binaries are not linked from GitLab releases; `regtest-node.sh` finds the x86_64 Linux tarball in the download host's `linux/` index and checks it against every signer's `SHA256SUMS.<version>.asc.<signer>` file; checksum lines may carry a directory | Claude Code | 2026-11-07 | DONE; the BCHN 28.0.1 tarball verified against both signer files in CI run 42406275913 |
+| review | The quorum was a strict majority of the servers that happened to connect, so with five configured servers and `spv_min_servers` 2, two reachable liars agreed with each other and forged the tip and a Merkle proof while the honest servers were unreachable. The quorum is now the larger of `spv_min_servers` and a strict majority of the configured servers, and a connection needs that many servers. The shipped three-server, quorum-2 defaults are unchanged in effect | Claude Code | 2026-11-07 | DONE; `test_spv_quorum` 37/37 (the three new checks fail on the old quorum) |
+| CI | Windows: `TreasuryCoreTests.cpp` included `unistd.h`; `test_spv_config_wiring` called `close()` on a stream that WinCompat's `close` macro rewrites. Docs: generated-table markers used HTML comments, which Mintlify's MDX parser refuses | Claude Code | 2026-11-07 | DONE; rerun in CI |
+
+Not covered: a run against public Electrum servers (blocked from this session); Alice over SPV (coin selection, local signing, change); BTC testnet/signet SPV rules (minimum-difficulty exception, signet block signatures).
+
+### Sign-off
+
+| Gate | Status | Signed | Date |
+|------|--------|--------|------|
+| Clang 18 build, `ctest -LE manual` | 49/50 (F29 only) | Claude Code | 2026-11-07 |
+| GCC build, SPV/UTXO tests | 14/14 | Claude Code | 2026-11-07 |
+
+## DeXFG remediation 1.9: UTXO transport gate against live regtest nodes; review fixes
+
+**Started**: 2026-11-07
+**Agent**: Claude Code
+**Status**: DONE — BTC, LTC and BCH pass in CI (CI run 42408891349, commit 578c583); the XFG leg is not covered (below)
+**Scope**: `tests/test_utxo_regtest.cpp` (new), `scripts/regtest-node.sh` (new), `.github/workflows/check.yml`, `src/CMakeLists.txt`, `Utxo/UtxoFullNode.{h,cpp}`, `SwapKeystore.cpp`, `Bitcoin/BtcHtlcScript.cpp`, `Litecoin/LtcRpcClient.cpp`, `tests/test_utxo_htlc.cpp`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1.9a | `test_utxo_regtest`: the real BTC/LTC/BCH clients against bitcoind 28.1, litecoind 0.21.4, BCHN 29.2.0 regtest (28.0.1 expired; see the claim-runway section) — happy path with the claim txid withheld from Alice, idempotent lock, unconfirmed/short/other-output/other-hash/wrong-key locks refused, wrong-secret claim refused, 6-confirmation finality, reorg (invalidate/reconsider), restart rediscovery, refund refused before and accepted at timeout, refund reveals no secret | Claude Code | 2026-11-07 | PASS: BTC, LTC, BCH 28/28 (CI run 42408891349, commit 578c583) |
+| 1.9b | CI job `utxo-regtest-gate` (matrix btc/ltc/bch): node binaries verified by SHA-256 before running | Claude Code | 2026-11-07 | DONE (CI run 42408891349, commit 578c583) |
+| review | Fee floor now the node's `relayfee`/`mempoolminfee` (Litecoin relays above 1 unit/vbyte); keystore replace works on Windows (`rename` does not overwrite there) | Claude Code | 2026-11-07 | DONE |
+| gate fix | P2WSH bech32 (`BtcHtlcScript::witnessScriptToAddress`, `ltcWitnessScriptToAddress`) regrouped the witness version together with the program, producing addresses no node accepts; the version is now its own 5-bit value (BIP173). Found by the first gate run ("Invalid Bitcoin address"). `test_utxo_htlc` checks exact BTC/LTC addresses and the BIP173 P2WSH vector | Claude Code | 2026-11-07 | DONE; `test_utxo_htlc` 65/65 |
+| gate fix | BCHN 28.0.1 is not at `download.bitcoincashnode.org/releases/<v>/linux/`; `regtest-node.sh` takes the tarball and checksum links from the GitLab release API, falls back to the download host, and lists what GitLab returned when neither has it | Claude Code | 2026-11-07 | SUPERSEDED: 28.0.1 was then found on the download host and verified (CI run 42406275913) but had expired; the gate now runs 29.2.0 from its GitHub release |
+
+Not covered by 1.9a: the XFG leg. A two-daemon XFG+UTXO run needs a mining fuegod testnet with spendable decoys; `scripts/e2e-xfg-local.sh` documents those blockers and AGENTS.md the block-serving RPC hang.
+
+## DeXFG remediation R7 (daemon): encrypted keystore for swap secrets
+
+**Started**: 2026-11-07
+**Agent**: Claude Code
+**Status**: DONE (daemon half; the Valise keychain half is in the Valise changelog)
+**Scope**: `SwapKeystore.{h,cpp}` (new), `ChainClientConfig.cpp`, `main.cpp`, `tests/test_swap_keystore.cpp` (new), `src/CMakeLists.txt`, `swap_config.example.json`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| R7 | Keystore file: scrypt (N=2^15, r=8, p=1) → AES-256-GCM over a JSON map of named secrets, header bound as associated data, written atomically 0600; `"keystore": "<file>"` makes every `"keystore:<name>"` config string the named secret (unknown names and unsafe values refused); passphrase from `XFG_SWAPD_KEYSTORE_PASSPHRASE` or `..._FILE`; `--keystore-put <file> <name>` (secret on stdin) and `--keystore-list <file>` | Claude Code | 2026-11-07 | DONE; `test_swap_keystore` 16/16 |
+
+Not changed: secrets still exist in daemon memory after load (unavoidable for signing); plaintext configs keep working.
+
+### Sign-off
+
+| Gate | Status | Signed | Date |
+|------|--------|--------|------|
+| Clang 18 build, `ctest -LE manual` | 46/47 (F29 only) | Claude Code | 2026-11-07 |
+
+## DeXFG remediation R6: Pyth as the corroborating price source
+
+**Started**: 2026-11-07
+**Agent**: Claude Code
+**Status**: DONE — no Pyth endpoint is shipped; the operator configures one
+**Scope**: `SwapDaemon.{h,cpp}`, `ChainClientConfig.cpp`, `tests/test_spv_config_wiring.cpp`, `swap_config.example.json`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| R6 | `pyth_rpc_url`, `pyth_contract`, `pyth_chain_id` (all or none, contract syntax checked); when set, `PythFeed` replaces CoinGecko as the price worker's second source, so corroboration no longer compares two readers of the same CoinGecko ids; status JSON names the second feed by its own name | Claude Code | 2026-11-07 | DONE; `test_pyth_corroboration_config` |
+
+Not changed: `PricePolicy::requireCorroboration` stays false by default; turning it on refuses single-source assets and is a policy decision.
+
+### Sign-off
+
+| Gate | Status | Signed | Date |
+|------|--------|--------|------|
+| Clang 18 build, `test_spv_config_wiring` | PASS | Claude Code | 2026-11-07 |
+| Live Pyth read | NOT RUN — no network to an EVM RPC from this session | — | — |
+
+## DeXFG remediation: EVM registry pin (R3), deterministic deployment (R4), evm_chains only (R5)
+
+**Started**: 2026-11-07
+**Agent**: Claude Code
+**Status**: DONE — contracts are not deployed (out of scope); PointTimelock is not pinned (no committed artifact)
+**Scope**: `Ethereum/EthRpcClient.{h,cpp}`, `Ethereum/EthChainClient.cpp`, `ChainClientConfig.cpp`, `SwapDaemon.{h,cpp}`, `main.cpp`, `tests/test_htlc_registry_pin.cpp` (new), `tests/test_spv_config_wiring.cpp`, `swap_config.example.json`, `docs/dexfg/DEXFG_SWAP_CHAINS.md`, `src/CMakeLists.txt`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| R3 | Readiness requires keccak-256 of the registry's runtime code to equal the committed HashedTimelock runtime (`.bin` after its 28-byte constructor prologue): `6ac1a8f2…7f99`; per-chain override `htlc_registry_code_hash` | Claude Code | 2026-11-07 | DONE; recomputed from the artifact in `test_htlc_registry_pin`; keccak checked against keccak("") |
+| R4 | `create2Address`; canonical registry `0x13e6f8fb77ce4036438469097828106fd60c73a4` (artifact via the deterministic deployment proxy, zero salt) is the default `htlc_registry` except on EraVM (zkSync Era, Abstract); `xfg-swapd --print-htlc-deployment <bin>` prints the deploying transaction | Claude Code | 2026-11-07 | DONE; formula checked against EIP-1014 examples 0 and 1 |
+| R5 | Flat per-chain EVM fields retired: 93 struct fields, their parsing and 15 registration blocks removed; the loader refuses any retired key and names the `evm_chains` key; example config moves 13 chains into `evm_chains` (GLEEC and Robinhood have no endpoint shipped); `--generate-spv-config` emits `evm_chains`; F15 (L2s sharing ETH's registry) and F16 (dead example keys) closed | Claude Code | 2026-11-07 | DONE; every flat subclass was a name-only wrapper over `EthChainClient`, which the generic path already instantiates |
+
+### Sign-off
+
+| Gate | Status | Signed | Date |
+|------|--------|--------|------|
+| Clang 18 and GCC 13.3 builds, `ctest -LE manual` | 45/46 (F29 only) | Claude Code | 2026-11-07 |
+| `test_htlc_registry_pin` | PASS, 15/15 | Claude Code | 2026-11-07 |
+| Registry deployment on any chain | NOT DONE (out of scope) | — | — |
+
+## DeXFG remediation: catalog-driven executability (R1), generated chain table (R10), seed rates (3.4), CI build fixes
+
+**Started**: 2026-11-07
+**Agent**: Claude Code
+**Status**: DONE
+**Scope**: `SwapPairCatalog.h`, `SwapOfferRelay.{h,cpp}`, `SwapDaemon.cpp`, `Rpc/RpcServer.cpp`, `Rpc/CoreRpcServerCommandsDefinitions.h`, `swapxfg/app/rpc.go`, `Common/Int128.h`, `CryptoNoteCore/AmmPool.cpp`, seven files missing `<algorithm>`, `scripts/gen-dexfg-chain-table.py`, `docs/dexfg/DEXFG_SWAP_CHAINS.md`, `.github/workflows/docs.yml`, `test_swap_pair_catalog.cpp`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| R1 | New catalog support level GATED (appended; numeric values unchanged) for XMR, BCH, KMD, DCR, BTC, LTC, DOGE, DASH, ZEC; `isExecutableSwapPair` = ACTIVE or ADAPTER; the relay's hand-numbered exclusion list now returns it | Claude Code | 2026-11-07 | DONE; catalog test asserts 9 GATED, all protocol and none executable |
+| R10 | `scripts/gen-dexfg-chain-table.py` generates the counts, gate table and catalog table from `SwapPairCatalog.h` + `AssetCatalog.cpp`; docs CI runs `--check` | Claude Code | 2026-11-07 | DONE |
+| 3.4 | Deleted `SwapOfferRelay::getSeedRate`: its ids were shifted (id 0 SOL priced as XMR) and it stood in for TWAP and composite price on pairs with no trades; both now report 0; `seedRate` dropped from `getswapprice` and the Go client struct | Claude Code | 2026-11-07 | DONE; `go test ./app/` passes |
+| CI | Clang CI (newer libstdc++): `<algorithm>` added to 7 files; MSVC: `uint128_t::operator-(int)` and an explicit `uint128_t` operand in `ammLimitBuyCapacity` | Claude Code | 2026-11-07 | DONE locally; MSVC unverified until CI |
+
+### Sign-off
+
+| Gate | Status | Signed | Date |
+|------|--------|--------|------|
+| Clang 18 build + `ctest -LE manual` | 44/45 (F29 only) | Claude Code | 2026-11-07 |
+| `gen-dexfg-chain-table.py --check` | PASS | Claude Code | 2026-11-07 |
+| MSVC | NOT RUN locally | — | — |
+
+## DeXFG remediation Phase 1: full-node UTXO swap path for BTC, LTC, BCH (code; e2e gate open)
+
+**Started**: 2026-11-07
+**Agent**: Claude Code
+**Status**: CODE DONE / E2E GATE OPEN — tasks 1.8 and 1.9 not done: no regtest node could be built in this session, so ids 3, 9, 10 stay non-executable
+**Scope**: `src/SwapDaemon/Utxo/` (new), `Bitcoin/`, `Litecoin/`, `BitcoinCash/` clients and RPC clients, `SwapPeerProtocol.*`, `SwapDaemon.*`, `SwapTypes.h`, `SwapStateMachine.cpp`, `ChainClientConfig.cpp`, `IChainClient.h`, `ChainClientResult.h`, `Spv/ElectrumConnection.*`, `Spv/ElectrumSpvClient.cpp`, `src/CMakeLists.txt`, tests, `swap_config.example.json`, plan
+
+Implements `docs/dexfg/SWAP_REMEDIATION_PLAN.md` tasks 1.0-1.7 and 1.10, plus 2.1 and F30 found on the way.
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1.0 | `ADAPTOR_EXCHANGE` carries Bob's claim key (signed, tagged digest segment; legacy digest unchanged when absent); new signed `CTR_LOCKED` (lock ref, output index, lock script) sent by Alice after funding and every tick until the claim is seen; Bob binds the first notice, rejects conflicts, accepts alphanumeric refs only | Claude Code | 2026-11-07 | DONE; `test_ctr_lock_notice` 12/12 |
+| 1.1 | Lock outpoint carried end to end: `ChainClientResult::outputIndex`, `SwapParams::ctrLockVout` (persisted), output index read from the wallet transaction by script | Claude Code | 2026-11-07 | DONE |
+| 1.2 | Lock verification with `gettxout` (no wallet): exact P2WSH/P2SH script, value >= amount, confirmations >= required; lock script parsed byte-exact, hash = H(t), recipient = our key, timeout leaves the catalog claim runway | Claude Code | 2026-11-07 | DONE |
+| 1.3 | `importaddress` and `listunspent` gone from the HTLC path; pure-P2TR PTLC is not negotiated in full-node mode (t is unrecoverable without the presig) | Claude Code | 2026-11-07 | DONE |
+| 1.4 | `UtxoSpendTracker`: claim discovery from `getblockhash`/`getblock 2`, bounded per call, rewinds on a reorg of the recorded spend or last scanned block, optional `gettxspendingprevout` mempool signal; restart rescans from the lock block (not persisted) | Claude Code | 2026-11-07 | DONE; 7 scenarios incl. two reorgs |
+| 1.5 | `hasConfirmedClaim` from chain data; the `SECRET_REVEAL` txid is only a hint re-checked against the outpoint and hash lock | Claude Code | 2026-11-07 | DONE |
+| 1.6 | Network parameters (`btc_network`, `ltc_network`, `bch_network`: main/test/signet/regtest) for HRP, P2PKH/P2SH/WIF versions; WIF must match the network | Claude Code | 2026-11-07 | DONE |
+| 1.7 | Readiness from capability: valid key, node chain matches, IBD done, wallet with private keys loaded; SPV reports a reason | Claude Code | 2026-11-07 | DONE |
+| 1.8 | Remove ids 3, 9, 10 from `isExecutablePair` | — | — | NOT DONE (gated on 1.9) |
+| 1.9 | Regtest two-daemon end-to-end gate | — | — | NOT DONE; building bitcoind from source was refused in this session |
+| 1.10 | One HTLC engine (`UtxoHtlc`) for P2WSH and P2SH/FORKID: exact 8-decimal amounts, `0x01`/empty selectors, signed nSequence written, refunds pay the refunder's key, fee from `estimatesmartfee` capped at 10% of the lock, lock funding idempotent via `listtransactions`; dead RPC claim/refund code removed | Claude Code | 2026-11-07 | DONE; signatures verify against python-bitcoinlib 0.11.2 digests (`tests/vectors/utxo_htlc_sighash.py`) |
+| 2.1 | Electrum TLS: `ssl://` CA chain + hostname, `#sha256=` leaf pin, plaintext only to loopback; previously every connection was plaintext (F31) | Claude Code | 2026-11-07 | DONE |
+| F30 | Test targets compile with `-UNDEBUG`; exposed and fixed two stale `parseClaimPreimage` fixtures and one message check | Claude Code | 2026-11-07 | DONE |
+
+Not changed, reported:
+- F32: AFK fill results carry no claim key, so UTXO pairs are interactive-only.
+- SPV claim/refund still use the old builder (F26-F28 apply there); SPV cannot start swaps. Phase 2.5 moves it to the engine.
+
+### Sign-off
+
+| Gate | Status | Signed | Date |
+|------|--------|--------|------|
+| Full build, Clang 18 | PASS | Claude Code | 2026-11-07 |
+| Full build, GCC 13.3 | PASS | Claude Code | 2026-11-07 |
+| `ctest -LE manual`, asserts enabled (45 tests) | 44 PASS, 1 FAIL (`test_orderbook_auction`, F29, pre-existing) | Claude Code | 2026-11-07 |
+| `test_utxo_htlc` | PASS, 62/62 | Claude Code | 2026-11-07 |
+| Regtest end-to-end (1.9) | NOT RUN — no bitcoind | — | — |
+
+## DeXFG remediation Phase 0: truthful build and CI
+
+**Started**: 2026-11-07
+**Agent**: Claude Code
+**Status**: DONE — CI test step is red on one pre-existing consensus defect (F29), reported, not changed
+**Scope**: `src/CryptoNoteCore/Blockchain.cpp`, `src/SwapDaemon/tests/test_price_policy.cpp`, `CMakeLists.txt`, `src/CMakeLists.txt`, `.github/workflows/check.yml`, five docs pages, `docs/dexfg/SWAP_REMEDIATION_PLAN.md`
+
+Implements `docs/dexfg/SWAP_REMEDIATION_PLAN.md` Phase 0 (tasks 0.1-0.5; 0.6 is in Fuego Valise).
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 0.1 | Drop the explicit `CryptoNote::` qualifiers on `isHeatwaveTag` / `carriesHeatwaveTag` (defined inside `namespace CryptoNote`; no semantic change) | Claude Code | 2026-11-07 | DONE; GCC 13 full build passes |
+| 0.2 | `test_price_policy.cpp:497`: element type `int64_t{-1}` instead of `-1LL` | Claude Code | 2026-11-07 | DONE; Clang 18 full build passes |
+| 0.3 | Register every test daemon with CTest regardless of `BUILD_TESTS`; label `test_price_status`, `test_sol_e2e`, `test_xmr_live_e2e` (live network) `manual`; CI runs `ctest -LE manual` | Claude Code | 2026-11-07 | DONE |
+| 0.4 | Clang 18 Linux CI job with the same build and test steps | Claude Code | 2026-11-07 | DONE |
+| 0.5 | 51 Mintlify broken links: source-path links become code spans with repo paths; two sibling links get correct relative paths | Claude Code | 2026-11-07 | DONE; `mint broken-links` reports none |
+| — | Plan amended to 1.1 with findings F22-F29 and tasks 1.0, 1.10 | Claude Code | 2026-11-07 | DONE |
+
+Found, not changed (outside scope):
+- F29: `test_orderbook_auction` fails on both compilers. `runAuction` floors the v11 CD
+  share per taker fill, so a 2+3 HEAT fee split pays CD holders 0 at v11 (code comment
+  claims cumulative floors). This is consensus code (`OrderbookAuction.cpp`, called from
+  `Blockchain.cpp`); changing it changes v11 settlement and needs an owner decision.
+
+### Sign-off
+
+| Gate | Status | Signed | Date |
+|------|--------|--------|------|
+| Full build, GCC 13.3, Boost 1.83, Ninja (439 steps) | PASS | Claude Code | 2026-11-07 |
+| Full build, Clang 18 | PASS | Claude Code | 2026-11-07 |
+| `ctest -LE manual` (44 tests, both compilers) | 43 PASS, 1 FAIL (`test_orderbook_auction`, F29, pre-existing) | Claude Code | 2026-11-07 |
+| `mint broken-links` | PASS | Claude Code | 2026-11-07 |
+| `mint validate` | NOT RUN — needs internet; CI runs it | — | — |
+| `tests/docs/test_docs_fee_routing_alignment.py` | PASS, 7/7 | Claude Code | 2026-11-07 |
+| MSVC (Windows CI) | NOT RUN locally | — | — |
+
+## DeXFG: operator template and docs for the 17 generic-adapter EVM pairs (ids 29-45)
+
+**Started**: 2026-11-06
+**Agent**: Claude Code
+**Status**: DONE — contract deployment and the PEAQ feed id are out of scope (see tasks 4-5)
+**Scope**: `swap_config.example.json`, `src/SwapDaemon/tests/test_spv_config_wiring.cpp`, `docs/dexfg/DEXFG_SWAP_CHAINS.md`
+
+The daemon already executes LINEA … SEI through `evm_chains` (generic `EthChainClient`),
+and the relay admits ids 29-45. What was missing was operator-facing: the example config
+had no `evm_chains` block, which is the only config path for these pairs. Fuego Valise is
+promoted in the same change set (its `chains.yaml` 17 chains → `tier: swap`).
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Add an `evm_chains` block for all 17 ADAPTER pairs to `swap_config.example.json` (catalog chain ids, public RPCs, signer/registry fields documented) | Claude Code | 2026-11-06 | DONE; entries parse as read-only clients that report "signer is not configured" until completed |
+| 2 | `test_example_evm_chains_cover_every_adapter_pair`: load the example's block through `loadChainClientConfig` and require exactly the catalog's ADAPTER EVM pairs | Claude Code | 2026-11-06 | DONE; negative control (peaq entry removed) fails with the drift message |
+| 3 | `docs/dexfg/DEXFG_SWAP_CHAINS.md`: all 46 ids with the four gates (STAGED, relay, client readiness, live quote); 31 pass once configured | Claude Code | 2026-11-06 | DONE; table generated from `SwapPairCatalog.h` |
+| 4 | Verified PEAQ feed id in `AssetCatalog.cpp` | — | — | TODO; `coingecko:peaq-2` untested; DeFiLlama and CoinGecko unreachable from this session |
+| 5 | Deploy `HashedTimelock` on each of the 17 chains | — | — | TODO (out of scope) |
+
+Found, not changed (outside scope):
+- GCC rejects `src/CryptoNoteCore/Blockchain.cpp:150,173` (`bool CryptoNote::isHeatwaveTag` /
+  `carriesHeatwaveTag` defined inside `namespace CryptoNote` with an explicit qualifier). Clang
+  accepts it. Every Linux GCC build of this tree fails there.
+- Clang on Linux rejects `src/SwapDaemon/tests/test_price_policy.cpp:497` (initializer list
+  deduces `long long` vs `long`).
+- The example's flat EVM fields (`eth_host`, `eth_wif`, `rh_host`, …) are names
+  `ChainClientConfig.cpp` never reads.
+
+### Sign-off
+
+| Gate | Status | Signed | Date |
+|------|--------|--------|------|
+| `test_swap_pair_catalog` | PASS (Clang 18, Boost 1.83) | Claude Code | 2026-11-06 |
+| `test_spv_config_wiring` | PASS, 14/14 (Clang 18); new TU also compiles under GCC 13 | Claude Code | 2026-11-06 |
+| Full `make -j$(nproc)` | NOT RUN — blocked by the pre-existing GCC error above | — | — |
+| All tasks DONE | NO — tasks 4, 5 open | — | — |
+
+## Audit fixes: epoch CD-yield mint priced at TWAP, AuntPoL HEAT-leg saturation, Hearth accumulator carry-forward
+
+**Started**: 2026-11-05
+**Agent**: Claude Opus 5
+**Status**: CODE DONE / BUILD NOT VERIFIED — Boost is not installed in the audit container, so `make -j$(nproc)` could not run. Build + test gates are open; see sign-off.
+**Scope**: `src/CryptoNoteCore/Blockchain.cpp` (3 hunks, 23+/7-)
+
+Audit of HEAT mints / XFG burns, Hearth operations, and AuntPoL funding paths. The
+mint path itself held up: `scanMintTx` bounds every author-controlled sum, the price
+multiply is 128-bit, the premium is guarded before the cap subtraction, and
+`TransactionInputCommitmentTransfer` is rejected as a burn source. AuntPoL pairing is
+ratio-only with excess carried forward, and the reorg path reverses both legs
+symmetrically. Three defects remained.
+
+1. **Epoch CD-yield mint was priced at live spot, not TWAP** (the one live bug).
+   `processBlockEpochWork` ran `ammGetSpotPrice(reserveXfg, reserveHeat)` to convert
+   the XFG-denominated `m_cdYieldPool` into minted HEAT. It is called from
+   `pushBlock` **after** every `pushTransaction` has settled, and epoch boundaries are
+   deterministic, so a swap placed in the epoch-closing block set the rate that priced
+   the mint — bounded by `HEARTH_MAX_BLOCK_PRICE_MOVE_PCT` (2×) but repeatable every
+   epoch, minting unbacked HEAT into `CD_APY_POOL`. This is the same hazard already
+   closed for mints (`validateSettlement` is TWAP-only, no spot fallback) and for the
+   swap CD share (`swapCdShare`); this call site was missed. Now `twapBefore(height)`,
+   which also excludes the current block, so replay is deterministic. The
+   `isEmpty`/reserve guards existed only to make the spot well-defined and are
+   replaced by a bare scope — `poolRate > 0` remains the gate that defers to the next
+   epoch.
+2. **AuntPoL HEAT leg incremented without a bound.** `m_treasuryHeatReserve +=
+   premiumHeat` was a bare `+=` while every sibling counter in the same block
+   saturates explicitly. Workstream 3 task 11 added the real guard in
+   `validateSettlement`, which does gate the mint connect path — so this was
+   defence-in-depth, not a live wrap — but the invariant sat in another function for
+   another purpose. Now saturating, like its siblings.
+3. **Hearth CD accumulator was dropped when its mint was skipped.**
+   `cdHearthFeeAccumulator = 0` ran even when the `m_heatSupply` guard skipped the
+   mint, destroying the accrued fee. Moved inside the success branch, matching the
+   AuntPoL counters that carry unpaired excess forward. Unreachable at current supply
+   bounds; corrected because it silently destroys value.
+
+Two findings were deliberately **not** changed. The connect/disconnect saturation
+asymmetry (connect saturates to `UINT64_MAX`, pop does a saturating subtract) and the
+128-bit headroom in `ammGetOutputAmount`'s triple product are both unreachable at the
+8M8 supply cap — roughly four orders of magnitude of margin — and altering consensus
+arithmetic for an unreachable branch adds split risk without benefit.
+
+### Workstream 1 — audit fixes
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Price the epoch CD-yield conversion with `twapBefore(height)` instead of `ammGetSpotPrice`; drop the reserve guards that only served the spot call | Claude Opus 5 | 2026-11-05 | DONE |
+| 2 | Saturate `m_treasuryHeatReserve += premiumHeat` at connect | Claude Opus 5 | 2026-11-05 | DONE |
+| 3 | Zero `cdHearthFeeAccumulator` only when the CD-yield mint lands | Claude Opus 5 | 2026-11-05 | DONE |
+| 4 | Add a regression test: epoch CD mint unchanged by a spot-moving swap in the closing block | — | — | TODO |
+| 5 | `make -j$(nproc)` on a host with Boost 1.86+ | — | — | TODO |
+
+### Sign-off
+
+| Gate | Status | Signed | Date |
+|------|--------|--------|------|
+| All tasks DONE | NO — tasks 4, 5 open | — | — |
+| Build compiles | NOT VERIFIED — no Boost in audit container | — | — |
+| Tests pass | NOT RUN | — | — |
+| Brace/paren balance + hunk placement reviewed | YES | Claude Opus 5 | 2026-11-05 |
+
 ## AppImage bundles non-system shared libraries and smoke-tests in clean Ubuntu
 
 **Started**: 2026-11-10
@@ -6786,4 +7216,25 @@ Sign-off table:
 | Build compiles | DONE — `make -j8` full build rc=0 |
 | Tests pass | DONE — core_tests 657/657; test_hearth_amm 45/45; test_orderbook 44/44; test_orderbook_auction 62/63 (the pre-existing `cdV11 > 0 && rebV11 > 0 ...` fee-split failure, unchanged) |
 | Mutation checks | DONE — each of: Hearth-state check, re-mint record on push, unrecord on pop, coinbase re-mint check, spot depth, dev-fund prefix, key wipe, when broken, fails a test |
+| All tasks done | DONE |
+
+## Merge master into PR #79 (F29 and swap work)
+
+**Feature name**: resolve PR #79 conflicts with master (`fe8a84f6`)
+**Agent**: Claude
+**Start date**: 2026-11-12
+**Consensus impact**: none beyond the two branches' own changes; the resolution keeps both.
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `processBlockEpochWork` CD yield conversion: master moved it off the live spot onto `twapBefore(height)`; this branch had replaced `twapBefore` with the mint oracle. Kept master's shape (no live spot, no pool-state guard) priced at `epochRate` = `hearthOraclePriceBefore(height)` | Claude | 2026-11-12 | DONE |
+| 2 | Master zeroes `cdHearthFeeAccumulator` only when the epoch mint lands; `m_cdFeeHeatFromXfg` now resets in the same branch, so both carry forward together when the supply guard skips the mint | Claude | 2026-11-12 | DONE |
+| 3 | Docs: master's "two streams today, not a closed list" wording kept with this branch's CD fee facts (`how-swaps-work.mdx`, `supported-pairs.mdx`); AGENTS.md hard rule no longer calls the CD fee a dev-fund payment; `interest-and-yield.mdx` CD fee corrected; stale `twapBefore` comment in `accumulateTwap` | Claude | 2026-11-12 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — CMake regenerated for master's new sources and cargo library; `make -j8` full build rc=0 |
+| Tests pass | DONE — core_tests 657/657; test_hearth_amm 45/45; test_orderbook 44/44; test_orderbook_auction 66/66 (master's F29 fix clears the fee-split failure that was failing before this PR); test_cross_dleq, test_cross_dleq_inhouse, test_adaptor_roundtrip pass |
 | All tasks done | DONE |

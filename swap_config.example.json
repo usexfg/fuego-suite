@@ -2,7 +2,7 @@
   // ── Swap Daemon Chain Config ───────────────────────────────────────────────
   //
   // Each chain can run in one of several modes:
-  //   SPV mode (BTC/LTC/KMD/BCH): light client, no full node needed.
+  //   SPV mode (BTC/LTC/BCH): light client for Bob's side of a swap.
   //   RPC mode (ETH/ARB/BASE/BSC/SOL): connect to any JSON-RPC endpoint.
   //
   // Generate a complete SPV config with fresh keys:
@@ -10,7 +10,7 @@
   //
   // ── SPV Setup Summary ──
   // 1. Generate keys:    xfg-swapd --generate-spv-config > my-config.json
-  // 2. Edit servers:     Replace the placeholder Electrum server addresses
+  // 2. Check servers:    Three Electrum servers per chain, different operators
   // 3. Fund addresses:   Send each chain's native token to the P2PKH address
   //                      shown in comments. The daemon needs funds for fees.
   // 4. Add XFG key:      Run `fire_wallet gen_swap_key` and paste the printed
@@ -25,53 +25,81 @@
   // 4. No full node required — uses public infrastructure.
 
   // ── BTC ──
-  // RPC mode (requires bitcoind with -txindex and a funded wallet):
-  //   "btc_host": "127.0.0.1",
-  //   "btc_port": 8332,
+  // Full-node mode (required for Alice, who funds the lock): bitcoind with a
+  // loaded wallet that holds private keys. -txindex is not required; the lock
+  // is checked with gettxout and claims are found by scanning blocks.
+  //   "btc_rpc_host": "127.0.0.1",
+  //   "btc_rpc_port": 8332,
   //   "btc_rpc_user": "your_rpc_user",
   //   "btc_rpc_pass": "your_rpc_pass",
+  //   "btc_network": "main",          // main | test | signet | regtest
+  //   "btc_wif": "<compressed-key WIF for the same network>",
   //
-  // SPV mode (light client, no full node needed):
+  // SPV mode (Bob only: verifies Alice's lock and claims it; cannot fund one).
+  // New swaps need three servers from different operators, a quorum of at
+  // least 2 and a checkpoint; header rules exist for main and regtest. More
+  // than half of the listed servers must agree even when the quorum is lower.
+  // Server list: https://raw.githubusercontent.com/spesmilo/electrum/master/electrum/chains/mainnet/servers.json
+  // Checkpoint: Bitcoin Core 28.1's assume-valid block; any later block you
+  // have verified shortens the first header sync.
   "btc_mode": "spv",
   "btc_spv_server_0": "electrum.blockstream.info:50002",
-  "btc_spv_min_servers": 1,
-  "btc_spv_checkpoint_height": 800000,
-  "btc_spv_checkpoint_hash": "00000000000000000002a7c4c1e8d3c5d5e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b",
+  "btc_spv_server_1": "electrum.bitaroo.net:50002",
+  "btc_spv_server_2": "bitcoin.lu.ke:50002",
+  "btc_spv_min_servers": 2,
+  "btc_spv_checkpoint_height": 856760,
+  "btc_spv_checkpoint_hash": "000000000000000000011c5890365bdbe5d25b97ce0057589acaef4f1a57263f",
   "btc_wif": "replace_with_your_btc_wif",  // P2PKH address: 1... (send BTC here)
 
-  // ── LTC ──
-  // "ltc_host": "127.0.0.1",
-  // "ltc_port": 9332,
+  // ── LTC ──  (full node: ltc_rpc_host, ltc_rpc_port, ltc_rpc_user, ltc_rpc_pass, ltc_network)
+  // "ltc_rpc_host": "127.0.0.1",
+  // "ltc_rpc_port": 9332,
+  // Server list: https://raw.githubusercontent.com/pooler/electrum-ltc/master/electrum_ltc/servers.json
+  // Checkpoint: Litecoin Core 0.21.4's assume-valid block.
   "ltc_mode": "spv",
-  "ltc_spv_server_0": "ltc.merkle.io:50002",
-  "ltc_spv_min_servers": 1,
+  "ltc_spv_server_0": "electrum-ltc.bysh.me:50002",
+  "ltc_spv_server_1": "electrum.ltc.xurious.com:50002",
+  "ltc_spv_server_2": "backup.electrum-ltc.org:443",
+  "ltc_spv_min_servers": 2,
+  "ltc_spv_checkpoint_height": 2772730,
+  "ltc_spv_checkpoint_hash": "80cdb35c080484df5bf384b311fde3c4694d3405765bc0f596e9eb369ff286e5",
   "ltc_wif": "replace_with_your_ltc_wif",  // P2PKH address: L... (send LTC here)
 
-  // ── KMD ──
+  // ── KMD ──  No SPV header validator (Equihash); KMD swaps are refused in both
+  // modes until the full-node path passes an end-to-end gate.
   // "kmd_host": "127.0.0.1",
   // "kmd_port": 7771,
-  "kmd_mode": "spv",
-  "kmd_spv_server_0": "electrum1.cipig.net:10001",
-  "kmd_spv_min_servers": 1,
-  "kmd_wif": "replace_with_your_kmd_wif",  // P2PKH address: R... (send KMD here)
+  // "kmd_wif": "replace_with_your_kmd_wif",
 
-  // ── BCH ──
-  // "bch_host": "127.0.0.1",
-  // "bch_port": 8332,
+  // ── BCH ──  (full node: bch_rpc_host, bch_rpc_port, bch_rpc_user, bch_rpc_pass, bch_network)
+  // "bch_rpc_host": "127.0.0.1",
+  // "bch_rpc_port": 8332,
+  // Server list: https://raw.githubusercontent.com/Electron-Cash/Electron-Cash/master/electroncash/servers.json
+  // Checkpoint: a BCHN 28.0.1 checkpoint; it must be at or above the ASERT anchor (661647).
   "bch_mode": "spv",
-  "bch_spv_server_0": "electroncash.org:50002",
-  "bch_spv_min_servers": 1,
+  "bch_spv_server_0": "bch.imaginary.cash:50002",
+  "bch_spv_server_1": "electroncash.dk:50002",
+  "bch_spv_server_2": "bch.loping.net:50002",
+  "bch_spv_min_servers": 2,
+  "bch_spv_checkpoint_height": 845891,
+  "bch_spv_checkpoint_hash": "0000000000000000017012058e7b67032926f1f20f96d1a2cd66abff9aaf8244",
   "bch_wif": "replace_with_your_bch_wif",  // P2PKH address: 1... (send BCH here)
 
-  // ── DCR ── (SPV is read-only; claim/refund needs RPC mode with dcrwallet)
+  // ── DCR ──  No SPV header validator (BLAKE-256) and SPV cannot broadcast; DCR
+  // swaps are refused in both modes until the full-node path is complete.
   // "dcr_host": "127.0.0.1",
   // "dcr_port": 9108,
   // "dcr_rpc_user": "your_rpc_user",
   // "dcr_rpc_pass": "your_rpc_pass",
-  "dcr_mode": "spv",
-  "dcr_spv_server_0": "localhost:19100",
-  "dcr_spv_min_servers": 1,
-  "dcr_wif": "replace_with_your_dcr_wif",  // P2PKH address: D... (send DCR here)
+  // "dcr_wif": "replace_with_your_dcr_wif",
+
+  // ── Keys at rest (recommended) ────────────────────────────────────────────
+  // Any key below can live in an encrypted keystore instead of this file:
+  //   XFG_SWAPD_KEYSTORE_PASSPHRASE='<12+ chars>' xfg-swapd --keystore-put keys.json xfg < key.txt
+  // then write "xfg_secret_key": "keystore:xfg" here and add:
+  //   "keystore": "keys.json",
+  // xfg-swapd reads the passphrase from XFG_SWAPD_KEYSTORE_PASSPHRASE or the
+  // file named by XFG_SWAPD_KEYSTORE_PASSPHRASE_FILE (scrypt + AES-256-GCM).
 
   // ── XFG (Fuego) ─────────────────────────────────────────────────────────────
   // The XFG keypair the swap daemon signs offers and XFG swap outputs with.
@@ -83,76 +111,56 @@
   // later makes existing swap state unreadable. Back it up.
   "xfg_secret_key": "<your_xfg_secret_key_64_hex_chars>",
 
-  // ── EVM Chains (Light Client — no full node required) ─────────────────────
-  // Connect to public RPC endpoints. No credentials needed for public endpoints.
-  // Point to your own node for higher throughput or private transactions.
-  //
-  // ETH — Ethereum Mainnet (chain ID 1)
-  "eth_mode": "rpc",
-  "eth_host": "eth.llamarpc.com",           // Free public RPC
-  "eth_port": 443,
-  "eth_wif": "<64_hex_private_key>",
-  //
-  // ARB — Arbitrum One (chain ID 42161)
-  "arb_mode": "rpc",
-  "arb_host": "arb1.arbitrum.io",
-  "arb_port": 443,
-  "arb_wif": "<64_hex_private_key>",
-  //
-  // BASE — Base L2 (chain ID 8453)
-  "base_mode": "rpc",
-  "base_host": "mainnet.base.org",
-  "base_port": 443,
-  "base_wif": "<64_hex_private_key>",
-  //
-  // BSC — BNB Smart Chain (chain ID 56)
-  "bsc_mode": "rpc",
-  "bsc_host": "bsc-dataseed.binance.org",
-  "bsc_port": 443,
-  "bsc_wif": "<64_hex_private_key>",
+  // ── EVM chains ────────────────────────────────────────────────────────────
+  // evm_chains is the only EVM config path; the flat eth_*/arb_*/... fields are
+  // retired and refused by the loader. Keys are SwapPairCatalog config keys.
+  // As shipped, each entry is a read-only client and reports not ready. To
+  // lock funds, add to that entry:
+  //   "private_key":   "<64_hex_private_key>",       // funded signer
+  //   "address":       "<0x signer address>",        // set together with the key
+  //   "htlc_registry": "<0x HashedTimelock on THIS chain>"   // optional, see below
+  //   "ptlc_registry": "<0x PointTimelock on THIS chain>"    // optional
+  // Without htlc_registry the canonical CREATE2 address applies (print it and its
+  // deployment calldata with `xfg-swapd --print-htlc-deployment <HashedTimelock .bin>`);
+  // readiness requires that address to hold exactly the committed HashedTimelock
+  // runtime code. zkSync Era and Abstract (EraVM) need an explicit htlc_registry and
+  // htlc_registry_code_hash. chain_id must equal the catalog value on mainnet.
+  // GLEEC (gleec, 11169) and Robinhood Chain (rh, 4663) have no endpoint here: add
+  // one you operate or trust. PEAQ parses, but new PEAQ swaps are refused: no
+  // verified price feed. Delete unused entries.
+  "evm_chains": {
+    "eth":       { "rpc_url": "https://eth.llamarpc.com", "chain_id": 1 },
+    "arb":       { "rpc_url": "https://arb1.arbitrum.io/rpc", "chain_id": 42161 },
+    "base":      { "rpc_url": "https://mainnet.base.org", "chain_id": 8453 },
+    "bsc":       { "rpc_url": "https://bsc-dataseed.binance.org", "chain_id": 56 },
+    "poly":      { "rpc_url": "https://polygon-rpc.com", "chain_id": 137 },
+    "avax":      { "rpc_url": "https://api.avax.network/ext/bc/C/rpc", "chain_id": 43114 },
+    "cro":       { "rpc_url": "https://evm.cronos.org", "chain_id": 25 },
+    "bob":       { "rpc_url": "https://rpc.gobob.xyz", "chain_id": 60808 },
+    "uni":       { "rpc_url": "https://mainnet.unichain.org", "chain_id": 130 },
+    "xpl":       { "rpc_url": "https://rpc.plasma.to", "chain_id": 9745 },
+    "pls":       { "rpc_url": "https://rpc.pulsechain.com", "chain_id": 369 },
+    "monad":     { "rpc_url": "https://rpc.monad.xyz", "chain_id": 143 },
+    "op":        { "rpc_url": "https://mainnet.optimism.io", "chain_id": 10 },
+    "linea":     { "rpc_url": "https://rpc.linea.build", "chain_id": 59144 },
+    "zksync":    { "rpc_url": "https://mainnet.era.zksync.io", "chain_id": 324 },
+    "hyperevm":  { "rpc_url": "https://rpc.hyperliquid.xyz/evm", "chain_id": 999 },
+    "ink":       { "rpc_url": "https://rpc-gel.inkonchain.com", "chain_id": 57073 },
+    "rsk":       { "rpc_url": "https://public-node.rsk.co", "chain_id": 30 },
+    "gnosis":    { "rpc_url": "https://rpc.gnosischain.com", "chain_id": 100 },
+    "flare":     { "rpc_url": "https://flare-api.flare.network/ext/C-rpc", "chain_id": 14 },
+    "kaia":      { "rpc_url": "https://public-en.node.kaia.io", "chain_id": 8217 },
+    "scroll":    { "rpc_url": "https://rpc.scroll.io", "chain_id": 534352 },
+    "abstract":  { "rpc_url": "https://rpc.abstract.xyz", "chain_id": 2741 },
+    "plume":     { "rpc_url": "https://rpc.plume.org", "chain_id": 98866 },
+    "soneium":   { "rpc_url": "https://rpc.soneium.org", "chain_id": 1868 },
+    "doma":      { "rpc_url": "https://rpc.doma.xyz", "chain_id": 97477 },
+    "beam":      { "rpc_url": "https://build.onbeam.com/rpc", "chain_id": 4337 },
+    "moonriver": { "rpc_url": "https://rpc.api.moonriver.moonbeam.network", "chain_id": 1285 },
+    "peaq":      { "rpc_url": "https://peaq.api.onfinality.io/public", "chain_id": 3338 },
+    "sei":       { "rpc_url": "https://evm-rpc.sei-apis.com", "chain_id": 1329 }
+  },
 
-  // POLYGON — Polygon PoS (chain ID 137)
-  "poly_mode": "rpc",
-  "poly_host": "polygon-rpc.com",
-  "poly_port": 443,
-  "poly_wif": "<64_hex_private_key>",
-
-  // ROBINHOOD — Robinhood Chain L2 (chain ID 4663)
-  "rh_host": "rpc.robinhood.vercel.app",
-  "rh_port": 443,
-  "rh_priv_key": "<64_hex_private_key>",
-  // AVAX — Avalanche C-Chain (chain ID 43114)
-  "avax_host": "api.avax.network",
-  "avax_port": 443,
-  "avax_priv_key": "<64_hex_private_key>",
-  // CRO — Crypto.com (chain ID 25)
-  "cro_host": "evm.cronos.org",
-  "cro_port": 443,
-  "cro_priv_key": "<64_hex_private_key>",
-  // BOB — Bob BTC rollup (chain ID 60808)
-  "bob_host": "rpc.gobob.xyz",
-  "bob_port": 443,
-  "bob_priv_key": "<64_hex_private_key>",
-  // UNICHAIN — Unichain (chain ID 130)
-  "uni_host": "mainnet.unichain.org",
-  "uni_port": 443,
-  "uni_priv_key": "<64_hex_private_key>",
-  // PLASMA — Plasma (chain ID 9745)
-  "plasma_host": "rpc.plasma.to",
-  "plasma_port": 443,
-  "plasma_priv_key": "<64_hex_private_key>",
-  // PULSECHAIN — PulseChain native PLS (chain ID 369)
-  "pulsechain_rpc_host": "rpc.pulsechain.com",
-  "pulsechain_rpc_port": 443,
-  "pulsechain_priv_key": "<64_hex_private_key>",
-  // MONAD — Monad (chain ID 143)
-  "monad_host": "rpc.monad.xyz",
-  "monad_port": 443,
-  "monad_priv_key": "<64_hex_private_key>",
-  // OPTIMISM — Optimism L2 (chain ID 10)
-  "op_host": "mainnet.optimism.io",
-  "op_port": 443,
-  "op_priv_key": "<64_hex_private_key>",
   // DOGE — Dogecoin (port 22556)
   "doge_host": "127.0.0.1",
   "doge_port": 22556,
@@ -182,6 +190,14 @@
   "dot_host": "rpc.polkadot.io",
   "dot_port": 443,
   "dot_address": "<ss58_address>",
+
+  // ── Price corroboration (optional) ────────────────────────────────────────
+  // DeFiLlama and CoinGecko both resolve CoinGecko ids, so they are not
+  // independent. Configure an EVM RPC and the Pyth price contract on that chain
+  // to make Pyth the corroborating source instead of CoinGecko. All or none:
+  //   "pyth_rpc_url":  "<https RPC of a chain where Pyth is deployed>",
+  //   "pyth_contract": "<0x Pyth contract address on that chain>",
+  //   "pyth_chain_id": <chain id>,
 
   // ── SOL (Solana — Light Client) ───────────────────────────────────────────
   // Connect to any Solana JSON-RPC endpoint. Public endpoints are free.

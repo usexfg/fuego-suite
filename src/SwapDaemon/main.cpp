@@ -20,6 +20,9 @@
 #include "Crypto/Secp256k1Signer.h"
 #include "SwapDaemon/Komodo/KmdHtlcScript.h"
 #include "SwapDaemon/Decred/DcrHtlcScript.h"
+#include "SwapDaemon/Ethereum/EthRpcClient.h"
+#include "SwapDaemon/SwapKeystore.h"
+#include "crypto/hash.h"
 #include <optional>
 #include <random>
 #include <array>
@@ -53,6 +56,80 @@ const uint16_t DEFAULT_MAINNET_PORT = 18180;
 const uint16_t DEFAULT_TESTNET_PORT = 28280;
 const char* DEFAULT_HOST = "127.0.0.1";
 
+static bool putKeystoreSecret(const std::string& file, const std::string& name) {
+  std::string passphrase, error;
+  if (!XfgSwap::keystorePassphraseFromEnvironment(passphrase, error)) {
+    std::cerr << "Error: " << error << std::endl;
+    return false;
+  }
+  XfgSwap::KeystoreSecrets secrets;
+  std::ifstream existing(file);
+  if (existing.good() && !XfgSwap::loadKeystore(file, passphrase, secrets, error)) {
+    std::cerr << "Error: " << error << std::endl;
+    return false;
+  }
+  std::string secret;
+  if (!std::getline(std::cin, secret) || secret.empty()) {
+    std::cerr << "Error: no secret on stdin" << std::endl;
+    return false;
+  }
+  secrets[name] = secret;
+  if (!XfgSwap::saveKeystore(file, passphrase, secrets, error)) {
+    std::cerr << "Error: " << error << std::endl;
+    return false;
+  }
+  std::cout << "Stored '" << name << "' in " << file << std::endl;
+  return true;
+}
+
+static bool listKeystore(const std::string& file) {
+  std::string passphrase, error;
+  XfgSwap::KeystoreSecrets secrets;
+  if (!XfgSwap::keystorePassphraseFromEnvironment(passphrase, error) ||
+      !XfgSwap::loadKeystore(file, passphrase, secrets, error)) {
+    std::cerr << "Error: " << error << std::endl;
+    return false;
+  }
+  for (const auto& entry : secrets) std::cout << entry.first << std::endl;
+  return true;
+}
+
+// Deterministic HashedTimelock deployment (remediation R4): the transaction an
+// operator sends to the CREATE2 proxy, and the address readiness will expect.
+static std::string canonicalContractAt(const std::string& address) {
+  if (address == XfgSwap::CANONICAL_HTLC_REGISTRY_ADDRESS) return "HashedTimelock";
+  if (address == XfgSwap::CANONICAL_PTLC_REGISTRY_ADDRESS) return "PointTimelock";
+  return "none";
+}
+
+static bool printHtlcDeployment(const std::string& binPath) {
+  std::ifstream in(binPath);
+  std::stringstream buffer;
+  buffer << in.rdbuf();
+  std::string initHex = buffer.str();
+  while (!initHex.empty() && std::isspace(static_cast<unsigned char>(initHex.back()))) initHex.pop_back();
+  if (initHex.compare(0, 2, "0x") == 0) initHex = initHex.substr(2);
+  std::vector<uint8_t> initCode;
+  if (initHex.empty() || !Common::fromHex(initHex, initCode)) {
+    std::cerr << "Error: " << binPath << " is not hex init code" << std::endl;
+    return false;
+  }
+  const std::vector<uint8_t> salt(32, 0);
+  Crypto::Hash initCodeHash;
+  Crypto::cn_fast_hash(initCode.data(), initCode.size(), initCodeHash);
+  const std::string address =
+      XfgSwap::create2Address(XfgSwap::DETERMINISTIC_DEPLOYMENT_PROXY, salt, initCode);
+  std::cout << "{\n"
+            << "  \"to\": \"" << XfgSwap::DETERMINISTIC_DEPLOYMENT_PROXY << "\",\n"
+            << "  \"salt\": \"0x" << std::string(64, '0') << "\",\n"
+            << "  \"init_code_keccak\": \"0x" << Common::podToHex(initCodeHash) << "\",\n"
+            << "  \"address\": \"" << address << "\",\n"
+            << "  \"canonical\": \"" << canonicalContractAt(address) << "\",\n"
+            << "  \"data\": \"0x" << std::string(64, '0') << initHex << "\"\n"
+            << "}" << std::endl;
+  return true;
+}
+
 void printUsage() {
   std::cout <<
     "Usage: xfg-swapd [options] <command> [args...]\n"
@@ -84,6 +161,13 @@ void printUsage() {
     "  --public-endpoint <h:p> Publicly reachable swap endpoint advertised to takers\n"
     "  --testnet               Use testnet ports (fuegod: 28280)\n"
     "  --generate-spv-config   Generate SPV config template with fresh keys and addresses\n"
+    "  --print-htlc-deployment <bin>  Print the CREATE2 deployment of a HashedTimelock or PointTimelock .bin\n"
+    "  --keystore-put <file> <name>   Store the secret read from stdin under <name> in an\n"
+    "                           encrypted keystore (passphrase: XFG_SWAPD_KEYSTORE_PASSPHRASE\n"
+    "                           or XFG_SWAPD_KEYSTORE_PASSPHRASE_FILE); reference it in the\n"
+    "                           config as \"keystore:<name>\" with \"keystore\": \"<file>\"\n"
+    "  --keystore-list <file>   List the names in an encrypted keystore\n"
+    "                           (proxy, salt, init-code hash, address, calldata)\n"
     "  --help                  Show this help message\n"
     "\n"
     "Amounts are in atomic units (1 XFG = 10,000,000 atomic)\n"
@@ -216,14 +300,16 @@ static void generateSpvConfig() {
     return XfgSwap::KmdHtlcScript::base58CheckEncode(p2pkhVersion, hash);
   };
 
+  // Compressed-key WIF (0x01 suffix): the address above and every HTLC script
+  // commit to the compressed public key.
   auto privKeyToWif = [&](const std::array<uint8_t, 32>& privKey, uint8_t wifVersion) {
     std::vector<uint8_t> privKeyVec(privKey.begin(), privKey.end());
+    privKeyVec.push_back(0x01);
     return XfgSwap::KmdHtlcScript::base58CheckEncode(wifVersion, privKeyVec);
   };
 
   auto btcKey = genPrivKey();
   auto ltcKey = genPrivKey();
-  auto kmdKey = genPrivKey();
   auto bchKey = genPrivKey();
 
   auto btcWif = privKeyToWif(btcKey, 0x80);
@@ -232,80 +318,66 @@ static void generateSpvConfig() {
   auto ltcWif = privKeyToWif(ltcKey, 0xB0);
   auto ltcAddr = pubkeyToAddress(ltcKey, 0x30);
 
-  auto kmdWif = privKeyToWif(kmdKey, 0xBC);
-  auto kmdAddr = pubkeyToAddress(kmdKey, 0x3C);
-
   auto bchWif = privKeyToWif(bchKey, 0x80);
   auto bchAddr = pubkeyToAddress(bchKey, 0x00);
-
-  // DCR uses hex-encoded private key (not Base58Check WIF) — version prefix + 32 bytes key + compress flag
-  auto dcrKey = genPrivKey();
-  auto dcrPubKey = signer.derivePublicKeyCompressed(dcrKey);
-  auto dcrPubKeyHash = XfgSwap::KmdHtlcScript::hash160(dcrPubKey);
-  auto dcrAddr = XfgSwap::DcrHtlcScript::pubkeyHashToAddress(dcrPubKeyHash, false);
-  std::vector<uint8_t> dcrWifBytes;
-  dcrWifBytes.push_back(0x22);
-  dcrWifBytes.insert(dcrWifBytes.end(), dcrKey.begin(), dcrKey.end());
-  dcrWifBytes.push_back(0x01);
-  auto dcrWif = XfgSwap::KmdHtlcScript::bytesToHex(dcrWifBytes);
 
   std::string nl = "\n";
   std::string tab = "  ";
 
   std::cout << R"({)" << nl
     << tab << R"(// ── SPV Configuration — Auto-generated by `xfg-swapd --generate-spv-config` ──)" << nl
-    << tab << R"(// 1. Replace each `*_spv_server_0` with a working Electrum server for your region.)" << nl
-    << tab << R"(// 2. Keep each `*_wif` as-is — these are freshly generated private keys.)" << nl
-    << tab << R"(// 3. Fund each P2PKH address with the chain's native tokens so the daemon can)" << nl
-    << tab << R"(//    claim HTLCs and receive refunds.)" << nl
+    << tab << R"(// SPV serves Bob only: it verifies Alice's lock and claims it. Alice, who)" << nl
+    << tab << R"(// funds the lock, needs a full node (*_rpc_host). KMD and DCR have no SPV)" << nl
+    << tab << R"(// header validator and are not generated here.)" << nl
+    << tab << R"(// 1. Keep at least three servers per chain, run by different operators, and)" << nl
+    << tab << R"(//    a quorum (spv_min_servers) of at least 2; more than half of the listed)" << nl
+    << tab << R"(//    servers must agree even when the quorum is lower. Server lists:)" << nl
+    << tab << R"(//      BTC https://raw.githubusercontent.com/spesmilo/electrum/master/electrum/chains/mainnet/servers.json)" << nl
+    << tab << R"(//      LTC https://raw.githubusercontent.com/pooler/electrum-ltc/master/electrum_ltc/servers.json)" << nl
+    << tab << R"(//      BCH https://raw.githubusercontent.com/Electron-Cash/Electron-Cash/master/electroncash/servers.json)" << nl
+    << tab << R"(// 2. The checkpoints are Bitcoin Core 28.1's and Litecoin Core 0.21.4's)" << nl
+    << tab << R"(//    assume-valid blocks and a BCHN 28.0.1 checkpoint; a more recent block)" << nl
+    << tab << R"(//    you have verified shortens the first header sync.)" << nl
+    << tab << R"(// 3. Keep each `*_wif` as-is — these are freshly generated private keys.)" << nl
+    << tab << R"(//    Fund each P2PKH address so claims can pay their fees.)" << nl
     << tab << R"(// 4. Set `xfg_secret_key`: run `fire_wallet gen_swap_key` and paste the result.)" << nl
-    << tab << R"(//)" << nl
-    << tab << R"(// Find public Electrum servers: https://github.com/cipig/electrum-servers)" << nl
-    << tab << R"(// Find public Neutrino servers: https://github.com/dcrlabs/neutrino-servers)" << nl
     << nl
     << tab << R"(// ── BTC ──)" << nl
     << tab << R"("btc_mode": "spv",)" << nl
     << tab << R"("btc_spv_server_0": "electrum.blockstream.info:50002",)" << nl
-    << tab << R"("btc_spv_min_servers": 1,)" << nl
-    << tab << R"("btc_spv_checkpoint_height": 800000,)" << nl
-    << tab << R"("btc_spv_checkpoint_hash": "00000000000000000002a7c4c1e8d3c5d5e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b",)" << nl
+    << tab << R"("btc_spv_server_1": "electrum.bitaroo.net:50002",)" << nl
+    << tab << R"("btc_spv_server_2": "bitcoin.lu.ke:50002",)" << nl
+    << tab << R"("btc_spv_min_servers": 2,)" << nl
+    << tab << R"("btc_spv_checkpoint_height": 856760,)" << nl
+    << tab << R"("btc_spv_checkpoint_hash": "000000000000000000011c5890365bdbe5d25b97ce0057589acaef4f1a57263f",)" << nl
     << tab << R"("btc_wif": ")" << btcWif << R"(",  // P2PKH address: )" << btcAddr << nl
     << nl
     << tab << R"(// ── LTC ──)" << nl
     << tab << R"("ltc_mode": "spv",)" << nl
-    << tab << R"("ltc_spv_server_0": "ltc.merkle.io:50002",)" << nl
-    << tab << R"("ltc_spv_min_servers": 1,)" << nl
+    << tab << R"("ltc_spv_server_0": "electrum-ltc.bysh.me:50002",)" << nl
+    << tab << R"("ltc_spv_server_1": "electrum.ltc.xurious.com:50002",)" << nl
+    << tab << R"("ltc_spv_server_2": "backup.electrum-ltc.org:443",)" << nl
+    << tab << R"("ltc_spv_min_servers": 2,)" << nl
+    << tab << R"("ltc_spv_checkpoint_height": 2772730,)" << nl
+    << tab << R"("ltc_spv_checkpoint_hash": "80cdb35c080484df5bf384b311fde3c4694d3405765bc0f596e9eb369ff286e5",)" << nl
     << tab << R"("ltc_wif": ")" << ltcWif << R"(",  // P2PKH address: )" << ltcAddr << nl
-    << nl
-    << tab << R"(// ── KMD ──)" << nl
-    << tab << R"("kmd_mode": "spv",)" << nl
-    << tab << R"("kmd_spv_server_0": "electrum1.cipig.net:10001",)" << nl
-    << tab << R"("kmd_spv_min_servers": 1,)" << nl
-    << tab << R"("kmd_wif": ")" << kmdWif << R"(",  // P2PKH address: )" << kmdAddr << nl
     << nl
     << tab << R"(// ── BCH ──)" << nl
     << tab << R"("bch_mode": "spv",)" << nl
-    << tab << R"("bch_spv_server_0": "electroncash.org:50002",)" << nl
-    << tab << R"("bch_spv_min_servers": 1,)" << nl
+    << tab << R"("bch_spv_server_0": "bch.imaginary.cash:50002",)" << nl
+    << tab << R"("bch_spv_server_1": "electroncash.dk:50002",)" << nl
+    << tab << R"("bch_spv_server_2": "bch.loping.net:50002",)" << nl
+    << tab << R"("bch_spv_min_servers": 2,)" << nl
+    << tab << R"("bch_spv_checkpoint_height": 845891,)" << nl
+    << tab << R"("bch_spv_checkpoint_hash": "0000000000000000017012058e7b67032926f1f20f96d1a2cd66abff9aaf8244",)" << nl
     << tab << R"("bch_wif": ")" << bchWif << R"(",  // P2PKH address: )" << bchAddr << nl
-    << nl
-    << tab << R"(// ── DCR ── (Neutrino SPV — read-only SPV; claim/refund needs RPC mode))" << nl
-    << tab << R"("dcr_mode": "spv",)" << nl
-    << tab << R"("dcr_spv_server_0": "localhost:19100",)" << nl
-    << tab << R"("dcr_spv_min_servers": 1,)" << nl
-    << tab << R"("dcr_wif": ")" << dcrWif << R"(",  // P2PKH address: )" << dcrAddr << nl
     << nl
     << tab << R"(// ── XFG ──)" << nl
     << tab << R"(// Run `fire_wallet gen_swap_key` and paste the printed secret key here.)" << nl
     << tab << R"("xfg_secret_key": "<your_xfg_secret_key>",)" << nl
     << nl
-    << tab << R"(// ── EVM chains (RPC-only, not SPV) ──)" << nl
-    << tab << R"(// These still need RPC endpoints:)" << nl
-    << tab << R"("eth_host": "",)" << nl
-    << tab << R"("bsc_host": "",)" << nl
-    << tab << R"("arb_host": "",)" << nl
-    << tab << R"("base_host": "",)" << nl
-    << tab << R"("poly_host": "")" << nl
+    << tab << R"(// ── EVM chains: one entry per catalog key (see swap_config.example.json) ──)" << nl
+    << tab << R"("evm_chains": {})" << nl
     << R"(})" << std::endl;
 }
 
@@ -432,6 +504,26 @@ int main(int argc, char* argv[]) {
     } else if (opt == "--generate-spv-config") {
       generateSpvConfig();
       return 0;
+    } else if (opt == "--keystore-put") {
+      if (argIdx + 2 >= argc) {
+        std::cerr << "Error: --keystore-put requires <file> <name>" << std::endl;
+        return 1;
+      }
+      const std::string file = argv[argIdx + 1];
+      const std::string name = argv[argIdx + 2];
+      return putKeystoreSecret(file, name) ? 0 : 1;
+    } else if (opt == "--keystore-list") {
+      if (++argIdx >= argc) {
+        std::cerr << "Error: --keystore-list requires <file>" << std::endl;
+        return 1;
+      }
+      return listKeystore(argv[argIdx]) ? 0 : 1;
+    } else if (opt == "--print-htlc-deployment") {
+      if (++argIdx >= argc) {
+        std::cerr << "Error: --print-htlc-deployment requires a .bin path" << std::endl;
+        return 1;
+      }
+      return printHtlcDeployment(argv[argIdx]) ? 0 : 1;
     } else {
       std::cerr << "Unknown option: " << opt << std::endl;
       printUsage();

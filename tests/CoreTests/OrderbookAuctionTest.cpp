@@ -346,6 +346,33 @@ void testFeeSplitFlipsAtV12() {
   TEST(cdV12 <= (cdV12 + rebV12) * 70 / 100 + 2);
 }
 
+void testCdShareSurvivesOneAtomFills() {
+  // F29: bids are the rationed (taker) side; ten fill 50 XFG at 2 HEAT, one
+  // fee atom each. Flooring the CD share per fill
+  // paid CD holders nothing at either version; flooring the running total pays
+  // them their percentage of the whole fee.
+  std::vector<AuctionOrder> bids;
+  for (uint8_t id = 1; id <= 11; ++id) bids.push_back(bid(id, 2 * P, 50, 10 + id, id));
+  std::vector<AuctionOrder> asks = { ask(20, 2 * P, 500, 40, 20) };
+
+  auto cdAndFee = [&](uint8_t version, uint64_t& cd, uint64_t& fee) {
+    AuctionResult r = runAuction(bids, asks, P, version);
+    cd = 0;
+    fee = 0;
+    for (const auto& f : r.fills) {
+      if (f.side != 0) continue;
+      cd += f.cdFeeHeat;
+      fee += f.cdFeeHeat + f.rebateHeat;
+    }
+  };
+  uint64_t cdV11 = 0, feeV11 = 0, cdV12 = 0, feeV12 = 0;
+  cdAndFee(BLOCK_MAJOR_VERSION_11, cdV11, feeV11);
+  cdAndFee(BLOCK_MAJOR_VERSION_12, cdV12, feeV12);
+  TEST(feeV11 == 10 && feeV12 == 10);
+  TEST(cdV11 == 3);
+  TEST(cdV12 == 7);
+}
+
 int main() {
   testNoCrossing();
   testBasicCrossingMaxVolume();
@@ -359,6 +386,7 @@ int main() {
   testFeeConservation();
   testFeeAskTakerAndTie();
   testFeeSplitFlipsAtV12();
+  testCdShareSurvivesOneAtomFills();
   testPrevPclearTieBreak();
   fprintf(stderr, "=== Auction Tests ===\nPassed: %d / %d\n", tests_passed, tests_run);
   return tests_passed == tests_run ? 0 : 1;

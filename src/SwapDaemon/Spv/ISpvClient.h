@@ -45,6 +45,19 @@ public:
   // txid: (output) the transaction ID on success.
   // Returns true on success.
   virtual bool broadcastTx(const std::vector<uint8_t>& rawTx, std::string& txid) = 0;
+
+  // Why this client may not be trusted to verify a counterparty lock for a
+  // new swap; empty when it may (remediation plan 2.4). Clients without a
+  // quorum and header-rule policy are never trusted.
+  virtual std::string newSwapTrustError() { return protocolName() + " client has no trust policy"; }
+
+  // Fee rates in base units per kilobyte: the relay minimum and a rate
+  // expected to confirm within two blocks. False when not reported.
+  virtual bool feeRatesPerKilobyte(uint64_t& relayFloor, uint64_t& nextBlocks) {
+    (void)relayFloor;
+    (void)nextBlocks;
+    return false;
+  }
 };
 
 } // namespace XfgSwap

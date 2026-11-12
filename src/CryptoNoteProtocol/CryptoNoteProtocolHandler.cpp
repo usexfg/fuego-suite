@@ -1250,10 +1250,18 @@ int CryptoNoteProtocolHandler::handle_swap_request(int command, COMMAND_SWAP_REQ
 }
 
 int CryptoNoteProtocolHandler::handle_swap_request_result(int command, COMMAND_SWAP_REQUEST_RESULT::request& arg, CryptoNoteConnectionContext& context) {
-  m_core.getSwapRelay().handleSwapRequestResult(arg.takerPubKey, arg.offerId, arg.lockId,
-                                                arg.makerEndpoint, arg.adaptorPoint,
-                                                arg.hashLock, arg.preSig, arg.ctrAddress,
-                                                arg.createdAt);
+  SwapRequestResult result;
+  result.offerId = arg.offerId;
+  result.lockId = arg.lockId;
+  result.makerEndpoint = arg.makerEndpoint;
+  result.adaptorPoint = arg.adaptorPoint;
+  result.hashLock = arg.hashLock;
+  result.preSig = arg.preSig;
+  result.ctrAddress = arg.ctrAddress;
+  result.ctrClaimPubKey = arg.ctrClaimPubKey;
+  result.createdAt = static_cast<time_t>(arg.createdAt);
+  result.makerSignature = arg.makerSignature;
+  m_core.getSwapRelay().handleSwapRequestResult(arg.takerPubKey, result);
   return 1;
 }
 

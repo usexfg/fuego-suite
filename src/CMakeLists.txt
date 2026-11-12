@@ -242,6 +242,7 @@ add_library(SwapDaemonLib STATIC
     SwapDaemon/SwapTypes.cpp
     SwapDaemon/SwapStateMachine.cpp
     SwapDaemon/SwapSecretEncryption.cpp
+    SwapDaemon/SwapKeystore.cpp
     SwapDaemon/SwapDatabase.cpp
     SwapDaemon/AdaptorSwap.cpp
     SwapDaemon/SwapDaemon.cpp
@@ -286,7 +287,12 @@ add_library(SwapDaemonLib STATIC
     SwapDaemon/Zano/ZanoChainClient.cpp
     SwapDaemon/Solana/SolRpcClient.cpp
     SwapDaemon/Solana/SolChainClient.cpp
+    SwapDaemon/Solana/SolPointClaim.cpp
     SwapDaemon/Crypto/Secp256k1Signer.cpp
+    SwapDaemon/Crypto/Secp256k1Ops.cpp
+    SwapDaemon/Crypto/CrossCurveDleq.cpp
+    SwapDaemon/Crypto/Bip340Adaptor.cpp
+    SwapDaemon/Crypto/BchSchnorrAdaptor.cpp
     SwapDaemon/Crypto/ripemd160.cpp
     SwapDaemon/Crypto/RlpEncoder.cpp
     SwapDaemon/Crypto/Bip143Sighash.cpp
@@ -301,6 +307,7 @@ add_library(SwapDaemonLib STATIC
     SwapDaemon/Spv/SpvMerkle.cpp
     SwapDaemon/Spv/SpvHeader.cpp
     SwapDaemon/Spv/SpvHeaderStore.cpp
+    SwapDaemon/Spv/SpvChainRules.cpp
     SwapDaemon/Spv/ElectrumConnection.cpp
     SwapDaemon/Spv/ElectrumSpvClient.cpp
     SwapDaemon/Bitcoin/BtcHtlcScript.cpp
@@ -310,6 +317,17 @@ add_library(SwapDaemonLib STATIC
     SwapDaemon/Komodo/KmdHtlcScript.cpp
     SwapDaemon/Komodo/KmdChainClient.cpp
     SwapDaemon/Bitcoin/BtcRpcClient.cpp
+    SwapDaemon/Utxo/UtxoFullNode.cpp
+    SwapDaemon/Utxo/UtxoHtlc.cpp
+    SwapDaemon/Utxo/UtxoPointLock.cpp
+    SwapDaemon/Utxo/UtxoPointLockSwap.cpp
+    SwapDaemon/Utxo/UtxoPointLockFullNode.cpp
+    SwapDaemon/Utxo/BchPointLock.cpp
+    SwapDaemon/Utxo/BchPointLockSwap.cpp
+    SwapDaemon/Utxo/UtxoBchPointLockFullNode.cpp
+    SwapDaemon/Utxo/UtxoHtlcFullNode.cpp
+    SwapDaemon/Utxo/UtxoHtlcSwap.cpp
+    SwapDaemon/Utxo/UtxoHtlcSpv.cpp
     SwapDaemon/Litecoin/LtcRpcClient.cpp
     SwapDaemon/Komodo/KmdRpcClient.cpp
     SwapDaemon/Decred/DcrRpcClient.cpp
@@ -333,7 +351,89 @@ target_include_directories(SwapDaemonLib PUBLIC
     ${CMAKE_SOURCE_DIR}/src/Storage
 )
 target_link_libraries(SwapDaemonLib PUBLIC Common Crypto Serialization CryptoNoteCore OpenSSL::SSL OpenSSL::Crypto secp256k1)
+
+# CROSS_CURVE_PLAN X1: sigma_fun's secp256k1/ed25519 discrete-log equality
+# proof, a Rust static library built by cargo from its committed Cargo.lock.
+find_program(CARGO_EXECUTABLE cargo REQUIRED)
+set(CROSS_CURVE_DLEQ_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/SwapDaemon/Crypto/cross_curve_dleq)
+set(CROSS_CURVE_DLEQ_BUILD_DIR ${CMAKE_BINARY_DIR}/cross_curve_dleq)
+if(MSVC)
+  set(CROSS_CURVE_DLEQ_LIBRARY ${CROSS_CURVE_DLEQ_BUILD_DIR}/release/fuego_cross_curve_dleq.lib)
+else()
+  set(CROSS_CURVE_DLEQ_LIBRARY ${CROSS_CURVE_DLEQ_BUILD_DIR}/release/libfuego_cross_curve_dleq.a)
+endif()
+add_custom_command(
+    OUTPUT ${CROSS_CURVE_DLEQ_LIBRARY}
+    COMMAND ${CARGO_EXECUTABLE} build --release --locked --lib
+            --manifest-path ${CROSS_CURVE_DLEQ_SOURCE_DIR}/Cargo.toml
+            --target-dir ${CROSS_CURVE_DLEQ_BUILD_DIR}
+    DEPENDS ${CROSS_CURVE_DLEQ_SOURCE_DIR}/Cargo.toml
+            ${CROSS_CURVE_DLEQ_SOURCE_DIR}/Cargo.lock
+            ${CROSS_CURVE_DLEQ_SOURCE_DIR}/src/lib.rs
+    COMMENT "Building the cross-curve proof library with cargo"
+    VERBATIM)
+add_custom_target(cross_curve_dleq_build DEPENDS ${CROSS_CURVE_DLEQ_LIBRARY})
+add_library(cross_curve_dleq STATIC IMPORTED GLOBAL)
+set_target_properties(cross_curve_dleq PROPERTIES IMPORTED_LOCATION ${CROSS_CURVE_DLEQ_LIBRARY})
+add_dependencies(cross_curve_dleq cross_curve_dleq_build)
+add_dependencies(SwapDaemonLib cross_curve_dleq_build)
+target_link_libraries(SwapDaemonLib PUBLIC cross_curve_dleq)
+if(WIN32)
+  target_link_libraries(SwapDaemonLib PUBLIC ws2_32 userenv bcrypt ntdll advapi32)
+elseif(NOT APPLE)
+  target_link_libraries(SwapDaemonLib PUBLIC pthread dl m)
+endif()
 target_include_directories(SwapDaemonLib SYSTEM PUBLIC ${JSONCPP_INCLUDE_DIRS})
+
+# Full-node UTXO HTLC engine: script layout, signed claim/refund bytes checked
+# against independently computed BIP143 digests, spend discovery with reorgs.
+add_executable(test_utxo_htlc
+    SwapDaemon/tests/test_utxo_htlc.cpp)
+target_link_libraries(test_utxo_htlc PRIVATE
+    SwapDaemonLib Common Crypto CryptoNoteCore Serialization OpenSSL::SSL OpenSSL::Crypto secp256k1)
+
+# Bob-only SPV swap path for BTC, LTC and BCH (remediation plan 2.5).
+add_executable(test_utxo_htlc_spv
+    SwapDaemon/tests/test_utxo_htlc_spv.cpp)
+target_link_libraries(test_utxo_htlc_spv PRIVATE
+    SwapDaemonLib Common Crypto CryptoNoteCore Serialization OpenSSL::SSL OpenSSL::Crypto secp256k1)
+
+# CTR_LOCKED notice and ADAPTOR_EXCHANGE claim key: signed, bounded, round-trip.
+add_executable(test_ctr_lock_notice
+    SwapDaemon/tests/test_ctr_lock_notice.cpp)
+target_link_libraries(test_ctr_lock_notice PRIVATE
+    SwapDaemonLib Common Crypto CryptoNoteCore Serialization OpenSSL::SSL OpenSSL::Crypto)
+
+# HashedTimelock registry runtime-code pin (remediation R3).
+add_executable(test_htlc_registry_pin
+    SwapDaemon/tests/test_htlc_registry_pin.cpp)
+target_link_libraries(test_htlc_registry_pin PRIVATE
+    SwapDaemonLib Common Crypto CryptoNoteCore Serialization OpenSSL::SSL OpenSSL::Crypto)
+target_compile_definitions(test_htlc_registry_pin PRIVATE
+    FUEGO_EVM_ARTIFACT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/SwapDaemon/Ethereum")
+
+# Encrypted keystore for daemon secrets (remediation R7).
+add_executable(test_swap_keystore
+    SwapDaemon/tests/test_swap_keystore.cpp)
+target_link_libraries(test_swap_keystore PRIVATE
+    SwapDaemonLib Common Crypto CryptoNoteCore Serialization OpenSSL::SSL OpenSSL::Crypto)
+
+# UTXO transport gate against a live regtest node (remediation plan 1.9). Not a
+# CTest test: it needs bitcoind/litecoind/BCHN, which CI's regtest job starts.
+add_executable(test_utxo_regtest
+    SwapDaemon/tests/test_utxo_regtest.cpp)
+target_link_libraries(test_utxo_regtest PRIVATE
+    SwapDaemonLib Common Crypto CryptoNoteCore Serialization OpenSSL::SSL OpenSSL::Crypto)
+set_target_properties(test_utxo_regtest PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/src/test_daemons")
+target_compile_options(test_utxo_regtest PRIVATE
+    $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG> $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-UNDEBUG>)
+
+# SPV per-chain header rules against reference vectors (remediation 2.2).
+add_executable(test_spv_chain_rules
+    SwapDaemon/tests/test_spv_chain_rules.cpp)
+target_link_libraries(test_spv_chain_rules PRIVATE
+    SwapDaemonLib Common Crypto CryptoNoteCore Serialization OpenSSL::SSL OpenSSL::Crypto)
 
 # Swap security audit regressions (AUDIT 1.2/3.2 adaptor binding, 6.1 timeout floor)
 add_executable(test_swap_audit_regressions
@@ -431,6 +531,12 @@ add_executable(test_spv_electrum
 target_link_libraries(test_spv_electrum PRIVATE
     SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
 
+# SPV quorum, reorg, fee and trust policy (remediation plan 2.6).
+add_executable(test_spv_quorum
+    SwapDaemon/tests/test_spv_quorum.cpp)
+target_link_libraries(test_spv_quorum PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
 # SwapDaemon unit test: SPV config parsing and wiring
 add_executable(test_spv_config_wiring
     SwapDaemon/tests/test_spv_config_wiring.cpp)
@@ -459,6 +565,79 @@ target_link_libraries(ownerbound_vectors PRIVATE
 add_executable(test_swap_state_machine_spv
     SwapDaemon/tests/test_swap_state_machine_spv.cpp)
 target_link_libraries(test_swap_state_machine_spv PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# EVM transport gate against anvil (remediation plan R9); run by CI's
+# evm-anvil-gate job, not by ctest.
+add_executable(test_evm_anvil_gate
+    SwapDaemon/tests/test_evm_anvil_gate.cpp)
+target_link_libraries(test_evm_anvil_gate PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+set_target_properties(test_evm_anvil_gate PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/src/test_daemons")
+target_compile_options(test_evm_anvil_gate PRIVATE
+    $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG> $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-UNDEBUG>)
+
+# EVM claims are refused once the lock leaves less than the claim runway.
+add_executable(test_evm_claim_deadline
+    SwapDaemon/tests/test_evm_claim_deadline.cpp)
+target_link_libraries(test_evm_claim_deadline PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# R12a X6: Taproot point lock scripts, sighash and transactions.
+add_executable(test_utxo_point_lock
+    SwapDaemon/tests/test_utxo_point_lock.cpp)
+target_link_libraries(test_utxo_point_lock PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto secp256k1)
+
+# R12a X5: BIP340 adaptor signatures for Taproot point locks.
+add_executable(test_bip340_adaptor
+    SwapDaemon/tests/test_bip340_adaptor.cpp)
+target_link_libraries(test_bip340_adaptor PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto secp256k1)
+
+# R12a X4: SOL point-lock gate against solana-test-validator (run by CI).
+add_executable(test_sol_validator_gate
+    SwapDaemon/tests/test_sol_validator_gate.cpp)
+target_link_libraries(test_sol_validator_gate PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto ${Boost_LIBRARIES})
+set_target_properties(test_sol_validator_gate PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/src/test_daemons")
+
+# R12a X4: SOL point claim proof for the xfg_htlc program's claim_ptlc.
+add_executable(test_sol_point_claim
+    SwapDaemon/tests/test_sol_point_claim.cpp)
+target_link_libraries(test_sol_point_claim PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# R12a X7: BCH P2SH point lock script, spends and state.
+add_executable(test_bch_point_lock
+    SwapDaemon/tests/test_bch_point_lock.cpp)
+target_link_libraries(test_bch_point_lock PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto secp256k1)
+
+# R12a X7: BCH Schnorr adaptor signatures for BCH point locks.
+add_executable(test_bch_schnorr_adaptor
+    SwapDaemon/tests/test_bch_schnorr_adaptor.cpp)
+target_link_libraries(test_bch_schnorr_adaptor PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto secp256k1)
+
+# R12a: cross-curve DLEQ (ed25519 <-> secp256k1) for point locks.
+add_executable(test_cross_dleq
+    SwapDaemon/tests/test_cross_dleq.cpp)
+target_link_libraries(test_cross_dleq PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# Reference only: the in-house proof X1 first shipped. Nothing in SwapDaemonLib uses it.
+add_executable(test_cross_dleq_inhouse
+    SwapDaemon/tests/test_cross_dleq_inhouse.cpp)
+target_link_libraries(test_cross_dleq_inhouse PRIVATE
+    Crypto Common OpenSSL::SSL OpenSSL::Crypto)
+
+# F32: AFK fill results are signed by the offer's maker and carry the claim key.
+add_executable(test_afk_fill_result
+    SwapDaemon/tests/test_afk_fill_result.cpp)
+target_link_libraries(test_afk_fill_result PRIVATE
     SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
 
 # SwapDaemon unit test: BCH HTLC helpers (parseClaimPreimage, redeemScriptToP2sh)
@@ -708,6 +887,7 @@ add_executable(SwapDaemon
     SwapDaemon/SwapDaemon.cpp
     SwapDaemon/SwapP2P.cpp
     SwapDaemon/SwapSecretEncryption.cpp
+    SwapDaemon/SwapKeystore.cpp
     SwapDaemon/StatusServer.cpp
     SwapDaemon/RpcServer.cpp
     SwapDaemon/ChainRegistry.cpp
@@ -750,6 +930,7 @@ add_executable(SwapDaemon
     SwapDaemon/Spv/SpvMerkle.cpp
     SwapDaemon/Spv/SpvHeader.cpp
     SwapDaemon/Spv/SpvHeaderStore.cpp
+    SwapDaemon/Spv/SpvChainRules.cpp
     SwapDaemon/Spv/ElectrumConnection.cpp
     SwapDaemon/Spv/ElectrumSpvClient.cpp
     SwapDaemon/Bitcoin/BtcHtlcScript.cpp
@@ -759,6 +940,11 @@ add_executable(SwapDaemon
     SwapDaemon/Komodo/KmdHtlcScript.cpp
     SwapDaemon/Komodo/KmdChainClient.cpp
     SwapDaemon/Bitcoin/BtcRpcClient.cpp
+    SwapDaemon/Utxo/UtxoFullNode.cpp
+    SwapDaemon/Utxo/UtxoHtlc.cpp
+    SwapDaemon/Utxo/UtxoHtlcFullNode.cpp
+    SwapDaemon/Utxo/UtxoHtlcSwap.cpp
+    SwapDaemon/Utxo/UtxoHtlcSpv.cpp
     SwapDaemon/Litecoin/LtcRpcClient.cpp
     SwapDaemon/Komodo/KmdRpcClient.cpp
     SwapDaemon/Decred/DcrRpcClient.cpp
@@ -1029,6 +1215,7 @@ if (${CMAKE_SYSTEM_NAME} STREQUAL "Linux" OR APPLE AND NOT ANDROID)
   target_link_libraries(Optimizer PRIVATE -lresolv)
   target_link_libraries(SwapDaemon PRIVATE -lresolv)
   target_link_libraries(test_swap_state_machine_spv PRIVATE -lresolv)
+  target_link_libraries(test_afk_fill_result PRIVATE -lresolv)
   # core_tests builds a real Blockchain (rebuildCache regression), which links
   # the DNS checkpoint lookup.
   target_link_libraries(core_tests PRIVATE -lresolv)
@@ -1066,6 +1253,12 @@ set_property(TARGET SwapDaemon PROPERTY OUTPUT_NAME "xfg-swapd")
 # --------------------------
 set(_TEST_DAEMON_TARGETS
     test_swap_pair_catalog
+    test_utxo_htlc
+    test_utxo_htlc_spv
+    test_ctr_lock_notice
+    test_htlc_registry_pin
+    test_swap_keystore
+    test_spv_chain_rules
     test_adaptor_roundtrip
     test_price_oracle_arb
     test_price_policy
@@ -1085,8 +1278,18 @@ set(_TEST_DAEMON_TARGETS
     test_spv_merkle
     test_spv_headers
     test_spv_electrum
+    test_spv_quorum
     test_spv_config_wiring
     test_swap_state_machine_spv
+    test_afk_fill_result
+    test_evm_claim_deadline
+    test_cross_dleq
+    test_cross_dleq_inhouse
+    test_bip340_adaptor
+    test_bch_schnorr_adaptor
+    test_bch_point_lock
+    test_sol_point_claim
+    test_utxo_point_lock
     test_bch_htlc
     test_bch_chain_client
     test_btc_htlc
@@ -1115,22 +1318,34 @@ set(_TEST_DAEMON_TARGETS
 foreach(_tgt IN LISTS _TEST_DAEMON_TARGETS)
   set_target_properties(${_tgt} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/src/test_daemons")
+  # Release adds -DNDEBUG, which would compile every assert() in these tests
+  # away and let them pass without checking anything.
+  target_compile_options(${_tgt} PRIVATE
+    $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG>
+    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-UNDEBUG>)
 endforeach()
 
 # Register these with ctest. The loop above only redirected the binaries; without
 # add_test() the whole test_daemons suite was built and runnable by hand but invisible
 # to ctest and therefore to CI. Guarded on TARGET + EXECUTABLE because the list also
-# carries helper targets that produce no runnable test.
-if(BUILD_TESTS)
-  foreach(_tgt IN LISTS _TEST_DAEMON_TARGETS)
-    if(TARGET ${_tgt})
-      get_target_property(_tgt_type ${_tgt} TYPE)
-      if(_tgt_type STREQUAL "EXECUTABLE")
-        add_test(NAME ${_tgt} COMMAND ${_tgt})
+# carries helper targets that produce no runnable test. Targets that need live
+# chains or operator credentials carry the "manual" label; CI runs `ctest -LE manual`.
+set(_MANUAL_TEST_DAEMON_TARGETS
+    test_price_status
+    test_sol_e2e
+    test_xmr_live_e2e
+)
+foreach(_tgt IN LISTS _TEST_DAEMON_TARGETS)
+  if(TARGET ${_tgt})
+    get_target_property(_tgt_type ${_tgt} TYPE)
+    if(_tgt_type STREQUAL "EXECUTABLE")
+      add_test(NAME ${_tgt} COMMAND ${_tgt})
+      if(_tgt IN_LIST _MANUAL_TEST_DAEMON_TARGETS)
+        set_tests_properties(${_tgt} PROPERTIES LABELS manual)
       endif()
     endif()
-  endforeach()
-endif()
+  endif()
+endforeach()
 include(GNUInstallDirs)
 
 install(TARGETS Daemon RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

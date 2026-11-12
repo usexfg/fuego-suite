@@ -1236,11 +1236,8 @@ bool RpcServer::on_get_swap_price(const COMMAND_RPC_GET_SWAP_PRICE::request& req
     return true;
   }
 
-  // Per-pair TWAP + seed
-  double twap = m_swapRelay->getTwap(req.pair);
-  double seed = SwapOfferRelay::getSeedRate(req.pair);
-  res.twap = std::to_string(twap);
-  res.seedRate = std::to_string(seed);
+  // Per-pair TWAP from settled trades; 0 when the pair has none.
+  res.twap = std::to_string(m_swapRelay->getTwap(req.pair));
 
   // Composite price with source breakdown
   CompositePrice cp = m_swapRelay->getCompositePrice(req.pair);
@@ -1463,7 +1460,9 @@ bool RpcServer::on_get_swap_requests(const COMMAND_RPC_GET_SWAP_REQUESTS::reques
     e.hashLock = r.hashLock;
     e.preSig = r.preSig;
     e.ctrAddress = r.ctrAddress;
+    e.ctrClaimPubKey = r.ctrClaimPubKey;
     e.createdAt = static_cast<uint64_t>(r.createdAt);
+    e.makerSignature = r.makerSignature;
     res.requests.push_back(std::move(e));
   }
   res.status = CORE_RPC_STATUS_OK;

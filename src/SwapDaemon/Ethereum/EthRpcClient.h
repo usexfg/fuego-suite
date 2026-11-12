@@ -32,6 +32,31 @@ struct EthTxReceipt {
   uint64_t gasUsed = 0;
 };
 
+// keccak256 of the committed runtime code (HashedTimelock_sol_HashedTimelock.bin-runtime,
+// PointTimelock_sol_PointTimelock.bin-runtime), built by contracts/artifacts-build with
+// solc 0.8.34 (optimizer, 200 runs, EVM paris); neither contract has immutables, so the
+// deployed code equals it. test_htlc_registry_pin recomputes both from the artifacts.
+constexpr const char* CANONICAL_HTLC_REGISTRY_CODE_HASH =
+    "8dfdda4bf413269b38405ff8648e3143093b906f7c5441e0dc62733d139ecb68";
+constexpr const char* CANONICAL_PTLC_REGISTRY_CODE_HASH =
+    "f6efcc40453542412a0daa8d60fefd9cb1dd12614e21bf5c3094f070b6af661b";
+
+// True when `runtimeCodeHex` ("0x..." from eth_getCode) hashes to `codeHashHex`.
+bool runtimeCodeMatchesHash(const std::string& runtimeCodeHex, const std::string& codeHashHex);
+
+// The deterministic deployment proxy (CREATE2 factory) deployed at the same
+// address on most EVM chains. Calldata = 32-byte salt || init code.
+constexpr const char* DETERMINISTIC_DEPLOYMENT_PROXY = "0x4e59b44847b379578588920ca78fbf26c0b4956c";
+// Each creation artifact deployed through that proxy with a zero salt: the
+// same address on every chain that has the proxy, so one address per contract
+// is pinned and audited. test_htlc_registry_pin recomputes both.
+constexpr const char* CANONICAL_HTLC_REGISTRY_ADDRESS = "0xcef71d1a85d98f0d9ce242b41bbd9fd5d99aefeb";
+constexpr const char* CANONICAL_PTLC_REGISTRY_ADDRESS = "0x10e9f7e464f3e538b9324fb830c2d8daaf7126da";
+
+// keccak256(0xff || deployer || salt || keccak256(initCode))[12:], "0x" + 40 hex.
+std::string create2Address(const std::string& deployerHex, const std::vector<uint8_t>& salt32,
+                           const std::vector<uint8_t>& initCode);
+
 class EthRpcClient {
 public:
   // Construct with JSON-RPC endpoint.
@@ -95,9 +120,18 @@ public:
 
   // Set the pre-deployed HashedTimelock registry address ("0x...").
   void setHtlcRegistry(const std::string& registryAddress) { m_htlcRegistry = registryAddress; }
+  // keccak256 of the registry's runtime code that readiness requires. Defaults
+  // to the committed HashedTimelock artifact; a chain whose VM compiles the
+  // contract differently configures its own (evm_chains htlc_registry_code_hash).
+  void setHtlcRegistryCodeHash(const std::string& codeHashHex) { m_htlcRegistryCodeHash = codeHashHex; }
   const std::string& htlcRegistry() const { return m_htlcRegistry; }
   static bool isValidEvmAddress(const std::string& address);
   bool hasDeployedHtlcRegistry();
+
+  enum class RegistryCode { PINNED, NO_CODE, OTHER_CODE, UNREACHABLE };
+  // What eth_getCode returns at `address`, judged against `codeHashHex`.
+  RegistryCode registryCode(const std::string& address, const std::string& codeHashHex);
+  RegistryCode ptlcRegistryCode() { return registryCode(m_ptlcRegistry, CANONICAL_PTLC_REGISTRY_CODE_HASH); }
 
   // Set the pre-deployed PointTimelock registry address ("0x...").
   // Pure PTLC (EVM side): locks keyed by a secp256k1 point address instead of
@@ -213,6 +247,8 @@ public:
                    const AtomicAmount& valueWei, uint64_t& gasEstimate);
 
 private:
+  bool sendClaim(const std::string& registry, const std::string& contractIdHex, const std::string& secretHex32,
+                 std::string& claimTxHash);
   // Test access for offline transaction-envelope vectors. Production callers
   // use sendTransaction(), which estimates fees and broadcasts the result.
   friend struct EthRpcClientTestAccess;
@@ -224,13 +260,13 @@ private:
   // to: 20-byte address (empty for contract deploy).
   // data: calldata bytes.
   // valueWei: ETH value to send.
-  // gasLimit: gas limit.
+  // gasCeiling: the most gas the buffered estimate may set as the limit.
   // Returns the tx hash on success.
   // Throws std::runtime_error if the signer private key is not configured.
   bool signAndSend(const std::vector<uint8_t>& to,
                    const std::vector<uint8_t>& data,
                    const AtomicAmount& valueWei,
-                   uint64_t gasLimit,
+                   uint64_t gasCeiling,
                    std::string& txHash);
 
   // The gas estimate is already buffered by estimateGas(). Fees remain
@@ -300,6 +336,7 @@ private:
   std::string m_htlcBytecode;
   // Pre-deployed HashedTimelock registry address ("0x..." + 40 hex).
   std::string m_htlcRegistry;
+  std::string m_htlcRegistryCodeHash = CANONICAL_HTLC_REGISTRY_CODE_HASH;
   // Pre-deployed PointTimelock registry address ("0x..." + 40 hex).
   // Empty => pure PTLC routing disabled (BRIDGE fallback at negotiation).
   std::string m_ptlcRegistry;

@@ -1,7 +1,7 @@
 # Polkadot Compatibility Plan
 
 This directory tracks the design for adding Polkadot (DOT) and CLV Parachain
-(a.k.a. "Robinhood Chain") support to Fuego SwapXFG.
+support to Fuego SwapXFG. CLV is not Robinhood Chain (catalog id 13, chain id 4663).
 
 ## Background
 
@@ -28,7 +28,7 @@ header-only inheritance pattern from `EthChainClient`.
 
 | Chain | Chain ID | Type | Notes |
 |-------|----------|------|-------|
-| **CLV Parachain** (a.k.a. "Robinhood") | 1024 | Substrate parachain | Has EVM module (dual EVM/Substrate) |
+| **CLV Parachain** | 1024 | Substrate parachain | Has EVM module (dual EVM/Substrate) |
 | **Polkadot** (Relay Chain) | N/A (no chain ID; uses SS58 prefix 0) | Substrate relay chain | Parent of all parachains |
 
 ## CLV Parachain (1024) — Hybrid Approach
@@ -55,7 +55,7 @@ CLV-specific gas payment, but still uses standard EVM HTLC contracts.
 ### Files to Create
 
 ```
-src/SwapDaemon/CLV/CLVChainClient.h       ← Header inheriting EthChainClient
+src/SwapDaemon/CLV/CLVChainClient.h       ← Header inheriting EthChainClient (an earlier orphan copy, never built or registered, was removed under R11)
 src/SwapDaemon/Polkadot/SubstrateRpcClient.h   ← Substrate JSON-RPC client (future)
 src/SwapDaemon/Polkadot/SubstrateRpcClient.cpp ← SCALE-encoded RPC calls (future)
 ```

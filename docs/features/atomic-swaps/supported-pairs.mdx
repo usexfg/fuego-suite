@@ -28,7 +28,7 @@ Exact production-ready set changes with releases — do not treat a four-row tab
 | **Hearth** | XFG ↔ HEAT | 1% Hearth fee (`HEARTH_FEE_BPS`) |
 | **swapXFG** | XFG ↔ external chains | 2% atomic fee (1% initiation + 1% claim, `SWAP_FEE_RATE_BPS`) → 80/20 at v11+ (pre-v11 replay: 69/11/20) |
 
-These are the **only two protocol earnings streams**. The 1% mint premium is not a third stream — it is a haircut inside the mint burn that funds both AuntPoL legs at v11 (withheld XFG → XFG leg, the HEAT it buys → HEAT leg); from v12 its XFG is burned and it funds only the HEAT leg. The CD creation fee (0.25%–1% by term, from v12) is paid in XFG to the AuntPoL XFG leg. Neither is protocol revenue.
+These are the **two protocol earnings streams implemented today** — not a closed list; further streams are welcome provided they are value genuinely paid to the protocol. The 1% mint premium is not one of them: it is a haircut inside the mint burn that funds both AuntPoL legs at v11 (withheld XFG → XFG leg, the HEAT it buys → HEAT leg); from v12 its XFG is burned and it funds only the HEAT leg. The CD creation fee (0.25%–1% by term, from v12) is paid in XFG to the AuntPoL XFG leg. Neither is protocol revenue, and neither may ever fund CD yield.
 
 ## Running SwapDaemon
 

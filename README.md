@@ -74,6 +74,8 @@ _____________________________
 sudo apt install build-essential git cmake libboost-all-dev libjsoncpp-dev libssl-dev libsecp256k1-dev
 ```
 
+The swap daemon's cross-curve proof is a Rust library that CMake builds with `cargo`, so a Rust toolchain (1.85 or newer) must be installed, for example with `rustup`.
+
 #### 2. Clone and Build
 
 ```bash

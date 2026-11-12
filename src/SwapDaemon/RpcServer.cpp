@@ -17,6 +17,10 @@
 #include "SwapTypes.h"
 #include "Common/JsonValue.h"
 #include "Common/StringTools.h"
+#include "CryptoNoteConfig.h"
+#include "CryptoNoteCore/SwapOfferRelay.h"
+#include "crypto/crypto.h"
+#include <cstring>
 #include <HTTP/httplib.h>
 #include <sstream>
 #include <mutex>
@@ -511,6 +515,10 @@ std::string RpcServer::handleInitiateSwap(const std::string& params) {
     if (root.contains("ctr_address")) {
       swapParams.ctrAddress = root("ctr_address").getString();
     }
+    if (afkMode) {
+      const std::string afkError = applySignedFillResult(root, swapParams);
+      if (!afkError.empty()) return rpcError(-32602, afkError);
+    }
 
     if (!m_daemon.initiate(swapParams)) {
       return rpcError(-32000, "Failed to initiate swap");
@@ -537,6 +545,44 @@ std::string RpcServer::handleInitiateSwap(const std::string& params) {
   } catch (const std::exception& e) {
     return rpcError(-32602, std::string("Parameter error: ") + e.what());
   }
+}
+
+// AFK pre-lock material arrives from fuegod's relay, which anyone can feed.
+// The taker locks against it only when the offer's maker (the pinned
+// expected peer) signed exactly these values for this taker.
+std::string RpcServer::applySignedFillResult(const Common::JsonValue& root, SwapParams& params) {
+  if (!CryptoNote::parameters::AFK_SOFT_ORDER_EXECUTION_ENABLED)
+    return "AFK soft-order execution is disabled until XFG payout is trustless";
+  static const Crypto::PublicKey ZERO{};
+  if (std::memcmp(&params.expectedPeerSwapPubKey, &ZERO, sizeof(ZERO)) == 0 ||
+      std::memcmp(&params.ourSwapPubKey, &ZERO, sizeof(ZERO)) == 0)
+    return "AFK needs expected_peer_pubkey (the offer's maker) and our_swap_secret_key";
+  for (const char* field : {"offer_id", "peer", "swap_id", "adaptor_point", "hash_lock", "pre_sig", "created_at",
+                            "maker_signature"})
+    if (!root.contains(field)) return std::string("AFK fill result is missing ") + field;
+  const auto optionalString = [&root](const char* field) {
+    return root.contains(field) ? root(field).getString() : std::string();
+  };
+
+  CryptoNote::SwapRequestResult result;
+  result.offerId = root("offer_id").getString();
+  result.lockId = root("swap_id").getString();
+  result.makerEndpoint = root("peer").getString();
+  result.adaptorPoint = root("adaptor_point").getString();
+  result.hashLock = root("hash_lock").getString();
+  result.preSig = root("pre_sig").getString();
+  result.ctrAddress = optionalString("ctr_address");
+  result.ctrClaimPubKey = optionalString("ctr_claim_pubkey");
+  result.createdAt = static_cast<time_t>(root("created_at").getInteger());
+  Crypto::Signature signature;
+  if (!Common::podFromHex(root("maker_signature").getString(), signature) ||
+      !Crypto::check_signature(
+          CryptoNote::swapRequestResultHash(Common::podToHex(params.ourSwapPubKey), result),
+          params.expectedPeerSwapPubKey, signature))
+    return "AFK fill result is not signed by the offer's maker";
+
+  params.ctrPubKey = result.ctrClaimPubKey;
+  return "";
 }
 
 std::string RpcServer::handleGetReserveProof(const std::string& params) {

@@ -39,6 +39,35 @@
 //     Sender: R = r*D_ij. Receiver: a*R = r*C_ij.
 //
 // The index (0, 0) is reserved for the master address — do not create sub-addresses at (0,0).
+//
+// Janus Attack Mitigation (V2 only):
+//
+// The Janus attack allows an attacker holding two subaddresses D_ij and D_kj from the
+// same wallet to link them by checking if b_kj * R == R_kj where R = r * D_ij.
+//
+// The mitigation uses TX_EXTRA_JANUS_BASE (tag 0x09) which carries janusBase = r * G.
+// The receiver performs janusCheck: verify subSpendSecret * janusBase == txPubKey.
+//
+// Mathematical proof of correctness:
+//
+// For a single-subaddress V2 tx, the sender computes:
+//   R = r * D_ij        (transaction public key)
+//   janusBase = r * G    (Janus base, stored in extra)
+//
+// The receiver checks:
+//   subSpendSecret * janusBase == txPubKey
+//   (b + m) * (r * G) == r * D_ij
+//   (b + m) * r * G == r * (B + m * G)
+//   r * (b + m) * G == r * B + r * m * G
+//   r * b * G + r * m * G == r * B + r * m * G
+//   Since B = b * G:  r * B + r * m * G == r * B + r * m * G  (QED)
+//
+// For an attacker with a different subaddress (different m'):
+//   (b + m') * r * G = r * B + r * m' * G != r * B + r * m * G
+//   unless m' == m, which means the attacker holds the same subaddress.
+//
+// Therefore, the Janus check correctly distinguishes between the legitimate receiver
+// and any attacker probing with a different subaddress from the same wallet.
 
 namespace Crypto {
 

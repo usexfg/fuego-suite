@@ -207,7 +207,7 @@ void WalletSerializerV2::load(Common::IInputStream& source, uint8_t version) {
   s(saveLevelValue, "saveLevel");
   WalletSaveLevel saveLevel = static_cast<WalletSaveLevel>(saveLevelValue);
 
-  loadKeyListAndBanalces(s, saveLevel == WalletSaveLevel::SAVE_ALL);
+  loadKeyListAndBanalces(s, saveLevel == WalletSaveLevel::SAVE_ALL, version);
 
   if (saveLevel == WalletSaveLevel::SAVE_KEYS_AND_TRANSACTIONS || saveLevel == WalletSaveLevel::SAVE_ALL) {
     loadTransactions(s);
@@ -255,7 +255,7 @@ std::unordered_set<Crypto::PublicKey>& WalletSerializerV2::deletedKeys() {
   return m_deletedKeys;
 }
 
-void WalletSerializerV2::loadKeyListAndBanalces(CryptoNote::ISerializer& serializer, bool saveCache) {
+void WalletSerializerV2::loadKeyListAndBanalces(CryptoNote::ISerializer& serializer, bool saveCache, uint8_t version) {
   size_t walletCount;
   serializer(walletCount, "walletCount");
 
@@ -264,6 +264,8 @@ void WalletSerializerV2::loadKeyListAndBanalces(CryptoNote::ISerializer& seriali
   m_lockedDepositBalance = 0;
   m_unlockedDepositBalance = 0;
   m_deletedKeys.clear();
+
+  bool hasSubaddressMetadata = version >= 9;
 
   std::unordered_set<Crypto::PublicKey> cachedKeySet;
   auto& index = m_walletsContainer.get<KeysIndex>();
@@ -282,6 +284,19 @@ void WalletSerializerV2::loadKeyListAndBanalces(CryptoNote::ISerializer& seriali
       serializer(unlockedDepositBalance, "unlockedDepositBalance");
     }
 
+    // Read subaddress metadata if present (version >= 9)
+    bool isSubAddress = false;
+    uint32_t subaddrMajor = 0;
+    uint32_t subaddrMinor = 0;
+    uint8_t subaddrVersion = 0;
+
+    if (hasSubaddressMetadata) {
+      serializer(isSubAddress, "isSubAddress");
+      serializer(subaddrMajor, "subaddrMajor");
+      serializer(subaddrMinor, "subaddrMinor");
+      serializer(subaddrVersion, "subaddrVersion");
+    }
+
     cachedKeySet.insert(spendPublicKey);
 
     auto it = index.find(spendPublicKey);
@@ -293,12 +308,16 @@ void WalletSerializerV2::loadKeyListAndBanalces(CryptoNote::ISerializer& seriali
       m_lockedDepositBalance += lockedDepositBalance;
       m_unlockedDepositBalance += unlockedDepositBalance;
 
-      index.modify(it, [actualBalance, pendingBalance, lockedDepositBalance, unlockedDepositBalance](WalletRecord& wallet) {
+      index.modify(it, [actualBalance, pendingBalance, lockedDepositBalance, unlockedDepositBalance,
+                        isSubAddress, subaddrMajor, subaddrMinor, subaddrVersion](WalletRecord& wallet) {
         wallet.actualBalance = actualBalance;
         wallet.pendingBalance = pendingBalance;
         wallet.lockedDepositBalance = lockedDepositBalance;
         wallet.unlockedDepositBalance = unlockedDepositBalance;
-
+        wallet.isSubAddress = isSubAddress;
+        wallet.subaddrMajor = subaddrMajor;
+        wallet.subaddrMinor = subaddrMinor;
+        wallet.subaddrVersion = subaddrVersion;
       });
     }
   }
@@ -322,6 +341,12 @@ void WalletSerializerV2::saveKeyListAndBanalces(CryptoNote::ISerializer& seriali
       serializer(wallet.lockedDepositBalance, "lockedDepositBalance");
       serializer(wallet.unlockedDepositBalance, "unlockedDepositBalance");
     }
+
+    // Serialize subaddress metadata (version >= 9)
+    serializer(wallet.isSubAddress, "isSubAddress");
+    serializer(wallet.subaddrMajor, "subaddrMajor");
+    serializer(wallet.subaddrMinor, "subaddrMinor");
+    serializer(wallet.subaddrVersion, "subaddrVersion");
   }
 }
 

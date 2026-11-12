@@ -34,6 +34,7 @@
 #include "CryptoNoteCore/Miner.h"
 #include "CryptoNoteCore/TransactionExtra.h"
 #include "CryptoNoteProtocol/ICryptoNoteProtocolQuery.h"
+#include "crypto/subaddress.h"
 #include "CryptoNoteConfig.h"
 
 #include "P2p/NetNode.h"
@@ -343,6 +344,7 @@ bool RpcServer::processJsonRpcRequest(const HttpRequest& request, HttpResponse& 
         {"f_on_transactions_pool_json", {makeMemberMethod(&RpcServer::f_on_transactions_pool_json), false}},
         {"check_tx_proof", {makeMemberMethod(&RpcServer::k_on_check_tx_proof), false}},
         {"check_reserve_proof", {makeMemberMethod(&RpcServer::k_on_check_reserve_proof), false}},
+        {"validateaddress", {makeMemberMethod(&RpcServer::k_on_validate_address), false}},
         {"getblockcount", {makeMemberMethod(&RpcServer::on_getblockcount), true}},
         {"on_getblockhash", {makeMemberMethod(&RpcServer::on_getblockhash), false}},
         {"getblocktemplate", {makeMemberMethod(&RpcServer::on_getblocktemplate), false}},
@@ -534,6 +536,14 @@ bool RpcServer::k_on_check_tx_proof(const K_COMMAND_RPC_CHECK_TX_PROOF::request&
 			}
 		}
 	}
+
+	// If standard proof still fails, try V2 subaddress proof for funsa addresses
+	if (!r && req.dest_address.find("funsa") != std::string::npos) {
+		res.is_subaddress = true;
+		res.subaddress_version = 2;
+		r = Crypto::check_tx_proof_subaddress(txid, R, address.spendPublicKey, address.viewPublicKey, rA, sig);
+	}
+
 	res.signature_valid = r;
 
 	if (r) {
@@ -706,6 +716,41 @@ bool RpcServer::k_on_check_reserve_proof(const K_COMMAND_RPC_CHECK_RESERVE_PROOF
 
 	return true;
 }
+
+bool RpcServer::k_on_validate_address(const K_COMMAND_RPC_VALIDATE_ADDRESS::request& req, K_COMMAND_RPC_VALIDATE_ADDRESS::response& res) {
+	res.valid = false;
+	res.is_subaddress = false;
+	res.subaddress_version = 0;
+	res.error = "";
+	res.status = CORE_RPC_STATUS_OK;
+
+	// Parse the address
+	CryptoNote::AccountPublicAddress address;
+	bool isSubaddress = false;
+	if (!m_core.currency().parseAccountAddressString(req.address, address, isSubaddress)) {
+		res.error = "Failed to parse address";
+		return true;
+	}
+
+	res.valid = true;
+	res.is_subaddress = isSubaddress;
+
+	// Determine subaddress version from prefix
+	// V1 "fire" prefix: 2304758999 (CRYPTONOTE_SUBADDRESS_BASE58_PREFIX_V1)
+	// V2 "funsa" prefix: 23047589992 (CRYPTONOTE_SUBADDRESS_BASE58_PREFIX)
+	if (isSubaddress) {
+		// Check the address string prefix to determine version
+		// "funsa" addresses are V2, "fire" addresses are V1
+		if (req.address.find("funsa") != std::string::npos || req.address.find("Tsub") != std::string::npos) {
+			res.subaddress_version = 2;
+		} else {
+			res.subaddress_version = 1;
+		}
+	}
+
+	return true;
+}
+
 bool RpcServer::on_get_deposits(const COMMAND_RPC_GET_DEPOSITS::request& req, COMMAND_RPC_GET_DEPOSITS::response& res) {
   res.status = CORE_RPC_STATUS_OK;
   return true;

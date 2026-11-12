@@ -1455,6 +1455,13 @@ namespace PaymentService
       CryptoNote::TransactionParameters sendParams;
       if (!request.paymentId.empty())
       {
+        // Reject payment ID when any destination is a V2 funsa subaddress
+        for (const auto& transfer : request.transfers) {
+          if (transfer.address.find("funsa") != std::string::npos) {
+            logger(Logging::WARNING) << "Payment ID cannot be used with V2 subaddress (funsa) destination. Use unique subaddresses instead of payment IDs.";
+            return make_error_code(CryptoNote::error::WRONG_PAYMENT_ID_FORMAT);
+          }
+        }
         addPaymentIdToExtra(request.paymentId, sendParams.extra);
       }
       else
@@ -1526,6 +1533,13 @@ namespace PaymentService
       CryptoNote::TransactionParameters sendParams;
       if (!request.paymentId.empty())
       {
+        // Reject payment ID when any destination is a V2 funsa subaddress
+        for (const auto& transfer : request.transfers) {
+          if (transfer.address.find("funsa") != std::string::npos) {
+            logger(Logging::WARNING) << "Payment ID cannot be used with V2 subaddress (funsa) destination. Use unique subaddresses instead of payment IDs.";
+            return make_error_code(CryptoNote::error::WRONG_PAYMENT_ID_FORMAT);
+          }
+        }
         addPaymentIdToExtra(request.paymentId, sendParams.extra);
       }
       else

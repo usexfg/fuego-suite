@@ -241,6 +241,22 @@ std::string signatureToString(const T& signature) {
     return crypto_ops::check_tx_proof(prefix_hash, R, A, D, sig);
   }
 
+  /* Generation and checking of a V2 subaddress tx proof.
+   * For V2 subaddresses, R = r * D_ij (not r * G) and the derivation uses C_ij = a * D_ij.
+   * This is a DLEQ proof between (G, D_ij) and (R, D) proving knowledge of r where R = r * D_ij.
+   *
+   * Parameters:
+   *   prefix_hash - transaction hash
+   *   R - transaction public key (R = r * D_ij for subaddress)
+   *   D_ij - subaddress spend public key (the base for R)
+   *   C_ij - subaddress view public key (the base for D)
+   *   D - key derivation (D = r * C_ij)
+   *   r - transaction secret key
+   *   sig - output signature
+   */
+  void generate_tx_proof_subaddress(const Hash &prefix_hash, const PublicKey &R, const PublicKey &Dij, const PublicKey &Cij, const PublicKey &D, const SecretKey &r, Signature &sig);
+  bool check_tx_proof_subaddress(const Hash &prefix_hash, const PublicKey &R, const PublicKey &Dij, const PublicKey &Cij, const PublicKey &D, const Signature &sig);
+
   /* To send money to a key:
    * * The sender generates an ephemeral key and includes it in transaction output.
    * * To spend the money, the receiver generates a key image from it.

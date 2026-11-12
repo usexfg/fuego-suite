@@ -1356,6 +1356,8 @@ struct K_COMMAND_RPC_CHECK_TX_PROOF {
         uint64_t total;
         uint64_t spent;
         bool good;
+        bool is_subaddress = false;
+        uint8_t subaddress_version = 0;
 
         void serialize(ISerializer &s) {
             KV_MEMBER(signature_valid)
@@ -1363,8 +1365,36 @@ struct K_COMMAND_RPC_CHECK_TX_PROOF {
             KV_MEMBER(outputs)
             KV_MEMBER(confirmations)
             KV_MEMBER(status)
+            KV_MEMBER(is_subaddress)
+            KV_MEMBER(subaddress_version)
         }
     };
+};
+
+struct K_COMMAND_RPC_VALIDATE_ADDRESS {
+	struct request {
+		std::string address;
+
+		void serialize(ISerializer &s) {
+			KV_MEMBER(address)
+		}
+	};
+
+	struct response {
+		bool valid = false;
+		bool is_subaddress = false;
+		uint8_t subaddress_version = 0;  // 0 = standard, 1 = V1 fire, 2 = V2 funsa
+		std::string error;
+		std::string status;
+
+		void serialize(ISerializer &s) {
+			KV_MEMBER(valid)
+			KV_MEMBER(is_subaddress)
+			KV_MEMBER(subaddress_version)
+			KV_MEMBER(error)
+			KV_MEMBER(status)
+		}
+	};
 };
 
 struct K_COMMAND_RPC_CHECK_RESERVE_PROOF {

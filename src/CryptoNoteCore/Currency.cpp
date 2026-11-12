@@ -712,12 +712,18 @@ double Currency::getBurnPercentage() const {
     return maxSize;
   }
 
+	bool Currency::devFundAddress(AccountPublicAddress& address) const {
+    uint64_t prefix = 0;
+    return CryptoNote::parseAccountAddressString(prefix, address, FUEGO_DEV_FUND_ADDRESS) &&
+           prefix == parameters::CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX;
+  }
+
 	bool Currency::appendDevFundOutput(Transaction& tx, const Crypto::SecretKey& txSecretKey, size_t outputIndex,
 	                                   uint64_t amount) const {
     AccountPublicAddress devFund;
     Crypto::KeyDerivation derivation;
     KeyOutput out;
-    if (!parseAccountAddressString(FUEGO_DEV_FUND_ADDRESS, devFund) ||
+    if (!devFundAddress(devFund) ||
         !Crypto::generate_key_derivation(devFund.viewPublicKey, txSecretKey, derivation) ||
         !Crypto::derive_public_key(derivation, outputIndex, devFund.spendPublicKey, out.key)) {
       return false;

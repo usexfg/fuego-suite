@@ -6757,3 +6757,33 @@ Sign-off table:
 | Build compiles | DONE — `make -j4` full build rc=0 |
 | Tests pass | DONE — core_tests 448/448 (wallet/API rename only) |
 | All tasks done | DONE |
+
+## Code review fixes for PR #79
+
+**Feature name**: fixes from the 2026-11-12 code review of PR #79 and its adversarial re-check
+**Agent**: Claude
+**Start date**: 2026-11-12
+**Consensus impact**: spot-history depth (retention only: the oracle reads the same entries); dev-fund address parsing (mainnet unchanged; testnet can now build and accept a quarter-boundary re-mint). No cache version change: the spot history format is unchanged and refills to the new depth as blocks arrive.
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Wallets judge activation by the next block's version (`Currency::blockMajorVersionAtHeight`, `height >` like consensus): `dev_fund_burn` and alias burn (WalletGreen, SimpleWallet), CD deposits (WalletGreen, WalletLegacy). At the upgrade height itself the block is still the old version | Claude | 2026-11-12 | DONE |
+| 2 | walletd `get_limit_orders` matches orders by per-order keys (`isOwnLimitOrder` over every wallet address) instead of the old wallet-wide hash, which matched none of them | Claude | 2026-11-12 | DONE |
+| 3 | End-of-block spot history kept for `MAX_ROLLBACK_HISTORY + EPOCH_DURATION_BLOCKS` (was `+ 8`, sized for the old 8-block mean): a rollback deeper than 108 blocks left the epoch oracle a short window. `recordBlockSpot` / `dropBlockSpot` | Claude | 2026-11-12 | DONE |
+| 4 | `Currency::devFundAddress` parses the dev fund's keys on every network. Testnet's own parser rejected the mainnet prefix, so any re-mint burn on testnet made the next quarter-boundary block impossible to build or accept | Claude | 2026-11-12 | DONE |
+| 5 | Per-order key derivation: one reserved preimage buffer (a reallocation freed an unwiped copy of the wallet spend secret); view secret and signing secrets wiped after use (`wipeSecretKey`, `wipeLimitOrderSecret`, `limitOrderAddressHash`) | Claude | 2026-11-12 | DONE |
+| 6 | Removed the unused regeneration gate (`PoolOrderOrchestrator::shouldRegenerate`, `lastRegenPclear`, `restoreLastRegenPclear`, their members and constants, and their tests in the compiled-out Phase 3 file) | Claude | 2026-11-12 | DONE |
+| 7 | Docs: AGENTS.md data flow and AuntPoL funding (no CD fee before v12), AuntPoL comment in `processBlockEpochWork`, the stale 0.1%-to-dev-fund CD fee in 10 docs and the v11 release notes | Claude | 2026-11-12 | DONE |
+| 8 | Tests: `testBlockConnectEnforcesHearthStateAndRemint` (mines testnet blocks through `pushBlock`/`popBlock`: forged Hearth state refused, quarter block without the re-mint refused, re-mint recorded, reversed on pop, re-applied), `testSpotHistoryCoversDeepestRollback`, `testLimitOrderAddressHashMatchesKeys` | Claude | 2026-11-12 | DONE |
+| 9 | Expired-but-unwithdrawn deposits are never pruned: recorded in `docs/V12_LAUNCH_TODO.md` with the cost and the fix's consensus risk; not changed | Claude | 2026-11-12 | DONE |
+
+Not changed (review findings judged not to need it): late `pushTransaction` failures after the new counter updates are unreachable because `validateSettlement` checks the same conditions first; order-listing cost and oracle recomputation are small at realistic sizes; the `m_cdFeeHeatFromXfg` split would not reduce the update sites.
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j8` full build rc=0 |
+| Tests pass | DONE — core_tests 657/657; test_hearth_amm 45/45; test_orderbook 44/44; test_orderbook_auction 62/63 (the pre-existing `cdV11 > 0 && rebV11 > 0 ...` fee-split failure, unchanged) |
+| Mutation checks | DONE — each of: Hearth-state check, re-mint record on push, unrecord on pop, coinbase re-mint check, spot depth, dev-fund prefix, key wipe, when broken, fails a test |
+| All tasks done | DONE |

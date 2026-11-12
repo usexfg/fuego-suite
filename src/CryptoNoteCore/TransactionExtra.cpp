@@ -1797,17 +1797,31 @@ namespace CryptoNote
   }
 
   namespace {
+    void wipeBytes(void* data, size_t size) {
+      volatile uint8_t* bytes = static_cast<volatile uint8_t*>(data);
+      for (size_t i = 0; i < size; ++i) bytes[i] = 0;
+    }
+
     Crypto::SecretKey limitOrderScalar(const std::string& domain, const Crypto::SecretKey& walletSpendSecret,
                                        const Crypto::Hash& orderId) {
-      std::vector<uint8_t> preimage(domain.begin(), domain.end());
+      std::vector<uint8_t> preimage;
+      preimage.reserve(domain.size() + sizeof(walletSpendSecret.data) + sizeof(orderId.data));
+      preimage.insert(preimage.end(), domain.begin(), domain.end());
       preimage.insert(preimage.end(), walletSpendSecret.data, walletSpendSecret.data + sizeof(walletSpendSecret.data));
       preimage.insert(preimage.end(), orderId.data, orderId.data + sizeof(orderId.data));
       Crypto::SecretKey scalar;
       Crypto::hash_to_scalar(preimage.data(), preimage.size(), scalar);
-      volatile uint8_t* wipe = preimage.data();
-      for (size_t i = 0; i < preimage.size(); ++i) wipe[i] = 0;
+      wipeBytes(preimage.data(), preimage.size());
       return scalar;
     }
+  }
+
+  void wipeSecretKey(Crypto::SecretKey& key) {
+    wipeBytes(key.data, sizeof(key.data));
+  }
+
+  void wipeLimitOrderSecret(LimitOrderKeys& keys) {
+    wipeSecretKey(keys.spendSecretKey);
   }
 
   LimitOrderKeys deriveLimitOrderKeys(const Crypto::SecretKey& walletSpendSecret, const Crypto::Hash& orderId) {
@@ -1816,6 +1830,7 @@ namespace CryptoNote
     Crypto::SecretKey viewSecret = limitOrderScalar("FuegoLimitOrderViewV1", walletSpendSecret, orderId);
     Crypto::secret_key_to_public_key(keys.spendSecretKey, keys.spendPublicKey);
     Crypto::secret_key_to_public_key(viewSecret, keys.viewPublicKey);
+    wipeSecretKey(viewSecret);
     uint8_t keyData[sizeof(keys.spendPublicKey.data) + sizeof(keys.viewPublicKey.data)];
     memcpy(keyData, keys.spendPublicKey.data, sizeof(keys.spendPublicKey.data));
     memcpy(keyData + sizeof(keys.spendPublicKey.data), keys.viewPublicKey.data, sizeof(keys.viewPublicKey.data));
@@ -1823,9 +1838,15 @@ namespace CryptoNote
     return keys;
   }
 
+  Crypto::Hash limitOrderAddressHash(const Crypto::SecretKey& walletSpendSecret, const Crypto::Hash& orderId) {
+    LimitOrderKeys keys = deriveLimitOrderKeys(walletSpendSecret, orderId);
+    wipeLimitOrderSecret(keys);
+    return keys.addressHash;
+  }
+
   bool isOwnLimitOrder(const Crypto::SecretKey& walletSpendSecret, const Crypto::Hash& orderId,
                        const Crypto::Hash& addressHash) {
-    const Crypto::Hash derived = deriveLimitOrderKeys(walletSpendSecret, orderId).addressHash;
+    const Crypto::Hash derived = limitOrderAddressHash(walletSpendSecret, orderId);
     return memcmp(derived.data, addressHash.data, sizeof(derived.data)) == 0;
   }
 

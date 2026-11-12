@@ -3453,14 +3453,18 @@ bool simple_wallet::process_command(const std::vector<std::string> &args) {
 //----------------------------------------------------------------------------------------------------
 // @ ALIAS SYSTEM COMMANDS
 //----------------------------------------------------------------------------------------------------
+uint8_t simple_wallet::nextBlockMajorVersion() const {
+  return m_currency.blockMajorVersionAtHeight(m_node->getLastKnownBlockHeight() + 1);
+}
+
 bool simple_wallet::dev_fund_burn(const std::vector<std::string> &args) {
   uint64_t amount = 0;
   if (args.size() != 1 || !m_currency.parseAmount(args[0], amount) || amount == 0) {
     fail_msg_writer() << "Usage: dev_fund_burn <amount>";
     return false;
   }
-  if (m_node->getLastKnownBlockHeight() + 1 < m_currency.upgradeHeight(CryptoNote::BLOCK_MAJOR_VERSION_11)) {
-    fail_msg_writer() << "Re-mint burns activate at block " << m_currency.upgradeHeight(CryptoNote::BLOCK_MAJOR_VERSION_11);
+  if (nextBlockMajorVersion() < CryptoNote::BLOCK_MAJOR_VERSION_11) {
+    fail_msg_writer() << "Re-mint burns activate at block " << m_currency.upgradeHeight(CryptoNote::BLOCK_MAJOR_VERSION_11) + 1;
     return false;
   }
   const uint64_t fee = m_currency.minimumFee() + amount;
@@ -3699,8 +3703,7 @@ bool simple_wallet::register_alias(const std::vector<std::string> &args) {
 
     // From v11 the mainnet fee is a re-mint burn: it rides in the transaction
     // fee and consensus withholds it, so no output pays the dev wallet.
-    const bool burnsFee = !m_currency.isTestnet() &&
-        m_node->getLastKnownBlockHeight() + 1 >= m_currency.upgradeHeight(CryptoNote::BLOCK_MAJOR_VERSION_11);
+    const bool burnsFee = !m_currency.isTestnet() && nextBlockMajorVersion() >= CryptoNote::BLOCK_MAJOR_VERSION_11;
     if (burnsFee) {
       CryptoNote::addRemintBurnToExtra(extra, CryptoNote::parameters::ALIAS_REGISTRATION_FEE);
     }

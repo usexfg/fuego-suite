@@ -753,8 +753,8 @@ struct TestChain {
   std::filesystem::path dir;
   bool ok = false;
 
-  explicit TestChain(const std::string& tag)
-      : currency(CurrencyBuilder(log).currency()),
+  explicit TestChain(const std::string& tag, bool testnet = false)
+      : currency(testnet ? CurrencyBuilder(log).testnet(true).currency() : CurrencyBuilder(log).currency()),
         pool(currency, chain, timeProvider, log),
         chain(currency, pool, log, false, false),
         dir(std::filesystem::temp_directory_path() /
@@ -1258,6 +1258,12 @@ public:
   static void popOrderbookBlock(Blockchain& chain, uint32_t height) {
     chain.restoreOrderbookSnapshotFor(height);
   }
+  static void recordBlockSpot(Blockchain& chain, uint32_t height, uint64_t spot) {
+    chain.recordBlockSpot(height, spot);
+  }
+  static void dropBlockSpot(Blockchain& chain, uint32_t height) { chain.dropBlockSpot(height); }
+  static size_t maxRollbackHistory() { return Blockchain::MAX_ROLLBACK_HISTORY; }
+  static void setRemintBurned(Blockchain& chain, uint64_t amount) { chain.m_remintBurnedXfg = amount; }
   static uint64_t oraclePriceBefore(const Blockchain& chain, uint32_t height) {
     return chain.hearthOraclePriceBefore(height);
   }
@@ -2468,6 +2474,141 @@ void testAliasBurnsRemintedQuarterly() {
   TEST(!t.chain.coinbasePaysRemint(toMiner.baseTransaction, 2 * fee));
 }
 
+// The epoch oracle reads 900 end-of-block spots. The history kept only
+// MAX_ROLLBACK_HISTORY + 8, sized for the old 8-block mean, so a rollback
+// deeper than 108 blocks left the epoch median short of a full window and the
+// node priced the re-pushed blocks differently from every other node.
+void testSpotHistoryCoversDeepestRollback() {
+  TestChain t("spot_depth");
+  TestChain fresh("spot_depth_fresh");
+  TEST(t.ok && fresh.ok);
+  const uint32_t rollback = static_cast<uint32_t>(VaultCoreTestAccess::maxRollbackHistory());
+  const uint32_t tip = static_cast<uint32_t>(parameters::EPOCH_DURATION_BLOCKS) + rollback;
+  const uint32_t resumeHeight = tip - rollback + 1;
+  auto risingSpot = [](uint32_t height) { return parameters::COIN / 8 + uint64_t(height) * 100; };
+  for (uint32_t h = 1; h <= tip; ++h) VaultCoreTestAccess::recordBlockSpot(t.chain, h, risingSpot(h));
+  for (uint32_t h = tip; h >= resumeHeight; --h) VaultCoreTestAccess::dropBlockSpot(t.chain, h);
+  for (uint32_t h = 1; h < resumeHeight; ++h) VaultCoreTestAccess::recordBlockSpot(fresh.chain, h, risingSpot(h));
+  const uint64_t freshPrice = VaultCoreTestAccess::oraclePriceBefore(fresh.chain, resumeHeight);
+  TEST(freshPrice < risingSpot(resumeHeight - 8));
+  TEST(VaultCoreTestAccess::oraclePriceBefore(t.chain, resumeHeight) == freshPrice);
+}
+
+AccountPublicAddress newMinerAddress() {
+  AccountPublicAddress address;
+  KeyPair spend = generateKeyPair(), view = generateKeyPair();
+  address.spendPublicKey = spend.publicKey;
+  address.viewPublicKey = view.publicKey;
+  return address;
+}
+
+// Built the way core::get_block_template builds one, so pushBlock sees what a
+// node's own miner would hand it.
+Block nextBlockTemplate(TestChain& t, const AccountPublicAddress& miner, bool payRemint) {
+  Blockchain& chain = t.chain;
+  const uint32_t height = chain.getCurrentBlockchainHeight();
+  Block b = boost::value_initialized<Block>();
+  b.majorVersion = chain.getBlockMajorVersionForHeight(height);
+  b.minorVersion = BLOCK_MINOR_VERSION_0;
+  b.previousBlockHash = chain.getTailId();
+  b.timestamp = chain.getBlockTimestamp(height - 1) + t.currency.difficultyTarget();
+  if (b.majorVersion >= BLOCK_MAJOR_VERSION_2) {
+    b.parentBlock.majorVersion = BLOCK_MAJOR_VERSION_1;
+    b.parentBlock.minorVersion = BLOCK_MINOR_VERSION_0;
+    b.parentBlock.transactionCount = 1;
+  }
+  uint64_t remint = 0;
+  if (b.majorVersion >= BLOCK_MAJOR_VERSION_11) {
+    b.hearthState = chain.currentHearthState();
+    remint = payRemint ? chain.remintDue(height, b.majorVersion) : 0;
+  }
+  const uint64_t burned = chain.getBurnedXfgAtHeight(height - 1);
+  TEST(t.currency.constructMinerTx(b.majorVersion, height, chain.getCurrentCumulativeBlocksizeLimit() / 2,
+                                   chain.getCoinsInCirculation(), 0, 0, miner, b.baseTransaction,
+                                   BinaryArray(), 1, burned, 0, remint));
+  return b;
+}
+
+bool mineAndConnect(TestChain& t, Block b) {
+  if (b.majorVersion >= BLOCK_MAJOR_VERSION_2) {
+    TransactionExtraMergeMiningTag tag = boost::value_initialized<TransactionExtraMergeMiningTag>();
+    if (!get_aux_block_header_hash(b, tag.merkleRoot)) return false;
+    b.parentBlock.baseTransaction.extra.clear();
+    if (!appendMergeMiningTagToExtra(b.parentBlock.baseTransaction.extra, tag)) return false;
+  }
+  const difficulty_type difficulty = t.chain.getDifficultyForNextBlock();
+  Crypto::cn_context context;
+  Crypto::Hash proofOfWork;
+  bool solved = false;
+  for (uint32_t nonce = 0; nonce < 1000000 && !solved; ++nonce) {
+    b.nonce = nonce;
+    solved = t.currency.checkProofOfWork(context, b, difficulty, proofOfWork);
+  }
+  block_verification_context bvc = boost::value_initialized<block_verification_context>();
+  return solved && t.chain.addNewBlock(b, bvc) && bvc.m_added_to_main_chain && !bvc.m_verification_failed;
+}
+
+bool mineUpTo(TestChain& t, const AccountPublicAddress& miner, uint32_t nextHeight) {
+  while (t.chain.getCurrentBlockchainHeight() < nextHeight) {
+    if (!mineAndConnect(t, nextBlockTemplate(t, miner, true))) return false;
+  }
+  return true;
+}
+
+// pushBlock itself must refuse a v11 block whose committed Hearth state is not
+// the chain's, and must enforce, record and on pop reverse the quarterly
+// re-mint. The helpers were tested alone; these blocks go through the node.
+void testBlockConnectEnforcesHearthStateAndRemint() {
+  TestChain t("block_connect", true);
+  TEST(t.ok);
+  const AccountPublicAddress miner = newMinerAddress();
+  const uint32_t firstV11 = t.currency.upgradeHeight(BLOCK_MAJOR_VERSION_11) + 1;
+  TEST(mineUpTo(t, miner, firstV11));
+
+  Block forgedState = nextBlockTemplate(t, miner, true);
+  TEST(forgedState.majorVersion == BLOCK_MAJOR_VERSION_11);
+  forgedState.hearthState.reserveXfg += 1;
+  TEST(!mineAndConnect(t, forgedState));
+  TEST(t.chain.getCurrentBlockchainHeight() == firstV11);
+  TEST(mineAndConnect(t, nextBlockTemplate(t, miner, true)));
+
+  const uint32_t quarter = static_cast<uint32_t>(
+      parameters::FCI_EPOCHS_PER_QUARTER * parameters::TESTNET_EPOCH_DURATION_BLOCKS);
+  TEST(mineUpTo(t, miner, quarter));
+  const uint8_t quarterVersion = t.chain.getBlockMajorVersionForHeight(quarter);
+  TEST(quarterVersion == BLOCK_MAJOR_VERSION_11);
+  const uint64_t burned = 3 * parameters::COIN;
+  VaultCoreTestAccess::setRemintBurned(t.chain, burned);
+  TEST(t.chain.remintDue(quarter, quarterVersion) == burned);
+
+  TEST(!mineAndConnect(t, nextBlockTemplate(t, miner, false)));
+  TEST(t.chain.getCurrentBlockchainHeight() == quarter && t.chain.getRemintedXfg() == 0);
+  TEST(mineAndConnect(t, nextBlockTemplate(t, miner, true)));
+  TEST(t.chain.getRemintedXfg() == burned);
+
+  TEST(t.chain.rollbackBlockchainTo(quarter - 1));
+  TEST(t.chain.getCurrentBlockchainHeight() == quarter);
+  TEST(t.chain.getRemintedXfg() == 0);
+  TEST(t.chain.remintDue(quarter, quarterVersion) == burned);
+  TEST(mineAndConnect(t, nextBlockTemplate(t, miner, true)));
+  TEST(t.chain.getRemintedXfg() == burned);
+}
+
+// The per-order address hash a wallet publishes must be the one the full key
+// derivation gives, since ownership checks compare against it.
+void testLimitOrderAddressHashMatchesKeys() {
+  const KeyPair wallet = generateKeyPair();
+  Crypto::Hash orderId{};
+  orderId.data[0] = 7;
+  const LimitOrderKeys keys = deriveLimitOrderKeys(wallet.secretKey, orderId);
+  TEST(limitOrderAddressHash(wallet.secretKey, orderId) == keys.addressHash);
+  TEST(isOwnLimitOrder(wallet.secretKey, orderId, keys.addressHash));
+  LimitOrderKeys wiped = keys;
+  wipeLimitOrderSecret(wiped);
+  TEST(wiped.spendSecretKey == Crypto::SecretKey{});
+  TEST(wiped.addressHash == keys.addressHash);
+}
+
 int main() {
   testCdInterestCompounding();
   testLegacyDepositWithdrawsForPrincipal();
@@ -2525,6 +2666,9 @@ int main() {
   testLimitOrderCancelTag();
   testCdCreationFeeWithheldForAuntPol();
   testHearthStateCommittedByProofOfWork();
+  testSpotHistoryCoversDeepestRollback();
+  testBlockConnectEnforcesHearthStateAndRemint();
+  testLimitOrderAddressHashMatchesKeys();
   testAliasRegistrationFeeBurned();
   testAuntPolCdCreationFeePushPop();
   testAuntPolMintPremiumPushPop();

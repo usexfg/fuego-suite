@@ -4443,8 +4443,6 @@ uint64_t lowerMedian(std::vector<uint64_t> prices) {
 uint64_t CryptoNote::Blockchain::hearthOraclePriceBefore(uint32_t height) const {
   const uint64_t longWindow = m_currency.isTestnet()
       ? parameters::TESTNET_EPOCH_DURATION_BLOCKS : parameters::EPOCH_DURATION_BLOCKS;
-  static_assert(parameters::EPOCH_DURATION_BLOCKS <= MAX_ROLLBACK_HISTORY + 8,
-                "the spot history must hold a full epoch");
   std::vector<uint64_t> recent;
   for (auto it = m_blockSpotHistory.rbegin(); it != m_blockSpotHistory.rend() && recent.size() < longWindow; ++it) {
     if (it->first < height) recent.push_back(it->second);
@@ -5713,11 +5711,10 @@ bool CryptoNote::Blockchain::processBlockEpochWork(const Block& block, uint32_t 
     // compounds inside the reserves and counts toward bootstrap repayment
     // via getTreasuryLpValue() (both legs, actual amounts).
     if (block.majorVersion >= BLOCK_MAJOR_VERSION_11) {
-      // Both legs are funded by the mint premium: the withheld premium XFG
-      // is credited to m_treasuryLpPendingXfg at connect, and the HEAT it
-      // buys is credited to m_treasuryHeatReserve. No SWF transfer is
-      // involved — the SWF is the protocol collateral reserve and is never
-      // spent to pair AuntPoL.
+      // v11: the mint premium funds both legs — its withheld XFG in
+      // m_treasuryLpPendingXfg, the HEAT it buys in m_treasuryHeatReserve.
+      // v12+: the CD creation fee funds the XFG leg and the premium only the
+      // HEAT leg. The SWF is never spent to pair AuntPoL.
       const uint64_t availXfg = m_treasuryLpPendingXfg;
       const uint64_t availHeat = m_treasuryHeatReserve;
       uint64_t depositXfg = 0;
@@ -6066,6 +6063,21 @@ void CryptoNote::Blockchain::rollbackFciBlock(uint32_t poppedHeight) {
   m_fuegoCostIndex.removeCoinbaseVote(m_blocks.back().bl.baseTransaction.extra);
 }
 
+void CryptoNote::Blockchain::recordBlockSpot(uint32_t height, uint64_t spot) {
+  static_assert(parameters::TESTNET_EPOCH_DURATION_BLOCKS <= parameters::EPOCH_DURATION_BLOCKS,
+                "BLOCK_SPOT_HISTORY_DEPTH covers the longer epoch");
+  m_blockSpotHistory.push_back({height, spot});
+  while (m_blockSpotHistory.size() > BLOCK_SPOT_HISTORY_DEPTH) {
+    m_blockSpotHistory.pop_front();
+  }
+}
+
+void CryptoNote::Blockchain::dropBlockSpot(uint32_t height) {
+  if (!m_blockSpotHistory.empty() && m_blockSpotHistory.back().first == height) {
+    m_blockSpotHistory.pop_back();
+  }
+}
+
 void CryptoNote::Blockchain::accumulateTwap(const Block& block, uint32_t height) {
   // TWAP accumulation per block (v11+). Shared by the push path and the
   // rebuildCache settlement replay.
@@ -6079,10 +6091,7 @@ void CryptoNote::Blockchain::accumulateTwap(const Block& block, uint32_t height)
     // The 8-block TWAP for mints (see twapBefore). Use the live AMM spot, not
     // the user-controlled call-auction clearing price; otherwise tiny crossed
     // orders can manufacture an oracle price and mint unbacked HEAT at it.
-    m_blockSpotHistory.push_back({height, spotPrice});
-    while (m_blockSpotHistory.size() > MAX_ROLLBACK_HISTORY + 8) {
-      m_blockSpotHistory.pop_front();
-    }
+    recordBlockSpot(height, spotPrice);
   }
 
   // Epoch boundary: reset TWAP accumulator (v11+)
@@ -6401,10 +6410,7 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
     m_blockTwapContributions.pop_back();
   }
 
-  // Drop the popped block's spot price; the older ones are all still here.
-  if (!m_blockSpotHistory.empty() && m_blockSpotHistory.back().first == poppedHeight) {
-    m_blockSpotHistory.pop_back();
-  }
+  dropBlockSpot(poppedHeight);
 
   m_blocks.pop_back();
   m_blockIndex.pop();
@@ -8676,7 +8682,7 @@ bool CryptoNote::Blockchain::coinbasePaysRemint(const Transaction& coinbase, uin
   Crypto::SecretKey devViewSecret;
   Crypto::KeyDerivation derivation;
   Crypto::PublicKey expected;
-  return m_currency.parseAccountAddressString(std::string(FUEGO_DEV_FUND_ADDRESS), devFund) &&
+  return m_currency.devFundAddress(devFund) &&
          Common::podFromHex(std::string(FUEGO_DEV_FUND_VIEW_SECRET_KEY_HEX), devViewSecret) &&
          Crypto::generate_key_derivation(getTransactionPublicKeyFromExtra(coinbase.extra), devViewSecret, derivation) &&
          Crypto::derive_public_key(derivation, index, devFund.spendPublicKey, expected) &&

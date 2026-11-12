@@ -3153,7 +3153,7 @@ namespace CryptoNote
     context->v11DepositExpiration = expiration;
     context->v11DepositOrderId = orderId;
 
-    context->v11DepositAddressHash = deriveLimitOrderKeys(m_keys.spendSecretKey, orderId).addressHash;
+    context->v11DepositAddressHash = limitOrderAddressHash(m_keys.spendSecretKey, orderId);
 
     transactionId = m_transactionsCache.addNewTransaction(neededMoney, fee, std::string(), {}, 0, {});
     context->transactionId = transactionId;
@@ -3379,7 +3379,7 @@ namespace CryptoNote
         }
       }
 
-      const LimitOrderKeys orderKeys = deriveLimitOrderKeys(m_keys.spendSecretKey, orderId);
+      LimitOrderKeys orderKeys = deriveLimitOrderKeys(m_keys.spendSecretKey, orderId);
       std::vector<uint8_t> extra;
       if (context->v11WithdrawStopOnly) {
         Crypto::Signature proof;
@@ -3394,6 +3394,7 @@ namespace CryptoNote
         addLimitWithdrawToExtra(extra, orderId, orderKeys.spendPublicKey,
                                 orderKeys.viewPublicKey, outputsHash, proof);
       }
+      wipeLimitOrderSecret(orderKeys);
       CryptoNote::BinaryArray extraData(extra.begin(), extra.end());
       transaction->appendExtra(extraData);
 

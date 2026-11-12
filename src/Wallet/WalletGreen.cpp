@@ -1693,7 +1693,7 @@ namespace CryptoNote
       const auto &owner = getWalletRecord(getTransactionTransfer(firstDeposit.creatingTransactionId, 0).address);
       Crypto::Hash orderId{};
       Crypto::generate_random_bytes(sizeof(orderId.data), orderId.data);
-      const Crypto::Hash addressHash = deriveLimitOrderKeys(owner.spendSecretKey, orderId).addressHash;
+      const Crypto::Hash addressHash = limitOrderAddressHash(owner.spendSecretKey, orderId);
       std::vector<uint8_t> extra;
       addLimitDepositToExtra(extra, side, amount, targetPrice, expiration, orderId, addressHash);
       transaction->appendExtra(CryptoNote::BinaryArray(extra.begin(), extra.end()));
@@ -1736,7 +1736,7 @@ namespace CryptoNote
     Crypto::Hash orderId{};
     Crypto::generate_random_bytes(sizeof(orderId.data), orderId.data);
     const Crypto::Hash addressHash =
-        deriveLimitOrderKeys(selectedTransfers[0].wallet->spendSecretKey, orderId).addressHash;
+        limitOrderAddressHash(selectedTransfers[0].wallet->spendSecretKey, orderId);
     std::vector<uint8_t> extra;
     addLimitDepositToExtra(extra, side, amount, targetPrice, expiration, orderId, addressHash);
     transaction->appendExtra(CryptoNote::BinaryArray(extra.begin(), extra.end()));
@@ -1861,7 +1861,7 @@ namespace CryptoNote
       }
     }
 
-    const LimitOrderKeys orderKeys = deriveLimitOrderKeys(ownerWallet->spendSecretKey, orderId);
+    LimitOrderKeys orderKeys = deriveLimitOrderKeys(ownerWallet->spendSecretKey, orderId);
     std::vector<uint8_t> extra;
     if (stopOnly) {
       Crypto::Signature proof;
@@ -1876,6 +1876,7 @@ namespace CryptoNote
       addLimitWithdrawToExtra(extra, orderId, orderKeys.spendPublicKey,
                               orderKeys.viewPublicKey, outputsHash, proof);
     }
+    wipeLimitOrderSecret(orderKeys);
     transaction->appendExtra(CryptoNote::BinaryArray(extra.begin(), extra.end()));
     typedef CryptoNote::COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount outs_for_amount;
     std::vector<outs_for_amount> mixinResult;
@@ -1912,12 +1913,10 @@ namespace CryptoNote
     if (termEpochs == parameters::HEAT_TERM) {
       throw std::system_error(make_error_code(error::WRONG_PARAMETERS), "term_epochs must not be HEAT_TERM");
     }
-    // Consensus rejects CD outputs below the activation height; say so plainly
-    // instead of building a transaction the network will refuse.
-    if (getBlockCount() < m_currency.cdActivationHeight()) {
+    if (nextBlockMajorVersion() < BLOCK_MAJOR_VERSION_12) {
       throw std::system_error(make_error_code(error::WRONG_STATE),
-          "HEAT CDs activate at block " + std::to_string(m_currency.cdActivationHeight()) +
-          " (current height " + std::to_string(getBlockCount()) + ")");
+          "HEAT CDs activate at block " + std::to_string(m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_12) + 1) +
+          " (next block " + std::to_string(m_node.getLastKnownBlockHeight() + 1) + ")");
     }
 
     fee = m_currency.minimumFee();
@@ -6684,6 +6683,10 @@ namespace CryptoNote
   // Alias methods
   // ============================================================================
 
+  uint8_t WalletGreen::nextBlockMajorVersion() const {
+    return m_currency.blockMajorVersionAtHeight(m_node.getLastKnownBlockHeight() + 1);
+  }
+
   std::error_code WalletGreen::devFundBurn(uint64_t amount, Crypto::Hash& txHashOut) {
     throwIfNotInitialized();
     throwIfTrackingMode();
@@ -6691,7 +6694,7 @@ namespace CryptoNote
     if (amount == 0) {
       return make_error_code(error::ZERO_DESTINATION);
     }
-    if (m_node.getLastKnownBlockHeight() + 1 < m_currency.upgradeHeight(CryptoNote::BLOCK_MAJOR_VERSION_11)) {
+    if (nextBlockMajorVersion() < CryptoNote::BLOCK_MAJOR_VERSION_11) {
       return make_error_code(error::WRONG_STATE);
     }
     std::vector<uint8_t> extraVec;
@@ -6795,8 +6798,7 @@ namespace CryptoNote
     // From v11 the registration fee is a re-mint burn: it rides in the
     // transaction fee and consensus withholds it, so no output pays the dev
     // wallet.
-    const bool burnsFee = !m_currency.isTestnet() &&
-        m_node.getLastKnownBlockHeight() + 1 >= m_currency.upgradeHeight(CryptoNote::BLOCK_MAJOR_VERSION_11);
+    const bool burnsFee = !m_currency.isTestnet() && nextBlockMajorVersion() >= CryptoNote::BLOCK_MAJOR_VERSION_11;
     if (burnsFee) {
       CryptoNote::addRemintBurnToExtra(extraVec, CryptoNote::parameters::ALIAS_REGISTRATION_FEE);
     }

@@ -17,11 +17,13 @@ Needed:
 The loyalty multipliers (2.5× at 72 epochs, 2× at 36, 1.5× at 18, 1.25× at 6) pull HEAT into long locks. The stated goal is liquid HEAT that prices XFG well. Decide whether to flatten or cut the multipliers, together with the CD creation fee schedule (0.25% at 6 epochs to 1% at 72; per year of lock that is 3.0%/1.55%/1.18%/1.0%, so long locks are still the cheapest per year).
 
 ### 3. Re-mint burn and quarterly re-mint — DONE (2026-11-12)
-`TX_EXTRA_REMINT_BURN` is its own burn type and counter; alias registrations pay their fee with one. Each FCI quarter boundary (from v11) the coinbase must end with one output paying the not-yet-re-minted total to the dev fund (`Blockchain::remintDue` / `coinbasePaysRemint`). Open: no test mines a full block through `pushBlock` / `popBlock` with the re-mint (the hooks are verified by reading).
+`TX_EXTRA_REMINT_BURN` is its own burn type and counter; alias registrations pay their fee with one. Each FCI quarter boundary (from v11) the coinbase must end with one output paying the not-yet-re-minted total to the dev fund (`Blockchain::remintDue` / `coinbasePaysRemint`). `testBlockConnectEnforcesHearthStateAndRemint` mines testnet blocks through `pushBlock` / `popBlock` across the quarter boundary.
 
 ## Should do
 
 - Standalone dev fund burn command: DONE 2026-11-12 (`dev_fund_burn` in SimpleWallet; `dev_fund_burn` JSON-RPC in walletd). The quarterly re-mint amount is only uninformative about alias count once people actually send standalone burns.
 
 - Tests that drive `pushTransaction` / `popTransaction` for the limit-order stop tag (AuntPoL legs and the alias-burn total are covered).
-- A test harness that mines a valid v11 block, to cover `pushBlock` rejecting a mismatched `HearthState`.
+- A test harness that mines a valid v11 block, to cover `pushBlock` rejecting a mismatched `HearthState`: DONE 2026-11-12 (`testBlockConnectEnforcesHearthStateAndRemint`).
+- Expired limit deposits nobody withdraws are never pruned (`pruneSettledLimitDeposits` drops only withdrawn ones). They stay in `m_limitDeposits`, and the expiry, auction, backstop and prune passes walk every entry each block. Each one locks at least `LIMIT_ORDER_MIN_XFG` (1 XFG) or `LIMIT_ORDER_MIN_HEAT` (0.1 HEAT), and the owner can withdraw it at any time, so the set grows only with capital left locked. A fix needs an index of resting orders kept in step at about 12 consensus mutation sites (deposit, stop, withdraw, expiry, prune, restore, each of their pops, cache load); a desync there splits consensus. Decide before v11 Hearth goes live.
+- Testnet `Currency::cdActivationHeight()` returns the v11 height (30), pinned by `testCdActivationHeight`, but `check_tx_outputs` admits CD outputs only in v12 blocks (height 181 on testnet). Wallets now gate CDs on the next block's version, matching consensus. Align `cdActivationHeight()` with the version rule or document why the claim rule keeps the earlier height.

@@ -37,7 +37,7 @@ fuego-suite/
 - **Balanced LP deposits only** — single-sided deposits mint no shares (no dilution); shares are fair pro-rata at the pool ratio
 - Taker pays the 1% fee; the split is versioned (`hearthCdSharePct`): **v11 pays 30% CD / 70% maker**, **v12 flips to 70% CD / 30% maker**. The CD share is debited into the HEAT-denominated `cdHearthFeeAccumulator` → minted into `CD_APY_POOL` at the epoch boundary; the maker share is the rebate (auction makers, or LPs on pool fills); consumed XFG burned 50/50 (EF/SWF)
 - The gossiped in-band CLOB matcher, `MIN_DISTINCT_PARTIES`, and unbacked orders are **retired**
-- **Treasury LP Manager (AuntPoL)**: the protocol's own ratio-paired LP position. **v11:** the 1% mint premium funds both legs (withheld premium XFG = **XFG leg**, the HEAT it buys = **HEAT leg**) and the CD creation fee adds to the XFG leg. **v12+: one source per leg** — the CD creation fee is the **XFG leg**, the mint premium's HEAT is the **HEAT leg** and its XFG is burned. Plus HEAT donations. The two pair at the pool ratio; no SWF transfer and no cross-conversion. Compounds and drives bootstrap repayment (two-leg owned-reserves check)
+- **Treasury LP Manager (AuntPoL)**: the protocol's own ratio-paired LP position. **v11:** the 1% mint premium funds both legs (withheld premium XFG = **XFG leg**, the HEAT it buys = **HEAT leg**); CDs, and with them the CD creation fee, start at v12. **v12+: one source per leg** — the CD creation fee is the **XFG leg**, the mint premium's HEAT is the **HEAT leg** and its XFG is burned. Plus HEAT donations. The two pair at the pool ratio; no SWF transfer and no cross-conversion. Compounds and drives bootstrap repayment (two-leg owned-reserves check)
 
 ### HEAT Flatcoin (colored coin)
 - Not fiat based, peg targets purchasing power only; adjusts for inflation/CPI
@@ -68,8 +68,8 @@ NOT protocol earnings:
 - **Alias registration fee**: 1 XFG (`ALIAS_REGISTRATION_FEE`). Before v11 it is an output to `FUEGO_DEV_FUND_ADDRESS`. From v11 a registration must carry a re-mint burn covering it, so no alias transaction pays the dev wallet and the counter does not count aliases.
 
 ### Hearth Exchange — Data Flow Per Block (v11+)
-1. `PoolOrderOrchestrator`: record pool spot (volatility), decide regeneration, compute adaptive spread
-2. `generatePoolOrders()` → `setPoolOrders()` — depth-band makers from AMM reserves (executed, not display-only)
+1. `PoolOrderOrchestrator`: record pool spot (volatility), compute adaptive spread
+2. `generatePoolOrders()` → `setPoolOrders()` — depth-band makers rebuilt every block from the AMM reserves, priced on the curve (executed, not display-only)
 3. Height-based expiry on `m_limitDeposits` (expired stay claimable, skip this block's fills)
 4. Call auction: user deposits + 0xF0 pool orders; user-vs-user fills move escrow/proceeds; pool fills move `reserve*`
 5. AMM backstop: unfilled user deposits vs constant-product curve at live spot, capped by `HEARTH_BACKSTOP_MAX_BPS`

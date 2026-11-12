@@ -228,6 +228,7 @@ protected:
 
   void throwIfNotInitialized() const;
   void throwIfStopped() const;
+  uint8_t nextBlockMajorVersion() const;
   void throwIfTrackingMode() const;
   // Derives a user-owned commitment output key at `outputIndex` of `transaction`,
   // bound to the primary address's spend public key. Every self-owned commitment

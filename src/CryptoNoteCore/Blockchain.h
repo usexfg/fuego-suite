@@ -637,8 +637,8 @@ namespace CryptoNote {
     uint64_t m_twapBlockCount = 0;
 
     // End-of-block Hearth spot price of each v11 block, (height, price), most
-    // recent last — kept for MAX_ROLLBACK_HISTORY blocks beyond the 8-block
-    // window and saved with the block cache. hearthOraclePriceBefore(h) reads
+    // recent last — kept for MAX_ROLLBACK_HISTORY blocks beyond the epoch
+    // oracle window and saved with the block cache. hearthOraclePriceBefore(h) reads
     // the entries below h, so validation, settlement, a reorg and a restart all
     // see the same price. The old window dropped its oldest entry on each
     // push and restored none on a pop, and was never saved: after a reorg or a
@@ -706,6 +706,10 @@ namespace CryptoNote {
     // Testnet has no checkpoints, so reorg depth is unbounded there; keep the
     // window generous and rely on the loud eviction log in popBlock.
     static constexpr size_t MAX_ROLLBACK_HISTORY = 1000;
+    static constexpr size_t BLOCK_SPOT_HISTORY_DEPTH =
+        MAX_ROLLBACK_HISTORY + CryptoNote::parameters::EPOCH_DURATION_BLOCKS;
+    void recordBlockSpot(uint32_t height, uint64_t spot);
+    void dropBlockSpot(uint32_t height);
 
     // Per-block OOB fill records for popBlock reversal.
     struct OrderFillRecord {

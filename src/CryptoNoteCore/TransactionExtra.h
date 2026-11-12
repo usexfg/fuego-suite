@@ -637,6 +637,9 @@ struct LimitOrderKeys {
   Crypto::Hash addressHash;
 };
 LimitOrderKeys deriveLimitOrderKeys(const Crypto::SecretKey& walletSpendSecret, const Crypto::Hash& orderId);
+void wipeSecretKey(Crypto::SecretKey& key);
+void wipeLimitOrderSecret(LimitOrderKeys& keys);
+Crypto::Hash limitOrderAddressHash(const Crypto::SecretKey& walletSpendSecret, const Crypto::Hash& orderId);
 bool isOwnLimitOrder(const Crypto::SecretKey& walletSpendSecret, const Crypto::Hash& orderId,
                      const Crypto::Hash& addressHash);
 

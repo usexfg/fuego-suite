@@ -40,6 +40,20 @@ using namespace Common;
 namespace CryptoNote
 {
 
+  namespace {
+    // A varint size followed by that many bytes of a binary-serialized field,
+    // read from the parse stream so the loop resumes after the payload.
+    template <typename Field>
+    bool readSizedExtraPayload(MemoryInputStream& iss, size_t extraSize, Field& field) {
+      uint64_t size = 0;
+      readVarint(iss, size);
+      if (size > extraSize - iss.getPosition()) return false;
+      BinaryArray payload(static_cast<size_t>(size));
+      read(iss, payload.data(), payload.size());
+      return fromBinaryArray(field, payload);
+    }
+  }
+
   bool parseTransactionExtra(const std::vector<uint8_t> &transactionExtra, std::vector<TransactionExtraField> &transactionExtraFields)
   {
     transactionExtraFields.clear();
@@ -448,7 +462,7 @@ namespace CryptoNote
             case TX_EXTRA_ALIAS:
            {
              TransactionExtraAliasRegistration alias;
-             if (getAliasFromExtra(transactionExtra, alias)) {
+             if (readSizedExtraPayload(iss, transactionExtra.size(), alias)) {
                transactionExtraFields.push_back(alias);
              } else {
                return false;
@@ -459,7 +473,7 @@ namespace CryptoNote
             case TX_EXTRA_ALIAS_RELEASE:
            {
              TransactionExtraAliasRelease release;
-             if (getAliasReleaseFromExtra(transactionExtra, release)) {
+             if (readSizedExtraPayload(iss, transactionExtra.size(), release)) {
                transactionExtraFields.push_back(release);
              } else {
                return false;
@@ -470,7 +484,7 @@ namespace CryptoNote
            case TX_EXTRA_ALIAS_TRANSFER:
            {
              TransactionExtraAliasTransfer transfer;
-             if (getAliasTransferFromExtra(transactionExtra, transfer)) {
+             if (readSizedExtraPayload(iss, transactionExtra.size(), transfer)) {
                transactionExtraFields.push_back(transfer);
              } else {
                return false;

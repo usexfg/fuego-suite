@@ -6760,7 +6760,16 @@ namespace CryptoNote
     std::string extra(extraVec.begin(), extraVec.end());
 
     TransactionParameters params;
-    if (!m_currency.isTestnet()) {
+    // From v11 the registration fee is burned: it rides in the transaction fee
+    // and consensus withholds it, so no output pays the dev wallet.
+    const bool burnsFee = !m_currency.isTestnet() &&
+        m_node.getLastKnownBlockHeight() + 1 >= m_currency.upgradeHeight(CryptoNote::BLOCK_MAJOR_VERSION_11);
+    if (burnsFee) {
+      WalletOrder selfOutput;
+      selfOutput.address = aliasReg.ownerAddress;
+      selfOutput.amount  = m_currency.minimumFee();
+      params.destinations.push_back(selfOutput);
+    } else if (!m_currency.isTestnet()) {
       WalletOrder devFundOutput;
       devFundOutput.address = CryptoNote::FUEGO_DEV_FUND_ADDRESS;
       uint64_t randomDust = 0;
@@ -6780,7 +6789,7 @@ namespace CryptoNote
       selfOutput.amount  = m_currency.minimumFee();
       params.destinations.push_back(selfOutput);
     }
-    params.fee   = m_currency.minimumFee();
+    params.fee   = m_currency.minimumFee() + (burnsFee ? CryptoNote::parameters::ALIAS_REGISTRATION_FEE : 0);
     params.mixIn = m_currency.minMixin(CryptoNote::BLOCK_MAJOR_VERSION_10);
     params.extra = extra;
 

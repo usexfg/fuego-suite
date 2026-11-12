@@ -87,7 +87,7 @@ const uint64_t TEST_BANK_FEE_TIER_3 = UINT64_C(
 
 // Fire Alias registration fee: 1 XFG
 const uint64_t ALIAS_REGISTRATION_FEE =
-    COIN; /* 1 XFG sent to Fuego Development Fund */
+    COIN; /* 1 XFG: to the dev fund before v11; burned from v11 (alias-burn total) */
 const uint64_t ALIAS_REGISTRATION_FEE_MAX_RANDOM =
     1000; /* max random dust added to alias fee to prevent fingerprinting */
 

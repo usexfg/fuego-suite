@@ -76,7 +76,7 @@ bool operator<(const Crypto::KeyImage& keyImage1, const Crypto::KeyImage& keyIma
 }
 }
 
-#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 20  // v20: HEAT supply counts only XFG-valued CD fees as new (cd_fee_heat_from_xfg). v19: limit deposits carry withdrawnHeight; orderbook snapshots carry pruned deposits. v18: v18: orderbook auction state and its rollback records are cached (forces replay: a v17 cache has none, and a node restarted from one re-entered bootstrap and forked)
+#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 21  // v21: alias registration fees burned from v11 (alias_burned_xfg). v20: HEAT supply counts only XFG-valued CD fees as new (cd_fee_heat_from_xfg). v19: limit deposits carry withdrawnHeight; orderbook snapshots carry pruned deposits. v18: v18: orderbook auction state and its rollback records are cached (forces replay: a v17 cache has none, and a node restarted from one re-entered bootstrap and forked)
 #define CURRENT_BLOCKCHAININDICES_STORAGE_ARCHIVE_VER 1
 
 namespace CryptoNote {
@@ -215,6 +215,27 @@ bool isCdOutputTerm(uint32_t term) {
          term != parameters::DEPOSIT_TERM_POOL_HEAT &&
          term != parameters::DEPOSIT_TERM_LP &&
          term != parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG;
+}
+
+// XFG a transaction's alias registrations burn from v11: the fee for every
+// registration except reserved ones (aliasType 0). Testnet registers free, as
+// it did when the fee went to the dev fund.
+uint64_t aliasRegistrationBurn(const std::vector<CryptoNote::TransactionExtraField>& fields, bool testnet) {
+  using namespace CryptoNote;
+  if (testnet) return 0;
+  uint64_t burn = 0;
+  for (const auto& f : fields) {
+    if (f.type() != typeid(TransactionExtraAliasRegistration)) continue;
+    const auto& reg = boost::get<TransactionExtraAliasRegistration>(f);
+    if (reg.isValid() && reg.aliasType != 0) burn += parameters::ALIAS_REGISTRATION_FEE;
+  }
+  return burn;
+}
+
+uint64_t aliasRegistrationBurn(const CryptoNote::Transaction& tx, bool testnet) {
+  std::vector<CryptoNote::TransactionExtraField> fields;
+  if (!CryptoNote::parseTransactionExtra(tx.extra, fields)) return 0;
+  return aliasRegistrationBurn(fields, testnet);
 }
 
 uint64_t declaredCdCreationFee(const CryptoNote::Transaction& tx) {
@@ -432,6 +453,7 @@ public:
       logger(INFO) << operation << "HEAT/AMM/PI state";
       s(m_bs.m_heatSupply, "heat_supply");
       s(m_bs.m_cdFeeHeatFromXfg, "cd_fee_heat_from_xfg");
+      s(m_bs.m_aliasBurnedXfg, "alias_burned_xfg");
       s(m_bs.m_heatOnDeposit, "heat_on_deposit");
       s(m_bs.m_cdExpiryByEpoch, "cd_expiry_by_epoch");
       s(m_bs.m_digmSupply, "digm_supply");
@@ -1282,6 +1304,7 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
     m_totalCdLocked = 0;
     m_heatSupply = 0;
     m_cdFeeHeatFromXfg = 0;
+    m_aliasBurnedXfg = 0;
     m_heatOnDeposit = 0;
     m_cdExpiryByEpoch.clear();
     m_blockCdCreatedHeat = 0;
@@ -1986,6 +2009,12 @@ bool CryptoNote::Blockchain::prevalidate_miner_transaction(const Block& b, uint3
       // so the two lists cannot drift apart again.
       if (isHeatwaveTag(field)) {
         logger(INFO, BRIGHT_RED) << "coinbase transaction carries a v11 settlement tag";
+        return false;
+      }
+      // The coinbase skips settlement, so it would register an alias without
+      // burning the fee.
+      if (field.type() == typeid(TransactionExtraAliasRegistration)) {
+        logger(INFO, BRIGHT_RED) << "coinbase transaction carries an alias registration";
         return false;
       }
     }
@@ -5130,7 +5159,9 @@ void CryptoNote::Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
                 // also match, otherwise a self-transfer satisfies the amount check.
                 // Reserved aliases (aliasType == 0) are exempt. Testnet always passes.
                 bool feeOk = true;
-                if (!m_currency.isTestnet() && aliasReg.aliasType != 0) {
+                // From v11 the fee is burned and settlement already enforced it.
+                if (!m_currency.isTestnet() && aliasReg.aliasType != 0 &&
+                    block.bl.majorVersion < BLOCK_MAJOR_VERSION_11) {
                   bool feeOutputFound = false;
                   AccountPublicAddress devFundAddr;
                   bool devAddrParsed = m_currency.parseAccountAddressString(
@@ -6746,6 +6777,7 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
   }
 
   if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11) {
+    m_aliasBurnedXfg += aliasRegistrationBurn(transaction.tx, m_currency.isTestnet());
     const uint64_t cdFee = declaredCdCreationFee(transaction.tx);
     m_treasuryLpPendingXfg = m_treasuryLpPendingXfg > UINT64_MAX - cdFee ? UINT64_MAX : m_treasuryLpPendingXfg + cdFee;
   }
@@ -7369,6 +7401,8 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
   }
 
   if (majorVersion >= BLOCK_MAJOR_VERSION_11) {
+    const uint64_t aliasBurn = aliasRegistrationBurn(transaction, m_currency.isTestnet());
+    m_aliasBurnedXfg = m_aliasBurnedXfg >= aliasBurn ? m_aliasBurnedXfg - aliasBurn : 0;
     const uint64_t cdFee = declaredCdCreationFee(transaction);
     m_treasuryLpPendingXfg = m_treasuryLpPendingXfg >= cdFee ? m_treasuryLpPendingXfg - cdFee : 0;
   }
@@ -8283,6 +8317,20 @@ bool CryptoNote::Blockchain::validateSettlement(const Transaction& tx, uint32_t 
       }
       xfgFee -= declared->amountXfg;
     }
+  }
+
+  // Alias registration fee: burned, not paid to the miner or to any wallet.
+  {
+    const uint64_t aliasBurn = aliasRegistrationBurn(fields, m_currency.isTestnet());
+    if (xfgFee < aliasBurn) {
+      error = "alias registration: XFG surplus does not cover the registration fee";
+      return false;
+    }
+    if (m_aliasBurnedXfg > UINT64_MAX - aliasBurn) {
+      error = "alias registration: alias-burn total overflow";
+      return false;
+    }
+    xfgFee -= aliasBurn;
   }
 
   // Each tag's own rules, including every condition its settlement in

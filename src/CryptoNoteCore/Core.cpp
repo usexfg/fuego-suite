@@ -1644,6 +1644,7 @@ core::HeatMetrics core::getHeatMetrics() const {
   m.permanentlyBurnedXfg = m_blockchain.getPermanentlyBurnedXfg();
   m.heatCdFeePool = m_blockchain.getHeatCdFeePool();
   m.swfBurnedXfgPendingHeat = m_blockchain.getSwfBurnedXfgPendingHeat();
+  m.aliasBurnedXfg = m_blockchain.getAliasBurnedXfg();
   const auto& pool = m_blockchain.getAmmPool();
   if (!pool.isEmpty() && pool.reserveHeat > 0) {
     // Pool XFG per HEAT, scaled by COIN: (reserveXfg / reserveHeat) × COIN.

@@ -147,6 +147,7 @@ namespace CryptoNote {
     uint64_t getCurrentEpochSwapFees() const { return m_currentEpochSwapFees; }
     uint64_t getTotalCdLocked() const { return m_totalCdLocked; }
     uint64_t getHeatSupply() const { return m_heatSupply; }
+    uint64_t getAliasBurnedXfg() const { return m_aliasBurnedXfg; }
     uint64_t getHearthstoneCents() const;
     uint64_t getHeatOnDeposit() const { return m_heatOnDeposit; }
     uint64_t getDigmSupply() const { return m_digmSupply; }
@@ -594,6 +595,11 @@ namespace CryptoNote {
     // backstop buys). Only this part is new HEAT when the epoch mints the
     // accumulator; the rest was HEAT taken from reserves or escrow.
     uint64_t m_cdFeeHeatFromXfg = 0;
+    // XFG burned as alias registration fees from v11. Kept out of the Eternal
+    // Flame (never re-emitted to miners) and out of the mint-burn tally; it is
+    // the total a later rule re-mints to the dev fund in one output, so no
+    // alias transaction pays the dev wallet directly.
+    uint64_t m_aliasBurnedXfg = 0;
     // HEAT in CDs still earning: added at creation, dropped at the boundary
     // closing the CD's last credited epoch. The v11+ epoch-rate denominator.
     uint64_t m_heatOnDeposit = 0;

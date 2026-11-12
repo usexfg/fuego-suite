@@ -244,6 +244,7 @@ namespace CryptoNote {
       uint64_t permanentlyBurnedXfg = 0; // SWF XFG permanently retired when converted to HEAT (removed from total supply)
       uint64_t heatCdFeePool = 0;     // HⲶ∆T in CD fee pool (accrued, not yet distributed)
       uint64_t swfBurnedXfgPendingHeat = 0; // already-burned XFG awaiting SWF HEAT conversion (removed from circulating, not total supply)
+      uint64_t aliasBurnedXfg = 0;      // alias registration fees burned from v11 (dev-fund re-mint total)
       uint64_t redemptionPriceNum = 1;  // pool XFG/HⲶ∆T ratio numerator, scaled by COIN
       uint64_t redemptionPriceDenom = 10000000;
       uint64_t treasuryBalance = 0;

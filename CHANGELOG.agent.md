@@ -6597,3 +6597,38 @@ Sign-off table:
 | Tests pass | DONE — core_tests 384/384, test_hearth_amm 45/45 |
 | Mutation check | DONE — withholding only the required fee fails the over-declared case |
 | All tasks done | DONE |
+
+## Alias registration fee burned from v11; alias tag parser fix
+
+**Feature name**: Alias fee burn with its own total; `parseTransactionExtra` alias cases
+**Agent**: Claude
+**Start date**: 2026-11-12
+**Decision**: owner, 2026-11-12 — burn the alias fee and track it as its own total, re-mint to the dev fund later, so no alias transaction pays the dev wallet directly.
+**Consensus impact**: v11+ fee rule (not live). Parser fix applies to all heights; v10 is live (mainnet height 1,028,599), see below. Cache archive 20 -> 21 (forces replay).
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Settlement: each non-reserved alias registration must leave `ALIAS_REGISTRATION_FEE` in the XFG surplus; it is withheld from the miner (burned). Testnet stays free, as before | Claude | 2026-11-12 | DONE |
+| 2 | `m_aliasBurnedXfg`: push adds, pop subtracts, cached; outside the Eternal Flame and the mint-burn tally; `alias_burned_xfg` in `/heat_metrics` | Claude | 2026-11-12 | DONE |
+| 3 | Pre-v11 dev-output check kept for pre-v11 blocks only; coinbase alias registrations refused from v11 (the coinbase skips settlement) | Claude | 2026-11-12 | DONE |
+| 4 | WalletGreen and SimpleWallet: from v11 on mainnet, no dev output; the fee rides in the transaction fee | Claude | 2026-11-12 | DONE |
+| 5 | Parser fix: the `TX_EXTRA_ALIAS` / `_RELEASE` / `_TRANSFER` cases rescanned the whole extra for the first tag byte and never consumed the payload, so every transaction carrying one failed `parseTransactionExtra`. They now read a size-bounded payload from the stream | Claude | 2026-11-12 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j4` full build rc=0 |
+| Tests pass | DONE — core_tests 396/396, test_hearth_amm 45/45 |
+| Mutation check | DONE — coinbase guard off, burn not withheld, old parser each fail tests |
+| All tasks done | DONE |
+
+Parser fix and history (v10 is live):
+- The bug is why no alias ever registered: `pushToBankingIndex` only sees aliases through `parseTransactionExtra`.
+- Before v11 consensus reads parsed fields only to detect HEAT/Hearth settlement tags and 0x08 burns. A wallet-built alias transaction (alias + tx key + optional nonce) carries none of them, so the fix changes no historical block's validity. It would only if a historical alias transaction also carried a settlement tag; the chain was not scanned for that here.
+- What changes on replay: past alias attempts that paid the 1 XFG dev-fund output register, and wallets now find those transactions' public key and see their change outputs.
+- The earlier coinbase alias test passed only because the alias extra failed to parse ("malformed extra"); it now fails on the alias rule itself (checked by mutation).
+
+Not covered:
+- No harness drives pushTransaction/popTransaction for the alias-burn total.
+- Re-minting the total to the dev fund is not implemented (`docs/V12_LAUNCH_TODO.md` item 3).

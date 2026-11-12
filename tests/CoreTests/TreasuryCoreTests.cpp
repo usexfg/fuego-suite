@@ -1341,6 +1341,15 @@ void testCoinbaseRejectsEverySettlementTag() {
   TEST(addHeatMintAuthToExtra(mint, 10 * parameters::COIN, 1 * parameters::COIN));
   TEST(!VaultCoreTestAccess::prevalidateCoinbase(t.chain, coinbaseWith(mint), 1));
 
+  // From v11 the alias fee is burned in settlement, which the coinbase skips.
+  TransactionExtraAliasRegistration coinbaseAlias;
+  coinbaseAlias.alias = "minerals";
+  coinbaseAlias.ownerAddress = "miner-owner";
+  coinbaseAlias.aliasType = 1;
+  std::vector<uint8_t> aliasExtra;
+  TEST(addAliasToExtra(aliasExtra, coinbaseAlias));
+  TEST(!VaultCoreTestAccess::prevalidateCoinbase(t.chain, coinbaseWith(aliasExtra), 1));
+
   // The retired tags are still settlement tags, so they stay covered as the single
   // shared list evolves.
   TEST(isHeatwaveTag(tagIn(lpAdd)));
@@ -2194,6 +2203,52 @@ void testHearthStateCommittedByProofOfWork() {
   TEST(decoded.hearthState == block.hearthState && get_block_hash(decoded) == id);
 }
 
+// Owner decision 2026-11-12: from v11 the alias registration fee is burned,
+// withheld from the miner and counted in its own total, so no alias
+// transaction carries an output to the dev wallet. Reserved aliases pay none.
+void testAliasRegistrationFeeBurned() {
+  TestChain t("alias_burn");
+  TEST(t.ok);
+  const uint64_t C = parameters::COIN;
+  auto registration = [&](uint8_t aliasType, uint64_t xfgIn, uint64_t& fee, std::string& err) {
+    TransactionExtraAliasRegistration reg;
+    reg.alias = "abcdefgh";
+    reg.ownerAddress = "owner-address";
+    reg.aliasType = aliasType;
+    std::vector<uint8_t> extra;
+    addAliasToExtra(extra, reg);
+    Blockchain::SettlementScratch scratch;
+    AssetFlows flows;
+    return t.chain.validateSettlement(settlementTx({xfgIn}, {keyOut(C / 2)}, extra), 100, scratch, flows, fee, err);
+  };
+  uint64_t fee = 0;
+  std::string err;
+  TEST(registration(1, 2 * C, fee, err) && fee == C / 2);
+  TEST(!registration(1, C + C / 4, fee, err) && err.find("registration fee") != std::string::npos);
+  TEST(registration(0, 2 * C, fee, err) && fee == C + C / 2);
+
+  // The alias tag parses, and parsing resumes after it: a public key placed
+  // after the registration is still found. The parser used to rescan the
+  // whole extra and never consume the payload, so any alias transaction failed
+  // to parse and its registration (and its tx key) were never seen.
+  TransactionExtraAliasRegistration reg;
+  reg.alias = "abcdefgh";
+  reg.ownerAddress = "owner-address";
+  reg.aliasType = 1;
+  std::vector<uint8_t> extra;
+  TEST(addAliasToExtra(extra, reg));
+  KeyPair txKey = generateKeyPair();
+  TEST(addTransactionPublicKeyToExtra(extra, txKey.publicKey));
+  std::vector<TransactionExtraField> fields;
+  TEST(parseTransactionExtra(extra, fields) && fields.size() == 2);
+  TEST(fields.size() == 2 && fields[0].type() == typeid(TransactionExtraAliasRegistration) &&
+       boost::get<TransactionExtraAliasRegistration>(fields[0]).alias == "abcdefgh");
+  TEST(getTransactionPublicKeyFromExtra(extra) == txKey.publicKey);
+
+  std::vector<uint8_t> oversized{TX_EXTRA_ALIAS, 0xFF, 0xFF, 0xFF, 0xFF, 0x0F};
+  TEST(!parseTransactionExtra(oversized, fields));
+}
+
 int main() {
   testCdInterestCompounding();
   testLegacyDepositWithdrawsForPrincipal();
@@ -2251,6 +2306,7 @@ int main() {
   testLimitOrderCancelTag();
   testCdCreationFeeWithheldForAuntPol();
   testHearthStateCommittedByProofOfWork();
+  testAliasRegistrationFeeBurned();
   fprintf(stderr, "=== Treasury/Core Tests ===\nPassed: %d / %d\n", tests_passed, tests_run);
   return tests_passed == tests_run ? 0 : 1;
 }

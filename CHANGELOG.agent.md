@@ -7238,3 +7238,30 @@ Sign-off table:
 | Build compiles | DONE — CMake regenerated for master's new sources and cargo library; `make -j8` full build rc=0 |
 | Tests pass | DONE — core_tests 657/657; test_hearth_amm 45/45; test_orderbook 44/44; test_orderbook_auction 66/66 (master's F29 fix clears the fee-split failure that was failing before this PR); test_cross_dleq, test_cross_dleq_inhouse, test_adaptor_roundtrip pass |
 | All tasks done | DONE |
+
+## Merge master 609d68a5 (fixed per-epoch mint rate) into PR #79
+
+**Feature name**: fix the PR #79 CI build break against master `609d68a5`
+**Agent**: Claude
+**Start date**: 2026-11-12
+**Consensus impact**: none added by this merge. Master's rule is kept as committed; only its fallback call is renamed.
+
+CI builds the PR merged with current master. Master `609d68a5` ("Use fixed per-epoch HEAT mint rate from previous epoch average") calls `twapBefore`, which this branch replaced with `hearthOraclePriceBefore`, so `Blockchain.cpp` failed to compile in every job (Ubuntu GCC and Clang, sanitizers, macOS, Windows, all transport gates).
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `validateSettlement` HEAT mint: `useEpochRate ? m_epochMintRate : hearthOraclePriceBefore(height)` (master's rule, this branch's fallback); stale "8-block TWAP only" comment corrected | Claude | 2026-11-12 | DONE |
+
+Open — master's rule, reported to the owner, not changed here:
+- `m_epochMintRate` is not saved in the block cache, not in `EpochStateSnapshot` (a pop of the boundary block keeps the new rate), and not set by the `rebuildCache` replay. A restarted or replayed node prices mints at the fallback while running nodes use the epoch rate: mint validity differs, and the chain forks once v11 mints exist.
+- `useEpochRate` reads `m_epochSnapshots.size()`, a rollback-history deque that a failed cache load clears.
+- The mint is bounded at `m_epochMintRate`, but `pushTransaction` credits the premium HEAT at `hearthOraclePriceBefore`, and `HearthState.mintPrice` commits the oracle, not the rate mints use.
+- The rate is a mean of end-of-block spots, fixed for 900 blocks: a mean moves linearly with time spent off-market, and a 5-day-old price lets anyone mint at a stale rate after the market moves.
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — GCC `make -j8` full build rc=0 on the merged tree; Clang and ASan+UBSan local runs still in progress at commit time, CI runs both |
+| Tests pass | DONE — `ctest -LE manual` 59/59 (GCC) |
+| All tasks done | DONE |

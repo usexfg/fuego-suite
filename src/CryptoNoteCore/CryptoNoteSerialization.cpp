@@ -546,7 +546,17 @@ void serialize(Block& block, ISerializer& serializer) {
     serializer(block.orderbookDepthBidXfg, "orderbook_depth_bid");
     serializer(block.orderbookDepthAskXfg, "orderbook_depth_ask");
     serializer(block.hearthPoolRatio, "hearth_pool_ratio");
+    serializer(block.hearthState, "hearth_state");
   }
+}
+
+void serialize(HearthState& state, ISerializer& serializer) {
+  serializer(state.mintPrice, "mint_price");
+  serializer(state.reserveXfg, "reserve_xfg");
+  serializer(state.reserveHeat, "reserve_heat");
+  serializer(state.clearingPrice, "clearing_price");
+  serializer(state.hearthstoneCents, "hearthstone_cents");
+  serializer(state.fciIndexCents, "fci_index_cents");
 }
 
 void serialize(AccountPublicAddress& address, ISerializer& serializer) {

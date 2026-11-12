@@ -25,8 +25,8 @@ Line numbers are `src/CryptoNoteCore/Blockchain.cpp` unless another file is name
 | M1, M2 | Fixed: 0.00001 tick; auction settles whole or not at all |
 | L2 (minimum mint) | Fixed in consensus; bill denominations still wallet-only |
 | M4 | Fixed: signed stop tag (0x0F) then withdraw |
-| M5 | Open — needs a policy decision: wire the Hearthstone reference into pricing/redemption, or document HEAT as pool-priced |
-| M6 | Open — committing the auction fields to the PoW hash changes the block hashing blob (hard-fork-level format decision) |
+| M5 | Closed by owner decision 2026-11-12: no redemption, no CPI feed; Hearthstone stays FCI-only on the 18-epoch re-base |
+| M6 | Fixed: 32-byte Hearth state hash (mint price, reserves, clearing price, Hearthstone, FCI index) in the v11 block hashing blob |
 | M7 | Moot after H5: per-order addressHash values never match across orders, so self-trade exclusion no longer applies; wash trading pays the taker fee and cannot lift the backstop (H2) |
 | L1 | Open — orderId front-running is grief only; it now costs the griefer a ≥1 XFG / 0.1 HEAT deposit plus fee (H4) |
 | L2 (denominations) | Open — needs every HEAT output path in the wallets to decompose into bills first |

@@ -675,6 +675,9 @@ bool core::get_block_template(Block& b, const AccountPublicAddress& adr, difficu
 
     b.previousBlockHash = get_tail_id();
     b.timestamp = time(NULL);
+    if (b.majorVersion >= BLOCK_MAJOR_VERSION_11) {
+      b.hearthState = m_blockchain.currentHearthState();
+    }
 
 
 

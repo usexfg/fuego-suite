@@ -10,6 +10,8 @@
 
 #include "CryptoNoteCore/BankingIndex.h"
 #include "CryptoNoteCore/AmmPool.h"
+#include "CryptoNoteCore/CryptoNoteFormatUtils.h"
+#include "CryptoNoteCore/CryptoNoteTools.h"
 #include "CryptoNoteCore/OrderbookAuction.h"
 #include "CryptoNoteConfig.h"
 #include "CryptoNoteCore/TransactionExtra.h"
@@ -2130,6 +2132,54 @@ void testCdCreationFeeWithheldForAuntPol() {
   TEST(!createCd(8 * C - 1, 72, fee, err));
 }
 
+// Audit 2026-11-11 M6: the Hearth price fields in a block were outside the
+// block hash, so any relaying peer could rewrite them. From v11 the block
+// hashing blob carries a 32-byte hash of the Hearth state the parent block
+// left, so the block id and the merge-mining aux hash (proof of work) commit
+// to it.
+void testHearthStateCommittedByProofOfWork() {
+  TestChain t("hearth_commit");
+  TEST(t.ok);
+  const auto& pool = t.chain.getAmmPool();
+  VaultCoreTestAccess::recordSpots(t.chain, 0, 16, ammGetSpotPrice(pool.reserveXfg, pool.reserveHeat));
+  const HearthState state = t.chain.currentHearthState();
+  TEST(state.reserveXfg == pool.reserveXfg && state.reserveHeat == pool.reserveHeat);
+  TEST(state.mintPrice == t.chain.getRollingTwap());
+  TEST(state.hearthstoneCents == parameters::FCI_HEARTHSTONE_INITIAL_CENTS);
+
+  Block block = boost::value_initialized<Block>();
+  block.majorVersion = BLOCK_MAJOR_VERSION_11;
+  block.parentBlock.majorVersion = BLOCK_MAJOR_VERSION_1;
+  block.parentBlock.transactionCount = 1;
+  TransactionExtraMergeMiningTag mmTag = boost::value_initialized<TransactionExtraMergeMiningTag>();
+  TEST(appendMergeMiningTagToExtra(block.parentBlock.baseTransaction.extra, mmTag));
+  block.hearthState = state;
+  block.hearthState.mintPrice = parameters::COIN / 8;
+  Crypto::Hash id{};
+  TEST(get_block_hash(block, id));
+  Crypto::Hash aux{};
+  TEST(get_aux_block_header_hash(block, aux));
+  Block tampered = block;
+  tampered.hearthState.mintPrice += 1;
+  Crypto::Hash tamperedAux{};
+  TEST(get_aux_block_header_hash(tampered, tamperedAux));
+  Crypto::Hash tamperedId{};
+  TEST(get_block_hash(tampered, tamperedId) && tamperedId != id);
+  TEST(tamperedAux != aux);
+
+  Block v10 = block;
+  v10.majorVersion = BLOCK_MAJOR_VERSION_10;
+  Block v10Tampered = v10;
+  v10Tampered.hearthState.mintPrice += 1;
+  TEST(get_block_hash(v10) == get_block_hash(v10Tampered));
+
+  BinaryArray blob;
+  TEST(toBinaryArray(block, blob));
+  Block decoded;
+  TEST(fromBinaryArray(decoded, blob));
+  TEST(decoded.hearthState == block.hearthState && get_block_hash(decoded) == id);
+}
+
 int main() {
   testCdInterestCompounding();
   testLegacyDepositWithdrawsForPrincipal();
@@ -2186,6 +2236,7 @@ int main() {
   testAuctionSettlesWholeOrNotAtAll();
   testLimitOrderCancelTag();
   testCdCreationFeeWithheldForAuntPol();
+  testHearthStateCommittedByProofOfWork();
   fprintf(stderr, "=== Treasury/Core Tests ===\nPassed: %d / %d\n", tests_passed, tests_run);
   return tests_passed == tests_run ? 0 : 1;
 }

@@ -6542,3 +6542,33 @@ Not covered:
 - push/pop crediting of `m_treasuryLpPendingXfg` and the v12 premium burn are verified by reading; no test drives pushTransaction/popTransaction.
 - The v12 premium burn raises the burn tally and with it the Eternal Flame, which feeds the block-reward calculation.
 - Tests reuse the shared prior-block oracle; a wallet pays a 0.5% margin (`WALLET_MINT_TWAP_MARGIN_BPS`) over the computed fee, which the miner keeps.
+
+## PoW-committed Hearth state (audit 2026-11-11: M6)
+
+**Feature name**: 32-byte Hearth state commitment in the block hashing blob
+**Agent**: Claude
+**Start date**: 2026-11-12
+**Decision**: owner, 2026-11-12 — commit the per-block price and FCI values to proof of work; no CPI feed (M5 closed: no redemption, FCI-only Hearthstone, 18-epoch re-base kept).
+**Consensus impact**: v11+ block format and block hash (not live). Testnet nodes holding v11 blocks must resync from before v11: those blocks' hashes change and their stored form no longer parses.
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `HearthState` {mint price, reserves, clearing price, Hearthstone cents, FCI index} as the parent block left it; serialized in v11+ blocks | Claude | 2026-11-12 | DONE |
+| 2 | `get_block_hashing_blob` appends `getHearthStateHash` (domain-separated) at v11+, so block id and merge-mining aux hash commit to it | Claude | 2026-11-12 | DONE |
+| 3 | `pushBlock` rejects a v11+ block whose state differs from `currentHearthState()`; `get_block_template` fills it | Claude | 2026-11-12 | DONE |
+| 4 | Block header RPC returns the values and their hash | Claude | 2026-11-12 | DONE |
+| 5 | Test: tampering changes block id and aux hash at v11, not at v10; serialization round-trip; state matches the chain | Claude | 2026-11-12 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j4` full build rc=0 |
+| Tests pass | DONE — core_tests 380/380, test_hearth_amm 45/45 |
+| Mutation check | DONE — dropping the hash from the hashing blob fails both tamper checks |
+| All tasks done | DONE |
+
+Not covered:
+- The `pushBlock` rejection of a mismatched state has no test (no harness mines a valid v11 block); it is verified by reading.
+- The older unhashed v11 block fields (`orderbookClearingPrice`, `hearthPoolRatio`, depth) remain; nodes overwrite them locally and nothing should trust them over `hearthState`.
+- The commitment describes the parent's state: the price committed in block H is the one H's mints use, not the post-auction price of H.

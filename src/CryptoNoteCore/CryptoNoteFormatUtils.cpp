@@ -613,7 +613,21 @@ bool get_block_hashing_blob(const Block& b, BinaryArray& ba) {
   ba.insert(ba.end(), treeRootHash.data, treeRootHash.data + 32);
   auto transactionCount = asBinaryArray(Tools::get_varint_data(b.transactionHashes.size() + 1));
   ba.insert(ba.end(), transactionCount.begin(), transactionCount.end());
+  if (b.majorVersion >= BLOCK_MAJOR_VERSION_11) {
+    const Hash hearthHash = getHearthStateHash(b.hearthState);
+    ba.insert(ba.end(), hearthHash.data, hearthHash.data + sizeof(hearthHash.data));
+  }
   return true;
+}
+
+Hash getHearthStateHash(const HearthState& state) {
+  static constexpr char domain[] = "FuegoHearthStateV1";
+  BinaryArray data(domain, domain + sizeof(domain) - 1);
+  HearthState copy = state;
+  BinaryArray body;
+  if (!toBinaryArray(copy, body)) return NULL_HASH;
+  data.insert(data.end(), body.begin(), body.end());
+  return getBinaryArrayHash(data);
 }
 
 bool get_parent_block_hashing_blob(const Block& b, BinaryArray& blob) {

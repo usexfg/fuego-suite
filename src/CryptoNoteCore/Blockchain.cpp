@@ -3732,6 +3732,12 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
     return false;
   }
 
+  if (blockData.majorVersion >= BLOCK_MAJOR_VERSION_11 && blockData.hearthState != currentHearthState()) {
+    logger(INFO, BRIGHT_WHITE) << "Block " << blockHash << " commits to a Hearth state this chain does not have";
+    bvc.m_verification_failed = true;
+    return false;
+  }
+
   // make sure block timestamp is not less than the median timestamp
   // of a set number of the most recent blocks.
   if (!check_block_timestamp_main(blockData)) {
@@ -8522,6 +8528,18 @@ uint64_t CryptoNote::Blockchain::cdCreationFeeXfgFor(const Transaction& tx, uint
     fee = fee > UINT64_MAX - outFee ? UINT64_MAX : fee + outFee;
   }
   return fee;
+}
+
+CryptoNote::HearthState CryptoNote::Blockchain::currentHearthState() const {
+  std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
+  HearthState state;
+  state.mintPrice = hearthOraclePriceBefore(static_cast<uint32_t>(m_blocks.size()));
+  state.reserveXfg = m_ammPool.reserveXfg;
+  state.reserveHeat = m_ammPool.reserveHeat;
+  state.clearingPrice = g_orderbookLastClearingPrice;
+  state.hearthstoneCents = m_fuegoCostIndex.hearthstoneCents();
+  state.fciIndexCents = m_fuegoCostIndex.indexCents();
+  return state;
 }
 
 uint64_t CryptoNote::Blockchain::blockMintCapHeat() {

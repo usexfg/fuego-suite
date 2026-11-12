@@ -1110,6 +1110,7 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
     m_poolLockedHeat = 0;
     m_twapAccumulator = 0;
     m_twapBlockCount = 0;
+    m_epochMintRate = 0;
     m_blockSpotHistory.clear();
     m_cdYieldPool = 0;
     m_cdReserve = 0;
@@ -3703,6 +3704,15 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
       preEpoch.feePoolBalance = m_feePoolBalance;
       preEpoch.cdHearthFeeAccumulator = m_ammPool.cdHearthFeeAccumulator;
       m_epochSnapshots.push_back({height, preEpoch});
+
+      // Fixed mint rate for this epoch = average of the just-completed epoch.
+      // The TWAP accumulator is reset at each epoch boundary, so the average
+      // of the previous epoch is simply accumulator / block count at this point.
+      // First epoch (or empty accumulator) leaves the rate at 0; mints then
+      // fall back to the rolling TWAP until an average exists.
+      if (m_twapBlockCount > 0) {
+        m_epochMintRate = static_cast<uint64_t>(m_twapAccumulator / m_twapBlockCount);
+      }
     }
   }
 
@@ -8150,9 +8160,14 @@ bool CryptoNote::Blockchain::validateSettlement(const Transaction& tx, uint32_t 
     const auto& a = boost::get<TransactionExtraHeatMintAuth>(*tag);
     // Priced by the 8-block TWAP only. The spot fallback let a swap earlier in
     // the same block set the price a mint pays.
-    const uint64_t price = twapBefore(height);
+    // Use the 8-block TWAP until at least two full epochs have completed so the
+    // epoch-average rate has enough history. After that, the fixed per-epoch
+    // rate (previous epoch average) is used. This avoids refusing mints during
+    // bootstrap while still switching to the more stable rate once it is meaningful.
+    const bool useEpochRate = (m_epochSnapshots.size() >= 2 && m_epochMintRate != 0);
+    const uint64_t price = useEpochRate ? m_epochMintRate : twapBefore(height);
     if (price == 0) {
-      error = "HEAT mint: no TWAP price yet";
+      error = "HEAT mint: no price available yet";
       return false;
     }
     // With the XFG fee the scan's burn is exactly the declared burn, so the

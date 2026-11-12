@@ -891,7 +891,7 @@ TransactionId WalletLegacy::mintHeatV10(uint64_t xfgBurned, uint64_t heatMinted,
   return txId;
 }
 
-TransactionId WalletLegacy::sendHeatV10(const AccountPublicAddress& recipient, uint64_t amount, uint64_t fee, uint64_t mixIn) {
+TransactionId WalletLegacy::sendHeatV10(const AccountPublicAddress& recipient, uint64_t amount, uint64_t fee, uint64_t mixIn, bool isSubaddress) {
   throwIfNotInitialised();
 
   TransactionId txId = 0;
@@ -902,7 +902,7 @@ TransactionId WalletLegacy::sendHeatV10(const AccountPublicAddress& recipient, u
 
   {
     std::unique_lock<std::mutex> lock(m_cacheMutex);
-    request = m_sender->makeHeatTransferV10Request(txId, events, recipient, amount, fee, mixIn);
+    request = m_sender->makeHeatTransferV10Request(txId, events, recipient, amount, fee, mixIn, isSubaddress);
     if (request != nullptr) pushBalanceUpdatedEvents(events);
   }
 
@@ -1600,26 +1600,39 @@ void WalletLegacy::getAccountKeys(AccountKeys& keys) {
   keys = m_account.getAccountKeys();
 }
 
-std::string WalletLegacy::registerSubAddress(uint32_t major, uint32_t minor) {
+std::string WalletLegacy::registerSubAddress(uint32_t major, uint32_t minor, uint8_t version) {
   throwIfNotInitialised();
 
   if (major == 0 && minor == 0) {
     throw std::runtime_error("Sub-address index (0,0) is reserved for the primary address");
   }
 
+  if (version != Crypto::SUBADDRESS_VERSION_V1 && version != Crypto::SUBADDRESS_VERSION_V2) {
+    throw std::runtime_error("Unsupported sub-address version");
+  }
+
   // Idempotent: if already registered, return cached address string.
   for (const auto& sa : m_subAddresses) {
     if (sa.major == major && sa.minor == minor) {
-      return m_currency.subAddressAsString({sa.keys.address.spendPublicKey, sa.keys.address.viewPublicKey});
+      if (sa.version == Crypto::SUBADDRESS_VERSION_V2) {
+        return m_currency.subAddressAsString({sa.keys.address.spendPublicKey, sa.keys.address.viewPublicKey});
+      }
+      return m_currency.accountAddressAsString({sa.keys.address.spendPublicKey, sa.keys.address.viewPublicKey});
     }
   }
 
   const AccountKeys& master = m_account.getAccountKeys();
-  Crypto::SubAddressKeys subKeys = Crypto::deriveSubAddressKeys(
-      master.viewSecretKey,
-      master.address.spendPublicKey,
-      &master.spendSecretKey,
-      major, minor);
+  Crypto::SubAddressKeys subKeys = version == Crypto::SUBADDRESS_VERSION_V2
+      ? Crypto::deriveSubAddressKeysV2(
+            master.viewSecretKey,
+            master.address.spendPublicKey,
+            &master.spendSecretKey,
+            major, minor)
+      : Crypto::deriveSubAddressKeys(
+            master.viewSecretKey,
+            master.address.spendPublicKey,
+            &master.spendSecretKey,
+            major, minor);
 
   // Build AccountKeys for this sub-address.
   AccountKeys subAccountKeys;
@@ -1647,6 +1660,7 @@ std::string WalletLegacy::registerSubAddress(uint32_t major, uint32_t minor) {
     entry.minor     = minor;
     entry.keys      = subAccountKeys;
     entry.container = container;
+    entry.version   = version;
     m_subAddresses.push_back(entry);
 
     // Update the sender with the new sub-address data.
@@ -1655,7 +1669,9 @@ std::string WalletLegacy::registerSubAddress(uint32_t major, uint32_t minor) {
     }
 
     m_blockchainSync.start(); //XXX: start can throw. what to do in this case?
-    return m_currency.subAddressAsString({subKeys.spendPublicKey, subKeys.viewPublicKey});
+    return version == Crypto::SUBADDRESS_VERSION_V2
+        ? m_currency.subAddressAsString({subKeys.spendPublicKey, subKeys.viewPublicKey})
+        : m_currency.accountAddressAsString({subKeys.spendPublicKey, subKeys.viewPublicKey});
   } catch (...) {
     // Ensure we restart the synchronizer even on error
     m_blockchainSync.start();

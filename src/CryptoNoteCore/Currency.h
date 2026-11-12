@@ -318,6 +318,7 @@ public:
   std::string accountAddressAsString(const AccountPublicAddress &accountPublicAddress) const;
   std::string subAddressAsString(const AccountPublicAddress &subAddressPublicAddress) const;
   bool parseAccountAddressString(const std::string &str, AccountPublicAddress &addr) const;
+  bool parseAccountAddressString(const std::string &str, AccountPublicAddress &addr, bool &isSubaddress) const;
 
   std::string formatAmount(uint64_t amount) const;
   std::string formatAmount(int64_t amount) const;

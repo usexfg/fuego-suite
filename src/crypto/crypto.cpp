@@ -444,6 +444,117 @@ void crypto_ops::generate_tx_proof(const Hash &prefix_hash, const PublicKey &R, 
     return sc_isnonzero(&c2) == 0;
   }
 
+  // V2 subaddress tx proof — DLEQ proof that R = r * D_ij and D = r * C_ij
+  // Proves knowledge of r such that discrete_log(R, D_ij) == discrete_log(D, C_ij) == r
+  void generate_tx_proof_subaddress(const Hash &prefix_hash, const PublicKey &R, const PublicKey &Dij, const PublicKey &Cij, const PublicKey &D, const SecretKey &r, Signature &sig) {
+    ge_p3 R_p3;
+    ge_p3 Dij_p3;
+    ge_p3 Cij_p3;
+    ge_p3 D_p3;
+    if (ge_frombytes_vartime(&R_p3, reinterpret_cast<const unsigned char*>(&R)) != 0) throw std::runtime_error("tx pubkey is invalid");
+    if (ge_frombytes_vartime(&Dij_p3, reinterpret_cast<const unsigned char*>(&Dij)) != 0) throw std::runtime_error("subaddress spend pubkey is invalid");
+    if (ge_frombytes_vartime(&Cij_p3, reinterpret_cast<const unsigned char*>(&Cij)) != 0) throw std::runtime_error("subaddress view pubkey is invalid");
+    if (ge_frombytes_vartime(&D_p3, reinterpret_cast<const unsigned char*>(&D)) != 0) throw std::runtime_error("key derivation is invalid");
+
+    assert(sc_check(reinterpret_cast<const unsigned char*>(&r)) == 0);
+
+    // pick random k
+    EllipticCurveScalar k;
+    random_scalar(k);
+
+    // compute X = k * D_ij  (instead of k * G in standard proof)
+    ge_p2 X_p2;
+    ge_scalarmult(&X_p2, reinterpret_cast<const unsigned char*>(&k), &Dij_p3);
+
+    // compute Y = k * C_ij  (instead of k * A in standard proof)
+    ge_p2 Y_p2;
+    ge_scalarmult(&Y_p2, reinterpret_cast<const unsigned char*>(&k), &Cij_p3);
+
+    // sig.c = Hs(Msg || D || X || Y)
+    s_comm_2 buf;
+    buf.msg = prefix_hash;
+    buf.D = reinterpret_cast<const EllipticCurvePoint&>(D);
+    ge_tobytes(reinterpret_cast<unsigned char*>(&buf.X), &X_p2);
+    ge_tobytes(reinterpret_cast<unsigned char*>(&buf.Y), &Y_p2);
+    hash_to_scalar(&buf, sizeof(s_comm_2), reinterpret_cast<EllipticCurveScalar&>(sig));
+
+    // sig.r = k - sig.c * r
+    sc_mulsub(reinterpret_cast<unsigned char*>(&sig) + 32, reinterpret_cast<unsigned char*>(&sig), reinterpret_cast<const unsigned char*>(&r), reinterpret_cast<unsigned char*>(&k));
+  }
+
+  bool check_tx_proof_subaddress(const Hash &prefix_hash, const PublicKey &R, const PublicKey &Dij, const PublicKey &Cij, const PublicKey &D, const Signature &sig) {
+    ge_p3 R_p3;
+    ge_p3 Dij_p3;
+    ge_p3 Cij_p3;
+    ge_p3 D_p3;
+    if (ge_frombytes_vartime(&R_p3, reinterpret_cast<const unsigned char*>(&R)) != 0) return false;
+    if (ge_frombytes_vartime(&Dij_p3, reinterpret_cast<const unsigned char*>(&Dij)) != 0) return false;
+    if (ge_frombytes_vartime(&Cij_p3, reinterpret_cast<const unsigned char*>(&Cij)) != 0) return false;
+    if (ge_frombytes_vartime(&D_p3, reinterpret_cast<const unsigned char*>(&D)) != 0) return false;
+    if (sc_check(reinterpret_cast<const unsigned char*>(&sig)) != 0 || sc_check(reinterpret_cast<const unsigned char*>(&sig) + 32) != 0) return false;
+
+    // compute sig.c * R
+    ge_p2 cR_p2;
+    ge_scalarmult(&cR_p2, reinterpret_cast<const unsigned char*>(&sig), &R_p3);
+
+    // compute sig.r * D_ij  (instead of sig.r * G in standard proof)
+    ge_p2 rDij_p2;
+    ge_scalarmult(&rDij_p2, reinterpret_cast<const unsigned char*>(&sig) + 32, &Dij_p3);
+
+    // compute sig.c * D
+    ge_p2 cD_p2;
+    ge_scalarmult(&cD_p2, reinterpret_cast<const unsigned char*>(&sig), &D_p3);
+
+    // compute sig.r * C_ij  (instead of sig.r * A in standard proof)
+    ge_p2 rCij_p2;
+    ge_scalarmult(&rCij_p2, reinterpret_cast<const unsigned char*>(&sig) + 32, &Cij_p3);
+
+    // compute X = sig.c * R + sig.r * D_ij
+    PublicKey cR;
+    PublicKey rDij;
+    ge_tobytes(reinterpret_cast<unsigned char*>(&cR), &cR_p2);
+    ge_tobytes(reinterpret_cast<unsigned char*>(&rDij), &rDij_p2);
+    ge_p3 cR_p3;
+    ge_p3 rDij_p3;
+    if (ge_frombytes_vartime(&cR_p3, reinterpret_cast<const unsigned char*>(&cR)) != 0) return false;
+    if (ge_frombytes_vartime(&rDij_p3, reinterpret_cast<const unsigned char*>(&rDij)) != 0) return false;
+    ge_cached rDij_cached;
+    ge_p3_to_cached(&rDij_cached, &rDij_p3);
+    ge_p1p1 X_p1p1;
+    ge_add(&X_p1p1, &cR_p3, &rDij_cached);
+    ge_p2 X_p2;
+    ge_p1p1_to_p2(&X_p2, &X_p1p1);
+
+    // compute Y = sig.c * D + sig.r * C_ij
+    PublicKey cD;
+    PublicKey rCij;
+    ge_tobytes(reinterpret_cast<unsigned char*>(&cD), &cD_p2);
+    ge_tobytes(reinterpret_cast<unsigned char*>(&rCij), &rCij_p2);
+    ge_p3 cD_p3;
+    ge_p3 rCij_p3;
+    if (ge_frombytes_vartime(&cD_p3, reinterpret_cast<const unsigned char*>(&cD)) != 0) return false;
+    if (ge_frombytes_vartime(&rCij_p3, reinterpret_cast<const unsigned char*>(&rCij)) != 0) return false;
+    ge_cached rCij_cached;
+    ge_p3_to_cached(&rCij_cached, &rCij_p3);
+    ge_p1p1 Y_p1p1;
+    ge_add(&Y_p1p1, &cD_p3, &rCij_cached);
+    ge_p2 Y_p2;
+    ge_p1p1_to_p2(&Y_p2, &Y_p1p1);
+
+    // compute c2 = Hs(Msg || D || X || Y)
+    s_comm_2 buf;
+    buf.msg = prefix_hash;
+    buf.D = reinterpret_cast<const EllipticCurvePoint&>(D);
+    ge_tobytes(&buf.X, &X_p2);
+    ge_tobytes(&buf.Y, &Y_p2);
+    EllipticCurveScalar c2;
+    hash_to_scalar(&buf, sizeof(s_comm_2), c2);
+
+    // test if c2 == sig.c
+    sc_sub(reinterpret_cast<unsigned char*>(&c2), reinterpret_cast<unsigned char*>(&c2), reinterpret_cast<const unsigned char*>(&sig));
+    return sc_isnonzero(&c2) == 0;
+  }
+
   static void hash_to_ec(const PublicKey &key, ge_p3 &res) {
     Hash h;
     ge_p2 point;

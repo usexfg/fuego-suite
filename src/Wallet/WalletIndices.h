@@ -54,6 +54,7 @@ namespace CryptoNote
         uint32_t subaddrMajor = 0;
         uint32_t subaddrMinor = 0;
         bool isSubAddress = false;
+        uint8_t subaddrVersion = 0;
     };
 
 #pragma pack(push, 1)

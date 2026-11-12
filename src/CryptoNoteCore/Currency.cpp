@@ -938,21 +938,34 @@ double Currency::getBurnPercentage() const {
 
   bool Currency::parseAccountAddressString(const std::string &str, AccountPublicAddress &addr) const
   {
+    bool isSubaddress = false;
+    return parseAccountAddressString(str, addr, isSubaddress);
+  }
+
+  bool Currency::parseAccountAddressString(const std::string &str, AccountPublicAddress &addr, bool &isSubaddress) const
+  {
     uint64_t prefix;
     if (!CryptoNote::parseAccountAddressString(prefix, addr, str))
     {
       return false;
     }
 
-    if (prefix != m_publicAddressBase58Prefix && prefix != m_subAddressBase58Prefix)
+    if (prefix == m_subAddressBase58Prefix)
     {
-      logger(DEBUGGING) << "Wrong address prefix: " << prefix
-                        << ", expected " << m_publicAddressBase58Prefix
-                        << " or " << m_subAddressBase58Prefix;
-      return false;
+      isSubaddress = true;
+      return true;
     }
 
-    return true;
+    if (prefix == m_publicAddressBase58Prefix)
+    {
+      isSubaddress = false;
+      return true;
+    }
+
+    logger(DEBUGGING) << "Wrong address prefix: " << prefix
+                      << ", expected " << m_publicAddressBase58Prefix
+                      << " or " << m_subAddressBase58Prefix;
+    return false;
   }
 
   bool Currency::isSubAddressStr(const std::string& str) const

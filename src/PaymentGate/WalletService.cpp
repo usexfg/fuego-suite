@@ -17,6 +17,7 @@
 
 #include "WalletService.h"
 
+#include <algorithm>
 #include <future>
 #include <assert.h>
 #include <sstream>
@@ -218,6 +219,27 @@ namespace PaymentService
         logger(Logging::WARNING) << "Can't validate payment id: " << paymentId;
         throw std::system_error(make_error_code(CryptoNote::error::WalletServiceErrorCode::WRONG_PAYMENT_ID_FORMAT));
       }
+    }
+
+    bool isSubaddressString(const CryptoNote::Currency &currency, const std::string &address)
+    {
+      CryptoNote::AccountPublicAddress ignored;
+      bool isSubaddress = false;
+      return currency.parseAccountAddressString(address, ignored, isSubaddress) && isSubaddress;
+    }
+
+    bool paysSubaddressWithPaymentId(const CryptoNote::Currency &currency,
+                                     const std::vector<PaymentService::WalletRpcOrder> &orders,
+                                     const std::string &extra)
+    {
+      Crypto::Hash paymentId;
+      if (!CryptoNote::getPaymentIdFromTxExtra(Common::asBinaryArray(extra), paymentId))
+      {
+        return false;
+      }
+      return std::any_of(orders.begin(), orders.end(), [&currency](const PaymentService::WalletRpcOrder &order) {
+        return isSubaddressString(currency, order.address);
+      });
     }
 
     bool createOutputBinaryFile(const std::string &filename, std::fstream &file)
@@ -1462,6 +1484,12 @@ namespace PaymentService
         sendParams.extra = Common::asString(Common::fromHex(request.extra));
       }
 
+      if (paysSubaddressWithPaymentId(currency, request.transfers, sendParams.extra))
+      {
+        logger(Logging::WARNING) << "Payment ID cannot be combined with a funsa subaddress destination";
+        return make_error_code(CryptoNote::error::WalletServiceErrorCode::WRONG_PAYMENT_ID_FORMAT);
+      }
+
       sendParams.sourceAddresses = request.sourceAddresses;
       sendParams.destinations = convertWalletRpcOrdersToWalletOrders(request.transfers);
       sendParams.messages = convertWalletRpcMessagesToWalletMessages(messages);
@@ -1533,6 +1561,12 @@ namespace PaymentService
         sendParams.extra = Common::asString(Common::fromHex(request.extra));
       }
 
+      if (paysSubaddressWithPaymentId(currency, request.transfers, sendParams.extra))
+      {
+        logger(Logging::WARNING) << "Payment ID cannot be combined with a funsa subaddress destination";
+        return make_error_code(CryptoNote::error::WalletServiceErrorCode::WRONG_PAYMENT_ID_FORMAT);
+      }
+
       sendParams.sourceAddresses = request.addresses;
       sendParams.destinations = convertWalletRpcOrdersToWalletOrders(request.transfers);
       sendParams.messages = convertWalletRpcMessagesToWalletMessages(messages);
@@ -1576,6 +1610,13 @@ namespace PaymentService
     const bool valid = CryptoNote::parseAccountAddressString(prefix,
                                                              addr,
                                                              address_str);
+    if (!valid) {
+      return make_error_code(CryptoNote::error::BAD_ADDRESS);
+    }
+    if (prefix == CryptoNote::parameters::CRYPTONOTE_SUBADDRESS_BASE58_PREFIX ||
+        prefix == CryptoNote::CRYPTONOTE_SUBADDRESS_BASE58_PREFIX_TESTNET) {
+      return make_error_code(CryptoNote::error::BAD_ADDRESS);
+    }
 
     CryptoNote::BinaryArray ba;
     CryptoNote::toBinaryArray(addr, ba);

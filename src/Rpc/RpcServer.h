@@ -52,6 +52,7 @@ public:
   bool checkSwapControlAuth(const HttpRequest& request) const;
   bool k_on_check_tx_proof(const K_COMMAND_RPC_CHECK_TX_PROOF::request& req, K_COMMAND_RPC_CHECK_TX_PROOF::response& res);
   bool k_on_check_reserve_proof(const K_COMMAND_RPC_CHECK_RESERVE_PROOF::request& req, K_COMMAND_RPC_CHECK_RESERVE_PROOF::response& res);
+  bool k_on_validate_address(const K_COMMAND_RPC_VALIDATE_ADDRESS::request& req, K_COMMAND_RPC_VALIDATE_ADDRESS::response& res);
   bool enableCors(const std::string domain);
   bool remotenode_check_incoming_tx(const BinaryArray& tx_blob);
   void setSwapRelay(SwapOfferRelay* relay);

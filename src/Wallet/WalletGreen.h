@@ -217,6 +217,7 @@ protected:
     Crypto::PublicKey spendPublicKey;
     Crypto::SecretKey spendSecretKey;
     uint64_t creationTimestamp;
+    Crypto::PublicKey viewPublicKey; // zero = master view key
   };
 
   void throwIfNotInitialized() const;
@@ -260,7 +261,8 @@ protected:
   static void incIv(Crypto::chacha8_iv& iv);
   void incNextIv();
   void initWithKeys(const std::string& path, const std::string& password, const Crypto::PublicKey& viewPublicKey, const Crypto::SecretKey& viewSecretKey);
-  std::string doCreateAddress(const Crypto::PublicKey &spendPublicKey, const Crypto::SecretKey &spendSecretKey, uint64_t creationTimestamp);
+  std::string doCreateAddress(const Crypto::PublicKey &spendPublicKey, const Crypto::SecretKey &spendSecretKey, uint64_t creationTimestamp,
+                              const Crypto::PublicKey &viewPublicKey = Crypto::PublicKey());
   std::vector<std::string> doCreateAddressList(const std::vector<NewAddressData> &addressDataList);
   Crypto::SecretKey getTransactionDeterministicSecretKey(Crypto::Hash &transactionHash) const;
 
@@ -284,6 +286,7 @@ protected:
   {
     CryptoNote::AccountPublicAddress receiver;
     std::vector<uint64_t> amounts;
+    bool isSubaddress = false;
   };
 
   struct WalletOuts
@@ -356,7 +359,8 @@ protected:
   const WalletRecord &getWalletRecord(CryptoNote::ITransfersContainer *container) const;
 
   CryptoNote::AccountPublicAddress parseAddress(const std::string &address) const;
-  std::string addWallet(const Crypto::PublicKey &spendPublicKey, const Crypto::SecretKey &spendSecretKey, uint64_t creationTimestamp);
+  std::string addWallet(const Crypto::PublicKey &spendPublicKey, const Crypto::SecretKey &spendSecretKey, uint64_t creationTimestamp,
+                        const Crypto::PublicKey &viewPublicKey = Crypto::PublicKey());
   AccountKeys makeAccountKeys(const WalletRecord &wallet) const;
   size_t getTransactionId(const Crypto::Hash &transactionHash) const;
   size_t getDepositId(const Crypto::Hash &transactionHash) const;
@@ -438,7 +442,7 @@ protected:
 
   std::vector<ReceiverAmounts> splitDestinations(const std::vector<WalletTransfer> &destinations,
                                                  uint64_t dustThreshold, const Currency &currency);
-  ReceiverAmounts splitAmount(uint64_t amount, const AccountPublicAddress &destination, uint64_t dustThreshold);
+  ReceiverAmounts splitAmount(uint64_t amount, const AccountPublicAddress &destination, uint64_t dustThreshold, bool isSubaddress = false);
 
   std::unique_ptr<CryptoNote::ITransaction> makeTransaction(const std::vector<ReceiverAmounts> &decomposedOutputs,
                                                             std::vector<InputInfo> &keysInfo, const std::vector<WalletMessage> &messages, const std::string &extra, uint64_t unlockTimestamp, Crypto::SecretKey &transactionSK);

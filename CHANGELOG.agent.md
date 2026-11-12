@@ -6510,3 +6510,35 @@ Not covered:
 - push/pop of the cancel (set/clear `expired`) is exercised by code reading only; no test drives pushTransaction/popTransaction.
 - The wallet stop paths have no automated test.
 - A stop costs a second transaction fee; one-step withdraw still works when no fill lands before inclusion.
+
+## CD creation fee → AuntPoL XFG leg; v12 one funding source per leg
+
+**Feature name**: Consensus-enforced, term-scaled CD creation fee funding AuntPoL
+**Agent**: Claude
+**Start date**: 2026-11-12
+**Decision**: owner, 2026-11-12 — no dev tax; CD fee funds the AuntPoL XFG leg; from v12 the mint premium funds the HEAT leg only.
+**Consensus impact**: v11+ (CD outputs exist from v12); v12 mint-premium routing. Neither version is live.
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `cdCreationFeeXfg`: 0.25% at 6 epochs rising linearly to 1% at 72, on the CD's HEAT valued at the mint oracle price, paid in XFG | Claude | 2026-11-12 | DONE |
+| 2 | `validateSettlement` withholds it from the XFG fee (rejects a CD creation that does not cover it, or with no oracle price); push credits `m_treasuryLpPendingXfg`, pop debits it | Claude | 2026-11-12 | DONE |
+| 3 | v12: mint premium XFG is burned (counted in the burn tally) instead of funding the XFG leg; premium HEAT still funds the HEAT leg | Claude | 2026-11-12 | DONE |
+| 4 | Wallets (WalletGreen, WalletLegacy, SimpleWallet): drop the dev-fund output; pay the fee in the transaction fee with the mint-price margin | Claude | 2026-11-12 | DONE |
+| 5 | AGENTS.md / DEPOSIT_ARCHITECTURE.md updated | Claude | 2026-11-12 | DONE |
+| 6 | Tests: fee schedule, under-paid CD rejected, fee withheld from miner, v11 vs v12 premium routing | Claude | 2026-11-12 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j4` full build rc=0 |
+| Tests pass | DONE — core_tests 366/366, test_hearth_amm 45/45 |
+| Mutation check | DONE — dropping the withholding fails both CD fee tests |
+| All tasks done | DONE (see Not covered) |
+
+Not covered:
+- **SimpleWallet / WalletLegacy CD deposits cannot produce a valid transaction**, before and after this change: `doSendHeatDepositV10Transaction` adds no XFG inputs, so it pays neither the network fee nor the CD fee. This change fixed what it touched there (the fee was selected as HEAT, which unbalanced HEAT; the term used the testnet epoch length on every network) but the XFG input selection is still missing. WalletGreen (walletd) builds them correctly.
+- push/pop crediting of `m_treasuryLpPendingXfg` and the v12 premium burn are verified by reading; no test drives pushTransaction/popTransaction.
+- The v12 premium burn raises the burn tally and with it the Eternal Flame, which feeds the block-reward calculation.
+- Tests reuse the shared prior-block oracle; a wallet pays a 0.5% margin (`WALLET_MINT_TWAP_MARGIN_BPS`) over the computed fee, which the miner keeps.

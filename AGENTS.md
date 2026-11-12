@@ -37,7 +37,7 @@ fuego-suite/
 - **Balanced LP deposits only** — single-sided deposits mint no shares (no dilution); shares are fair pro-rata at the pool ratio
 - Taker pays the 1% fee; the split is versioned (`hearthCdSharePct`): **v11 pays 30% CD / 70% maker**, **v12 flips to 70% CD / 30% maker**. The CD share is debited into the HEAT-denominated `cdHearthFeeAccumulator` → minted into `CD_APY_POOL` at the epoch boundary; the maker share is the rebate (auction makers, or LPs on pool fills); consumed XFG burned 50/50 (EF/SWF)
 - The gossiped in-band CLOB matcher, `MIN_DISTINCT_PARTIES`, and unbacked orders are **retired**
-- **Treasury LP Manager (AuntPoL)**: the protocol's own ratio-paired LP position. **Both legs are funded by the 1% mint premium**: the withheld premium XFG is the **XFG leg** and the HEAT it buys is the **HEAT leg** (plus HEAT donations). The two pair at the pool ratio; no SWF transfer and no cross-conversion. Compounds and drives bootstrap repayment (two-leg owned-reserves check)
+- **Treasury LP Manager (AuntPoL)**: the protocol's own ratio-paired LP position. **v11:** the 1% mint premium funds both legs (withheld premium XFG = **XFG leg**, the HEAT it buys = **HEAT leg**) and the CD creation fee adds to the XFG leg. **v12+: one source per leg** — the CD creation fee is the **XFG leg**, the mint premium's HEAT is the **HEAT leg** and its XFG is burned. Plus HEAT donations. The two pair at the pool ratio; no SWF transfer and no cross-conversion. Compounds and drives bootstrap repayment (two-leg owned-reserves check)
 
 ### HEAT Flatcoin (colored coin)
 - Not fiat based, peg targets purchasing power only; adjusts for inflation/CPI
@@ -61,8 +61,8 @@ fuego-suite/
 2. **Atomic swap fee — 1% + 1% = 2% per cross-chain swap** (`SWAP_FEE_RATE_BPS = 100` initiation + claim), via SwapXFG TUI or DeXFG tab in Fuego-Wallet GUI. Split **80% CD Yield / 20% Bonus Vault** at v11+ (pre-v11 replay: 69/11/20, treasury leg now 0).
 
 NOT protocol earnings:
-- **Mint premium**: 1% of the declared burn (`HEAT_MINT_PREMIUM_BPS = 100`, v11+). It is a haircut **inside** the burn, not a surcharge: the withheld `premiumXfg` is the **AuntPoL XFG leg** (`m_treasuryLpPendingXfg`, not burned), and the `heat(premiumXfg)` it buys is the **AuntPoL HEAT leg** (`m_treasuryHeatReserve`). Not revenue — it is the protocol's own LP inventory.
-- **CD creation fee**: 0.1% of the HEAT being deposited, charged in **XFG** as a KeyOutput to `FUEGO_DEV_FUND_ADDRESS`. NOT protocol revenue, NOT CD yield, NOT a treasury reserve credit.
+- **Mint premium**: 1% of the declared burn (`HEAT_MINT_PREMIUM_BPS = 100`, v11+). It is a haircut **inside** the burn, not a surcharge: at v11 the withheld `premiumXfg` is the **AuntPoL XFG leg** (`m_treasuryLpPendingXfg`, not burned); from v12 it is burned (`mintPremiumFundsXfgLeg`). The `heat(premiumXfg)` it buys is the **AuntPoL HEAT leg** (`m_treasuryHeatReserve`). Not revenue — it is the protocol's own LP inventory.
+- **CD creation fee**: consensus-enforced, 0.25% (6-epoch CD) rising linearly to 1% (72-epoch CD) of the HEAT deposited, valued at the mint oracle price and paid in **XFG** (`cdCreationFeeXfg`). Withheld from the miner's fee and credited to the **AuntPoL XFG leg** (`m_treasuryLpPendingXfg`). No dev tax: nothing goes to `FUEGO_DEV_FUND_ADDRESS`. NOT protocol revenue, NOT CD yield — protocol LP inventory.
 
 ### Hearth Exchange — Data Flow Per Block (v11+)
 1. `PoolOrderOrchestrator`: record pool spot (volatility), decide regeneration, compute adaptive spread

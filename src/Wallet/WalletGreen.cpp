@@ -1921,10 +1921,6 @@ namespace CryptoNote
     }
 
     fee = m_currency.minimumFee();
-    if (bankingFee == 0) {
-      bankingFee = amount / 1000; // 0.1% default (matches SimpleWallet heat_deposit)
-      if (bankingFee == 0) bankingFee = 1;
-    }
 
     const uint64_t epochBlocks = m_currency.isTestnet()
       ? parameters::TESTNET_EPOCH_DURATION_BLOCKS
@@ -1933,6 +1929,15 @@ namespace CryptoNote
     if (cdTermBlocks == 0) {
       throw std::system_error(make_error_code(error::WRONG_PARAMETERS), "CD term blocks underflow");
     }
+    // CD creation fee: consensus withholds it from the XFG fee for the AuntPoL
+    // XFG leg. Pad it like a mint, so the oracle moving before inclusion does
+    // not leave it short; a caller may pay more, never less.
+    const uint64_t requiredCdFee = cdCreationFeeXfg(amount, cdTermBlocks, epochBlocks, m_node.getHearthTwap());
+    if (requiredCdFee == 0) {
+      throw std::system_error(make_error_code(error::WRONG_STATE), "No Hearth oracle price yet to value the CD creation fee");
+    }
+    bankingFee = std::max(bankingFee, static_cast<uint64_t>(
+        ((uint128_t)requiredCdFee * (10000 + parameters::WALLET_MINT_TWAP_MARGIN_BPS) + 9999) / 10000));
 
     const uint64_t neededHeat = amount;
     uint32_t currentHeight = getBlockCount();
@@ -1963,23 +1968,6 @@ namespace CryptoNote
       cdOut.commitKey = deriveSelfCommitmentKey(*transaction, cdIdx);
       cdOut.term = cdTermBlocks;
       transaction->addOutput(amount, cdOut);
-    }
-
-    // CD creation fee → dev fund, paid in XFG. It is 0.1% of the HEAT being
-    // deposited and is charged alongside the network fee, not carved out of the
-    // HEAT inputs: the dev fund is an XFG address and has no HEAT claim, so a
-    // HEAT-denominated fee credited to a protocol reserve would not be the dev
-    // fund's money. (v11 used to route it to m_treasuryHeatReserve through a
-    // TreasuryFund tag; the dev fund's share must not fund protocol reserves.)
-    if (bankingFee > 0) {
-      AccountPublicAddress devAddr{};
-      if (m_currency.parseAccountAddressString(CryptoNote::FUEGO_DEV_FUND_ADDRESS, devAddr)) {
-        transaction->addOutput(bankingFee, devAddr);
-      } else {
-        m_logger(WARNING, BRIGHT_YELLOW)
-            << "CD creation fee skipped: FUEGO_DEV_FUND_ADDRESS did not parse";
-        bankingFee = 0;
-      }
     }
 
     // HEAT change remains FOREVER HEAT_TERM

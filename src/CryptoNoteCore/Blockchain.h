@@ -93,6 +93,9 @@ namespace CryptoNote {
     virtual bool checkTransactionSize(size_t blobSize) override;
     virtual bool checkTransactionSettlement(const CryptoNote::Transaction& tx, uint64_t& fee) override;
     virtual uint64_t blockMintCapHeat() override;
+    // XFG the CD outputs of `tx` owe as creation fee at `height`; createsCd
+    // is set when it has any. 0 with createsCd means no oracle price yet.
+    uint64_t cdCreationFeeXfgFor(const Transaction& tx, uint32_t height, bool& createsCd) const;
 
     bool init() { return init(Tools::getDefaultDataDirectory(), true); }
     bool init(const std::string& config_folder, bool load_existing);

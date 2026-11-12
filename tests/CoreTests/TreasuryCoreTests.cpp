@@ -1208,6 +1208,11 @@ public:
     dep.withdrawn = true;
     dep.withdrawnHeight = height;
   }
+  static void addHeatRingMember(Blockchain& chain, uint64_t amount) {
+    CommitmentOutputRef ref{};
+    ref.term = parameters::HEAT_TERM;
+    chain.m_indexManager.commitmentOutputs()[amount].push_back(ref);
+  }
   static void markExpired(Blockchain& chain, const Crypto::Hash& orderId) {
     chain.m_limitDeposits.at(orderId).expired = true;
   }
@@ -2093,6 +2098,38 @@ void testLimitOrderCancelTag() {
   TEST(!cancelSignedBy(keys.spendPublicKey, keys.spendSecretKey, afterStop, err) && err.find("stopped") != std::string::npos);
 }
 
+// Owner decision 2026-11-12: the CD creation fee is consensus-enforced, scales
+// with the term (0.25% at 6 epochs to 1% at 72) on the HEAT's value at the
+// mint price, is paid in XFG and is withheld from the miner for AuntPoL.
+void testCdCreationFeeWithheldForAuntPol() {
+  TestChain t("cd_fee");
+  TEST(t.ok);
+  const uint64_t C = parameters::COIN;
+  const auto& pool = t.chain.getAmmPool();
+  const uint64_t price = ammGetSpotPrice(pool.reserveXfg, pool.reserveHeat);
+  VaultCoreTestAccess::recordSpots(t.chain, 0, 16, price);
+  VaultCoreTestAccess::addHeatRingMember(t.chain, 100 * C);
+  const uint64_t epochBlocks = VaultCoreTestAccess::epochDuration(t.chain);
+
+  auto createCd = [&](uint64_t xfgIn, uint32_t epochs, uint64_t& fee, std::string& err) {
+    Transaction tx = settlementTx({xfgIn}, {commitmentOut(100 * C, static_cast<uint32_t>(epochs * epochBlocks))}, {});
+    TransactionInputCommitmentSpend heatIn{};
+    heatIn.amount = 100 * C;
+    heatIn.outputIndexes = {0};
+    tx.inputs.push_back(heatIn);
+    Blockchain::SettlementScratch scratch;
+    AssetFlows flows;
+    return t.chain.validateSettlement(tx, 100, scratch, flows, fee, err);
+  };
+  uint64_t fee = 0;
+  std::string err;
+  // 100 HEAT at 0.125 HEAT/XFG is 800 XFG of value: 0.25% → 2 XFG, 1% → 8 XFG.
+  TEST(createCd(3 * C, 6, fee, err) && fee == 1 * C);
+  TEST(!createCd(2 * C - 1, 6, fee, err) && err.find("CD creation fee") != std::string::npos);
+  TEST(createCd(9 * C, 72, fee, err) && fee == 1 * C);
+  TEST(!createCd(8 * C - 1, 72, fee, err));
+}
+
 int main() {
   testCdInterestCompounding();
   testLegacyDepositWithdrawsForPrincipal();
@@ -2148,6 +2185,7 @@ int main() {
   testHeatSupplyCountsOnlyXfgValuedFees();
   testAuctionSettlesWholeOrNotAtAll();
   testLimitOrderCancelTag();
+  testCdCreationFeeWithheldForAuntPol();
   fprintf(stderr, "=== Treasury/Core Tests ===\nPassed: %d / %d\n", tests_passed, tests_run);
   return tests_passed == tests_run ? 0 : 1;
 }

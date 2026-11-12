@@ -10,10 +10,12 @@
 > (`SWAP_FEE_*_PRE_V11`), so the old numbers below survive only where they describe pre-v11 replay.
 > The Hearth 1% taker fee splits **30% CD / 70% maker at v11**, flipping to **70/30 at v12**
 > (`HEARTH_CD_SHARE_PCT_V11` / `_V12`). The treasury's Hearth LP position (AuntPoL) is funded by
-> the **1% mint premium** itself (`HEAT_MINT_PREMIUM_BPS = 100`): the withheld premium XFG is the
-> **XFG leg** (`m_treasuryLpPendingXfg`, not burned) and the HEAT it buys is the **HEAT leg**
-> (`m_treasuryHeatReserve`). (AuntPoL — a quiet nod to the Peaky Blinders matriarch who keeps the books.) No SWF transfer is involved. The **CD creation fee** is 0.1% of the
-> HEAT being deposited, charged in **XFG** to `FUEGO_DEV_FUND_ADDRESS`.
+> the **1% mint premium** (`HEAT_MINT_PREMIUM_BPS = 100`) and the **CD creation fee**. At v11 the
+> withheld premium XFG is the **XFG leg** (`m_treasuryLpPendingXfg`, not burned) and the HEAT it
+> buys is the **HEAT leg** (`m_treasuryHeatReserve`); from v12 the premium XFG is burned and the
+> CD creation fee alone funds the XFG leg. (AuntPoL — a quiet nod to the Peaky Blinders matriarch who keeps the books.) No SWF transfer is involved. The **CD creation fee** is
+> consensus-enforced: 0.25% (6 epochs) to 1% (72 epochs) of the HEAT deposited, valued at the
+> mint oracle price, paid in **XFG**, withheld from the miner and credited to the XFG leg.
 
 ---
 
@@ -278,13 +280,14 @@ Protocol Earnings (ONLY TWO):
 
 NOT protocol earnings:
 ├── Mint premium:    1% of the declared burn (HEAT_MINT_PREMIUM_BPS = 100, v11+).
-│                    A haircut INSIDE the burn, not a surcharge: the withheld
+│                    A haircut INSIDE the burn, not a surcharge. v11: the withheld
 │                    premium XFG is the AuntPoL XFG leg (m_treasuryLpPendingXfg,
-│                    not burned) and the HEAT it buys is the HEAT leg
-│                    (m_treasuryHeatReserve). Protocol LP inventory, not revenue.
-└── CD creation fee: 0.1% of the HEAT being deposited, charged in XFG as a KeyOutput
-                     to FUEGO_DEV_FUND_ADDRESS. NOT protocol revenue,
-                     NOT CD yield, NOT a treasury reserve credit.
+│                    not burned); v12+: it is burned. The HEAT it buys is the HEAT
+│                    leg (m_treasuryHeatReserve). Protocol LP inventory, not revenue.
+└── CD creation fee: 0.25% (6 epochs) → 1% (72 epochs) of the HEAT deposited,
+                     valued at the mint oracle price, paid in XFG, withheld from
+                     the miner and credited to the AuntPoL XFG leg. Consensus-
+                     enforced. NOT protocol revenue, NOT CD yield, no dev tax.
 
         │
         ▼

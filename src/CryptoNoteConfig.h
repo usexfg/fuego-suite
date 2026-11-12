@@ -451,6 +451,8 @@ const uint64_t HEARTH_MINT_MAX_BPS_PER_BLOCK =
 const uint64_t HEARTH_AUNTPOL_MAX_SPOT_DEVIATION_BPS =
     200; // AuntPoL pairs only while pool spot is within 2% of the oracle price
 const uint64_t HEARTH_ORACLE_SHORT_WINDOW = 8; // blocks in the short median
+const uint64_t CD_CREATION_FEE_MIN_BPS = 25;  // 0.25% for a CD_MIN_EPOCHS (~1 month) CD
+const uint64_t CD_CREATION_FEE_MAX_BPS = 100; // 1% for a CD_MAX_EPOCHS (~1 year) CD
 const uint64_t LIMIT_ORDER_MIN_XFG = COIN;          // smallest SELL_XFG deposit (1 XFG)
 const uint64_t LIMIT_ORDER_MIN_HEAT = COIN / 10;    // smallest BUY_XFG deposit (0.1 HEAT)
 const uint32_t LIMIT_ORDER_MAX_TTL_BLOCKS = 5400;   // ~30 days: expiry required, at most this far out
@@ -672,6 +674,12 @@ inline bool limitOrderExpiryValid(uint32_t expiration, uint32_t height) {
 // at `requested` (0 = default TTL) when the next block is `nextHeight`.
 inline uint32_t limitOrderExpiryFor(uint32_t requested, uint32_t nextHeight) {
   return requested == 0 ? nextHeight + parameters::LIMIT_ORDER_DEFAULT_TTL_BLOCKS : requested;
+}
+
+// From v12 each AuntPoL leg has one source: the CD creation fee funds the XFG
+// leg, so the mint premium's XFG is burned and only its HEAT funds the HEAT leg.
+inline bool mintPremiumFundsXfgLeg(uint8_t blockMajorVersion) {
+  return blockMajorVersion < BLOCK_MAJOR_VERSION_12;
 }
 
 // HEAT one block may mint, from the pool's HEAT reserve at block open.

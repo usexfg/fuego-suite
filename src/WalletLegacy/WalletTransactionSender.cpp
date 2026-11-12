@@ -1941,7 +1941,7 @@ namespace CryptoNote
   {
     throwIf(amount == 0, error::WRONG_AMOUNT);
 
-    uint64_t neededHeat = amount + bankingFee;
+    uint64_t neededHeat = amount;
     std::shared_ptr<SendTransactionContext> context = std::make_shared<SendTransactionContext>();
     context->dustPolicy.dustThreshold = m_currency.defaultDustThreshold();
     context->mixIn = m_currency.maxMixin();
@@ -2828,11 +2828,12 @@ namespace CryptoNote
     try {
       std::unique_ptr<ITransaction> transaction = createTransaction();
       uint64_t totalHeat = context->foundMoney;
-      uint64_t needed = cdAmount + bankingFee;
-      uint64_t changeAmount = (totalHeat > needed) ? (totalHeat - needed) : 0;
+      uint64_t changeAmount = (totalHeat > cdAmount) ? (totalHeat - cdAmount) : 0;
 
       // HEAT CD commitment output (finite term)
-      uint32_t cdTermBlocks = termEpochs * parameters::TESTNET_EPOCH_DURATION_BLOCKS; // TODO: real epoch mapping
+      const uint32_t epochBlocks = static_cast<uint32_t>(m_currency.isTestnet()
+          ? parameters::TESTNET_EPOCH_DURATION_BLOCKS : parameters::EPOCH_DURATION_BLOCKS);
+      uint32_t cdTermBlocks = termEpochs * epochBlocks;
       const uint32_t cdIdx = static_cast<uint32_t>(transaction->getOutputCount());
       std::array<uint8_t, 32> cdSecret;
       {
@@ -2852,10 +2853,6 @@ namespace CryptoNote
       cdOut.term = cdTermBlocks;
       transaction->addOutput(cdAmount, cdOut);
 
-      // Banking fee to dev fund (regular KeyOutput)
-      AccountPublicAddress devAddr;
-      m_currency.parseAccountAddressString(FUEGO_DEV_FUND_ADDRESS, devAddr);
-      transaction->addOutput(bankingFee, devAddr);
 
       // HEAT change (FOREVER term)
       if (changeAmount > 0) {

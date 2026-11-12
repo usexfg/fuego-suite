@@ -4488,11 +4488,19 @@ bool simple_wallet::heat_deposit(const std::vector<std::string>& args) {
     return false;
   }
 
-  // The CD creation fee is XFG (it goes to the dev fund address); the deposit
+  // The CD creation fee is XFG (it funds the AuntPoL XFG leg); the deposit
   // itself is HEAT. Check the two balances separately — comparing the XFG
   // balance against the HEAT amount rejected deposits a wallet could fund.
-  uint64_t bankingFee = amount / 1000;  // 0.1% of the deposit, in XFG → dev fund
-  if (bankingFee == 0) bankingFee = 1;   // minimum 1 atomic unit
+  const uint64_t epochBlocks = m_currency.isTestnet()
+      ? CryptoNote::parameters::TESTNET_EPOCH_DURATION_BLOCKS : CryptoNote::parameters::EPOCH_DURATION_BLOCKS;
+  const uint64_t requiredCdFee = CryptoNote::cdCreationFeeXfg(amount, termEpochs * epochBlocks, epochBlocks,
+                                                              m_node->getHearthTwap());
+  if (requiredCdFee == 0) {
+    fail_msg_writer() << "No Hearth oracle price yet to value the CD creation fee";
+    return false;
+  }
+  const uint64_t bankingFee = requiredCdFee +
+      requiredCdFee * CryptoNote::parameters::WALLET_MINT_TWAP_MARGIN_BPS / 10000;
 
   uint64_t fee = m_currency.minimumFee();
   uint64_t xfgNeeded = bankingFee + fee;
@@ -4508,14 +4516,14 @@ bool simple_wallet::heat_deposit(const std::vector<std::string>& args) {
     fail_msg_writer() << "Insufficient XFG for the fees. Available: "
                       << m_currency.formatAmount(xfgBalance)
                       << ", needed: " << m_currency.formatAmount(xfgNeeded)
-                      << " (0.1% CD creation fee + network fee)";
+                      << " (CD creation fee + network fee)";
     return false;
   }
 
   success_msg_writer() << "HEAT Deposit: " << m_currency.formatAmount(amount)
                        << " HEAT for " << termEpochs << " epochs"
                        << " | CD creation fee: " << m_currency.formatAmount(bankingFee)
-                       << " XFG (dev fund)";
+                       << " XFG (0.25%-1% by term, to the protocol's Hearth liquidity)";
 
   // Use heatDepositV10() — dedicated deposit API that builds proper commitment tx
   uint64_t mixIn = m_currency.isTestnet() ? 0 : CryptoNote::parameters::MIN_TX_MIXIN_SIZE;

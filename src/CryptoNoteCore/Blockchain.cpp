@@ -198,10 +198,22 @@ uint64_t bankedBurn(const CryptoNote::TransactionExtraField& f, uint8_t blockMaj
   }
   if (blockMajorVersion >= BLOCK_MAJOR_VERSION_11 && f.type() == typeid(TransactionExtraHeatMintAuth)) {
     const auto& auth = boost::get<TransactionExtraHeatMintAuth>(f);
+    if (!mintPremiumFundsXfgLeg(blockMajorVersion)) return auth.xfgBurned;
     const uint64_t premiumXfg = heatMintPremiumXfg(auth.xfgBurned, blockMajorVersion);
     return (auth.xfgBurned > premiumXfg) ? (auth.xfgBurned - premiumXfg) : 0;
   }
   return 0;
+}
+
+// A commitment output that is a CD. LP and swap-receive markers, pool markers
+// and plain HEAT are not CDs and never earn.
+bool isCdOutputTerm(uint32_t term) {
+  using namespace CryptoNote;
+  return term > 0 && term != parameters::HEAT_TERM &&
+         term != parameters::DEPOSIT_TERM_POOL_XFG &&
+         term != parameters::DEPOSIT_TERM_POOL_HEAT &&
+         term != parameters::DEPOSIT_TERM_LP &&
+         term != parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG;
 }
 
 bool isSettlementTag(const CryptoNote::TransactionExtraField& f) {
@@ -6699,10 +6711,12 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
             // The premium XFG is the AuntPoL XFG leg: withheld from the
             // minter but not burned, so it pairs with the premium HEAT.
             // validateSettlement bounded both additions for the same tx.
-            m_treasuryLpPendingXfg =
-                (m_treasuryLpPendingXfg > UINT64_MAX - premiumXfg)
-                    ? UINT64_MAX
-                    : m_treasuryLpPendingXfg + premiumXfg;
+            if (mintPremiumFundsXfgLeg(block.bl.majorVersion)) {
+              m_treasuryLpPendingXfg =
+                  (m_treasuryLpPendingXfg > UINT64_MAX - premiumXfg)
+                      ? UINT64_MAX
+                      : m_treasuryLpPendingXfg + premiumXfg;
+            }
             if (premiumHeat > 0) {
               m_treasuryHeatReserve += premiumHeat;
             }
@@ -6712,6 +6726,12 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
         }
       }
     }
+  }
+
+  if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11) {
+    bool createsCd = false;
+    const uint64_t cdFee = cdCreationFeeXfgFor(transaction.tx, block.height, createsCd);
+    m_treasuryLpPendingXfg = m_treasuryLpPendingXfg > UINT64_MAX - cdFee ? UINT64_MAX : m_treasuryLpPendingXfg + cdFee;
   }
 
   transaction.m_global_output_indexes.resize(transaction.tx.outputs.size());
@@ -6763,11 +6783,7 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
       // that were never counted, and kept matured-but-unwithdrawn CDs in the
       // denominator after they stopped earning.
       // LP and swap-receive markers are not CDs and never earn.
-      if (commitOut.term > 0 && commitOut.term != parameters::HEAT_TERM &&
-          commitOut.term != parameters::DEPOSIT_TERM_POOL_XFG &&
-          commitOut.term != parameters::DEPOSIT_TERM_POOL_HEAT &&
-          commitOut.term != parameters::DEPOSIT_TERM_LP &&
-          commitOut.term != parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG) {
+      if (isCdOutputTerm(commitOut.term)) {
         const uint64_t cdAmount = transaction.tx.outputs[output].amount;
         const uint64_t lastCreditedEpoch =
             m_currency.cdLastCreditedEpoch(block.height, commitOut.term);
@@ -7325,13 +7341,21 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
           m_heatSupply = (m_heatSupply >= created) ? (m_heatSupply - created) : 0;
           m_treasuryHeatReserve = (m_treasuryHeatReserve >= premiumHeat)
               ? (m_treasuryHeatReserve - premiumHeat) : 0;
-          const uint64_t premiumXfg = heatMintPremiumXfg(auth.xfgBurned, majorVersion);
-          m_treasuryLpPendingXfg = (m_treasuryLpPendingXfg >= premiumXfg)
-              ? (m_treasuryLpPendingXfg - premiumXfg) : 0;
+          if (mintPremiumFundsXfgLeg(majorVersion)) {
+            const uint64_t premiumXfg = heatMintPremiumXfg(auth.xfgBurned, majorVersion);
+            m_treasuryLpPendingXfg = (m_treasuryLpPendingXfg >= premiumXfg)
+                ? (m_treasuryLpPendingXfg - premiumXfg) : 0;
+          }
           break;
         }
       }
     }
+  }
+
+  if (majorVersion >= BLOCK_MAJOR_VERSION_11) {
+    bool createsCd = false;
+    const uint64_t cdFee = cdCreationFeeXfgFor(transaction, height, createsCd);
+    m_treasuryLpPendingXfg = m_treasuryLpPendingXfg >= cdFee ? m_treasuryLpPendingXfg - cdFee : 0;
   }
 
   m_paymentIdIndex.remove(transaction);
@@ -8207,6 +8231,29 @@ bool CryptoNote::Blockchain::validateSettlement(const Transaction& tx, uint32_t 
     return false;
   }
 
+  // CD creation fee: withheld from the miner's XFG fee, credited to the
+  // AuntPoL XFG leg at settlement.
+  {
+    bool createsCd = false;
+    const uint64_t cdFee = cdCreationFeeXfgFor(tx, height, createsCd);
+    if (createsCd) {
+      if (cdFee == 0) {
+        error = "CD creation: no oracle price to value the fee";
+        return false;
+      }
+      if (xfgFee < cdFee) {
+        error = "CD creation: XFG fee " + std::to_string(xfgFee) + " below the CD creation fee " +
+                std::to_string(cdFee);
+        return false;
+      }
+      if (m_treasuryLpPendingXfg > UINT64_MAX - cdFee) {
+        error = "CD creation: AuntPoL XFG leg overflow";
+        return false;
+      }
+      xfgFee -= cdFee;
+    }
+  }
+
   // Each tag's own rules, including every condition its settlement in
   // pushTransaction relies on — pushBlock does not act on a settlement
   // failure, so none may be left for settlement to discover.
@@ -8249,8 +8296,8 @@ bool CryptoNote::Blockchain::validateSettlement(const Transaction& tx, uint32_t 
       error = "HEAT mint: treasury HEAT reserve overflow";
       return false;
     }
-    const uint64_t premiumXfg = heatMintPremiumXfg(
-        a.xfgBurned, getBlockMajorVersionForHeight(height));
+    const uint8_t mintVersion = getBlockMajorVersionForHeight(height);
+    const uint64_t premiumXfg = mintPremiumFundsXfgLeg(mintVersion) ? heatMintPremiumXfg(a.xfgBurned, mintVersion) : 0;
     if (m_treasuryLpPendingXfg > UINT64_MAX - premiumXfg) {
       error = "HEAT mint: treasury XFG reserve overflow";
       return false;
@@ -8456,6 +8503,25 @@ bool CryptoNote::Blockchain::checkTransactionSettlement(const Transaction& tx, u
   }
   fee = in - out;
   return true;
+}
+
+uint64_t CryptoNote::Blockchain::cdCreationFeeXfgFor(const Transaction& tx, uint32_t height,
+                                                     bool& createsCd) const {
+  uint64_t fee = 0;
+  createsCd = false;
+  const uint64_t epochBlocks = m_currency.isTestnet()
+      ? parameters::TESTNET_EPOCH_DURATION_BLOCKS : parameters::EPOCH_DURATION_BLOCKS;
+  const uint64_t price = hearthOraclePriceBefore(height);
+  for (const auto& out : tx.outputs) {
+    if (out.target.type() != typeid(TransactionOutputCommitment)) continue;
+    const uint32_t term = boost::get<TransactionOutputCommitment>(out.target).term;
+    if (!isCdOutputTerm(term) || Currency::classifyCommitmentTermAsset(term) != AssetType::HEAT) continue;
+    createsCd = true;
+    const uint64_t outFee = cdCreationFeeXfg(out.amount, term, epochBlocks, price);
+    if (outFee == 0) return 0;
+    fee = fee > UINT64_MAX - outFee ? UINT64_MAX : fee + outFee;
+  }
+  return fee;
 }
 
 uint64_t CryptoNote::Blockchain::blockMintCapHeat() {

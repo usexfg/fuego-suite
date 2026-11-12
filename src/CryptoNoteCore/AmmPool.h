@@ -93,6 +93,13 @@ bool ammApplyPoolMakerFill(AmmPoolState& pool, uint8_t side,
 void ammRevertPoolMakerFill(AmmPoolState& pool, uint8_t side,
                             uint64_t xfg, uint64_t heat, uint64_t rebateHeat);
 
+// CD creation fee in XFG: the CD's HEAT valued at the mint oracle price
+// (HEAT per XFG × COIN), at a rate rising linearly with the term from
+// CD_CREATION_FEE_MIN_BPS (CD_MIN_EPOCHS) to CD_CREATION_FEE_MAX_BPS
+// (CD_MAX_EPOCHS). It funds the AuntPoL XFG leg. Rounded up. 0 without a price.
+uint64_t cdCreationFeeXfg(uint64_t heatAmount, uint64_t termBlocks, uint64_t epochBlocks,
+                          uint64_t oraclePrice);
+
 bool ammValidateDepositRatio(uint64_t amountA, uint64_t amountB,
                               uint64_t reserveA, uint64_t reserveB,
                               uint32_t toleranceBps);

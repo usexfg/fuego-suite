@@ -6716,3 +6716,25 @@ Sign-off table:
 Not covered:
 - No wallet command sends a standalone re-mint burn yet, so in practice the quarterly re-mint still equals 1 XFG × aliases registered that quarter (`docs/V12_LAUNCH_TODO.md`).
 - An alias registration and its burn sit in the same transaction: consensus can only verify a fee it can see.
+
+## Standalone re-mint burn command
+
+**Feature name**: `remint_burn` in SimpleWallet and walletd
+**Agent**: Claude
+**Start date**: 2026-11-12
+**Consensus impact**: none (wallet and walletd API).
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `WalletGreen::remintBurn(amount)`: one self output of the network minimum, fee = minimum + amount, `TX_EXTRA_REMINT_BURN` extra; refused before v11 | Claude | 2026-11-12 | DONE |
+| 2 | walletd JSON-RPC `remint_burn` `{amount}` → `{tx_hash, status}` | Claude | 2026-11-12 | DONE |
+| 3 | SimpleWallet `remint_burn <amount>` (same transaction shape through WalletLegacy) | Claude | 2026-11-12 | DONE |
+| 4 | `docs/getting-started/wallet-setup.mdx` command table; `docs/V12_LAUNCH_TODO.md` updated | Claude | 2026-11-12 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j4` full build rc=0 |
+| Tests pass | Consensus side covered by `testAliasRegistrationFeeBurned` (standalone burn accepted, counted, withheld from the miner) and `testAliasBurnTotalPushPop`. The wallet commands have no automated test (no wallet harness; live RPC hangs per AGENTS.md Known Issues) |
+| All tasks done | DONE |

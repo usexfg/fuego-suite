@@ -718,6 +718,19 @@ void GetLimitOrders::Response::serialize(CryptoNote::ISerializer &serializer)
   serializer(status, "status");
 }
 
+void RemintBurn::Request::serialize(CryptoNote::ISerializer &serializer)
+{
+  if (!serializer(amount, "amount")) {
+    throw RequestSerializationError();
+  }
+}
+
+void RemintBurn::Response::serialize(CryptoNote::ISerializer &serializer)
+{
+  serializer(tx_hash, "tx_hash");
+  serializer(status, "status");
+}
+
 void RegisterAlias::Request::serialize(CryptoNote::ISerializer &serializer)
 {
   serializer(alias, "alias");

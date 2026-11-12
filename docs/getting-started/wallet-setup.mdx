@@ -68,6 +68,7 @@ Others can then send to `@myname` instead of your full address. Aliases are stor
 | `address` | Display your wallet address |
 | Deposit / CD list | List **HEAT** commitment deposits (CLI names vary by build — not COLD) |
 | HEAT mint / Burn2Mint | Burn XFG → mint HEAT (`mintHeatV10`) |
+| `remint_burn <amount>` | From v11: burn XFG into the re-mint counter. It is re-minted to the dev fund once a quarter in one coinbase output; no output of yours goes to any dev wallet. walletd: JSON-RPC `remint_burn` with `{"amount": <atomic units>}` |
 | `help` | Show all available commands |
 
 **Product path:** mint HEAT first, then open a HEAT CD. There is no XFG CD / COLD deposit path.

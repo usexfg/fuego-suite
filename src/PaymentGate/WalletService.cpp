@@ -2805,6 +2805,30 @@ namespace PaymentService
     return std::error_code();
   }
 
+  std::error_code WalletService::remintBurn(uint64_t amount, std::string &transactionHash)
+  {
+    try
+    {
+      System::EventLock lk(readyEvent);
+      auto *green = dynamic_cast<CryptoNote::WalletGreen *>(&wallet);
+      if (!green) {
+        return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
+      }
+      Crypto::Hash txHash{};
+      std::error_code ec = green->remintBurn(amount, txHash);
+      if (ec) {
+        return ec;
+      }
+      transactionHash = Common::podToHex(txHash);
+    }
+    catch (std::system_error &x)
+    {
+      logger(Logging::WARNING) << "remint_burn: " << x.what();
+      return x.code();
+    }
+    return std::error_code();
+  }
+
   std::error_code WalletService::registerAlias(
       const std::string &alias,
       const std::string &ownerAddress,

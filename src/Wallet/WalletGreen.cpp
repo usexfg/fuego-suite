@@ -6684,6 +6684,41 @@ namespace CryptoNote
   // Alias methods
   // ============================================================================
 
+  std::error_code WalletGreen::remintBurn(uint64_t amount, Crypto::Hash& txHashOut) {
+    throwIfNotInitialized();
+    throwIfTrackingMode();
+    throwIfStopped();
+    if (amount == 0) {
+      return make_error_code(error::ZERO_DESTINATION);
+    }
+    if (m_node.getLastKnownBlockHeight() + 1 < m_currency.upgradeHeight(CryptoNote::BLOCK_MAJOR_VERSION_11)) {
+      return make_error_code(error::WRONG_STATE);
+    }
+    std::vector<uint8_t> extraVec;
+    CryptoNote::addRemintBurnToExtra(extraVec, amount);
+
+    TransactionParameters params;
+    WalletOrder selfOutput;
+    selfOutput.address = getAddress(0);
+    selfOutput.amount = m_currency.minimumFee();
+    params.destinations.push_back(selfOutput);
+    params.fee = m_currency.minimumFee() + amount;
+    params.mixIn = m_currency.minMixin(CryptoNote::BLOCK_MAJOR_VERSION_10);
+    params.extra = std::string(extraVec.begin(), extraVec.end());
+
+    Crypto::SecretKey txSK;
+    size_t txIdx;
+    try {
+      txIdx = transfer(params, txSK);
+    } catch (const std::system_error& e) {
+      return e.code();
+    } catch (...) {
+      return make_error_code(std::errc::io_error);
+    }
+    txHashOut = getTransaction(txIdx).hash;
+    return {};
+  }
+
   std::error_code WalletGreen::registerAlias(const std::string& alias,
                                               const std::string& ownerAddress,
                                               Crypto::Hash& txHashOut) {

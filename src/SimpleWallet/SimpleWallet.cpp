@@ -516,6 +516,7 @@ std::string simple_wallet::get_commands_str() {
     {"claim_lp_fees", "Claim LP swap fee earnings"},
     {"place_order", "Place limit order on Hearth"},
     {"cancel_order", "Cancel limit order by transaction hash"},
+    {"remint_burn", "Burn XFG into the re-mint counter (re-minted to the dev fund each quarter; no output to any dev wallet)"},
     {"stop_order", "Stop a limit order filling; withdraw it afterwards with cancel_order"},
     {"orderbook", "Show Hearth CLOB orderbook"},
     {"show_orders", "Show your open limit orders on Hearth"}
@@ -613,6 +614,7 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
 
   // @ Alias system commands
   m_consoleHandler.setHandler("register_alias", boost::bind(&simple_wallet::register_alias, this, boost::arg<1>()), "register_alias <alias> - Register an @ alias (8 chars [a-z0-9&], costs 1 XFG). Auto-derives a fresh subaddress; master is never used on-chain.");
+  m_consoleHandler.setHandler("remint_burn", boost::bind(&simple_wallet::remint_burn, this, boost::arg<1>()), "remint_burn <amount> - Burn XFG into the re-mint counter (v11+); re-minted to the dev fund each quarter in one coinbase output");
   m_consoleHandler.setHandler("lookup_alias", boost::bind(&simple_wallet::lookup_alias, this, boost::arg<1>()), "lookup_alias <alias_or_address> - Look up an @ alias by name or wallet address");
   m_consoleHandler.setHandler("list_aliases", boost::bind(&simple_wallet::list_aliases, this, boost::arg<1>()), "list_aliases - List all registered @ aliases on the network");
   m_consoleHandler.setHandler("gen_new_sub", boost::bind(&simple_wallet::gen_new_sub, this, boost::arg<1>()), "gen_new_sub [major] [minor] - Generate a sub-address at index (major, minor). Omit args for auto-increment (0, N).");
@@ -3451,6 +3453,53 @@ bool simple_wallet::process_command(const std::vector<std::string> &args) {
 //----------------------------------------------------------------------------------------------------
 // @ ALIAS SYSTEM COMMANDS
 //----------------------------------------------------------------------------------------------------
+bool simple_wallet::remint_burn(const std::vector<std::string> &args) {
+  uint64_t amount = 0;
+  if (args.size() != 1 || !m_currency.parseAmount(args[0], amount) || amount == 0) {
+    fail_msg_writer() << "Usage: remint_burn <amount>";
+    return false;
+  }
+  if (m_node->getLastKnownBlockHeight() + 1 < m_currency.upgradeHeight(CryptoNote::BLOCK_MAJOR_VERSION_11)) {
+    fail_msg_writer() << "Re-mint burns activate at block " << m_currency.upgradeHeight(CryptoNote::BLOCK_MAJOR_VERSION_11);
+    return false;
+  }
+  const uint64_t fee = m_currency.minimumFee() + amount;
+  if (m_wallet->actualBalance() < fee + m_currency.minimumFee()) {
+    fail_msg_writer() << "Insufficient balance: need " << m_currency.formatAmount(fee + m_currency.minimumFee()) << " XFG";
+    return false;
+  }
+  std::vector<uint8_t> extra;
+  CryptoNote::addRemintBurnToExtra(extra, amount);
+  const std::string extraString(extra.begin(), extra.end());
+
+  CryptoNote::WalletHelper::SendCompleteResultObserver sent;
+  WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
+  std::vector<CryptoNote::WalletLegacyTransfer> transfers;
+  CryptoNote::WalletLegacyTransfer selfTransfer;
+  selfTransfer.address = m_wallet->getAddress();
+  selfTransfer.amount = m_currency.minimumFee();
+  transfers.push_back(selfTransfer);
+  std::vector<CryptoNote::TransactionMessage> messages;
+  Crypto::SecretKey transactionSK;
+  CryptoNote::TransactionId tx = m_wallet->sendTransaction(transactionSK, transfers, fee, extraString,
+                                                           CryptoNote::parameters::MIN_TX_MIXIN_SIZE, 0, messages, 0);
+  if (tx == WALLET_INVALID_TRANSACTION_ID) {
+    fail_msg_writer() << "Re-mint burn transaction failed";
+    return false;
+  }
+  std::error_code sendError = sent.wait(tx);
+  removeGuard.removeObserver();
+  if (sendError) {
+    fail_msg_writer() << "Failed to send re-mint burn: " << sendError.message();
+    return false;
+  }
+  CryptoNote::WalletLegacyTransaction txInfo;
+  m_wallet->getTransaction(tx, txInfo);
+  success_msg_writer() << "Burned " << m_currency.formatAmount(amount) << " XFG into the re-mint counter, tx "
+                       << Common::podToHex(txInfo.hash);
+  return true;
+}
+
 bool simple_wallet::register_alias(const std::vector<std::string> &args) {
   if (args.size() != 1) {
     fail_msg_writer() << "Usage: register_alias <alias>";

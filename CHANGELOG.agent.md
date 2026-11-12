@@ -6632,3 +6632,27 @@ Parser fix and history (v10 is live):
 Not covered:
 - No harness drives pushTransaction/popTransaction for the alias-burn total.
 - Re-minting the total to the dev fund is not implemented (`docs/V12_LAUNCH_TODO.md` item 3).
+
+## Push/pop tests for AuntPoL and the alias-burn total
+
+**Feature name**: Production push/pop harness for AuntPoL ledgers
+**Agent**: Claude
+**Start date**: 2026-11-12
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Test access drives `pushTransaction` / `popTransaction` / `pushToBankingIndex` on a synthetic block entry | Claude | 2026-11-12 | DONE |
+| 2 | CD creation fee: push credits the declared fee to the XFG leg, pop removes it | Claude | 2026-11-12 | DONE |
+| 3 | Mint premium: v11 credits both legs and banks 99% of the burn; v12 credits only the HEAT leg and banks 100%; pop restores both legs | Claude | 2026-11-12 | DONE |
+| 4 | Alias burn total: push adds the fee, pop removes it | Claude | 2026-11-12 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — core_tests target rc=0 |
+| Tests pass | DONE — core_tests 420/420 |
+| Mutation check | DONE — 5 breaks (CD fee pop, v12 premium XFG credit, v12 burn tally, alias pop, premium HEAT pop) each fail a test |
+| All tasks done | DONE |
+
+Not covered: the burn tally on pop (`popFromBankingIndex` path) is not asserted.

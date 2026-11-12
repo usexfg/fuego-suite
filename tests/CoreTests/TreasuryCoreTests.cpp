@@ -1210,6 +1210,26 @@ public:
     dep.withdrawn = true;
     dep.withdrawnHeight = height;
   }
+  // One transaction at index 1 of a block at `height`, version `v` (index 0 is
+  // the coinbase slot), driven through the production push/pop.
+  static Blockchain::BlockEntry blockWith(const Transaction& tx, uint32_t height, uint8_t v) {
+    Blockchain::BlockEntry block{};
+    block.bl.majorVersion = v;
+    block.height = height;
+    block.transactions.resize(2);
+    block.transactions[1].tx = tx;
+    return block;
+  }
+  static bool pushTx(Blockchain& chain, Blockchain::BlockEntry& block) {
+    return chain.pushTransaction(block, getObjectHash(block.transactions[1].tx), TxIndex{block.height, 1});
+  }
+  static void popTx(Blockchain& chain, const Blockchain::BlockEntry& block) {
+    chain.popTransaction(block.transactions[1].tx, getObjectHash(block.transactions[1].tx),
+                         block.height, block.bl.majorVersion);
+  }
+  static void bankBlock(Blockchain& chain, const Blockchain::BlockEntry& block) {
+    chain.pushToBankingIndex(block, 0);
+  }
   static void addHeatRingMember(Blockchain& chain, uint64_t amount) {
     CommitmentOutputRef ref{};
     ref.term = parameters::HEAT_TERM;
@@ -2249,6 +2269,105 @@ void testAliasRegistrationFeeBurned() {
   TEST(!parseTransactionExtra(oversized, fields));
 }
 
+namespace {
+
+KeyInput freshKeyInput(uint64_t amount) {
+  Crypto::PublicKey pub;
+  Crypto::SecretKey sec;
+  Crypto::generate_keys(pub, sec);
+  KeyInput in{};
+  in.amount = amount;
+  in.outputIndexes = {0};
+  Crypto::generate_key_image(pub, sec, in.keyImage);
+  return in;
+}
+
+Transaction auntPolTx(uint64_t xfgIn, const std::vector<TransactionOutput>& outputs, const std::vector<uint8_t>& extra) {
+  Transaction tx{};
+  tx.version = TRANSACTION_VERSION_2;
+  tx.inputs.push_back(freshKeyInput(xfgIn));
+  tx.outputs = outputs;
+  tx.extra = extra;
+  return tx;
+}
+
+} // namespace
+
+// The AuntPoL ledgers are credited in pushTransaction and debited in
+// popTransaction; validateSettlement only bounds them. These drive the
+// production push and pop, so a reorg over any of these transactions must put
+// the legs back exactly.
+void testAuntPolCdCreationFeePushPop() {
+  TestChain t("auntpol_cd_pushpop");
+  TEST(t.ok);
+  const uint64_t C = parameters::COIN;
+  const uint32_t epochBlocks = static_cast<uint32_t>(VaultCoreTestAccess::epochDuration(t.chain));
+  std::vector<uint8_t> extra;
+  addCdCreationFeeToExtra(extra, 3 * C);
+  auto block = VaultCoreTestAccess::blockWith(
+      auntPolTx(4 * C, {commitmentOut(100 * C, 6 * epochBlocks)}, extra), 100, BLOCK_MAJOR_VERSION_12);
+  const uint64_t xfgLegBefore = t.chain.getTreasuryLpPendingXfg();
+  TEST(VaultCoreTestAccess::pushTx(t.chain, block));
+  TEST(t.chain.getTreasuryLpPendingXfg() == xfgLegBefore + 3 * C);
+  VaultCoreTestAccess::popTx(t.chain, block);
+  TEST(t.chain.getTreasuryLpPendingXfg() == xfgLegBefore);
+}
+
+// v11: the mint premium funds both legs (withheld XFG + the HEAT it buys) and
+// the burn tally excludes the withheld XFG. v12: only the HEAT leg; the whole
+// declared burn is counted. Pop restores both legs.
+void testAuntPolMintPremiumPushPop() {
+  const uint64_t C = parameters::COIN;
+  for (uint8_t version : {BLOCK_MAJOR_VERSION_11, BLOCK_MAJOR_VERSION_12}) {
+    TestChain t(version == BLOCK_MAJOR_VERSION_11 ? "auntpol_mint_v11" : "auntpol_mint_v12");
+    TEST(t.ok);
+    const auto& pool = t.chain.getAmmPool();
+    const uint64_t price = ammGetSpotPrice(pool.reserveXfg, pool.reserveHeat);
+    VaultCoreTestAccess::recordSpots(t.chain, 0, 16, price);
+    std::vector<uint8_t> extra;
+    addHeatMintAuthToExtra(extra, 100 * C, 12 * C);
+    auto block = VaultCoreTestAccess::blockWith(
+        auntPolTx(101 * C, {commitmentOut(12 * C, parameters::HEAT_TERM)}, extra), 100, version);
+
+    const uint64_t xfgLegBefore = t.chain.getTreasuryLpPendingXfg();
+    const uint64_t heatLegBefore = t.chain.getTreasuryHeatReserve();
+    const uint64_t burnedBefore = t.chain.getTotalBurnedXfg();
+    const uint64_t premiumHeat = static_cast<uint64_t>(((uint128_t)(1 * C) * price) / C);
+    TEST(VaultCoreTestAccess::pushTx(t.chain, block));
+    VaultCoreTestAccess::bankBlock(t.chain, block);
+    TEST(t.chain.getTreasuryHeatReserve() == heatLegBefore + premiumHeat);
+    if (version == BLOCK_MAJOR_VERSION_11) {
+      TEST(t.chain.getTreasuryLpPendingXfg() == xfgLegBefore + 1 * C);
+      TEST(t.chain.getTotalBurnedXfg() == burnedBefore + 99 * C);
+    } else {
+      TEST(t.chain.getTreasuryLpPendingXfg() == xfgLegBefore);
+      TEST(t.chain.getTotalBurnedXfg() == burnedBefore + 100 * C);
+    }
+    VaultCoreTestAccess::popTx(t.chain, block);
+    TEST(t.chain.getTreasuryLpPendingXfg() == xfgLegBefore);
+    TEST(t.chain.getTreasuryHeatReserve() == heatLegBefore);
+  }
+}
+
+void testAliasBurnTotalPushPop() {
+  TestChain t("alias_burn_pushpop");
+  TEST(t.ok);
+  const uint64_t C = parameters::COIN;
+  TransactionExtraAliasRegistration reg;
+  reg.alias = "pushpop1";
+  reg.ownerAddress = "owner-address";
+  reg.aliasType = 1;
+  std::vector<uint8_t> extra;
+  TEST(addAliasToExtra(extra, reg));
+  auto block = VaultCoreTestAccess::blockWith(
+      auntPolTx(2 * C, {keyOut(C / 2)}, extra), 100, BLOCK_MAJOR_VERSION_11);
+  TEST(t.chain.getAliasBurnedXfg() == 0);
+  TEST(VaultCoreTestAccess::pushTx(t.chain, block));
+  TEST(t.chain.getAliasBurnedXfg() == parameters::ALIAS_REGISTRATION_FEE);
+  VaultCoreTestAccess::popTx(t.chain, block);
+  TEST(t.chain.getAliasBurnedXfg() == 0);
+}
+
 int main() {
   testCdInterestCompounding();
   testLegacyDepositWithdrawsForPrincipal();
@@ -2307,6 +2426,9 @@ int main() {
   testCdCreationFeeWithheldForAuntPol();
   testHearthStateCommittedByProofOfWork();
   testAliasRegistrationFeeBurned();
+  testAuntPolCdCreationFeePushPop();
+  testAuntPolMintPremiumPushPop();
+  testAliasBurnTotalPushPop();
   fprintf(stderr, "=== Treasury/Core Tests ===\nPassed: %d / %d\n", tests_passed, tests_run);
   return tests_passed == tests_run ? 0 : 1;
 }

@@ -21,5 +21,5 @@ From v11 the alias registration fee is burned and counted in its own total (not 
 
 ## Should do
 
-- Tests that drive `pushTransaction` / `popTransaction` for: the CD creation fee credit to AuntPoL, the v12 mint-premium routing, the limit-order stop tag.
+- Tests that drive `pushTransaction` / `popTransaction` for the limit-order stop tag (AuntPoL legs and the alias-burn total are covered).
 - A test harness that mines a valid v11 block, to cover `pushBlock` rejecting a mismatched `HearthState`.

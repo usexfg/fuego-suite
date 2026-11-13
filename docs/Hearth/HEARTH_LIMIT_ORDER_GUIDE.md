@@ -5,7 +5,7 @@
 ### Overview
 
 One pool inventory, two uses — not AMM *or* depth band. `reserveXfg × reserveHeat`
-is the balance sheet (LP shares, direct swaps, mint-spot fallback, backstop).
+is the balance sheet (LP shares, direct swaps, the 8-block spot TWAP that prices HEAT mints, backstop).
 The depth band is that inventory quoted as makers in the call auction. There is
 no UTXO-level counterparty settlement (Phase 6b cancelled).
 

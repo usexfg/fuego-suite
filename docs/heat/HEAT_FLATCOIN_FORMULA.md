@@ -1,5 +1,7 @@
 # HEAT Flatcoin Formula
 
+> **Status: design, not implemented.** The CPI multiplier, the CPI source median (BLS, Pyth, FPI) and `target_ratio` below do not exist in `src/`. HEAT runs in `HEAT_STABILITY_MODE = 2` (8:1 full float): mints price at the 8-block AMM spot TWAP with no CPI input. The on-chain Fuego Cost Index only re-bases the informational Hearthstone USD reference; see `docs/heat/HEAT-flatcoin-how.md`.
+
 ## Concept
 
 HEAT is upgraded from a **stablecoin** (constant nominal USD) to a **flatcoin** (constant purchasing power). The peg target rises as USD loses purchasing power, so 1 HEAT preserves real value across time.

@@ -398,6 +398,10 @@ const uint32_t DEPOSIT_TERM_POOL_HEAT =
 const uint32_t DEPOSIT_TERM_SWAP_RECEIVE_XFG =
     0x53575258; // 'SWRX' — user receives XFG from HEAT→XFG swap
 const uint32_t DIGM_TERM = 0x44494D47; // 'DIMG' — DIGM colored coin marker
+// First block major version that admits DIGM outputs. The DIGM mint stays rejected
+// from v12 (isDigmMint) until it validates per-input HEAT debit; both gates must
+// be lifted together.
+const uint8_t DIGM_ACTIVATION_MAJOR_VERSION = 13;
 
 // DIGM peg: 1 DIGM = 0.10 HEAT = 1,000,000 atomic HEAT
 const uint64_t DIGM_PEG_HEAT_ATOMIC = 1000000; // 0.10 HEAT in atomic units

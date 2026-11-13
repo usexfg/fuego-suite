@@ -22,8 +22,8 @@ Based on the CryptoNote protocol.
 | **Core** | Dynamic Ring Size | 32, 16, or min 8 decoys per transaction, adaptive to pool depth |
 | **Core** | Sub-addresses | Multiple addresses from single seed; integrated (v1) wallets |
 | **Core** | Fire Aliases | 8 characters ONLY, on-chain '@' aliases for fire addresses; (@fuegoxfg for development) integrated with ecosystem wallets |
-| **Assets** | ΗΞΔŦ flatcoin | XFG-colored coin pegged to purchasing power by rate of inflation on 1 USD since Q1 2009 value ⩰ $1.58 / Minted only by burning XFG at TWAP of Hearth's price / Launch ratio 10 : 1 |
-| **Assets** | Hearth Floor | Block-discrete on-chain exchange with limit order matching & adaptive-spread pool swap; batch-clears at VWAP |
+| **Assets** | ΗΞΔŦ flatcoin | XFG-colored coin with a purchasing-power reference value (⩰ $1.58 at launch, re-based quarterly from the on-chain Fuego Cost Index); it floats at the Hearth pool price and no consensus rule enforces the reference / Minted only by burning XFG at the 8-block TWAP of Hearth's AMM spot price / Launch ratio 8 : 1 |
+| **Assets** | Hearth Floor | Block-discrete on-chain exchange with limit order matching & adaptive-spread pool swap; batch-clears at one uniform price that maximizes matched volume |
 | **Assets** | Certificates of Deposit | ΗΞΔŦ-denominated time-locked deposits earning yield from protocol fees |
 | **Swaps** | Atomic Swaps | Cross-chain XFG swaps via COMIT protocol with PTLC/HTLC adaptor signatures |
 | **Swaps** | ЅШ𑫛𑫒**❋**XFG | Integrated TUI, Go-based swap engine with inter-chain fee routing |
@@ -175,7 +175,7 @@ Navigate with arrow keys or j/k, select with Enter, quit with q or Ctrl+C.
 
 ### ΗΞΔŦ Flatcoin & Hearth Exchange
 
-ΗΞΔŦ is Fuego's flatcoin — a stable asset pegged to purchasing power. It is **not** pegged to a fiat currency; it is pegged to inflation rate over time beginning Jan 2009 ⩰ $1.58 ||  XFG/ΗΞΔŦ ratio at launch mints 8:1 (1 XFG ⩰ $0.1975)
+ΗΞΔŦ is Fuego's flatcoin — an asset with a purchasing-power reference value, not a fiat peg. The reference (the Hearthstone) started at $1.58 USD, anchored to Jan 2009 purchasing power, and is re-based quarterly from the miner-voted Fuego Cost Index. It is informational: ΗΞΔŦ floats at the Hearth pool price, and nothing in consensus pulls it toward the reference or applies CPI to minting. XFG/ΗΞΔŦ ratio at launch mints 8:1 (1 XFG ⩰ $0.1975)
 
 | Operation | CLI Command | Description |
 |-----------|------------|-------------|
@@ -189,7 +189,7 @@ Navigate with arrow keys or j/k, select with Enter, quit with q or Ctrl+C.
 
 **Key Properties**:
 - Launch ratio 8:1 (1 ΗΞΔŦ = 8 XFG) at genesis
-- Peg target $1.58 USD; mint premium **1%** of the burn (`HEAT_MINT_PREMIUM_BPS = 100`) — a haircut inside the burn that funds both AuntPoL legs (withheld XFG → XFG leg, the HEAT it buys → HEAT leg); PI controller removed
+- Reference value $1.58 USD at launch (not enforced by consensus); mint premium **1%** of the burn (`HEAT_MINT_PREMIUM_BPS = 100`) — a haircut inside the burn that funds both AuntPoL legs (withheld XFG → XFG leg, the HEAT it buys → HEAT leg); PI controller removed
 - Protocol buys or mints ΗΞΔŦ for CD yield payments (structural demand, protocol pays 0% fee)
 - On-chain Hearth: constant-product AMM (swaps + backstop) plus pool depth-band makers in the per-block call auction (`HEARTH_DEPTH_BAND_PCT` of reserves, adaptive spread)
 - Pool reserves tracked (as a whole) on-chain with unspendable pool keys

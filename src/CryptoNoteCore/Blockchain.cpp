@@ -3491,7 +3491,7 @@ bool CryptoNote::Blockchain::check_tx_outputs(const Transaction& tx, uint32_t he
         bool validTerm =
             (term == 0) ||
             (term == CryptoNote::parameters::HEAT_TERM) ||
-            (term == CryptoNote::parameters::DIGM_TERM) ||
+            (term == CryptoNote::parameters::DIGM_TERM && majorVersion >= parameters::DIGM_ACTIVATION_MAJOR_VERSION) ||
             (term == CryptoNote::parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG) ||
             (term == CryptoNote::parameters::DEPOSIT_TERM_LP) ||
             (term == CryptoNote::parameters::DEPOSIT_TERM_POOL_XFG) ||
@@ -4941,8 +4941,9 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
   }
 
   if (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0) {
-    // V11+: discovered price — the call-auction clearing price (last-price
-    // semantics, bootstrap-seeded from the pool ratio). Mint TWAP reads this.
+    // V11+: the call-auction clearing price (last-price semantics, bootstrap-
+    // seeded from the pool ratio), recorded for observers. Mint pricing does not
+    // read it: twapBefore averages the live AMM spot in m_blockSpotHistory.
     block.hearthPoolRatio = g_orderbookLastClearingPrice;
   }
 }

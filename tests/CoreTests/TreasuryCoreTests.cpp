@@ -1537,6 +1537,24 @@ void testRollbackHistoriesSurviveCacheReload() {
   std::filesystem::remove_all(dir, ec);
 }
 
+// DIGM outputs are admitted only from DIGM_ACTIVATION_MAJOR_VERSION. At v11
+// they were creatable, and as markers they carried no usable lock: DIGM is off
+// until its mint validates per-input HEAT debit.
+void testDigmOutputsAreRejectedBeforeActivationVersion() {
+  TestChain t("digm_gate");
+  TEST(t.ok);
+  Transaction tx{};
+  tx.inputs.push_back(BaseInput{0});
+  tx.outputs.push_back(commitmentOut(1, parameters::DIGM_TERM));
+  const uint32_t height = VaultCoreTestAccess::m_currency_upgrade_height_v11(t.chain) + 1;
+
+  TEST(VaultCoreTestAccess::txOutputsValid(t.chain, tx, height, BLOCK_MAJOR_VERSION_10));
+  TEST(!VaultCoreTestAccess::txOutputsValid(t.chain, tx, height, BLOCK_MAJOR_VERSION_11));
+  TEST(!VaultCoreTestAccess::txOutputsValid(t.chain, tx, height, BLOCK_MAJOR_VERSION_12));
+  TEST(VaultCoreTestAccess::txOutputsValid(t.chain, tx, height, parameters::DIGM_ACTIVATION_MAJOR_VERSION));
+  TEST(parameters::DIGM_ACTIVATION_MAJOR_VERSION == BLOCK_MAJOR_VERSION_13);
+}
+
 namespace {
 __attribute__((noinline)) void paintStack(uint8_t pattern) {
   volatile uint8_t scratch[16384];
@@ -2031,6 +2049,7 @@ int main() {
   testCoinbaseMintsOnlyKeyOutputsFromV11();
   testCommitmentSpendRingMemberRulesFromV11();
   testPoolOrdersAreFullyDeterministic();
+  testDigmOutputsAreRejectedBeforeActivationVersion();
   testOrderbookStateSurvivesCacheReload();
   testRollbackHistoriesSurviveCacheReload();
   fprintf(stderr, "=== Treasury/Core Tests ===\nPassed: %d / %d\n", tests_passed, tests_run);

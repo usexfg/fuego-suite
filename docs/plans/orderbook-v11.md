@@ -99,6 +99,7 @@ This is O(n log n) over distinct price levels with prefix sums — trivially wit
 2. Wire into `processOrderbookForBlock`: build books from `m_limitDeposits` (skip withdrawn/expired), run auction, settle into proceeds buckets, record fills in `m_blockOrderFills` for popBlock reversal.
 3. `P_clear` = p* when matchedVol > 0; header write unchanged.
 4. Mint TWAP: `getRollingTwap()` window fed from `block.hearthPoolRatio` — switch the v11 write to `P_clear` (auction price) with pool-spot fallback when no auction volume.
+   **Superseded:** the auction price is user-influenceable, so it is not an oracle input. The mint TWAP (`twapBefore`) averages the live AMM spot in `m_blockSpotHistory`, with no spot fallback; `hearthPoolRatio` records P_clear for observers only.
 
 ### Phase B — Microstructure
 5. Price-tick validation in the LimitDeposit validation branch (v11-gated).

@@ -161,7 +161,7 @@ namespace CryptoNote {
     uint64_t getPoolTwap() const;
 
     // Rolling 8-block TWAP for HEAT mint price validation.
-    // Simple average of the last 8 blocks' hearthPoolRatio.
+    // Simple average of the last 8 recorded AMM spot prices (twapBefore).
     // Canonical scale: HEAT atomics per XFG atomic × COIN.
     uint64_t getRollingTwap() const;
     // TWAP of the 8 v11 blocks below `height` (0 below two blocks): the price

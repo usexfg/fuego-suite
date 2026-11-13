@@ -6732,13 +6732,16 @@ Task list:
 | 5 | C — `makePoolId` hashes only the 48 bytes it writes (8 bytes were uninitialized). | Claude Code (claude-opus-5-5) | 2026-11-12 | DONE |
 | 6 | Regression tests for 1–5 and 7 in `tests/CoreTests/TreasuryCoreTests.cpp` (red before fix, green after, mutation-checked). | Claude Code (claude-opus-5-5) | 2026-11-12 | DONE |
 | 7 | B2 — persist every per-block journal `popBlock` / `popTransaction` reverses from (order fills, LP-remove deltas, orderbook snapshots, swap-fee contributions, epoch distributions, TWAP contributions). Position-keyed journals keep their newest `MAX_ROLLBACK_HISTORY` entries. FCI is excluded: `rebuildFciState` re-derives it at init. | Claude Code (claude-opus-5-5) | 2026-11-12 | DONE |
+| 8 | DIGM — outputs with `DIGM_TERM` are admitted only from `parameters::DIGM_ACTIVATION_MAJOR_VERSION` (13); the mint stays rejected from v12 (`isDigmMint`) until it validates per-input HEAT debit. Previously creatable at v11 as markers with no usable lock. | Claude Code (claude-sonnet-5-5) | 2026-11-13 | DONE |
+| 9 | Correct two stale comments that said the mint TWAP reads the auction clearing price (`Blockchain.cpp` header write, `Blockchain.h` `getRollingTwap`); it averages live AMM spot. No behaviour change. | Claude Code (claude-sonnet-5-5) | 2026-11-13 | DONE |
+| 10 | Docs — README, Hearth docs, limit-order guide, orderbook plan, fee-routing plan and flatcoin formula corrected to match the code (uniform-price clearing, no spot fallback, no CPI in minting, 8:1 launch ratio); added `docs/review/2026-11-12-v11-adversarial-review.md` with findings and recommendations. | Claude Code (claude-sonnet-5-5) | 2026-11-13 | DONE |
 
 Evidence:
 - Red phase (pre-fix): `core_tests` 295/303 — coinbase commitment outputs accepted at v11 (×3), LP and swap-receive spends rejected (×2), coinbase HEAT mixed-ring spend accepted, pool `targetPrice` ≠ price, pool ids differ across painted stacks. B: 306/318 (12 fields lost on reload). B2: 328/334 (6 journals lost on reload).
 - Mutations (each restored byte-identical): serialization of orderbook state removed → 12 failures; rollback journals not serialized → 6 failures; transfer legacy maturity + no coinbase guard → 2 failures.
 - Pool-order harness on fixed sources: 0/20 orders with `targetPrice != price` at -O0 and -O2; valgrind 0 errors (was 478 errors / 48 contexts).
 
-Not fixed (open, need decisions):
+Not fixed (open, need decisions; details and recommendations in `docs/review/2026-11-12-v11-adversarial-review.md`):
 - Exact-size fill against a pool level and exact-tie user crosses pay no 1% fee (`OrderbookAuction.cpp` "no taker, no fee").
 - `m_blockEpochDistributions` is pushed every block but popped only on epoch-boundary pops, so after non-boundary pops a boundary pop reverses the wrong entry (treasury reversal skipped).
 - Mint priced only from the pool's own 8-block TWAP; commitment-index RPCs serve a never-written index; cache rebuild replays without `validateSettlement`; docs/code drift (VWAP, spot fallback, CPI peg, 10:1 ratio).
@@ -6748,5 +6751,5 @@ Sign-off table:
 | Gate | Status |
 |------|--------|
 | Build compiles | DONE — full `make -j4` exit 0 (Claude Code, 2026-11-12) |
-| Tests pass | DONE — core_tests 334/334, test_orderbook_auction 66/66, test_orderbook 44/44, test_p2p_orderbook 115/115, test_hearth_amm 31/31; test_orderbook_phase3 / phase5 exit 0 with no assertions printed (Claude Code, 2026-11-12) |
+| Tests pass | DONE — core_tests 340/340 (2026-11-13; DIGM gate mutation fails 2 assertions), test_orderbook_auction 66/66, test_orderbook 44/44, test_p2p_orderbook 115/115, test_hearth_amm 31/31; test_orderbook_phase3 / phase5 exit 0 with no assertions printed (Claude Code, 2026-11-12) |
 | All tasks done | DONE (Claude Code, 2026-11-12) |

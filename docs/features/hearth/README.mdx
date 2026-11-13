@@ -4,7 +4,7 @@ Hearth is Fuego's native XFG/HEAT market. This document explains the v11 archite
 
 ## 1. What Hearth is
 
-Hearth is a **per-block call auction plus a constant-product AMM**, implemented as a consensus rule on a privacy (CryptoNote/RingCT) chain. **One inventory, two uses** — not AMM *or* depth band. `m_ammPool` (`reserveXfg × reserveHeat`) is the balance sheet (LP shares, direct swaps, mint-spot fallback, post-auction backstop). The depth band is that same inventory quoted as 0xF0 makers in the auction (`generatePoolOrders()`, `HEARTH_DEPTH_BAND_PCT` of reserves, adaptive 30–300 bps). Two-sided price discovery is on-chain, at block time, from tx-extra-backed user limits plus those pool makers.
+Hearth is a **per-block call auction plus a constant-product AMM**, implemented as a consensus rule on a privacy (CryptoNote/RingCT) chain. **One inventory, two uses** — not AMM *or* depth band. `m_ammPool` (`reserveXfg × reserveHeat`) is the balance sheet (LP shares, direct swaps, the 8-block spot TWAP that prices HEAT mints, post-auction backstop). The depth band is that same inventory quoted as 0xF0 makers in the auction (`generatePoolOrders()`, `HEARTH_DEPTH_BAND_PCT` of reserves, adaptive 30–300 bps). Two-sided price discovery is on-chain, at block time, from tx-extra-backed user limits plus those pool makers.
 
 Three properties define it:
 
@@ -22,7 +22,7 @@ Three properties define it:
 | Maker compensation | Often none | 30% of the 1% taker fee rebated to makers |
 | Protocol revenue | Fee to treasury/liquidity | 70% of the 1% taker fee → HEAT CD yield pool |
 | LP mechanics | Single-sided often allowed | Balanced-only (no dilution), fair pro-rata shares |
-| Manipulation surface | Sandwich attacks on mempool ordering | Batch VWAP-free clearing; self-trade exclusion; min price tick; fee-gated sybil |
+| Manipulation surface | Sandwich attacks on mempool ordering | Uniform-price max-volume batch clearing; self-trade exclusion; min price tick; fee-gated sybil |
 | Backing | Reserves only | User orders escrowed; pool makers backed by the same AMM reserves used for swaps/backstop |
 
 The unusual parts worth calling out:

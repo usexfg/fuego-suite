@@ -28,7 +28,7 @@
 | D1 | Swap protocol fee form | A consensus-enforced XFG sink (destroyed), nominal 1% refund / 2% claim, network fee paid on top | The treasury key no longer receives XFG; swap users pay the network fee in addition to the protocol fee |
 | D2 | Mint bound | No volume cap. Mint is priced at the minter-worst of epoch rate, 8-block TWAP and opening spot; until the epoch rate is active the genesis ratio (1 HEAT per 8 XFG) is an additional ceiling | A minter never receives more HEAT per XFG than the pool pays, so a genuine XFG rally inside the first two epochs mints at the genesis ratio |
 | D3 | Self-trade exclusion | Removed | Per-order keys make it a no-op; wash trades cannot be detected on a privacy chain |
-| D4 | CD privacy (v12) | Moved to `docs/plans/2026-11-13-heat-cd-privacy-plan.md`. The bucket rule was rejected by the owner on 2026-11-13 | CDs stay deferred until that plan's choice is built |
+| D4 | CD privacy (v12) | Moved to `docs/plans/2026-11-13-heat-cd-privacy-plan.md`. The bucket rule was rejected by the owner on 2026-11-13 | CDs stay deferred until that plan's Phase 2A (option A) is built |
 | D5 | Reorg deeper than 1,000 blocks | Truncate to the fork point and replay from genesis | Slow on the rare path; correct instead of divergent |
 | D6 | Seed LP shares | Protocol-owned; no provider key | Nobody can ever withdraw the seed. A provider key would let its holder withdraw 8,000 XFG + 1,000 HEAT that consensus created without any payment |
 
@@ -272,8 +272,8 @@ Limits stated plainly:
 
 The bucket rule (a ring limited to one amount, one term and one creation epoch) was rejected by the owner on 2026-11-13. The CD exit, and the HEAT ring defects found while tracing it, are planned in `docs/plans/2026-11-13-heat-cd-privacy-plan.md`.
 
-- CDs stay deferred until that plan's Phase 2 choice is built. The claim path as written must not activate: it over-pays (interest is taken from the youngest ring member), it identifies the CD, and on mainnet it mostly cannot relay.
-- That plan's Phase 0 is a v11 dependency, not a v12 one: as written an ordinary HEAT spend does not validate (its finding H-1).
+- CDs stay deferred until that plan's Phase 2A (option A, chosen by the owner on 2026-11-13) is built. The claim path as written must not activate: it over-pays (interest is taken from the youngest ring member), it identifies the CD, and on mainnet it mostly cannot relay.
+- That plan's Phase 0 (option R1, chosen by the owner on 2026-11-13) is a v11 dependency, not a v12 one: as written an ordinary HEAT spend does not validate (its finding H-1).
 
 ---
 

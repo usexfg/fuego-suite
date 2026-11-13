@@ -634,10 +634,6 @@ namespace CryptoNote {
     uint64_t m_poolLockedXfg = 0;    // sum of DEPOSIT_TERM_POOL_XFG outputs
     uint64_t m_poolLockedHeat = 0;   // sum of DEPOSIT_TERM_POOL_HEAT outputs
     uint128_t m_twapAccumulator = 0;
-    // Fixed HEAT mint rate for the current epoch, set at the epoch boundary
-    // from the average of the previous epoch's TWAP observations. 0 means
-    // no previous epoch average is available yet (first epoch).
-    uint64_t m_epochMintRate = 0;
     uint64_t m_twapBlockCount = 0;
 
     // End-of-block Hearth spot price of each v11 block, (height, price), most

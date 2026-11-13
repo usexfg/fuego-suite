@@ -7265,3 +7265,25 @@ Sign-off table:
 | Build compiles | DONE — GCC `make -j8` full build rc=0 on the merged tree; Clang and ASan+UBSan local runs still in progress at commit time, CI runs both |
 | Tests pass | DONE — `ctest -LE manual` 59/59 (GCC) |
 | All tasks done | DONE |
+
+## Remove the fixed per-epoch HEAT mint rate
+
+**Feature name**: drop master `609d68a5`'s fixed per-epoch mint rate from PR #79; mints priced by the Hearth oracle only
+**Agent**: Claude
+**Start date**: 2026-11-13
+**Decision**: owner, 2026-11-13.
+**Consensus impact**: HEAT mints are validated at `hearthOraclePriceBefore(height)` (the lower of the 8-block and epoch median end-of-block spot) at all heights, as before `609d68a5`. v11 is not live, so no mined block is affected.
+
+Why: minting holds the pool at the mint rate (anyone can mint and sell HEAT into the pool when the pool gives fewer HEAT per XFG than the mint). A rate fixed to the previous epoch's average therefore sets the next epoch's average within the ~2% fee band (1% premium + 1% Hearth fee): it rises freely but can fall only ~2% per 900-block epoch (~11% a month; a 50% XFG drop takes ~34 epochs, ~170 days, to reach the mint). In that window minters burn devalued XFG, mint HEAT at the stale rate and sell it into the pool; LPs and AuntPoL pay the difference and HEAT supply grows unbacked. The oracle follows a fall within blocks (8-block median) and lags only on a rise (epoch median), where lagging costs the protocol nothing. The rate was also not cached, snapshotted or replayed (restarted and replayed nodes priced mints differently), the premium HEAT and `HearthState.mintPrice` used the oracle, and a mean over an epoch moves linearly with time spent off-market.
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Removed `m_epochMintRate` (member, init reset, epoch-boundary assignment) and the `useEpochRate` branch in `validateSettlement`; the mint price is `hearthOraclePriceBefore(height)` | Claude | 2026-11-13 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j4` full build rc=0 |
+| Tests pass | DONE — core_tests 657/657; `ctest -LE manual` 59/59 |
+| All tasks done | DONE |

@@ -47,7 +47,7 @@ fuego-suite/
 - Fuego Cost Index (FCI): miners vote a 6-item consumer basket in integer cents (power, gas, rice, milk, bread, eggs) via `TX_EXTRA_MINER_BASKET_VOTE`; trimmed median per category, 3-of-6 fresh-quorum gate per quarter, 5.04% max quarterly move
 - Certificates of Deposit (CD): V12 activation, epoch-term-locked HEAT earning protocol revenue yield
 - **SWAP FEE ROUTING (v11+)**: 80% CD Yield Pool / 20% Bonus Vault / 0% Treasury. Pre-v11 blocks settled 69/11/20 and reorg replay keeps that split (`SWAP_FEE_*_PRE_V11`).
-- **BONUS VAULT**: 20% of swap fees (v11+) fund tier-based loyalty bonuses (2.5× for 72 epochs, 2× for 36, 1.5× for 18, 1.25× for 6)
+- **BONUS VAULT**: 20% of swap fees (v11+). Pays only the yield-floor top-up: in an epoch whose CD yield is below `CD_YIELD_FLOOR_RATE`, it covers the shortfall, limited by its balance. No term tiers or multipliers.
 - **DEPOSIT MODEL**: See `DEPOSIT_ARCHITECTURE.md` for full details. Key points:
   - "HEAT" has TWO meanings in code: current flatcoin (dynamic TWAP pricing) vs legacy Embers_Heat (fixed 10M:1 ratio)
   - **Two-step process**: burn XFG → mint HEAT → deposit HEAT as CD (you CANNOT deposit a deposit)
@@ -136,6 +136,10 @@ NOT protocol earnings:
 ## Known Issues
 
 - **Block-serving RPC hang (pre-existing, not DIGM-related).** Every binary tested — including the month-old Jul-10 daemon on 18180 while idle and fully synced — hangs on `queryblockslite.bin` / `queryblocks.bin` / `getblocks.bin`. This blocks live sync/send e2e testing only; verification is done against the C++ production code directly (unit/integration harnesses), not live RPC.
+
+## Deferred Design Notes
+
+- **CD output size (v12, option A).** `CD_MAX_OUTPUT_AMOUNT` is planned at 5,000 HEAT per CD output. It is a payout-size bound, not an economic limit: the largest HEAT bill is 500, so a larger CD would pay out in more coinbase outputs than one block should carry. Larger deposits are split across several CD outputs. Raise the bound later by adding larger denominations to `HEAT_BILL_DENOMINATIONS`, or by letting one payout span several blocks. Not needed for launch. See `docs/plans/2026-11-13-heat-cd-privacy-plan.md`, decisions P-7 and P-11.
 
 ## Graphify
 

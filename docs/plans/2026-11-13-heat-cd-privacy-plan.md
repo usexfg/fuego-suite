@@ -16,6 +16,7 @@
 
 - Yield comes only from fees paid. No inflation, and no burn-derived value, funds a CD.
 - A commitment output created before v11 is never spendable as HEAT.
+- XFG never enters a shielded pool or a hidden-amount output (owner, 2026-11-14). Any hidden-amount option applies to HEAT only.
 - No consensus path admits a ring below the minimum on mainnet, in the mempool or in a block.
 - v11 is not active on mainnet: consensus rules and wire formats may change. Testnet must be reset.
 - `CHANGELOG.agent.md` entry before any source edit. No commit or push without the owner's go-ahead.
@@ -76,7 +77,7 @@
 
 ## Phase 0 — R1 for v11: implementation
 
-R1 is the owner's choice for v11 (2026-11-13). When this phase is done, a HEAT spend validates on mainnet parameters with a ring of exactly 16 eligible bills, and nothing in the ring marks the true input.
+R1 is the owner's choice for v11 (2026-11-13). When this phase is done, a HEAT spend validates on mainnet parameters with a ring of exactly 16 eligible bills, and nothing in the ring marks the true input. LP shares follow the same model (owner, 2026-11-14): fixed-size LP bills, spent in rings of 16, so an LP removal does not point at the deposit that created it.
 
 ### Rules R1 adds at block version 11
 
@@ -85,7 +86,7 @@ R1 is the owner's choice for v11 (2026-11-13). When this phase is done, a HEAT s
 | R1-a | A HEAT output (`term` 0 or `HEAT_TERM`) has an amount in `HEAT_BILL_DENOMINATIONS`, and its `amountCommitment` and `amountProof` are all zero. |
 | R1-b | An eligible HEAT ring member has `term` 0 or `HEAT_TERM`; sits in a block of major version 11 or later; is at least `HEAT_SPEND_MIN_AGE` (10) blocks old, or `minedMoneyUnlockWindow` blocks old if it is a coinbase output; and is not slashed. |
 | R1-c | A HEAT-class commitment spend has exactly `HEAT_RING_SIZE` (16) distinct members, all eligible under R1-b. The all-`HEAT_TERM` rejection is removed. `claimedInterest` is 0. |
-| R1-d | An LP-class commitment spend has exactly one member, the LP output itself. LP positions are already public: the add and remove tags state their amounts. |
+| R1-d | An LP output (`term == DEPOSIT_TERM_LP`) has an amount in `LP_BILL_DENOMINATIONS`. An LP-class commitment spend has exactly `HEAT_RING_SIZE` (16) distinct members, each an LP output of the same amount, from a block of version 11 or later, at least `HEAT_SPEND_MIN_AGE` blocks old. An LP add declares `lpShares` as a multiple of `LP_BILL_UNIT`, no more than the shares its deposit buys; its LP outputs are bills summing to `lpShares`. Value the floor leaves behind stays in the reserves and accrues to all LPs. |
 | R1-e | `DEPOSIT_TERM_SWAP_RECEIVE_XFG` outputs are rejected. A swap pays XFG as ordinary key outputs. |
 | R1-f | `TransactionInputCommitmentTransfer` is rejected. |
 | R1-g | HEAT that a transaction takes from a consensus-computed source is floored to `HEAT_BILL_UNIT` (0.1 HEAT). Limit-order dust is credited to `reserveHeat`; LP-removal dust is never debited from the reserves. |
@@ -106,6 +107,7 @@ Each rule lives in one function that both block validation and the mempool call.
   - `NonZeroAmountCommitmentRejectedAtV11` (H-7).
   - `PreV11CommitmentOutputRejectedAsHeatInput` (H-8).
   - `LpShareSpendValidatesWithRingOfOne` (H-9).
+  - `LpRemovalPointsAtItsDeposit` (H-9): an LP removal names the LP output it spends; with R1-d it must instead carry 16 same-denomination LP bills.
   - `SwapXfgProceedsAreSpendable` (H-10): swap HEAT for XFG, then spend the XFG received.
 - [ ] `make -j$(nproc)`, run `build/release/src/core_tests`. Record which fail. A test that passes drops its finding and the step that fixes it. Checkpoint.
 
@@ -119,17 +121,16 @@ Each rule lives in one function that both block validation and the mempool call.
 - `uint64_t floorToHeatBillUnit(uint64_t amount);`
 - `std::vector<uint64_t> splitIntoHeatBills(uint64_t amount);` — greedy, largest first; requires `amount % HEAT_BILL_UNIT == 0`; returns only bills, never a remainder.
 - `bool Blockchain::isEligibleHeatRingMember(const CommitmentOutputRef& ref, uint32_t spendHeight) const;` — rule R1-b. A ref with `transactionIndex.transaction == 0` is a coinbase output.
+- `const uint64_t LP_BILL_UNIT = 100000;` `const std::vector<uint64_t> LP_BILL_DENOMINATIONS` = {1, 5} × 10^k shares for k = 5 to 11 (14 bills). Scale: the genesis seed (8,000 XFG / 1,000 HEAT) mints `isqrt(8×10^10 × 10^10)` ≈ 2.83×10^10 shares, so the smallest bill is about 0.028 XFG + 0.0035 HEAT at launch and the largest about 17.7 genesis pools. Two bills per decade, not three, keeps each denomination's set larger (decision P-13).
+- `bool isLpBill(uint64_t shares);` `uint64_t floorToLpBillUnit(uint64_t shares);` `std::vector<uint64_t> splitIntoLpBills(uint64_t shares);` — same contract as the HEAT functions.
+- `bool Blockchain::isEligibleLpRingMember(const CommitmentOutputRef& ref, uint32_t spendHeight) const;` — rule R1-d.
 
-- [ ] Unit tests in `tests/UnitTests/HeatRingRulesTests.cpp`: `SplitReturnsOnlyBills` for 0.1, 388.6 and 500.0 HEAT; `SplitSumsToInput`; `FloorDropsSubUnitRemainder` (500.0345678 HEAT gives 500.0); `EligibilityRejectsYoungPreV11PoolMarkerLpAndCdOutputs`, one case each.
+- [ ] Unit tests in `tests/UnitTests/HeatRingRulesTests.cpp`: `SplitReturnsOnlyBills` for 0.1, 388.6 and 500.0 HEAT; `SplitSumsToInput`; `FloorDropsSubUnitRemainder` (500.0345678 HEAT gives 500.0); `EligibilityRejectsYoungPreV11PoolMarkerLpAndCdOutputs`, one case each; `LpSplitReturnsOnlyLpBills`; `LpEligibilityRejectsHeatBillOfSameAmount`.
 - [ ] Implement. Build, run. Checkpoint.
 
-### Task 3: Pre-v11 commitment outputs (H-8)
+### Task 3: Pre-v11 commitment outputs (H-8) — closed by the owner
 
-**Files:** `src/Daemon/DaemonCommandsHandler.cpp` (read-only console command).
-
-- [ ] Add console command `print_commitment_summary <below_height>`: for commitment outputs created below that height, print the count and total amount per `term`.
-- [ ] Run it on a synced mainnet data directory with the v11 height. Record the output in the changelog.
-- [ ] If the count is zero, nothing more is needed: R1-b already excludes pre-v11 outputs. If it is not zero, stop and take decision P-6 to the owner before Task 4 merges; those outputs are owed something, and R1-b makes them unspendable as HEAT.
+The owner states (2026-11-13) that mainnet holds no commitment outputs yet. No scan is needed and nothing is owed. Rule R1-b still excludes any output created below version 11, and `PreV11CommitmentOutputRejectedAsHeatInput` in Task 4 keeps it that way.
 
 ### Task 4: Ring validation (R1-b, R1-c, R1-d, R1-f)
 
@@ -139,12 +140,12 @@ Each rule lives in one function that both block validation and the mempool call.
 
 - [ ] In `checkCommitmentSpendInput`, resolve the validating block version at the top (it is resolved only inside the interest branch today). At version 11 and later, classify the ring by its first member's term and apply:
   - HEAT class: `outputIndexes.size() == HEAT_RING_SIZE`; every relative offset after the first is non-zero; every member passes `isEligibleHeatRingMember(ref, currentHeight)`; `claimedInterest == 0`.
-  - LP class: exactly one member, with `term == DEPOSIT_TERM_LP`.
+  - LP class: `outputIndexes.size() == HEAT_RING_SIZE`; every relative offset after the first is non-zero; every member passes `isEligibleLpRingMember(ref, currentHeight)`; `claimedInterest == 0`. The remove tag's `lpSharesBurned` equals the sum of the LP inputs' amounts.
   - XFG class: rejected.
   - The block at lines 2974-2979 ("all ring members are burned outputs") runs only below version 11.
 - [ ] `checkTransactionInputs` rejects `TransactionInputCommitmentTransfer` at version 11 and later.
 - [ ] `check_tx_mixin` stops judging commitment-spend ring sizes at version 11 and later; `checkCommitmentSpendInput` owns them and runs for blocks as well as the mempool.
-- [ ] Tests: the Task 1 tests for H-1, H-4, H-8, H-9 pass; add `RingOfFifteenRejected`, `RingOfSeventeenRejected`, `RingWithRepeatedMemberRejected`, `RingWithNineBlockOldMemberRejected`, `CommitmentTransferRejectedAtV11`, `PreV11BlocksRevalidate`.
+- [ ] Tests: the Task 1 tests for H-1, H-4, H-8, H-9 pass; add `RingOfFifteenRejected`, `RingOfSeventeenRejected`, `RingWithRepeatedMemberRejected`, `RingWithNineBlockOldMemberRejected`, `CommitmentTransferRejectedAtV11`, `PreV11BlocksRevalidate`, `LpRingOfOneRejected`, `LpRingWithHeatBillMemberRejected`, `LpRemoveSharesMustEqualInputSum`.
 - [ ] Mutation: drop the member-version condition from `isEligibleHeatRingMember`; `PreV11CommitmentOutputRejectedAsHeatInput` must fail. Restore. Checkpoint.
 
 ### Task 5: Output rules (R1-a, R1-e)
@@ -155,7 +156,8 @@ Each rule lives in one function that both block validation and the mempool call.
   - `term` 0 or `HEAT_TERM`: `isHeatBill(out.amount)`.
   - any term: `amountCommitment` and `amountProof` are all zero.
   - `term == DEPOSIT_TERM_SWAP_RECEIVE_XFG`: rejected (remove it from the `validTerm` list at line 3293 for version 11 and later).
-- [ ] Tests: `NonBillHeatOutputRejectedAtV11`, `NonZeroAmountCommitmentRejectedAtV11`, `SwapReceiveCommitmentRejectedAtV11`, `SwapPayingXfgAsKeyOutputsValidates`, `PoolMarkerOfAnyAmountStillAccepted`.
+  - `term == DEPOSIT_TERM_LP`: `isLpBill(out.amount)`; in an LP-add transaction the LP outputs sum to the tag's `lpShares`, which is a multiple of `LP_BILL_UNIT` (`validateSettlement`, near line 8302).
+- [ ] Tests: `NonBillHeatOutputRejectedAtV11`, `NonZeroAmountCommitmentRejectedAtV11`, `SwapReceiveCommitmentRejectedAtV11`, `SwapPayingXfgAsKeyOutputsValidates`, `PoolMarkerOfAnyAmountStillAccepted`, `NonBillLpOutputRejectedAtV11`, `LpAddOutputsMustSumToDeclaredShares`, `LpAddFloorLeavesExcessInReserves`.
 - [ ] Mutation, checkpoint.
 
 Cost to know: a commitment output serializes about 330 bytes, of which 288 are these two zeroed fields. A 388.6 HEAT payment is 12 bills, about 4 KB of outputs. Decision P-10 covers a compact output type later.
@@ -170,6 +172,7 @@ Cost to know: a commitment output serializes about 330 bytes, of which 288 are t
 
 - [ ] Limit withdraw: the HEAT owed is `proceedsHeat` (sell order) or the remaining `amount` (buy order). `flows.heatSource = floorToHeatBillUnit(owed)`. At connect, `reserveHeat += owed - floorToHeatBillUnit(owed)` and the same value is stored in `forfeitedHeat`. `popTransaction` subtracts it and clears the field.
 - [ ] LP remove: both sites use `lpRemovalPayout`; reserves are debited by the floored HEAT.
+- [ ] LP add: `m_lpCommitmentShares` / `m_lpCommitTxGidx` (`Blockchain.cpp:6865-6871`, inverse at `:7347-7350`) record only the first LP output of a transaction. An output's amount now is its share count, so both maps are retired and removed from the block-state serializer (`:416`). Testnet reset covers the format change.
 - [ ] No rule is added for declared amounts (mint `heatMinted`, swap amounts, limit-deposit escrow, LP-add HEAT, treasury-fund HEAT). With bill inputs and bill outputs, exact HEAT balance already forces each to a multiple of the unit; test this instead of coding it.
 - [ ] Tests: `LimitWithdrawPaysBillsAndCreditsDustToReserves`, `PopRestoresReservesAfterDustCredit`, `LpRemovePaysBillSumAndLeavesDustInReserves`, `MintOfNonUnitHeatFailsBalance`, `SwapWithNonUnitHeatOutputFailsBalance`, and `heatInExistence` (readiness plan Task 0) unchanged across each.
 - [ ] Mutation, checkpoint.
@@ -183,8 +186,8 @@ Cost to know: a commitment output serializes about 330 bytes, of which 288 are t
 - `max_height` / `maxHeight` is removed from the request and from every signature listed above. The parameter is the defect; leaving it in place invites its return.
 - `bool Blockchain::getRandomCommitmentOutputsForAmount(uint64_t amount, uint64_t count, std::vector<...out_entry>& result);`
 
-- [ ] The picker builds its candidate list with `isEligibleHeatRingMember(ref, tipHeight + 1)` and samples from that list with the existing triangular bias toward recent outputs. If the list holds no more than `count` entries it returns all of them.
-- [ ] Tests: `DecoyRpcReturnsOnlyEligibleOutputs`; `DecoyRpcCoversWholeEligibleRange` (over 1,000 calls, entries both older and newer than the median output appear).
+- [ ] The request gains `uint8_t ring_class` (0 = HEAT, 1 = LP). The picker builds its candidate list with `isEligibleHeatRingMember` or `isEligibleLpRingMember` at `tipHeight + 1` and samples from that list with the existing triangular bias toward recent outputs. If the list holds no more than `count` entries it returns all of them.
+- [ ] Tests: `DecoyRpcReturnsOnlyEligibleOutputs`; `DecoyRpcLpClassReturnsOnlyLpBills`; `DecoyRpcCoversWholeEligibleRange` (over 1,000 calls, entries both older and newer than the median output appear).
 - [ ] Mutation: sample from all outputs of the amount; `DecoyRpcReturnsOnlyEligibleOutputs` must fail. Checkpoint.
 
 Limit to know: the triangular bias is a guess. The right distribution is the chain's own spend-age distribution, which cannot be measured before HEAT has traffic. Re-fit it after launch. A remote node also learns which bill denomination a wallet is about to spend.
@@ -201,12 +204,19 @@ Limit to know: the triangular bias is a guess. The right distribution is the cha
 - [ ] `prepareHeatSpends` requests `HEAT_RING_SIZE + 4` decoys, drops any whose `term` or `height` fails R1-b by the wallet's own check, drops its own output, and takes 15. With fewer than 15 it throws, with the message "this bill cannot be spent yet: N of 16 ring members exist".
 - [ ] A HEAT output becomes available `HEAT_SPEND_MIN_AGE` blocks after it is mined.
 - [ ] HEAT-to-XFG swaps pay the XFG as key outputs to the wallet's own address, decomposed the way limit-withdraw proceeds already are (`WalletGreen.cpp:1855`).
-- [ ] LP removal signs with a ring of one.
+- [ ] LP add requests `floorToLpBillUnit(shares)` and receives `splitIntoLpBills` outputs. LP removal spends whole LP bills, each in a ring of 16 drawn through the LP class of the decoy RPC, with the same refusal message when fewer than 15 eligible decoys exist.
+- [ ] LP removal defaults to one transaction per denomination-sized piece, not one transaction for the whole position, so the remove tag's `lpSharesBurned` is a single bill and cannot be matched against the add tag's total. The user may opt to remove in one transaction, with a warning that the total links it to the deposit.
 - [ ] The three CD builders (`:538`, `:832`, `:1049`) are not touched here; Phase 2A removes them.
-- [ ] Tests: `RealInputIsNotAlwaysNewestRingMember`; `WalletNeverEmitsNonBill` across send, mint, swap, limit deposit, limit withdraw, LP add and LP remove; `ChooseHeatBillsSeedsAnEmptyDenomination`; `ChooseHeatBillsAvoidsThinDenomination`; `SpendWithFourteenDecoysRefused`; `SwapXfgProceedsAreSpendable`.
+- [ ] Tests: `RealInputIsNotAlwaysNewestRingMember`; `WalletNeverEmitsNonBill` across send, mint, swap, limit deposit, limit withdraw, LP add and LP remove; `ChooseHeatBillsSeedsAnEmptyDenomination`; `ChooseHeatBillsAvoidsThinDenomination`; `SpendWithFourteenDecoysRefused`; `SwapXfgProceedsAreSpendable`; `LpRemoveBuildsRingOfSixteen`; `LpRemoveDefaultsToOneBillPerTransaction`.
 - [ ] Mutation: pass the wallet's own height back as a cap in the picker call; `RealInputIsNotAlwaysNewestRingMember` must fail. Checkpoint.
 
 Limit to know: until 16 eligible bills of a denomination exist, nobody can spend one. The first users of a denomination wait, or seed it themselves; a ring whose other 15 members are the spender's own bills hides nothing from anyone. Rings gain meaning only as other holders arrive.
+
+Limits for LP, stated plainly:
+- An LP cannot remove a denomination until 16 eligible LP bills of it exist. At launch, with few LPs, liquidity can be locked until others add. Decoys known to be unspendable (protocol-owned bills) do not help: an observer excludes them.
+- Bills created by one LP add are siblings. If the other 15 members of a ring all came from one add, removing one reveals that add. Rings hide the link only once several independent LPs hold the denomination.
+- The add tag's amounts and share total stay public. Hidden: which add a removal draws from. Not hidden: that someone added a given size at a given height.
+- Removing several bills in one transaction links them to each other, as with HEAT bills.
 
 ### Task 9: Vault conversions use the mint price (F-2)
 
@@ -218,7 +228,8 @@ Limit to know: until 16 eligible bills of a denomination exist, nobody can spend
 
 ### Task 10: Documents match the code
 
-- [ ] AGENTS.md: remove the 2.5× / 2× / 1.5× / 1.25× tier multipliers (the code has a flat yield floor); remove "RingCT" and "Pedersen (RingCT)" from the protocol description; add the R1 rules; record H-1 to H-10 as fixed.
+- [x] AGENTS.md: tier multipliers removed and the Bonus Vault described as the yield floor (owner, 2026-11-14).
+- [ ] AGENTS.md: remove "RingCT" and "Pedersen (RingCT)" from the protocol description; add the R1 rules; record H-1 to H-10 as fixed.
 - [ ] `DEPOSIT_ARCHITECTURE.md:415-448`: replace the term-privacy section with Part 1's statement of what a ring hides and what it does not.
 
 ### Task 11: R1 gate on the reset testnet
@@ -228,7 +239,7 @@ Feeds the readiness plan's Task 18. Each line is an observation on live nodes us
 - [ ] A first mint seeds a denomination with at least 16 bills; a second wallet's mint of the same denomination becomes spendable 10 blocks later.
 - [ ] Send, receive and re-spend HEAT between two wallets; every transaction relays and confirms.
 - [ ] Across 100 HEAT spends, the true input is the newest ring member in fewer than half.
-- [ ] Swap both directions, limit deposit and withdraw, LP add and remove: all confirm; every HEAT output on chain is a bill; XFG proceeds re-spend.
+- [ ] Swap both directions, limit deposit and withdraw, LP add and remove: all confirm; every HEAT output on chain is a bill; every LP output is an LP bill; every LP removal carries a ring of 16; XFG proceeds re-spend.
 - [ ] `heatInExistence` equals minted HEAT minus burned HEAT on every node.
 - [ ] Sign off the changelog table.
 
@@ -245,7 +256,7 @@ Phase 0 is option R1. A ring cannot be larger than the number of eligible output
 | R3 | Log-size linkable ring signature (Triptych class) over large batches | 1,024–4,096 | Public | New signature, audit |
 | R4 | Confidential amounts (Pedersen commitments, range proofs); rings across all HEAT, no bills | 16–32, drawn from every HEAT output | Hidden | Range proofs, MLSAG/CLSAG wiring |
 | R5 | Full-set membership proof (Curve Trees class) | Every HEAT output | Hidden, or public with bills | Large |
-| R6 | Shielded note pool (the 2026-09-29 STARK design) | Every note | Hidden | Largest; nothing implemented |
+| R6 | Shielded note pool, HEAT only (the 2026-09-29 STARK design minus XFG) | Every HEAT note | Hidden | Largest; nothing implemented |
 
 Notes:
 - **R1** leaves the classic weak point: which decoys a wallet picks. Age-distribution mismatches and ring intersection have traced a large share of spends on other ring-signature chains.
@@ -288,15 +299,15 @@ Option A is the owner's choice for v12 (2026-11-13). A CD is a public, locked ou
 
 ### Rules option A adds at block version 12
 
-`D` is the epoch length in blocks. A CD created at height `h` with term `t` has creation epoch `E = h / D` and maturity epoch `M = (h + t) / D`.
+`D` is the epoch length in blocks. A CD created at height `h` with term `t` has creation epoch `E = h / D`, maturity epoch `M = (h + t) / D`, and creation-epoch weight `f = ((E + 1) × D − h) / D`: the fraction of epoch `E` it is locked for (1 when created in the epoch's first block).
 
 | # | Rule |
 |---|---|
 | A-a | A CD output is a commitment output with `term` between `depositMinTerm` and `depositMaxTerm`; amount a multiple of `HEAT_BILL_UNIT`, at least `DEPOSIT_MIN_AMOUNT` (8 HEAT), at most `CD_MAX_OUTPUT_AMOUNT` (5,000 HEAT); zero commitment fields. It is never a ring member and never an input. |
-| A-b | Accrual uses one index per epoch, `CD_INDEX_ONE = 10^12` at the v12 activation epoch. A CD's value in epoch `e` is `amount × index[e] / index[E]`. |
+| A-b | Accrual uses one index per epoch, `CD_INDEX_ONE = 10^12` at the v12 activation epoch. A CD earns full-epoch growth from epoch `E + 1`. Its value in epoch `e > E` is `entryValue × index[e] / index[E + 1]`, with `entryValue` from A-d. |
 | A-c | When an epoch closes, `index` rises by `inflow × CD_INDEX_ONE / totalShares`. `inflow` is the HEAT minted into `CD_APY_POOL` for that epoch, plus the carry release, plus the yield-floor top-up. |
-| A-d | A CD earns the increments of epochs `E` through `M − 1`: a term of `T` whole epochs earns exactly `T` increments. |
-| A-e | Payout value is `floor(amount × index[M] / index[E])`, floored again to `HEAT_BILL_UNIT`. The dust joins the carry. |
+| A-d | Pro rata in the creation epoch: epoch `E`'s inflow is shared over `m_cdTotalShares` plus each new CD's weight `amount × f × CD_INDEX_ONE / index[E]`. At `E`'s close the CD is credited `firstInterest = floor(amount × f × delta[E] / index[E])` and enters with `entryValue = amount + firstInterest`. It then earns epochs `E + 1` through `M − 1` in full. A CD earns from the block it is created in; nothing is gained by depositing late in an epoch, since its weight shrinks with the blocks left. |
+| A-e | Payout value is `floor(entryValue × index[M] / index[E + 1])`, floored again to `HEAT_BILL_UNIT`. The dust joins the carry. |
 | A-f | A CD is due at height `h + t + 1` and joins a first-in-first-out queue. A block pays CDs from the head of the queue until the next one would take the block past `CD_PAYOUT_MAX_OUTPUTS_PER_BLOCK` (128) bills. The head CD is always paid, whatever its size. |
 | A-g | Payout bills are coinbase outputs with `term = HEAT_TERM`, in queue order, each CD's bills largest first. Bill `k` of a CD with key `P` pays to `P + Hs("fuego-cd-payout" ‖ P ‖ k)·G`. A coinbase's commitment outputs must equal this list exactly. |
 | A-h | The XFG reward check sums the coinbase's key outputs only. The bytes of payout outputs do not count toward the block size used for the reward and the size limit. |
@@ -306,7 +317,9 @@ Option A is the owner's choice for v12 (2026-11-13). A CD is a public, locked ou
 Consequences to accept:
 - The lock runs to the payout block, at least one block past the term, longer if the queue is backed up. Payout bills then follow the coinbase unlock window (60 blocks on mainnet).
 - The final partial epoch earns nothing. Today's code credits it, and credits `T + 1` epochs for a `T`-epoch term.
-- A CD created in the last block of an epoch earns that whole epoch's increment, as it does today.
+- A CD earns from its creation block, pro rata by blocks locked in that epoch. Today's code pays the creation epoch in full, so a deposit in its last block takes a full share of fees it was not locked for; the weight `f` removes that.
+- The tail is not pro rata: blocks between the last boundary and `h + t` earn nothing, because the payout is due at `h + t + 1`, before that epoch's fees are known. A mid-epoch CD with a term of `T` whole epochs earns `T − 1 + f` epochs. Crediting the tail means paying at the next boundary instead (decision P-9).
+- Fees collected before v12 reach CDs over about a year, starting 6 epochs after v12. While few CDs exist, each release is shared among few; nothing caps the rate.
 - A CD's existence, size, term, yield and payout bills are public. What is hidden is who spends each bill.
 - Funds from one CD arrive as sibling bills. Spending several in one transaction links them.
 
@@ -315,9 +328,12 @@ Consequences to accept:
 | Member | Meaning |
 |---|---|
 | `uint64_t m_cdIndexFirstEpoch`, `std::vector<uint64_t> m_cdIndexByEpoch` | `m_cdIndexByEpoch[i]` is the index in force during epoch `m_cdIndexFirstEpoch + i` |
-| `uint64_t m_cdTotalShares` | Sum over earning CDs of `ceil(amount × CD_INDEX_ONE / index[E])` |
+| `uint64_t m_cdTotalShares` | Sum over CDs in full earning of `ceil(entryValue × CD_INDEX_ONE / index[E + 1])` |
+| `std::map<uint64_t, std::vector<CdRef>> m_cdCreatedByEpoch` | CDs in their creation epoch, keyed by `E`; entries kept for replay |
+| `unsigned __int128 m_cdPartialWeight` | Sum of `amount × ((E + 1) × D − h) × CD_INDEX_ONE / (D × index[E])` over CDs created in the open epoch |
 | `std::map<uint64_t, uint64_t> m_cdSharesByMaturityEpoch` | Shares that stop earning when epoch `M − 1` closes; entries are never erased |
 | `uint64_t m_cdCarryHeat` | HEAT in `CD_APY_POOL` not yet attributed to any CD |
+| `uint64_t m_cdCarryScheduled` | The per-epoch release, fixed when the carry is first set: one seventy-second of it |
 | `std::map<uint32_t, std::vector<CdRef>> m_cdPayoutSchedule` | CDs by due height |
 | `std::deque<CdRef> m_cdPayoutQueue` | CDs due and not yet paid |
 | `std::vector<CdRef> m_blockCdCreated` | CDs created by the block being connected; cleared when the coinbase is pushed |
@@ -343,10 +359,13 @@ struct CdPayout {
 struct CdBlockUndo {
   uint64_t totalSharesBefore;
   uint64_t carryBefore;
+  uint64_t carryScheduledBefore;
   uint64_t feePoolBefore;
   size_t indexCountBefore;
   size_t queueSizeBefore;          // before this block's due CDs were appended
   std::vector<CdRef> created;      // admitted by this block
+  unsigned __int128 partialWeightBefore;
+  std::vector<CdRef> started;      // moved to full earning at this block's epoch close
   std::vector<CdPayout> paid;      // paid by this block, in order
 };
 ```
@@ -382,13 +401,13 @@ Rounding is one-directional: shares round up when added, payouts round down. `CD
 **Files:** `src/CryptoNoteCore/Blockchain.h`, `Blockchain.cpp` (serializer 380-507, reset block 1100-1160, `popBlock`), `src/CryptoNoteCore/IndexManager.h:77-90` (`paidOut`), `src/CryptoNoteConfig.h`.
 
 **Interfaces (produced):**
-- Constants: `CD_INDEX_ONE = 1000000000000`, `CD_MAX_OUTPUT_AMOUNT = 5000 × COIN`, `CD_PAYOUT_MAX_OUTPUTS_PER_BLOCK = 128`, `CD_CARRY_RELEASE_EPOCHS = 72`, `CD_CARRY_MAX_RATE = 10000` (1% per epoch on the `FEE_POOL_RATE_PRECISION` scale).
+- Constants: `CD_INDEX_ONE = 1000000000000`, `CD_MAX_OUTPUT_AMOUNT = 5000 × COIN`, `CD_PAYOUT_MAX_OUTPUTS_PER_BLOCK = 128`, `CD_CARRY_RELEASE_EPOCHS = 72`, `CD_CARRY_WARMUP_EPOCHS = 6`.
 - `uint64_t Blockchain::cdIndexAt(uint64_t epoch) const;` — `CD_INDEX_ONE` while the series is empty and for any epoch before `m_cdIndexFirstEpoch`; otherwise the stored value.
 - `CdBlockUndo& Blockchain::cdUndoFor(uint32_t height);` — creates the block's record on first use.
 - `void Blockchain::undoCdBlock(uint32_t height);` — called by `popBlock` before transactions are popped.
 
 - [ ] Add the members, `serialize` for `CdRef`, `CdPayout`, `CdBlockUndo`, and cache entries for every member in the table. Bump the cache version. Reset all of them in the rebuild reset block.
-- [ ] `undoCdBlock` restores the four scalars, truncates `m_cdIndexByEpoch`, removes each `created` CD from its schedule entry and subtracts its shares from `m_cdSharesByMaturityEpoch`, clears `paidOut` and re-queues each `paid` CD at the front in reverse order, and cuts the queue back to `queueSizeBefore`.
+- [ ] `undoCdBlock` restores the scalars, truncates `m_cdIndexByEpoch`, removes each `created` CD from its schedule entry and removes it from `m_cdCreatedByEpoch`, restores `m_cdPartialWeight`, subtracts each `started` CD's shares from `m_cdTotalShares` and `m_cdSharesByMaturityEpoch`, clears `paidOut` and re-queues each `paid` CD at the front in reverse order, and cuts the queue back to `queueSizeBefore`.
 - [ ] Tests: `RestartKeepsCdState` (store, reload, compare every member); `UndoOfEmptyBlockChangesNothing`. Checkpoint.
 
 ### Task A-4: Creation rules and admission (A-a)
@@ -399,9 +418,9 @@ Rounding is one-directional: shares round up when added, payouts round down. `CD
 
 - [ ] `check_tx_outputs` at version 12: a CD-term output obeys rule A-a.
 - [ ] `pushTransaction` appends a `CdRef` (shares 0) to `m_blockCdCreated` for each CD output. It does no share arithmetic.
-- [ ] `admitCreatedCds` runs as the last step of `processBlockEpochWork`, so a CD created in a boundary block is priced at the new epoch's index. For each created CD: `shares = ceil(amount × CD_INDEX_ONE / cdIndexAt(E))`; add to `m_cdTotalShares` and to `m_cdSharesByMaturityEpoch[M]`; append to `m_cdPayoutSchedule[h + t + 1]`; record in the block's undo.
+- [ ] `admitCreatedCds` runs as the last step of `processBlockEpochWork`, so a CD created in a boundary block is priced at the new epoch's index. For each created CD: append to `m_cdPayoutSchedule[h + t + 1]` and to `m_cdCreatedByEpoch[E]`, add its weight to `m_cdPartialWeight`, and record it in the block's undo. A CD in a boundary block belongs to the new epoch with `f = 1`.
 - [ ] `cdLastCreditedEpoch` returns `M − 1` for a creation height at version 12 or later, so the existing epoch report drops a CD from `m_heatOnDeposit` at the same boundary.
-- [ ] Tests: `CdAmountNotMultipleOfUnitRejected`, `CdAboveMaxOutputAmountRejected`, `CdBelowMinimumRejected`, `CdCreatedInBoundaryBlockPricedAtNewIndex`, `PopBlockRemovesAdmittedCd`.
+- [ ] Tests: `CdAmountNotMultipleOfUnitRejected`, `CdAboveMaxOutputAmountRejected`, `CdBelowMinimumRejected`, `CdCreatedInBoundaryBlockPricedAtNewIndex`, `CdCreatedInBoundaryBlockEarnsFullEpoch`, `CdCreatedMidEpochEarnsBlockFraction`, `LastBlockDepositEarnsOneBlockOfEpoch`, `PopBlockRemovesCreatedCdAndWeight`.
 - [ ] Mutation: price a boundary-block CD at the old index; `CdCreatedInBoundaryBlockPricedAtNewIndex` must fail. Checkpoint.
 
 ### Task A-5: Epoch close (A-b, A-c, A-i)
@@ -411,18 +430,19 @@ Rounding is one-directional: shares round up when added, payouts round down. `CD
 **Interfaces (produced):** `void Blockchain::closeCdEpoch(uint32_t height, uint64_t mintedHeat, const Crypto::Hash& blockHash, const Crypto::Hash& coinbaseHash);`
 
 Steps of `closeCdEpoch`, in this order, with `e` the epoch being closed:
-1. At the first boundary at version 12: `m_cdIndexFirstEpoch = e`, `m_cdIndexByEpoch = {CD_INDEX_ONE}`, and `m_cdCarryHeat` is the `CD_APY_POOL` partition balance minus `mintedHeat`. Everything collected before CDs existed is carry.
-2. `totalValue = m_cdTotalShares × cdIndexAt(e) / CD_INDEX_ONE`.
-3. If `m_cdTotalShares == 0`: `m_cdCarryHeat += mintedHeat`, append `cdIndexAt(e)` unchanged, go to step 8.
-4. `carryRelease = min(m_cdCarryHeat / CD_CARRY_RELEASE_EPOCHS, totalValue × CD_CARRY_MAX_RATE / FEE_POOL_RATE_PRECISION)`.
+1. At the first boundary at version 12: `m_cdIndexFirstEpoch = e`, `m_cdIndexByEpoch = {CD_INDEX_ONE}`, and `m_cdCarryHeat` is the `CD_APY_POOL` partition balance minus `mintedHeat`. Everything collected before CDs existed is carry. `m_cdCarryScheduled = ceil(m_cdCarryHeat / CD_CARRY_RELEASE_EPOCHS)`.
+2. `weight = m_cdTotalShares + m_cdPartialWeight`. `totalValue = weight × cdIndexAt(e) / CD_INDEX_ONE`.
+3. If `weight == 0`: `m_cdCarryHeat += mintedHeat`, append `cdIndexAt(e)` unchanged, go to step 8.
+4. `carryRelease` is zero for the first `CD_CARRY_WARMUP_EPOCHS` epochs of the series. After that it is `min(m_cdCarryHeat, max(m_cdCarryScheduled, m_cdCarryHeat / CD_CARRY_RELEASE_EPOCHS))`. Nothing caps the rate this produces; yield is never limited.
 5. `floorTarget = totalValue × CD_YIELD_FLOOR_RATE / FEE_POOL_RATE_PRECISION`. `topUp` is zero when `mintedHeat + carryRelease ≥ floorTarget`; otherwise the shortfall, limited by `m_bonusVaultBalance` and by the `BONUS_VAULT` partition balance. Move `topUp`: spend it from `BONUS_VAULT`, add a `CD_APY_POOL` UTXO, record the spent indices under `m_vaultSpentByTx[coinbaseHash]`, and adjust both counters.
-6. `inflow = mintedHeat + carryRelease + topUp`. `delta = inflow × CD_INDEX_ONE / m_cdTotalShares`. Append `cdIndexAt(e) + delta`.
-7. `m_cdCarryHeat = m_cdCarryHeat − carryRelease + (inflow − delta × m_cdTotalShares / CD_INDEX_ONE)`.
+6. `inflow = mintedHeat + carryRelease + topUp`. `delta = inflow × CD_INDEX_ONE / weight`. Append `cdIndexAt(e) + delta`.
+7. `m_cdCarryHeat = m_cdCarryHeat − carryRelease + (inflow − Σ interest credited this epoch)`, the sum taken over full shares and every `firstInterest`, each floored.
 8. `m_cdTotalShares −= m_cdSharesByMaturityEpoch[e + 1]`.
+9. For each CD in `m_cdCreatedByEpoch[e]`: `firstInterest = floor(amount × f × delta / cdIndexAt(e))`, `shares = ceil((amount + firstInterest) × CD_INDEX_ONE / cdIndexAt(e + 1))`, added to `m_cdTotalShares` and `m_cdSharesByMaturityEpoch[M]`; recorded in the block's undo as `started`. Then `m_cdPartialWeight = 0`. The entry is kept, so a replacement block re-starts the same CDs.
 
 - [ ] All 128-bit intermediates use `uint128_t`. The append saturates at `UINT64_MAX`; that needs more than a 10^7-fold rise and is not reachable.
-- [ ] Tests: `IndexRisesByInflowPerShare`, `TermOfSixEpochsEarnsSixIncrements`, `MaturedCdStopsEarning`, `EpochWithNoCdsCarriesItsFees`, `CarryReleaseNeverExceedsOnePercentOfValue`, `V11FeesBecomeCarryAtActivation`, `YieldFloorTopUpComesFromBonusVaultAndIsCapped`, `ApyPoolNeverBelowOwedInterest` (property test over random deposits, fees and maturities), `PopAcrossBoundaryRestoresIndexAndShares`.
-- [ ] Mutation: round shares down in Task A-4; `ApyPoolNeverBelowOwedInterest` must fail. Checkpoint.
+- [ ] Tests: `IndexRisesByInflowPerShare`, `BoundaryCdWithSixEpochTermEarnsSixIncrements`, `HalfEpochCdEarnsHalfOfCreationEpoch`, `PartialWeightDilutesFullSharesExactly`, `MaturedCdStopsEarning`, `EpochWithNoCdsCarriesItsFees`, `CarryReleaseStartsAfterWarmup`, `StartingCarryIsReleasedOverSeventyTwoEpochs`, `CarryReleaseIsNotCappedByDepositSize`, `V11FeesBecomeCarryAtActivation`, `YieldFloorTopUpComesFromBonusVaultAndIsCapped`, `ApyPoolNeverBelowOwedInterest` (property test over random deposits, fees and maturities), `PopAcrossBoundaryRestoresIndexAndShares`, `PopAcrossBoundaryRestoresPartialWeightAndStartedCds`.
+- [ ] Mutation: round shares down in Task A-4; `ApyPoolNeverBelowOwedInterest` must fail. Mutation: set `f = 1` for every CD; `LastBlockDepositEarnsOneBlockOfEpoch` must fail. Checkpoint.
 
 ### Task A-6: Payout list and coinbase validation (A-e, A-f, A-g, A-h)
 
@@ -448,8 +468,8 @@ Steps of `closeCdEpoch`, in this order, with `e` the epoch being closed:
 
 **Interfaces (produced):** `void Blockchain::settleCdPayouts(uint32_t height, const Crypto::Hash& coinbaseHash);`
 
-- [ ] `settleCdPayouts` runs as the first step of `processBlockEpochWork`, before the epoch closes. It first creates the block's undo record with the four scalar values and `queueSizeBefore`, and computes `cdPayoutsForHeight(height)`. It then appends `m_cdPayoutSchedule[height]` to the queue (the schedule entry is kept, so a replacement block at this height appends the same CDs), and for each payout: sets `paidOut` on the CD's output ref; spends `interest` from `CD_APY_POOL` with `spendUtxos`, returns the overshoot with `mintVaultChangeUtxo`, and records the spent indices under `m_vaultSpentByTx[coinbaseHash]`; subtracts `interest` from `m_feePoolBalance`; adds `dust` to `m_cdCarryHeat`; pops the queue head; records the payout in the block's undo.
-- [ ] Schedule entries and `m_cdSharesByMaturityEpoch` entries more than `MAX_ROLLBACK_HISTORY` blocks below the tip are erased.
+- [ ] `settleCdPayouts` runs as the first step of `processBlockEpochWork`, before the epoch closes. It first creates the block's undo record with the scalar values and `queueSizeBefore`, and computes `cdPayoutsForHeight(height)`. It then appends `m_cdPayoutSchedule[height]` to the queue (the schedule entry is kept, so a replacement block at this height appends the same CDs), and for each payout: sets `paidOut` on the CD's output ref; spends `interest` from `CD_APY_POOL` with `spendUtxos`, returns the overshoot with `mintVaultChangeUtxo`, and records the spent indices under `m_vaultSpentByTx[coinbaseHash]`; subtracts `interest` from `m_feePoolBalance`; adds `dust` to `m_cdCarryHeat`; pops the queue head; records the payout in the block's undo.
+- [ ] Schedule entries, `m_cdCreatedByEpoch` entries and `m_cdSharesByMaturityEpoch` entries more than `MAX_ROLLBACK_HISTORY` blocks below the tip are erased.
 - [ ] `popBlock` calls `undoCdBlock` before popping transactions. The vault un-spend already runs when the coinbase is popped (`popTransaction`, line 7252), and `m_vault.removeAboveIndex` already removes the change UTXOs.
 - [ ] Because all three steps (`settleCdPayouts`, `closeCdEpoch`, `admitCreatedCds`) sit inside `processBlockEpochWork`, the rebuild replay runs them with no further change. Confirm by test.
 - [ ] Tests: `PaidCdIsMarkedAndLeavesQueue`, `InterestLeavesApyPoolExactly`, `PopBlockRestoresCdPayoutState`, `RebuildMatchesLiveCdState`, `ReorgAcrossPayoutBlockConverges`, `HeatInExistenceUnchangedByPayout`.
@@ -516,7 +536,7 @@ Steps of `closeCdEpoch`, in this order, with `e` the epoch being closed:
 - This codebase's unbacked-HEAT paths (readiness plan C2 and C3, and those recorded in the changelog) were found by reading public accounting. Under hidden amounts the same class of defect leaves no trace on chain.
 - Precedent: the Zcash Sprout counterfeiting flaw was found in 2018, fixed in Sapling and disclosed in 2019. Zcash later added a consensus rule that a shielded pool's total balance may never go negative.
 - If hidden amounts are adopted, the conservative shape is: XFG stays publicly countable; only HEAT is hidden; and a turnstile counter bounds every public sink (pool reserves, CD deposits, burns) so that HEAT arriving from hidden outputs can never exceed HEAT that entered them. A flaw is then limited to the hidden float and is detected when the counter would go negative.
-- The 2026-09-29 STARK design puts XFG and HEAT in one pool. That places the base money's supply behind proof soundness and is the decision with the largest effect on the sound-money claim.
+- XFG stays out of every shielded pool and every hidden-amount output (owner, 2026-11-14). The 2026-09-29 STARK design (`docs/plans/2026-09-29-v11-pq-shielded-note-pool.md`) puts XFG and HEAT in one pool; that part is rejected, and R6 or CD F, if ever built, hold HEAT only.
 
 ---
 
@@ -528,12 +548,12 @@ Steps of `closeCdEpoch`, in this order, with `e` the epoch being closed:
 | P-2 | Ring size | 16 |
 | P-3 | Spend-age floor | 10 blocks; coinbase outputs follow the 60-block mined-money window |
 | P-4 | CD exit for v12 | Chosen 2026-11-13: A (Phase 2A) |
-| P-5 | Hidden amounts | Not for XFG. For HEAT only after R3 and A are live, with a turnstile |
-| P-6 | Pre-v11 commitment outputs, if the mainnet scan finds any | Not spendable as HEAT; what they are owed is undecided |
+| P-5 | Hidden amounts | Never for XFG (owner, 2026-11-14). For HEAT only after R3 and A are live, with a turnstile |
+| P-6 | Pre-v11 commitment outputs | Closed 2026-11-13: the owner states mainnet holds none. R1-b keeps any pre-v11 output out of HEAT rings regardless |
 | P-7 | CD principal | One public output per CD, a multiple of 0.1 HEAT, at most 5,000 HEAT. Not a bill: under A it is never in a ring |
 | P-8 | Accrual | Per-epoch index: compounding, and solvent by construction. Alternative: keep per-epoch rates with simple interest on principal |
-| P-9 | Credited epochs and due height | Epochs `E` to `M − 1`; due at `h + t + 1` |
+| P-9 | Credited epochs and due height | Creation epoch pro rata by blocks, then `E + 1` to `M − 1` in full (owner, 2026-11-14); due at `h + t + 1`. Open: credit the tail too by paying at the first boundary after `h + t` |
 | P-10 | The 288 unused bytes on every commitment output | Required to be zero now; a compact HEAT output type later |
 | P-11 | Payout capacity | 128 bills per block; the head CD is always paid |
-| P-12 | Fees collected before any CD exists | Carry, released at 1/72 per epoch and at most 1% of total CD value per epoch. Alternative: all of it to the first epoch's depositors |
-| P-13 | LP share spends | Ring of one, public. Alternative: denominated LP shares |
+| P-12 | Fees collected before any CD exists | Carry. Nothing is released for the first 6 epochs after v12; then one seventy-second of the starting carry per epoch. No cap on the resulting rate (owner, 2026-11-13). Alternative: all of it to the first epoch's depositors |
+| P-13 | LP share spends | Chosen 2026-11-14: LP bills, {1, 5} × 10^k shares, rings of 16 (R1-d). Hides the add-to-remove link; position size at add stays public |

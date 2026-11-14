@@ -1899,15 +1899,15 @@ void testHearthMintCapPerBlock() {
 
   Blockchain::SettlementScratch scratch;
   scratch.mintCapHeatLeft = hearthMintCapHeat(pool.reserveHeat);
-  TEST(scratch.mintCapHeatLeft == 50 * C);
+  TEST(scratch.mintCapHeatLeft == 80 * C);
   AssetFlows flows;
   uint64_t fee = 0;
   std::string err;
   int accepted = 0;
-  for (int i = 0; i < 5; ++i) {
+  for (int i = 0; i < 7; ++i) {
     if (t.chain.validateSettlement(mintTx, 100, scratch, flows, fee, err)) ++accepted;
   }
-  TEST(accepted == 4);
+  TEST(accepted == 6);
   TEST(err.find("mint cap") != std::string::npos);
 
   // Audit 2026-11-11 L2: the minimum mint was enforced by wallets only.
@@ -1917,7 +1917,7 @@ void testHearthMintCapPerBlock() {
   TEST(!t.chain.validateSettlement(
       settlementTx({2 * C}, {commitmentOut(parameters::HEAT_MINT_MIN_HEAT - 1, parameters::HEAT_TERM)}, dust),
       100, dustScratch, flows, fee, err) && err.find("minimum") != std::string::npos);
-  TEST(t.chain.blockMintCapHeat() == 50 * C);
+  TEST(t.chain.blockMintCapHeat() == 80 * C);
 }
 
 // Audit 2026-11-11 H3: AuntPoL deposits at the pool ratio, so pairing while

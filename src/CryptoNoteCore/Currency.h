@@ -462,7 +462,7 @@ private:
   std::string m_txPoolFileName;
   std::string m_blockchinIndicesFileName;
 
-  bool m_testnet;
+  bool m_testnet = false;
 
   Block m_genesisBlock;
   Crypto::Hash m_genesisBlockHash;

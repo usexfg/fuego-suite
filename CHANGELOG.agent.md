@@ -7287,3 +7287,26 @@ Sign-off table:
 | Build compiles | DONE — `make -j4` full build rc=0 |
 | Tests pass | DONE — core_tests 657/657; `ctest -LE manual` 59/59 |
 | All tasks done | DONE |
+
+## Mint and backstop caps to 8%; Currency testnet flag initialised
+
+**Feature name**: `HEARTH_MINT_MAX_BPS_PER_BLOCK` and `HEARTH_BACKSTOP_MAX_BPS` 500 → 800; `Currency::m_testnet` initialised
+**Agent**: Claude
+**Start date**: 2026-11-14
+**Decision**: owner, 2026-11-13 (both caps 8%; flag fix yes; note the CD-terms/ring-size reset for after the new privacy methods).
+**Consensus impact**: v11 limits only (not live): all mints in a block ≤ 8% of pool HEAT at block open; backstop per block ≤ the lower of 8× auction volume and 8% of pool XFG (one constant sets both). `m_testnet` was read uninitialised by the `CurrencyBuilder` constructor, which picks the minimum ring size and network ID from it; mainnet now always takes the mainnet branch.
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Both caps 800 bps; comments in `CryptoNoteConfig.h` and the backstop block; `how-hearth-works.mdx` table | Claude | 2026-11-14 | DONE |
+| 2 | `testHearthMintCapPerBlock`: cap 80 HEAT at the 1,000 HEAT seed, six 12-HEAT mints accepted, the seventh refused | Claude | 2026-11-14 | DONE |
+| 3 | `bool m_testnet = false;` in `Currency.h` | Claude | 2026-11-14 | DONE |
+| 4 | `docs/V12_LAUNCH_TODO.md`: revisit the CD-terms / ring-size reset in `CurrencyBuilder` after the new privacy methods | Claude | 2026-11-14 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j4` full build rc=0 |
+| Tests pass | DONE — core_tests 657/657; test_hearth_amm 45/45; `ctest -LE manual` 59/59 |
+| All tasks done | DONE |

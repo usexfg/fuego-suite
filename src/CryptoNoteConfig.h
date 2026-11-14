@@ -442,7 +442,7 @@ const uint64_t HEARTH_CD_SHARE_PCT_V11 = 30; // v11: 30% CD yield / 70% maker
 const uint64_t HEARTH_CD_SHARE_PCT_V12 = 70; // v12: 70% CD yield / 30% maker
 const uint64_t ORDER_PRICE_TICK = COIN / 100000; // 0.00001 HEAT/XFG: 0.008% of the 0.125 launch price
 const uint64_t HEARTH_MINT_MAX_BPS_PER_BLOCK =
-    500; // HEAT minted per block ≤ 5% of the pool's HEAT reserve at block open
+    800; // HEAT minted per block ≤ 8% of the pool's HEAT reserve at block open
 const uint64_t HEARTH_AUNTPOL_MAX_SPOT_DEVIATION_BPS =
     200; // AuntPoL pairs only while pool spot is within 2% of the oracle price
 const uint64_t HEARTH_ORACLE_SHORT_WINDOW = 8; // blocks in the short median
@@ -454,7 +454,7 @@ const uint32_t LIMIT_ORDER_MAX_TTL_BLOCKS = 5400;   // ~30 days: expiry required
 const uint32_t LIMIT_ORDER_DEFAULT_TTL_BLOCKS = 1260; // ~7 days when a wallet caller names no expiry
 const uint32_t LIMIT_DEPOSITS_MAX_PER_BLOCK = 100;
 const uint64_t HEARTH_BACKSTOP_MAX_BPS =
-    500; // backstop fills ≤ 5× auction volume per block
+    800; // backstop fills per block ≤ the lower of 8× auction volume and 8% of the pool's XFG reserve
 constexpr uint64_t HEARTH_POOL_SEED_XFG =
     8000; // 8,000 XFG at genesis (COIN units)
 constexpr uint64_t HEARTH_POOL_SEED_HEAT =

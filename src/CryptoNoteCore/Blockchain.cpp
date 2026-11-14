@@ -4763,11 +4763,10 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
     // Taker-fee split for this block's version (v11: 30% CD / 70% maker,
     // v12: 70% CD / 30% maker). The maker share stays with the LPs.
     const uint64_t cdSharePct = hearthCdSharePct(block.majorVersion);
-    // Backstop volume cap: pool-intermediated fills are bounded at
-    // HEARTH_BACKSTOP_MAX_BPS (500 = 5×) of the block's auction volume. With no
-    // auction volume the backstop is bounded at 500 basis points (5%) of the
-    // pool's XFG reserve — never unlimited — so a single quiet block cannot
-    // drain the pool to dust.
+    // Backstop volume cap: the lower of HEARTH_BACKSTOP_MAX_BPS (800 = 8×) of
+    // the block's auction volume and 800 basis points (8%) of the pool's XFG
+    // reserve. Self-crossed auction volume cannot lift it past the reserve
+    // bound.
     const uint64_t reserveBound = static_cast<uint64_t>(
         ((uint128_t)m_ammPool.reserveXfg * parameters::HEARTH_BACKSTOP_MAX_BPS) / 10000);
     uint64_t backstopRemaining = reserveBound;

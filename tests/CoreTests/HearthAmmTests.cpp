@@ -304,6 +304,45 @@ static void testNoCrossWhenSpread() {
   CHECK(!r.crossed && r.fills.empty(), "best bid below best ask yields no fills");
 }
 
+// Regression (audit 2026-11-11 H1): reverting a pool sell fill added the HEAT
+// back instead of removing it, so a reorg over such a block left reserveHeat
+// high by twice the fill. Apply then revert must restore the pool exactly.
+static void testPoolMakerFillRevertIsExact() {
+  std::cout << "\nPool maker fill: apply/revert round trip\n";
+  AmmPoolState seed;
+  seed.reserveXfg = 8000 * COIN;
+  seed.reserveHeat = 1000 * COIN;
+  for (uint8_t side = 0; side < 2; ++side) {
+    AmmPoolState pool = seed;
+    CHECK(ammApplyPoolMakerFill(pool, side, 40 * COIN, 5 * COIN, 3500000),
+          (side ? "pool sell fill applies" : "pool buy fill applies"));
+    CHECK(side ? pool.reserveHeat == seed.reserveHeat + 5 * COIN + 3500000
+               : pool.reserveHeat == seed.reserveHeat - 5 * COIN + 3500000,
+          "the maker rebate stays in the pool's HEAT reserve");
+    ammRevertPoolMakerFill(pool, side, 40 * COIN, 5 * COIN, 3500000);
+    CHECK(pool.reserveXfg == seed.reserveXfg && pool.reserveHeat == seed.reserveHeat,
+          (side ? "pool sell fill reverts exactly" : "pool buy fill reverts exactly"));
+  }
+  AmmPoolState thin = seed;
+  CHECK(!ammApplyPoolMakerFill(thin, 1, seed.reserveXfg + 1, 1, 0) &&
+        thin.reserveXfg == seed.reserveXfg, "a fill larger than the reserve is refused untouched");
+}
+
+// CD creation fee schedule: 0.25% at 6 epochs, linear to 1% at 72, on the
+// HEAT's value at the oracle price, paid in XFG, rounded up.
+static void testCdCreationFeeSchedule() {
+  std::cout << "\nCD creation fee schedule\n";
+  const uint64_t price = COIN / 8;  // 0.125 HEAT per XFG
+  const uint64_t epoch = 900;
+  CHECK(cdCreationFeeXfg(1000 * COIN, 6 * epoch, epoch, price) == 20 * COIN, "6 epochs: 0.25% of 8,000 XFG of value");
+  CHECK(cdCreationFeeXfg(1000 * COIN, 72 * epoch, epoch, price) == 80 * COIN, "72 epochs: 1%");
+  CHECK(cdCreationFeeXfg(1000 * COIN, 39 * epoch, epoch, price) == 50 * COIN, "39 epochs: halfway, 0.625%");
+  CHECK(cdCreationFeeXfg(1000 * COIN, 1 * epoch, epoch, price) == 20 * COIN, "below the minimum term: the minimum rate");
+  CHECK(cdCreationFeeXfg(1000 * COIN, 900 * epoch, epoch, price) == 80 * COIN, "above the maximum term: the maximum rate");
+  CHECK(cdCreationFeeXfg(1, 6 * epoch, epoch, price) == 1, "a positive fee never rounds to zero");
+  CHECK(cdCreationFeeXfg(1000 * COIN, 6 * epoch, epoch, 0) == 0, "no price, no fee figure");
+}
+
 int main() {
   std::cout << "Hearth subsystem tests\n======================\n";
   testAmmGuards();
@@ -316,6 +355,8 @@ int main() {
   testConservation();
   testDeterminism();
   testNoCrossWhenSpread();
+  testPoolMakerFillRevertIsExact();
+  testCdCreationFeeSchedule();
   std::cout << "\n======================\n"
             << g_pass << " passed, " << g_fail << " failed\n";
   return g_fail == 0 ? 0 : 1;

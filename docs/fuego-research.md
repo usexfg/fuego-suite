@@ -167,7 +167,7 @@ Swap fees: 2% per atomic swap (1% initiation + 1% claim on claim/refund)
 - Protocol earnings are ONLY these two streams. The v11 1% mint premium (`HEAT_MINT_PREMIUM_BPS = 100`) is a haircut inside the mint burn that funds both AuntPoL legs — the withheld XFG is the XFG leg and the HEAT it buys is the HEAT leg — not revenue.
 
 Banking fees (tiered): 0.1% per tier (0.8/8/80/800 XFG burns → fee 8K/80K/800K/8M ħ)
-- The CD creation fee (0.1% of the HEAT deposited) is charged in XFG to the dev fund (`FUEGO_DEV_FUND_ADDRESS`). Not CD yield, not protocol revenue.
+- The CD creation fee (v12+: 0.25% for a 6-epoch CD rising to 1% for 72 epochs, of the HEAT deposited, valued at the mint oracle price) is paid in XFG and credited to the AuntPoL XFG leg. Not CD yield, not protocol revenue.
 
 ## 10. Governance for Protocol Upgrades
 

@@ -196,6 +196,25 @@ struct BlockHeader {
   Crypto::Hash previousBlockHash;
 };
 
+// Hearth state as the parent block left it. From v11 its hash is part of the
+// block hashing blob, so proof of work commits to it and anyone holding the
+// block can check these values without replaying the chain. Prices are HEAT
+// atomics per XFG atomic × COIN.
+struct HearthState {
+  uint64_t mintPrice = 0;        // the oracle price this block's mints and fee conversions use
+  uint64_t reserveXfg = 0;
+  uint64_t reserveHeat = 0;
+  uint64_t clearingPrice = 0;    // last call-auction clearing price
+  uint64_t hearthstoneCents = 0; // HEAT reference (FCI, re-based each quarter)
+  uint64_t fciIndexCents = 0;
+  bool operator==(const HearthState& o) const {
+    return mintPrice == o.mintPrice && reserveXfg == o.reserveXfg && reserveHeat == o.reserveHeat &&
+           clearingPrice == o.clearingPrice && hearthstoneCents == o.hearthstoneCents &&
+           fciIndexCents == o.fciIndexCents;
+  }
+  bool operator!=(const HearthState& o) const { return !(*this == o); }
+};
+
 struct Block : public BlockHeader {
   ParentBlock parentBlock;
   Transaction baseTransaction;
@@ -206,6 +225,7 @@ struct Block : public BlockHeader {
   uint32_t orderbookDepthBidXfg;
   uint32_t orderbookDepthAskXfg;
   uint64_t hearthPoolRatio;
+  HearthState hearthState;  // v11+
 };
 
 struct AccountPublicAddress {

@@ -87,7 +87,7 @@ const uint64_t TEST_BANK_FEE_TIER_3 = UINT64_C(
 
 // Fire Alias registration fee: 1 XFG
 const uint64_t ALIAS_REGISTRATION_FEE =
-    COIN; /* 1 XFG sent to Fuego Development Fund */
+    COIN; /* 1 XFG: to the dev fund before v11; from v11 paid by a re-mint burn (TX_EXTRA_REMINT_BURN) */
 const uint64_t ALIAS_REGISTRATION_FEE_MAX_RANDOM =
     1000; /* max random dust added to alias fee to prevent fingerprinting */
 
@@ -440,9 +440,21 @@ const uint64_t HEARTH_FEE_DIVISOR = 10000;
 // savers once the depth has a track record. The two legs always sum to 100.
 const uint64_t HEARTH_CD_SHARE_PCT_V11 = 30; // v11: 30% CD yield / 70% maker
 const uint64_t HEARTH_CD_SHARE_PCT_V12 = 70; // v12: 70% CD yield / 30% maker
-const uint64_t ORDER_PRICE_TICK = COIN / 100; // min price granularity (1%)
+const uint64_t ORDER_PRICE_TICK = COIN / 100000; // 0.00001 HEAT/XFG: 0.008% of the 0.125 launch price
+const uint64_t HEARTH_MINT_MAX_BPS_PER_BLOCK =
+    800; // HEAT minted per block ≤ 8% of the pool's HEAT reserve at block open
+const uint64_t HEARTH_AUNTPOL_MAX_SPOT_DEVIATION_BPS =
+    200; // AuntPoL pairs only while pool spot is within 2% of the oracle price
+const uint64_t HEARTH_ORACLE_SHORT_WINDOW = 8; // blocks in the short median
+const uint64_t CD_CREATION_FEE_MIN_BPS = 25;  // 0.25% for a CD_MIN_EPOCHS (~1 month) CD
+const uint64_t CD_CREATION_FEE_MAX_BPS = 100; // 1% for a CD_MAX_EPOCHS (~1 year) CD
+const uint64_t LIMIT_ORDER_MIN_XFG = COIN;          // smallest SELL_XFG deposit (1 XFG)
+const uint64_t LIMIT_ORDER_MIN_HEAT = COIN / 10;    // smallest BUY_XFG deposit (0.1 HEAT)
+const uint32_t LIMIT_ORDER_MAX_TTL_BLOCKS = 5400;   // ~30 days: expiry required, at most this far out
+const uint32_t LIMIT_ORDER_DEFAULT_TTL_BLOCKS = 1260; // ~7 days when a wallet caller names no expiry
+const uint32_t LIMIT_DEPOSITS_MAX_PER_BLOCK = 100;
 const uint64_t HEARTH_BACKSTOP_MAX_BPS =
-    500; // backstop fills ≤ 5× auction volume per block
+    800; // backstop fills per block ≤ the lower of 8× auction volume and 8% of the pool's XFG reserve
 constexpr uint64_t HEARTH_POOL_SEED_XFG =
     8000; // 8,000 XFG at genesis (COIN units)
 constexpr uint64_t HEARTH_POOL_SEED_HEAT =
@@ -644,6 +656,32 @@ inline uint64_t hearthMakerRebatePct(uint8_t blockMajorVersion) {
   return 100 - hearthCdSharePct(blockMajorVersion);
 }
 
+// Limit-order deposit bounds. Every resting order is scanned in every block,
+// so the set must stay bounded: a minimum size, a required expiry, a cap on
+// new deposits per block.
+inline uint64_t limitOrderMinAmount(uint8_t side) {
+  return side == 1 ? parameters::LIMIT_ORDER_MIN_XFG : parameters::LIMIT_ORDER_MIN_HEAT;
+}
+inline bool limitOrderExpiryValid(uint32_t expiration, uint32_t height) {
+  return expiration > height && expiration - height <= parameters::LIMIT_ORDER_MAX_TTL_BLOCKS;
+}
+// Wallet side: the absolute expiry height for an order a caller asked to expire
+// at `requested` (0 = default TTL) when the next block is `nextHeight`.
+inline uint32_t limitOrderExpiryFor(uint32_t requested, uint32_t nextHeight) {
+  return requested == 0 ? nextHeight + parameters::LIMIT_ORDER_DEFAULT_TTL_BLOCKS : requested;
+}
+
+// From v12 each AuntPoL leg has one source: the CD creation fee funds the XFG
+// leg, so the mint premium's XFG is burned and only its HEAT funds the HEAT leg.
+inline bool mintPremiumFundsXfgLeg(uint8_t blockMajorVersion) {
+  return blockMajorVersion < BLOCK_MAJOR_VERSION_12;
+}
+
+// HEAT one block may mint, from the pool's HEAT reserve at block open.
+inline uint64_t hearthMintCapHeat(uint64_t reserveHeat) {
+  return (reserveHeat / 10000) * parameters::HEARTH_MINT_MAX_BPS_PER_BLOCK;
+}
+
 // Mint premium for a block major version. Consensus paths pass the version of
 // the block they are settling, never a default: a reorg replays the block's
 // own version and must recompute the same premium.
@@ -690,9 +728,6 @@ const uint32_t MAX_MARKET_ORDER_LEVELS = 5;
 const uint32_t MIN_DISTINCT_PARTIES = 2;
 const uint32_t DEFAULT_ORDER_EXPIRATION_BLOCKS = 12600; // ~1 week
 const uint32_t HEARTH_DEPTH_BAND_PCT = 10;
-const uint32_t ORDERBOOK_DEFAULT_EXPIRY =
-    4320; // ~3 days at 1-min blocks — prevents stale P2P orders
-const uint32_t ORDERBOOK_MAX_ENDURANCE = 20160; // ~14 days absolute max
 // Mint premium funds treasury reserves.
 
 const uint8_t BLOCK_MINOR_VERSION_0 = 0;

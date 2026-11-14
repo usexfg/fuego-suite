@@ -40,6 +40,20 @@ using namespace Common;
 namespace CryptoNote
 {
 
+  namespace {
+    // A varint size followed by that many bytes of a binary-serialized field,
+    // read from the parse stream so the loop resumes after the payload.
+    template <typename Field>
+    bool readSizedExtraPayload(MemoryInputStream& iss, size_t extraSize, Field& field) {
+      uint64_t size = 0;
+      readVarint(iss, size);
+      if (size > extraSize - iss.getPosition()) return false;
+      BinaryArray payload(static_cast<size_t>(size));
+      read(iss, payload.data(), payload.size());
+      return fromBinaryArray(field, payload);
+    }
+  }
+
   bool parseTransactionExtra(const std::vector<uint8_t> &transactionExtra, std::vector<TransactionExtraField> &transactionExtraFields)
   {
     transactionExtraFields.clear();
@@ -370,6 +384,9 @@ namespace CryptoNote
             {
               TransactionExtraOrderCancel cancel;
               read(iss, cancel.orderId.data, sizeof(cancel.orderId.data));
+              read(iss, cancel.spendPublicKey.data, sizeof(cancel.spendPublicKey.data));
+              read(iss, cancel.viewPublicKey.data, sizeof(cancel.viewPublicKey.data));
+              read(iss, cancel.proof.data, sizeof(cancel.proof.data));
               transactionExtraFields.push_back(cancel);
               break;
             }
@@ -421,6 +438,26 @@ namespace CryptoNote
               break;
             }
 
+            case TX_EXTRA_REMINT_BURN:
+            {
+              TransactionExtraRemintBurn burn;
+              burn.amountXfg = 0;
+              for (int i = 0; i < 8; ++i)
+                burn.amountXfg |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+              transactionExtraFields.push_back(burn);
+              break;
+            }
+
+            case TX_EXTRA_CD_CREATION_FEE:
+            {
+              TransactionExtraCdCreationFee cdFee;
+              cdFee.amountXfg = 0;
+              for (int i = 0; i < 8; ++i)
+                cdFee.amountXfg |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+              transactionExtraFields.push_back(cdFee);
+              break;
+            }
+
             case TX_EXTRA_TREASURY_FUND:
             {
               TransactionExtraTreasuryFund fund;
@@ -435,7 +472,7 @@ namespace CryptoNote
             case TX_EXTRA_ALIAS:
            {
              TransactionExtraAliasRegistration alias;
-             if (getAliasFromExtra(transactionExtra, alias)) {
+             if (readSizedExtraPayload(iss, transactionExtra.size(), alias)) {
                transactionExtraFields.push_back(alias);
              } else {
                return false;
@@ -446,7 +483,7 @@ namespace CryptoNote
             case TX_EXTRA_ALIAS_RELEASE:
            {
              TransactionExtraAliasRelease release;
-             if (getAliasReleaseFromExtra(transactionExtra, release)) {
+             if (readSizedExtraPayload(iss, transactionExtra.size(), release)) {
                transactionExtraFields.push_back(release);
              } else {
                return false;
@@ -457,7 +494,7 @@ namespace CryptoNote
            case TX_EXTRA_ALIAS_TRANSFER:
            {
              TransactionExtraAliasTransfer transfer;
-             if (getAliasTransferFromExtra(transactionExtra, transfer)) {
+             if (readSizedExtraPayload(iss, transactionExtra.size(), transfer)) {
                transactionExtraFields.push_back(transfer);
              } else {
                return false;
@@ -647,7 +684,7 @@ namespace CryptoNote
 
     bool operator()(const TransactionExtraOrderCancel &t)
     {
-      return addOrderCancelToExtra(extra, t.orderId);
+      return addOrderCancelToExtra(extra, t.orderId, t.spendPublicKey, t.viewPublicKey, t.proof);
     }
 
     bool operator()(const TransactionExtraMarketBuyAuth &t)
@@ -674,6 +711,16 @@ namespace CryptoNote
     bool operator()(const TransactionExtraTreasuryFund &t)
     {
       return addTreasuryFundToExtra(extra, t.asset, t.amount);
+    }
+
+    bool operator()(const TransactionExtraCdCreationFee &t)
+    {
+      return addCdCreationFeeToExtra(extra, t.amountXfg);
+    }
+
+    bool operator()(const TransactionExtraRemintBurn &t)
+    {
+      return addRemintBurnToExtra(extra, t.amountXfg);
     }
 
   };
@@ -1646,10 +1693,49 @@ namespace CryptoNote
     return true;
   }
 
-  bool addOrderCancelToExtra(std::vector<uint8_t>& tx_extra, const Crypto::Hash& orderId) {
+  bool addOrderCancelToExtra(std::vector<uint8_t>& tx_extra, const Crypto::Hash& orderId,
+                             const Crypto::PublicKey& spendPublicKey, const Crypto::PublicKey& viewPublicKey,
+                             const Crypto::Signature& proof) {
     tx_extra.push_back(TX_EXTRA_ORDER_CANCEL);
     tx_extra.insert(tx_extra.end(), orderId.data, orderId.data + sizeof(orderId.data));
+    tx_extra.insert(tx_extra.end(), spendPublicKey.data, spendPublicKey.data + sizeof(spendPublicKey.data));
+    tx_extra.insert(tx_extra.end(), viewPublicKey.data, viewPublicKey.data + sizeof(viewPublicKey.data));
+    tx_extra.insert(tx_extra.end(), proof.data, proof.data + sizeof(proof.data));
     return true;
+  }
+
+  bool addRemintBurnToExtra(std::vector<uint8_t>& tx_extra, uint64_t amountXfg) {
+    tx_extra.push_back(TX_EXTRA_REMINT_BURN);
+    for (int i = 0; i < 8; ++i) { tx_extra.push_back(static_cast<uint8_t>(amountXfg & 0xFF)); amountXfg >>= 8; }
+    return true;
+  }
+
+  bool addCdCreationFeeToExtra(std::vector<uint8_t>& tx_extra, uint64_t amountXfg) {
+    tx_extra.push_back(TX_EXTRA_CD_CREATION_FEE);
+    for (int i = 0; i < 8; ++i) { tx_extra.push_back(static_cast<uint8_t>(amountXfg & 0xFF)); amountXfg >>= 8; }
+    return true;
+  }
+
+  Crypto::Hash getLimitCancelAuthHash(const Crypto::Hash& orderId, const Crypto::Hash& addressHash) {
+    static constexpr char domain[] = "FuegoLimitCancelV1";
+    std::vector<uint8_t> authData(domain, domain + sizeof(domain) - 1);
+    authData.insert(authData.end(), orderId.data, orderId.data + sizeof(orderId.data));
+    authData.insert(authData.end(), addressHash.data, addressHash.data + sizeof(addressHash.data));
+    Crypto::Hash result{};
+    Crypto::cn_fast_hash(authData.data(), authData.size(), result);
+    return result;
+  }
+
+  bool limitOrderKeysProve(const Crypto::Hash& addressHash, const Crypto::PublicKey& spendPublicKey,
+                           const Crypto::PublicKey& viewPublicKey, const Crypto::Hash& authHash,
+                           const Crypto::Signature& proof) {
+    uint8_t keyData[sizeof(spendPublicKey.data) + sizeof(viewPublicKey.data)];
+    memcpy(keyData, spendPublicKey.data, sizeof(spendPublicKey.data));
+    memcpy(keyData + sizeof(spendPublicKey.data), viewPublicKey.data, sizeof(viewPublicKey.data));
+    Crypto::Hash keysHash{};
+    Crypto::cn_fast_hash(keyData, sizeof(keyData), keysHash);
+    return memcmp(keysHash.data, addressHash.data, sizeof(keysHash.data)) == 0 &&
+           Crypto::check_signature(authHash, spendPublicKey, proof);
   }
 
   bool addMarketBuyAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t xfgWanted, uint64_t maxHeatCost) {
@@ -1708,6 +1794,60 @@ namespace CryptoNote
     Crypto::Hash result{};
     Crypto::cn_fast_hash(serializedOutputs.data(), serializedOutputs.size(), result);
     return result;
+  }
+
+  namespace {
+    void wipeBytes(void* data, size_t size) {
+      volatile uint8_t* bytes = static_cast<volatile uint8_t*>(data);
+      for (size_t i = 0; i < size; ++i) bytes[i] = 0;
+    }
+
+    Crypto::SecretKey limitOrderScalar(const std::string& domain, const Crypto::SecretKey& walletSpendSecret,
+                                       const Crypto::Hash& orderId) {
+      std::vector<uint8_t> preimage;
+      preimage.reserve(domain.size() + sizeof(walletSpendSecret.data) + sizeof(orderId.data));
+      preimage.insert(preimage.end(), domain.begin(), domain.end());
+      preimage.insert(preimage.end(), walletSpendSecret.data, walletSpendSecret.data + sizeof(walletSpendSecret.data));
+      preimage.insert(preimage.end(), orderId.data, orderId.data + sizeof(orderId.data));
+      Crypto::SecretKey scalar;
+      Crypto::hash_to_scalar(preimage.data(), preimage.size(), scalar);
+      wipeBytes(preimage.data(), preimage.size());
+      return scalar;
+    }
+  }
+
+  void wipeSecretKey(Crypto::SecretKey& key) {
+    wipeBytes(key.data, sizeof(key.data));
+  }
+
+  void wipeLimitOrderSecret(LimitOrderKeys& keys) {
+    wipeSecretKey(keys.spendSecretKey);
+  }
+
+  LimitOrderKeys deriveLimitOrderKeys(const Crypto::SecretKey& walletSpendSecret, const Crypto::Hash& orderId) {
+    LimitOrderKeys keys;
+    keys.spendSecretKey = limitOrderScalar("FuegoLimitOrderSpendV1", walletSpendSecret, orderId);
+    Crypto::SecretKey viewSecret = limitOrderScalar("FuegoLimitOrderViewV1", walletSpendSecret, orderId);
+    Crypto::secret_key_to_public_key(keys.spendSecretKey, keys.spendPublicKey);
+    Crypto::secret_key_to_public_key(viewSecret, keys.viewPublicKey);
+    wipeSecretKey(viewSecret);
+    uint8_t keyData[sizeof(keys.spendPublicKey.data) + sizeof(keys.viewPublicKey.data)];
+    memcpy(keyData, keys.spendPublicKey.data, sizeof(keys.spendPublicKey.data));
+    memcpy(keyData + sizeof(keys.spendPublicKey.data), keys.viewPublicKey.data, sizeof(keys.viewPublicKey.data));
+    Crypto::cn_fast_hash(keyData, sizeof(keyData), keys.addressHash);
+    return keys;
+  }
+
+  Crypto::Hash limitOrderAddressHash(const Crypto::SecretKey& walletSpendSecret, const Crypto::Hash& orderId) {
+    LimitOrderKeys keys = deriveLimitOrderKeys(walletSpendSecret, orderId);
+    wipeLimitOrderSecret(keys);
+    return keys.addressHash;
+  }
+
+  bool isOwnLimitOrder(const Crypto::SecretKey& walletSpendSecret, const Crypto::Hash& orderId,
+                       const Crypto::Hash& addressHash) {
+    const Crypto::Hash derived = limitOrderAddressHash(walletSpendSecret, orderId);
+    return memcmp(derived.data, addressHash.data, sizeof(derived.data)) == 0;
   }
 
   Crypto::Hash getLimitWithdrawAuthHash(const Crypto::Hash& orderId,

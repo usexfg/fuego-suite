@@ -2276,6 +2276,15 @@ void RpcServer::fill_block_header_response(const Block& blk, bool orphan_status,
   responce.hash = Common::podToHex(hash);
   m_core.getBlockDifficulty(static_cast<uint32_t>(height), responce.difficulty);
   responce.reward = get_block_reward(blk);
+  if (blk.majorVersion >= BLOCK_MAJOR_VERSION_11) {
+    responce.mint_price = blk.hearthState.mintPrice;
+    responce.reserve_xfg = blk.hearthState.reserveXfg;
+    responce.reserve_heat = blk.hearthState.reserveHeat;
+    responce.clearing_price = blk.hearthState.clearingPrice;
+    responce.hearthstone_cents = blk.hearthState.hearthstoneCents;
+    responce.fci_index_cents = blk.hearthState.fciIndexCents;
+    responce.hearth_state_hash = Common::podToHex(getHearthStateHash(blk.hearthState));
+  }
 }
 
 bool RpcServer::on_get_last_block_header(const COMMAND_RPC_GET_LAST_BLOCK_HEADER::request& req, COMMAND_RPC_GET_LAST_BLOCK_HEADER::response& res) {
@@ -3012,6 +3021,8 @@ bool RpcServer::on_get_heat_metrics(const COMMAND_RPC_GET_HEAT_METRICS::request&
                                      COMMAND_RPC_GET_HEAT_METRICS::response& res) {
   auto metrics = m_core.getHeatMetrics();
   res.heat_supply = metrics.heatSupply;
+  res.remint_burned_xfg = metrics.remintBurnedXfg;
+  res.reminted_xfg = metrics.remintedXfg;
   res.heat_on_deposit = metrics.heatOnDeposit;
   res.burned_xfg = metrics.burnedXfg;
   res.total_burned_xfg = metrics.totalBurnedXfg;

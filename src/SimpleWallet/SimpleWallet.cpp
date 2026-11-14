@@ -516,6 +516,8 @@ std::string simple_wallet::get_commands_str() {
     {"claim_lp_fees", "Claim LP swap fee earnings"},
     {"place_order", "Place limit order on Hearth"},
     {"cancel_order", "Cancel limit order by transaction hash"},
+    {"dev_fund_burn", "Dev fund burn: burn XFG into the re-mint counter (re-minted to the dev fund each quarter; no output to any dev wallet)"},
+    {"stop_order", "Stop a limit order filling; withdraw it afterwards with cancel_order"},
     {"orderbook", "Show Hearth CLOB orderbook"},
     {"show_orders", "Show your open limit orders on Hearth"}
   });
@@ -612,6 +614,7 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
 
   // @ Alias system commands
   m_consoleHandler.setHandler("register_alias", boost::bind(&simple_wallet::register_alias, this, boost::arg<1>()), "register_alias <alias> - Register an @ alias (8 chars [a-z0-9&], costs 1 XFG). Auto-derives a fresh subaddress; master is never used on-chain.");
+  m_consoleHandler.setHandler("dev_fund_burn", boost::bind(&simple_wallet::dev_fund_burn, this, boost::arg<1>()), "dev_fund_burn <amount> - Burn XFG into the re-mint counter (v11+); re-minted to the dev fund each quarter in one coinbase output");
   m_consoleHandler.setHandler("lookup_alias", boost::bind(&simple_wallet::lookup_alias, this, boost::arg<1>()), "lookup_alias <alias_or_address> - Look up an @ alias by name or wallet address");
   m_consoleHandler.setHandler("list_aliases", boost::bind(&simple_wallet::list_aliases, this, boost::arg<1>()), "list_aliases - List all registered @ aliases on the network");
   m_consoleHandler.setHandler("gen_new_sub", boost::bind(&simple_wallet::gen_new_sub, this, boost::arg<1>()), "gen_new_sub [major] [minor] - Generate a sub-address at index (major, minor). Omit args for auto-increment (0, N).");
@@ -639,6 +642,7 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
   // Hearth orderbook commands (v11+)
   m_consoleHandler.setHandler("place_order", boost::bind(&simple_wallet::place_order, this, boost::arg<1>()), "place_order <buy|sell> <amount> <price> [exp_blocks] - Place limit order on Hearth");
   m_consoleHandler.setHandler("cancel_order", boost::bind(&simple_wallet::cancel_order, this, boost::arg<1>()), "cancel_order <tx_hash> - Cancel limit order by transaction hash");
+  m_consoleHandler.setHandler("stop_order", boost::bind(&simple_wallet::stop_order, this, boost::arg<1>()), "stop_order <order_id> - Stop a limit order filling so a later cancel_order cannot race a fill");
   m_consoleHandler.setHandler("orderbook", boost::bind(&simple_wallet::orderbook, this, boost::arg<1>()), "orderbook - Show Hearth CLOB orderbook");
   m_consoleHandler.setHandler("show_orders", boost::bind(&simple_wallet::show_orders, this, boost::arg<1>()), "show_orders - Show your open limit orders on Hearth");
 }
@@ -3449,6 +3453,57 @@ bool simple_wallet::process_command(const std::vector<std::string> &args) {
 //----------------------------------------------------------------------------------------------------
 // @ ALIAS SYSTEM COMMANDS
 //----------------------------------------------------------------------------------------------------
+uint8_t simple_wallet::nextBlockMajorVersion() const {
+  return m_currency.blockMajorVersionAtHeight(m_node->getLastKnownBlockHeight() + 1);
+}
+
+bool simple_wallet::dev_fund_burn(const std::vector<std::string> &args) {
+  uint64_t amount = 0;
+  if (args.size() != 1 || !m_currency.parseAmount(args[0], amount) || amount == 0) {
+    fail_msg_writer() << "Usage: dev_fund_burn <amount>";
+    return false;
+  }
+  if (nextBlockMajorVersion() < CryptoNote::BLOCK_MAJOR_VERSION_11) {
+    fail_msg_writer() << "Re-mint burns activate at block " << m_currency.upgradeHeight(CryptoNote::BLOCK_MAJOR_VERSION_11) + 1;
+    return false;
+  }
+  const uint64_t fee = m_currency.minimumFee() + amount;
+  if (m_wallet->actualBalance() < fee + m_currency.minimumFee()) {
+    fail_msg_writer() << "Insufficient balance: need " << m_currency.formatAmount(fee + m_currency.minimumFee()) << " XFG";
+    return false;
+  }
+  std::vector<uint8_t> extra;
+  CryptoNote::addRemintBurnToExtra(extra, amount);
+  const std::string extraString(extra.begin(), extra.end());
+
+  CryptoNote::WalletHelper::SendCompleteResultObserver sent;
+  WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
+  std::vector<CryptoNote::WalletLegacyTransfer> transfers;
+  CryptoNote::WalletLegacyTransfer selfTransfer;
+  selfTransfer.address = m_wallet->getAddress();
+  selfTransfer.amount = m_currency.minimumFee();
+  transfers.push_back(selfTransfer);
+  std::vector<CryptoNote::TransactionMessage> messages;
+  Crypto::SecretKey transactionSK;
+  CryptoNote::TransactionId tx = m_wallet->sendTransaction(transactionSK, transfers, fee, extraString,
+                                                           CryptoNote::parameters::MIN_TX_MIXIN_SIZE, 0, messages, 0);
+  if (tx == WALLET_INVALID_TRANSACTION_ID) {
+    fail_msg_writer() << "Dev fund burn transaction failed";
+    return false;
+  }
+  std::error_code sendError = sent.wait(tx);
+  removeGuard.removeObserver();
+  if (sendError) {
+    fail_msg_writer() << "Failed to send dev fund burn: " << sendError.message();
+    return false;
+  }
+  CryptoNote::WalletLegacyTransaction txInfo;
+  m_wallet->getTransaction(tx, txInfo);
+  success_msg_writer() << "Burned " << m_currency.formatAmount(amount) << " XFG into the re-mint counter, tx "
+                       << Common::podToHex(txInfo.hash);
+  return true;
+}
+
 bool simple_wallet::register_alias(const std::vector<std::string> &args) {
   if (args.size() != 1) {
     fail_msg_writer() << "Usage: register_alias <alias>";
@@ -3646,6 +3701,12 @@ bool simple_wallet::register_alias(const std::vector<std::string> &args) {
       return true;
     }
 
+    // From v11 the mainnet fee is a re-mint burn: it rides in the transaction
+    // fee and consensus withholds it, so no output pays the dev wallet.
+    const bool burnsFee = !m_currency.isTestnet() && nextBlockMajorVersion() >= CryptoNote::BLOCK_MAJOR_VERSION_11;
+    if (burnsFee) {
+      CryptoNote::addRemintBurnToExtra(extra, CryptoNote::parameters::ALIAS_REGISTRATION_FEE);
+    }
     std::string extraString(extra.begin(), extra.end());
 
     CryptoNote::WalletHelper::SendCompleteResultObserver sent;
@@ -3653,8 +3714,7 @@ bool simple_wallet::register_alias(const std::vector<std::string> &args) {
 
     std::vector<CryptoNote::WalletLegacyTransfer> transfers;
 
-    if (m_currency.isTestnet()) {
-      // Testnet: send minimum amount to self
+    if (m_currency.isTestnet() || burnsFee) {
       CryptoNote::WalletLegacyTransfer selfTransfer;
       selfTransfer.address = walletAddress;
       selfTransfer.amount = m_currency.minimumFee();
@@ -3668,7 +3728,7 @@ bool simple_wallet::register_alias(const std::vector<std::string> &args) {
     }
 
     std::vector<CryptoNote::TransactionMessage> messages;
-    uint64_t fee = m_currency.minimumFee();
+    uint64_t fee = m_currency.minimumFee() + (burnsFee ? CryptoNote::parameters::ALIAS_REGISTRATION_FEE : 0);
     uint64_t mixIn = 0;
     uint64_t unlockTimestamp = 0;
     uint64_t ttl = 0;
@@ -3989,7 +4049,7 @@ bool simple_wallet::mint_heat(const std::vector<std::string>& args) {
     return false;
   }
 
-  // Consensus prices the mint at the 8-block TWAP; build a little under it so
+  // Consensus prices the mint at the Hearth oracle price; build a little under it so
   // the TWAP moving before inclusion does not invalidate the mint.
   //
   // The v11 mint premium is a haircut inside the burn: heat(premiumXfg) of the
@@ -4024,7 +4084,7 @@ bool simple_wallet::mint_heat(const std::vector<std::string>& args) {
   success_msg_writer() << "  Burn: " << m_currency.formatAmount(xfgAmount) << " XFG";
   success_msg_writer() << "  Mint: " << m_currency.formatAmount(heatAmount) << " HEAT";
   success_msg_writer() << "  Price: " << m_currency.formatAmount(poolTwap)
-                       << " HEAT per XFG (8-block TWAP, minted "
+                       << " HEAT per XFG (Hearth oracle price, minted "
                        << parameters::WALLET_MINT_TWAP_MARGIN_BPS / 100.0 << "% under it)";
   success_msg_writer() << "  Mint premium: " << m_currency.formatAmount(premiumXfg)
                        << " XFG of the burn (" << parameters::HEAT_MINT_PREMIUM_BPS / 100.0
@@ -4180,7 +4240,7 @@ bool simple_wallet::swap(const std::vector<std::string>& args) {
     // sale, often far more HEAT. Offer it; the command stays a Hearth sale.
     if (mintAmount > 0) {
       success_msg_writer() << "Mint instead: " << m_currency.formatAmount(mintAmount)
-                           << " HEAT (burns the XFG at the 8-block TWAP; no pool price impact)"
+                           << " HEAT (burns the XFG at the Hearth oracle price; no pool price impact)"
                            << " — use: mint_heat " << m_currency.formatAmount(amount);
     } else {
       success_msg_writer() << "Mint instead: unavailable (no Hearth TWAP yet)";
@@ -4486,11 +4546,19 @@ bool simple_wallet::heat_deposit(const std::vector<std::string>& args) {
     return false;
   }
 
-  // The CD creation fee is XFG (it goes to the dev fund address); the deposit
+  // The CD creation fee is XFG (it funds the AuntPoL XFG leg); the deposit
   // itself is HEAT. Check the two balances separately — comparing the XFG
   // balance against the HEAT amount rejected deposits a wallet could fund.
-  uint64_t bankingFee = amount / 1000;  // 0.1% of the deposit, in XFG → dev fund
-  if (bankingFee == 0) bankingFee = 1;   // minimum 1 atomic unit
+  const uint64_t epochBlocks = m_currency.isTestnet()
+      ? CryptoNote::parameters::TESTNET_EPOCH_DURATION_BLOCKS : CryptoNote::parameters::EPOCH_DURATION_BLOCKS;
+  const uint64_t requiredCdFee = CryptoNote::cdCreationFeeXfg(amount, termEpochs * epochBlocks, epochBlocks,
+                                                              m_node->getHearthTwap());
+  if (requiredCdFee == 0) {
+    fail_msg_writer() << "No Hearth oracle price yet to value the CD creation fee";
+    return false;
+  }
+  const uint64_t bankingFee = requiredCdFee +
+      requiredCdFee * CryptoNote::parameters::WALLET_MINT_TWAP_MARGIN_BPS / 10000;
 
   uint64_t fee = m_currency.minimumFee();
   uint64_t xfgNeeded = bankingFee + fee;
@@ -4506,14 +4574,14 @@ bool simple_wallet::heat_deposit(const std::vector<std::string>& args) {
     fail_msg_writer() << "Insufficient XFG for the fees. Available: "
                       << m_currency.formatAmount(xfgBalance)
                       << ", needed: " << m_currency.formatAmount(xfgNeeded)
-                      << " (0.1% CD creation fee + network fee)";
+                      << " (CD creation fee + network fee)";
     return false;
   }
 
   success_msg_writer() << "HEAT Deposit: " << m_currency.formatAmount(amount)
                        << " HEAT for " << termEpochs << " epochs"
                        << " | CD creation fee: " << m_currency.formatAmount(bankingFee)
-                       << " XFG (dev fund)";
+                       << " XFG (0.25%-1% by term, to the protocol's Hearth liquidity)";
 
   // Use heatDepositV10() — dedicated deposit API that builds proper commitment tx
   uint64_t mixIn = m_currency.isTestnet() ? 0 : CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
@@ -4833,17 +4901,22 @@ bool simple_wallet::place_order(const std::vector<std::string>& args) {
     return false;
   }
 
-  uint32_t expiration = ORDERBOOK_DEFAULT_EXPIRY;
+  uint32_t ttlBlocks = parameters::LIMIT_ORDER_DEFAULT_TTL_BLOCKS;
   if (args.size() >= 4) {
-    if (!Common::fromString(args[3], expiration) || expiration == 0) {
+    if (!Common::fromString(args[3], ttlBlocks) || ttlBlocks == 0) {
       fail_msg_writer() << "Invalid expiration (blocks)";
       return false;
     }
-    if (expiration > ORDERBOOK_MAX_ENDURANCE) {
-      fail_msg_writer() << "Expiration exceeds max (" << ORDERBOOK_MAX_ENDURANCE << " blocks)";
+    if (ttlBlocks > parameters::LIMIT_ORDER_MAX_TTL_BLOCKS) {
+      fail_msg_writer() << "Expiration exceeds max (" << parameters::LIMIT_ORDER_MAX_TTL_BLOCKS << " blocks)";
       return false;
     }
   }
+  if (amount < limitOrderMinAmount(side)) {
+    fail_msg_writer() << "Order below the minimum size (" << m_currency.formatAmount(limitOrderMinAmount(side)) << ")";
+    return false;
+  }
+  const uint32_t expiration = m_node->getLastKnownBlockHeight() + 1 + ttlBlocks;
 
   uint64_t fee = m_currency.minimumFee();
   uint64_t balance = m_wallet->actualBalance();
@@ -4861,7 +4934,7 @@ bool simple_wallet::place_order(const std::vector<std::string>& args) {
     if (rounded == 0) rounded = tick;
     uint64_t drift = (rounded > price) ? (rounded - price) : (price - rounded);
     if (drift > tick / 20) {
-      fail_msg_writer() << "Invalid price: must be a multiple of the order tick (0.01)";
+      fail_msg_writer() << "Invalid price: must be a multiple of the order tick (0.00001)";
       return false;
     }
     price = rounded;
@@ -4874,7 +4947,7 @@ bool simple_wallet::place_order(const std::vector<std::string>& args) {
                          << " " << m_currency.formatAmount(amount)
                          << (side == 0 ? " HEAT" : " XFG")
                          << " @ " << m_currency.formatAmount(price)
-                         << " | expires in " << expiration << " blocks"
+                         << " | expires in " << ttlBlocks << " blocks (height " << expiration << ")"
                          << " | tx: " << tx;
     return true;
   }
@@ -4910,6 +4983,26 @@ bool simple_wallet::cancel_order(const std::vector<std::string>& args) {
   }
   fail_msg_writer() << "Transaction failed";
   return false;
+}
+
+bool simple_wallet::stop_order(const std::vector<std::string>& args) {
+  Crypto::Hash orderId;
+  if (args.size() < 1 || !Common::podFromHex(args[0], orderId)) {
+    fail_msg_writer() << "Usage: stop_order <order_id>";
+    return false;
+  }
+  const uint64_t fee = m_currency.minimumFee();
+  if (m_wallet->actualBalance() < fee) {
+    fail_msg_writer() << "Insufficient balance for fee (" << m_currency.formatAmount(fee) << ")";
+    return false;
+  }
+  TransactionId tx = m_wallet->cancelOrderV13(orderId, fee, CryptoNote::parameters::MIN_TX_MIXIN_SIZE, true);
+  if (tx == WALLET_INVALID_TRANSACTION_ID) {
+    fail_msg_writer() << "Transaction failed";
+    return false;
+  }
+  success_msg_writer() << "Stop order submitted: tx " << tx << ". Withdraw with cancel_order once it confirms.";
+  return true;
 }
 
 bool simple_wallet::orderbook(const std::vector<std::string>& args) {
@@ -4959,19 +5052,16 @@ bool simple_wallet::show_orders(const std::vector<std::string>& args) {
     return false;
   }
 
-  // Compute wallet's own address_hash = cn_fast_hash(spendKey||viewKey)
   AccountKeys accountKeys;
   m_wallet->getAccountKeys(accountKeys);
-  std::vector<uint8_t> keyData(sizeof(accountKeys.address.spendPublicKey.data) + sizeof(accountKeys.address.viewPublicKey.data));
-  memcpy(keyData.data(), accountKeys.address.spendPublicKey.data, sizeof(accountKeys.address.spendPublicKey.data));
-  memcpy(keyData.data() + sizeof(accountKeys.address.spendPublicKey.data), accountKeys.address.viewPublicKey.data, sizeof(accountKeys.address.viewPublicKey.data));
-  Crypto::Hash myAddrHash = Crypto::cn_fast_hash(keyData.data(), keyData.size());
-  std::string myAddressHash = Common::podToHex(myAddrHash);
 
-  // Filter to wallet's own orders
+  // Each order has its own one-time keys (deriveLimitOrderKeys); only this
+  // wallet's spend key reproduces an order's addressHash.
   std::vector<CryptoNote::COMMAND_RPC_GET_LIMIT_ORDERS::LimitOrderInfo> myOrders;
   for (const auto& o : res.orders) {
-    if (o.address_hash == myAddressHash) {
+    Crypto::Hash orderId{}, addressHash{};
+    if (Common::podFromHex(o.order_id, orderId) && Common::podFromHex(o.address_hash, addressHash) &&
+        isOwnLimitOrder(accountKeys.spendSecretKey, orderId, addressHash)) {
       myOrders.push_back(o);
     }
   }

@@ -924,6 +924,11 @@ TransactionId WalletLegacy::placeOrderV13(uint8_t side, uint64_t amount, uint64_
   fee = m_currency.minimumFee();
   {
     std::unique_lock<std::mutex> lock(m_cacheMutex);
+    const uint32_t nextHeight = m_node.getLastKnownBlockHeight() + 1;
+    expiration = limitOrderExpiryFor(expiration, nextHeight);
+    if (amount < limitOrderMinAmount(side) || !limitOrderExpiryValid(expiration, nextHeight)) {
+      throw std::system_error(make_error_code(error::WRONG_PARAMETERS));
+    }
     request = m_sender->makePlaceOrderV13Request(txId, events, side, amount, price, expiration, fee, mixIn);
     if (request != nullptr) pushBalanceUpdatedEvents(events);
   }
@@ -935,7 +940,7 @@ TransactionId WalletLegacy::placeOrderV13(uint8_t side, uint64_t amount, uint64_
   return txId;
 }
 
-TransactionId WalletLegacy::cancelOrderV13(const Crypto::Hash& orderId, uint64_t fee, uint64_t mixIn) {
+TransactionId WalletLegacy::cancelOrderV13(const Crypto::Hash& orderId, uint64_t fee, uint64_t mixIn, bool stopOnly) {
   throwIfNotInitialised();
   TransactionId txId = 0;
   std::unique_ptr<WalletRequest> request;
@@ -943,7 +948,7 @@ TransactionId WalletLegacy::cancelOrderV13(const Crypto::Hash& orderId, uint64_t
   fee = m_currency.minimumFee();
   {
     std::unique_lock<std::mutex> lock(m_cacheMutex);
-    request = m_sender->makeCancelOrderV13Request(txId, events, orderId, fee, mixIn);
+    request = m_sender->makeCancelOrderV13Request(txId, events, orderId, fee, mixIn, stopOnly);
     if (request != nullptr) pushBalanceUpdatedEvents(events);
   }
   notifyClients(events);
@@ -1096,13 +1101,11 @@ TransactionId WalletLegacy::lpClaimFeesV10(uint64_t lpShares, uint64_t minXfg, u
 TransactionId WalletLegacy::heatDepositV10(uint64_t amount, uint32_t termEpochs, uint64_t bankingFee, uint64_t fee, uint64_t mixIn) {
   throwIfNotInitialised();
 
-  // Consensus rejects CD outputs below the activation height; say so plainly
-  // instead of building a transaction the network will refuse.
   const uint32_t nextHeight = m_node.getLastKnownBlockHeight() + 1;
-  if (nextHeight < m_currency.cdActivationHeight()) {
+  if (m_currency.blockMajorVersionAtHeight(nextHeight) < BLOCK_MAJOR_VERSION_12) {
     throw std::system_error(make_error_code(error::WRONG_STATE),
-        "HEAT CDs activate at block " + std::to_string(m_currency.cdActivationHeight()) +
-        " (current height " + std::to_string(nextHeight) + ")");
+        "HEAT CDs activate at block " + std::to_string(m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_12) + 1) +
+        " (next block " + std::to_string(nextHeight) + ")");
   }
 
   TransactionId txId = 0;

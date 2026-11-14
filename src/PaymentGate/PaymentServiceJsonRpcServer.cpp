@@ -95,6 +95,7 @@ PaymentServiceJsonRpcServer::PaymentServiceJsonRpcServer(System::Dispatcher& sys
   handlers.emplace("cancel_limit_order", jsonHandler<CancelLimitOrder::Request, CancelLimitOrder::Response>(std::bind(&PaymentServiceJsonRpcServer::handleCancelLimitOrder, this, std::placeholders::_1, std::placeholders::_2)));
   handlers.emplace("get_limit_orders", jsonHandler<GetLimitOrders::Request, GetLimitOrders::Response>(std::bind(&PaymentServiceJsonRpcServer::handleGetLimitOrders, this, std::placeholders::_1, std::placeholders::_2)));
   handlers.emplace("register_alias", jsonHandler<RegisterAlias::Request, RegisterAlias::Response>(std::bind(&PaymentServiceJsonRpcServer::handleRegisterAlias, this, std::placeholders::_1, std::placeholders::_2)));
+  handlers.emplace("dev_fund_burn", jsonHandler<DevFundBurn::Request, DevFundBurn::Response>(std::bind(&PaymentServiceJsonRpcServer::handleDevFundBurn, this, std::placeholders::_1, std::placeholders::_2)));
 }
 
 void PaymentServiceJsonRpcServer::processJsonRpcRequest(const Common::JsonValue& req, Common::JsonValue& resp) {
@@ -415,7 +416,7 @@ std::error_code PaymentServiceJsonRpcServer::handlePlaceLimitOrder(const PlaceLi
 
 std::error_code PaymentServiceJsonRpcServer::handleCancelLimitOrder(const CancelLimitOrder::Request& request, CancelLimitOrder::Response& response)
 {
-  auto ec = service.cancelLimitOrder(request.order_id, request.mixin, response.tx_hash);
+  auto ec = service.cancelLimitOrder(request.order_id, request.mixin, request.stop_only, response.tx_hash);
   if (!ec) {
     response.status = "OK";
   }
@@ -425,6 +426,15 @@ std::error_code PaymentServiceJsonRpcServer::handleCancelLimitOrder(const Cancel
 std::error_code PaymentServiceJsonRpcServer::handleGetLimitOrders(const GetLimitOrders::Request& request, GetLimitOrders::Response& response)
 {
   auto ec = service.getLimitOrders(response.orders);
+  if (!ec) {
+    response.status = "OK";
+  }
+  return ec;
+}
+
+std::error_code PaymentServiceJsonRpcServer::handleDevFundBurn(const DevFundBurn::Request& request, DevFundBurn::Response& response)
+{
+  auto ec = service.devFundBurn(request.amount, response.tx_hash);
   if (!ec) {
     response.status = "OK";
   }

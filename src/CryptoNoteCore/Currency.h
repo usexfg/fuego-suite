@@ -273,10 +273,18 @@ public:
     AssetBalance getTransactionOutputAssetAmounts(const Transaction& tx) const;
   size_t maxBlockCumulativeSize(uint64_t height) const;
 
+  // Appends a KeyOutput paying `amount` to the dev fund, derived with the
+  // transaction's secret key at `outputIndex`.
+  bool appendDevFundOutput(Transaction& tx, const Crypto::SecretKey& txSecretKey, size_t outputIndex, uint64_t amount) const;
+  // The dev fund's keys on every network: its address carries the mainnet
+  // prefix, which testnet's own address parser rejects.
+  bool devFundAddress(AccountPublicAddress& address) const;
+  // remint > 0 appends one output paying it to the dev fund: the quarterly
+  // re-mint of TransactionExtraRemintBurn (Blockchain::remintDue).
   bool constructMinerTx(uint8_t blockMajorVersion, uint32_t height, size_t medianSize, uint64_t alreadyGeneratedCoins, size_t currentBlockSize,
                           uint64_t fee, const AccountPublicAddress &minerAddress, Transaction &tx,
                           const BinaryArray &extraNonce = BinaryArray(), size_t maxOuts = 1, uint64_t burnedCoinsOverride = UINT64_MAX,
-                          uint64_t bankingFeesInBlock = 0) const;
+                          uint64_t bankingFeesInBlock = 0, uint64_t remint = 0) const;
 
   bool isFusionTransaction(const Transaction &transaction) const;
   bool isFusionTransaction(const Transaction &transaction, size_t size) const;
@@ -454,7 +462,7 @@ private:
   std::string m_txPoolFileName;
   std::string m_blockchinIndicesFileName;
 
-  bool m_testnet;
+  bool m_testnet = false;
 
   Block m_genesisBlock;
   Crypto::Hash m_genesisBlockHash;

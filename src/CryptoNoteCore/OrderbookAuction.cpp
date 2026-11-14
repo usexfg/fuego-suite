@@ -43,6 +43,24 @@ bool laterOrder(const AuctionOrder& a, const AuctionOrder& b) {
   return lessByHash(b.orderId, a.orderId);
 }
 
+bool isPoolOrderId(const Crypto::Hash& orderId) {
+  return orderId.data[0] == POOL_ORDER_ID_PREFIX;
+}
+
+void applyPoolMakerRule(AuctionResult& result) {
+  bool poolFilledBid = false, poolFilledAsk = false;
+  for (const auto& f : result.fills) {
+    if (!isPoolOrderId(f.orderId) || f.fillXfg == 0) continue;
+    (f.side == 0 ? poolFilledBid : poolFilledAsk) = true;
+  }
+  if (poolFilledBid == poolFilledAsk) {
+    if (poolFilledBid) result.hasTaker = false;
+    return;
+  }
+  result.hasTaker = true;
+  result.takerIsBid = poolFilledAsk;
+}
+
 } // anonymous namespace
 
 AuctionResult runAuction(const std::vector<AuctionOrder>& bidsIn,
@@ -221,6 +239,11 @@ AuctionResult runAuction(const std::vector<AuctionOrder>& bidsIn,
       result.fills.push_back({o.orderId, 1, fill, heat, 0, 0});
     }
   }
+
+  // The pool only ever quotes: whoever trades against it is the taker. Left
+  // to rationing, a user order smaller than the band made the pool the taker,
+  // and its fee and the user's rebate were paid by nobody.
+  applyPoolMakerRule(result);
 
   // Fee assignment: the taker side pays the full 1%. The split is versioned
   // (hearthCdSharePct): v11 pays makers 70% to buy depth, v12 pays CD holders

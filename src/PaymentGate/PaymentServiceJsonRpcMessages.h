@@ -348,6 +348,7 @@ struct CancelLimitOrder
     std::string order_id;
     uint64_t fee = 0;
     uint64_t mixin = 0;
+    bool stop_only = false;
 
     void serialize(CryptoNote::ISerializer &serializer);
   };
@@ -383,6 +384,24 @@ struct GetLimitOrders
   struct Response
   {
     std::vector<LimitOrderInfo> orders;
+    std::string status;
+
+    void serialize(CryptoNote::ISerializer &serializer);
+  };
+};
+
+struct DevFundBurn
+{
+  struct Request
+  {
+    uint64_t amount = 0;  // XFG atomic units destroyed into the re-mint counter
+
+    void serialize(CryptoNote::ISerializer &serializer);
+  };
+
+  struct Response
+  {
+    std::string tx_hash;
     std::string status;
 
     void serialize(CryptoNote::ISerializer &serializer);

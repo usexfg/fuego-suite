@@ -179,7 +179,9 @@ public:
 
   // v13 Orderbook
   virtual TransactionId placeOrderV13(uint8_t side, uint64_t amount, uint64_t price, uint32_t expiration, uint64_t fee, uint64_t mixIn = 0) = 0;
-  virtual TransactionId cancelOrderV13(const Crypto::Hash& orderId, uint64_t fee, uint64_t mixIn = 0) = 0;
+  // stopOnly: stop the order filling (TransactionExtraOrderCancel) and leave
+  // its escrow and proceeds frozen for a later withdraw; otherwise withdraw.
+  virtual TransactionId cancelOrderV13(const Crypto::Hash& orderId, uint64_t fee, uint64_t mixIn = 0, bool stopOnly = false) = 0;
   virtual TransactionId marketBuyV13(uint64_t xfgWanted, uint64_t maxHeatCost, uint64_t fee, uint64_t mixIn = 0) = 0;
   virtual TransactionId marketSellV13(uint64_t xfgToSell, uint64_t minHeatReceive, uint64_t fee, uint64_t mixIn = 0) = 0;
 

@@ -64,6 +64,7 @@ namespace CryptoNote
       bool movesReserves = false;
       bool hasDeposit = false;
       bool hasWithdraw = false;
+      uint64_t mintHeat = 0;
       Crypto::Hash depositId{};
       Crypto::Hash withdrawId{};
     };
@@ -84,6 +85,10 @@ namespace CryptoNote
         {
           touch.movesReserves = true;
         }
+        else if (f.type() == typeid(TransactionExtraHeatMintAuth))
+        {
+          touch.mintHeat = boost::get<TransactionExtraHeatMintAuth>(f).heatMinted;
+        }
         else if (f.type() == typeid(TransactionExtraLimitDeposit))
         {
           touch.hasDeposit = true;
@@ -93,6 +98,11 @@ namespace CryptoNote
         {
           touch.hasWithdraw = true;
           touch.withdrawId = boost::get<TransactionExtraLimitWithdraw>(f).orderId;
+        }
+        else if (f.type() == typeid(TransactionExtraOrderCancel))
+        {
+          touch.hasWithdraw = true;
+          touch.withdrawId = boost::get<TransactionExtraOrderCancel>(f).orderId;
         }
       }
       return touch;
@@ -612,6 +622,7 @@ namespace CryptoNote
     BlockTemplate blockTemplate;
 
     bool reservesMoved = false;
+    uint64_t mintCapHeatLeft = m_validator.blockMintCapHeat();
     std::set<Crypto::Hash, HashLess> depositIds, withdrawIds;
     for (auto it = m_fee_index.rbegin(); it != m_fee_index.rend(); ++it)
     {
@@ -637,8 +648,9 @@ namespace CryptoNote
       // against reserves the first already moved — and each order id placed or
       // withdrawn once.
       const PoolTouch touch = getPoolTouch(txd.tx);
-      if ((touch.movesReserves && reservesMoved) ||
-          (touch.hasDeposit && depositIds.count(touch.depositId)) ||
+      if ((touch.movesReserves && reservesMoved) || touch.mintHeat > mintCapHeatLeft ||
+          (touch.hasDeposit && (depositIds.count(touch.depositId) ||
+                                depositIds.size() >= parameters::LIMIT_DEPOSITS_MAX_PER_BLOCK)) ||
           (touch.hasWithdraw && withdrawIds.count(touch.withdrawId)))
       {
         continue;
@@ -658,6 +670,7 @@ namespace CryptoNote
         total_size += txd.blobSize;
         fee += txFee;
         reservesMoved = reservesMoved || touch.movesReserves;
+        mintCapHeatLeft -= touch.mintHeat;
         if (touch.hasDeposit) depositIds.insert(touch.depositId);
         if (touch.hasWithdraw) withdrawIds.insert(touch.withdrawId);
         logger(DEBUGGING) << "Transaction " << txd.id << " included in the block template";

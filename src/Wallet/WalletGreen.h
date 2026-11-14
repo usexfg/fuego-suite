@@ -63,7 +63,10 @@ public:
                   uint64_t fee, uint64_t mixin, std::string &transactionHash);
   void placeLimitOrderV13(uint8_t side, uint64_t amount, uint64_t targetPrice, uint32_t expiration,
                           uint64_t fee, uint64_t mixin, std::string &transactionHash);
-  void cancelLimitOrderV13(const Crypto::Hash &orderId, uint64_t fee, uint64_t mixin, std::string &transactionHash);
+  // stopOnly: stop the order filling and leave its escrow frozen for a later
+  // withdraw (TransactionExtraOrderCancel); otherwise withdraw it.
+  void cancelLimitOrderV13(const Crypto::Hash &orderId, uint64_t fee, uint64_t mixin, std::string &transactionHash,
+                           bool stopOnly = false);
   std::vector<MultisignatureInput> prepareMultisignatureInputs(const std::vector<TransactionOutputInformation> &selectedTransfers);
 
   // Phase 5: Wallet Auto-Rollover + Compound Interest
@@ -115,6 +118,10 @@ public:
   // ALIAS_REGISTRATION_FEE output to the Fuego Developer Fund (mainnet only), and
   // submits the transaction.  On success, txHashOut receives the transaction hash.
   std::error_code registerAlias(const std::string& alias, const std::string& ownerAddress, Crypto::Hash& txHashOut);
+  // Burns `amount` XFG as a re-mint burn (TX_EXTRA_REMINT_BURN, v11+): its own
+  // counter, re-minted to the dev fund each quarter in one coinbase output.
+  // The only output is the network minimum back to this wallet.
+  std::error_code devFundBurn(uint64_t amount, Crypto::Hash& txHashOut);
 
   // Look up the alias registered for a given wallet address.
   // Delegates to m_node via /get_alias_by_address (INode::getAliasByAddress if available,
@@ -221,6 +228,7 @@ protected:
 
   void throwIfNotInitialized() const;
   void throwIfStopped() const;
+  uint8_t nextBlockMajorVersion() const;
   void throwIfTrackingMode() const;
   // Derives a user-owned commitment output key at `outputIndex` of `transaction`,
   // bound to the primary address's spend public key. Every self-owned commitment

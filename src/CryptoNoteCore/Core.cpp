@@ -625,6 +625,7 @@ bool core::add_new_tx(const Transaction& tx, const Crypto::Hash& tx_hash, size_t
 bool core::get_block_template(Block& b, const AccountPublicAddress& adr, difficulty_type& diffic, uint32_t& height, const BinaryArray& ex_nonce) {
   size_t median_size;
   uint64_t already_generated_coins;
+  uint64_t remint = 0;
 
   {
     LockedBlockchainStorage blockchainLock(m_blockchain);
@@ -675,6 +676,10 @@ bool core::get_block_template(Block& b, const AccountPublicAddress& adr, difficu
 
     b.previousBlockHash = get_tail_id();
     b.timestamp = time(NULL);
+    if (b.majorVersion >= BLOCK_MAJOR_VERSION_11) {
+      b.hearthState = m_blockchain.currentHearthState();
+      remint = m_blockchain.remintDue(height, b.majorVersion);
+    }
 
 
 
@@ -745,7 +750,7 @@ bool core::get_block_template(Block& b, const AccountPublicAddress& adr, difficu
 
   //make block's coinbase tx look more like real coinbase txs to get truthful blob size
   size_t maxCoinbaseOuts = (b.majorVersion >= BLOCK_MAJOR_VERSION_11) ? 33 : 11;
-  bool r = m_currency.constructMinerTx(b.majorVersion, height, median_size, already_generated_coins, txs_size, fee, adr, b.baseTransaction, ex_nonce, maxCoinbaseOuts, burnedCoins, bankingFeesInBlock);
+  bool r = m_currency.constructMinerTx(b.majorVersion, height, median_size, already_generated_coins, txs_size, fee, adr, b.baseTransaction, ex_nonce, maxCoinbaseOuts, burnedCoins, bankingFeesInBlock, remint);
   if (!r) {
     logger(ERROR, BRIGHT_RED) << "Failed to construct miner tx, first chance";
     return false;
@@ -757,7 +762,7 @@ bool core::get_block_template(Block& b, const AccountPublicAddress& adr, difficu
     logger(TRACE) << "constructMinerTx attempt " << try_count << ": height=" << height << ", majorVersion=" << (int)b.majorVersion
       << ", median_size=" << median_size << ", cumulative_size=" << cumulative_size
       << ", already_generated_coins=" << already_generated_coins << ", fee=" << fee;
-    r = m_currency.constructMinerTx(b.majorVersion, height, median_size, already_generated_coins, cumulative_size, fee, adr, b.baseTransaction, ex_nonce, maxCoinbaseOuts, burnedCoins, bankingFeesInBlock);
+    r = m_currency.constructMinerTx(b.majorVersion, height, median_size, already_generated_coins, cumulative_size, fee, adr, b.baseTransaction, ex_nonce, maxCoinbaseOuts, burnedCoins, bankingFeesInBlock, remint);
 
     if (!(r)) {
       logger(ERROR, BRIGHT_RED) << "Failed to construct miner tx, second chance. height=" << height
@@ -1641,6 +1646,8 @@ core::HeatMetrics core::getHeatMetrics() const {
   m.permanentlyBurnedXfg = m_blockchain.getPermanentlyBurnedXfg();
   m.heatCdFeePool = m_blockchain.getHeatCdFeePool();
   m.swfBurnedXfgPendingHeat = m_blockchain.getSwfBurnedXfgPendingHeat();
+  m.remintBurnedXfg = m_blockchain.getRemintBurnedXfg();
+  m.remintedXfg = m_blockchain.getRemintedXfg();
   const auto& pool = m_blockchain.getAmmPool();
   if (!pool.isEmpty() && pool.reserveHeat > 0) {
     // Pool XFG per HEAT, scaled by COIN: (reserveXfg / reserveHeat) × COIN.

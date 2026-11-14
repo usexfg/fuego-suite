@@ -1941,7 +1941,7 @@ namespace CryptoNote
   {
     throwIf(amount == 0, error::WRONG_AMOUNT);
 
-    uint64_t neededHeat = amount + bankingFee;
+    uint64_t neededHeat = amount;
     std::shared_ptr<SendTransactionContext> context = std::make_shared<SendTransactionContext>();
     context->dustPolicy.dustThreshold = m_currency.defaultDustThreshold();
     context->mixIn = m_currency.maxMixin();
@@ -2828,11 +2828,12 @@ namespace CryptoNote
     try {
       std::unique_ptr<ITransaction> transaction = createTransaction();
       uint64_t totalHeat = context->foundMoney;
-      uint64_t needed = cdAmount + bankingFee;
-      uint64_t changeAmount = (totalHeat > needed) ? (totalHeat - needed) : 0;
+      uint64_t changeAmount = (totalHeat > cdAmount) ? (totalHeat - cdAmount) : 0;
 
       // HEAT CD commitment output (finite term)
-      uint32_t cdTermBlocks = termEpochs * parameters::TESTNET_EPOCH_DURATION_BLOCKS; // TODO: real epoch mapping
+      const uint32_t epochBlocks = static_cast<uint32_t>(m_currency.isTestnet()
+          ? parameters::TESTNET_EPOCH_DURATION_BLOCKS : parameters::EPOCH_DURATION_BLOCKS);
+      uint32_t cdTermBlocks = termEpochs * epochBlocks;
       const uint32_t cdIdx = static_cast<uint32_t>(transaction->getOutputCount());
       std::array<uint8_t, 32> cdSecret;
       {
@@ -2852,10 +2853,6 @@ namespace CryptoNote
       cdOut.term = cdTermBlocks;
       transaction->addOutput(cdAmount, cdOut);
 
-      // Banking fee to dev fund (regular KeyOutput)
-      AccountPublicAddress devAddr;
-      m_currency.parseAccountAddressString(FUEGO_DEV_FUND_ADDRESS, devAddr);
-      transaction->addOutput(bankingFee, devAddr);
 
       // HEAT change (FOREVER term)
       if (changeAmount > 0) {
@@ -2879,6 +2876,9 @@ namespace CryptoNote
         transaction->addOutput(changeAmount, chOut);
       }
 
+      std::vector<uint8_t> cdFeeExtra;
+      addCdCreationFeeToExtra(cdFeeExtra, bankingFee);
+      transaction->appendExtra(CryptoNote::BinaryArray(cdFeeExtra.begin(), cdFeeExtra.end()));
       transaction->setUnlockTime(0);
 
       // HEAT commitment spend inputs
@@ -3153,11 +3153,7 @@ namespace CryptoNote
     context->v11DepositExpiration = expiration;
     context->v11DepositOrderId = orderId;
 
-    // Compute address_hash = cn_fast_hash(spendKey||viewKey) for privacy
-    uint8_t keyData[64];
-    memcpy(keyData, m_keys.address.spendPublicKey.data, 32);
-    memcpy(keyData + 32, m_keys.address.viewPublicKey.data, 32);
-    Crypto::cn_fast_hash(keyData, 64, context->v11DepositAddressHash);
+    context->v11DepositAddressHash = limitOrderAddressHash(m_keys.spendSecretKey, orderId);
 
     transactionId = m_transactionsCache.addNewTransaction(neededMoney, fee, std::string(), {}, 0, {});
     context->transactionId = transactionId;
@@ -3173,12 +3169,13 @@ namespace CryptoNote
   std::unique_ptr<WalletRequest> WalletTransactionSender::makeCancelOrderV13Request(
       TransactionId& transactionId,
       std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
-      const Crypto::Hash& orderId, uint64_t fee, uint64_t mixIn) {
+      const Crypto::Hash& orderId, uint64_t fee, uint64_t mixIn, bool stopOnly) {
     std::shared_ptr<SendTransactionContext> context = std::make_shared<SendTransactionContext>();
     context->dustPolicy.dustThreshold = m_currency.defaultDustThreshold();
     context->mixIn = mixIn == 0 ? m_currency.maxMixin() : mixIn;
 
     context->isV11LimitWithdraw = true;
+    context->v11WithdrawStopOnly = stopOnly;
     context->v11WithdrawOrderId = orderId;
 
     // Resolve the order on-chain before signing: the order id is public, so
@@ -3197,13 +3194,7 @@ namespace CryptoNote
       if (!Common::podFromHex(deposit.address_hash, ownerHash)) {
         throw std::system_error(make_error_code(error::WRONG_PARAMETERS), "Invalid owner hash");
       }
-      uint8_t keyData[sizeof(m_keys.address.spendPublicKey.data) + sizeof(m_keys.address.viewPublicKey.data)];
-      memcpy(keyData, m_keys.address.spendPublicKey.data, sizeof(m_keys.address.spendPublicKey.data));
-      memcpy(keyData + sizeof(m_keys.address.spendPublicKey.data),
-             m_keys.address.viewPublicKey.data, sizeof(m_keys.address.viewPublicKey.data));
-      Crypto::Hash ownHash{};
-      Crypto::cn_fast_hash(keyData, sizeof(keyData), ownHash);
-      if (memcmp(ownHash.data, ownerHash.data, sizeof(ownHash.data)) != 0) {
+      if (!isOwnLimitOrder(m_keys.spendSecretKey, orderId, ownerHash)) {
         throw std::system_error(make_error_code(error::WRONG_PARAMETERS),
                                 "Limit order belongs to another wallet");
       }
@@ -3368,7 +3359,9 @@ namespace CryptoNote
         transaction->addOutput(heatAmount, heatOut);
       };
 
-      if (context->v11WithdrawSide == 1) {
+      if (context->v11WithdrawStopOnly) {
+        // Stop only: no payout; the escrow waits frozen for the withdraw.
+      } else if (context->v11WithdrawSide == 1) {
         // SELL_XFG: return the remaining XFG deposit plus HEAT fill proceeds.
         if (context->v11WithdrawAmount > 0) {
           transaction->addOutput(context->v11WithdrawAmount, m_keys.address);
@@ -3386,20 +3379,22 @@ namespace CryptoNote
         }
       }
 
-      uint8_t keyData[sizeof(m_keys.address.spendPublicKey.data) + sizeof(m_keys.address.viewPublicKey.data)];
-      memcpy(keyData, m_keys.address.spendPublicKey.data, sizeof(m_keys.address.spendPublicKey.data));
-      memcpy(keyData + sizeof(m_keys.address.spendPublicKey.data),
-             m_keys.address.viewPublicKey.data, sizeof(m_keys.address.viewPublicKey.data));
-      Crypto::Hash addressHash{};
-      Crypto::cn_fast_hash(keyData, sizeof(keyData), addressHash);
-      Crypto::Hash outputsHash = getLimitWithdrawOutputHash(transaction->getTransactionPrefix().outputs);
-      Crypto::Hash authHash = getLimitWithdrawAuthHash(orderId, addressHash, outputsHash);
-      Crypto::Signature proof;
-      Crypto::generate_signature(authHash, m_keys.address.spendPublicKey, m_keys.spendSecretKey, proof);
-
+      LimitOrderKeys orderKeys = deriveLimitOrderKeys(m_keys.spendSecretKey, orderId);
       std::vector<uint8_t> extra;
-      addLimitWithdrawToExtra(extra, orderId, m_keys.address.spendPublicKey,
-                              m_keys.address.viewPublicKey, outputsHash, proof);
+      if (context->v11WithdrawStopOnly) {
+        Crypto::Signature proof;
+        Crypto::generate_signature(getLimitCancelAuthHash(orderId, orderKeys.addressHash),
+                                   orderKeys.spendPublicKey, orderKeys.spendSecretKey, proof);
+        addOrderCancelToExtra(extra, orderId, orderKeys.spendPublicKey, orderKeys.viewPublicKey, proof);
+      } else {
+        Crypto::Hash outputsHash = getLimitWithdrawOutputHash(transaction->getTransactionPrefix().outputs);
+        Crypto::Hash authHash = getLimitWithdrawAuthHash(orderId, orderKeys.addressHash, outputsHash);
+        Crypto::Signature proof;
+        Crypto::generate_signature(authHash, orderKeys.spendPublicKey, orderKeys.spendSecretKey, proof);
+        addLimitWithdrawToExtra(extra, orderId, orderKeys.spendPublicKey,
+                                orderKeys.viewPublicKey, outputsHash, proof);
+      }
+      wipeLimitOrderSecret(orderKeys);
       CryptoNote::BinaryArray extraData(extra.begin(), extra.end());
       transaction->appendExtra(extraData);
 

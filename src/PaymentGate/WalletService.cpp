@@ -75,6 +75,26 @@
 
 using namespace CryptoNote;
 
+namespace
+{
+  bool placedByWallet(const CryptoNote::IWallet &wallet, const CryptoNote::INode::LimitDepositRpcEntry &deposit)
+  {
+    Crypto::Hash orderId{}, addressHash{};
+    if (!Common::podFromHex(deposit.order_id, orderId) || !Common::podFromHex(deposit.address_hash, addressHash)) {
+      return false;
+    }
+    for (size_t i = 0; i < wallet.getAddressCount(); ++i) {
+      CryptoNote::KeyPair spendKeys = wallet.getAddressSpendKey(i);
+      const bool own = CryptoNote::isOwnLimitOrder(spendKeys.secretKey, orderId, addressHash);
+      CryptoNote::wipeSecretKey(spendKeys.secretKey);
+      if (own) {
+        return true;
+      }
+    }
+    return false;
+  }
+}
+
 namespace PaymentService
 {
 
@@ -2723,6 +2743,7 @@ namespace PaymentService
   std::error_code WalletService::cancelLimitOrder(
       const std::string &orderIdHex,
       uint64_t mixin,
+      bool stopOnly,
       std::string &transactionHash)
   {
     try
@@ -2737,7 +2758,7 @@ namespace PaymentService
         return make_error_code(CryptoNote::error::WRONG_PARAMETERS);
       }
       uint64_t fee = currency.minimumFee();
-      green->cancelLimitOrderV13(orderId, fee, mixin, transactionHash);
+      green->cancelLimitOrderV13(orderId, fee, mixin, transactionHash, stopOnly);
     }
     catch (std::system_error &x)
     {
@@ -2765,25 +2786,9 @@ namespace PaymentService
         orders.clear();
         return std::error_code();
       }
-      // Filter to this wallet's address hash when possible
-      std::string myHash;
-      try {
-        if (wallet.getAddressCount() > 0) {
-          std::string addr = wallet.getAddress(0);
-          CryptoNote::AccountPublicAddress acc{};
-          if (currency.parseAccountAddressString(addr, acc)) {
-            uint8_t preimage[64];
-            memcpy(preimage, &acc.spendPublicKey, 32);
-            memcpy(preimage + 32, &acc.viewPublicKey, 32);
-            Crypto::Hash h = Crypto::cn_fast_hash(preimage, 64);
-            myHash = Common::podToHex(h);
-          }
-        }
-      } catch (...) {
-      }
       orders.clear();
       for (const auto &dep : all) {
-        if (!myHash.empty() && dep.address_hash != myHash) {
+        if (!placedByWallet(wallet, dep)) {
           continue;
         }
         GetLimitOrders::LimitOrderInfo info;
@@ -2800,6 +2805,30 @@ namespace PaymentService
     {
       logger(Logging::WARNING) << "getLimitOrders: " << x.what();
       return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
+    }
+    return std::error_code();
+  }
+
+  std::error_code WalletService::devFundBurn(uint64_t amount, std::string &transactionHash)
+  {
+    try
+    {
+      System::EventLock lk(readyEvent);
+      auto *green = dynamic_cast<CryptoNote::WalletGreen *>(&wallet);
+      if (!green) {
+        return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
+      }
+      Crypto::Hash txHash{};
+      std::error_code ec = green->devFundBurn(amount, txHash);
+      if (ec) {
+        return ec;
+      }
+      transactionHash = Common::podToHex(txHash);
+    }
+    catch (std::system_error &x)
+    {
+      logger(Logging::WARNING) << "dev_fund_burn: " << x.what();
+      return x.code();
     }
     return std::error_code();
   }

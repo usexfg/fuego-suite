@@ -85,6 +85,8 @@
 // 0xFA: Orderbook limit order placement (v11+)
 #define TX_EXTRA_ORDER_PLACE                0xFA
 #define TX_EXTRA_LIMIT_DEPOSIT              0xFB
+#define TX_EXTRA_REMINT_BURN                0x0D
+#define TX_EXTRA_CD_CREATION_FEE            0x0E
 #define TX_EXTRA_ORDER_CANCEL               0x0F
 #define TX_EXTRA_MARKET_BUY_AUTH            0xFC
 #define TX_EXTRA_MARKET_SELL_AUTH           0xFD
@@ -323,9 +325,14 @@ struct TransactionExtraOrderPlace {
   bool serialize(ISerializer& serializer);
 };
 
+// Stops a resting limit order: from the block that includes it the order no
+// longer fills, and its escrow and proceeds wait, frozen, for the withdraw.
+// Signed with the order's one-time keys (deriveLimitOrderKeys).
 struct TransactionExtraOrderCancel {
   Crypto::Hash orderId;
-  bool serialize(ISerializer& serializer);
+  Crypto::PublicKey spendPublicKey;
+  Crypto::PublicKey viewPublicKey;
+  Crypto::Signature proof;
 };
 
 struct TransactionExtraMarketBuyAuth {
@@ -366,6 +373,20 @@ struct TransactionExtraLimitWithdraw {
 struct TransactionExtraTreasuryFund {
   uint8_t  asset;
   uint64_t amount;
+};
+
+// XFG a CD-creating transaction pays as CD creation fee. All of it goes to the
+// AuntPoL XFG leg; it must cover cdCreationFeeXfg, and the network fee is what
+// the transaction's XFG surplus has beyond it.
+struct TransactionExtraCdCreationFee {
+  uint64_t amountXfg;
+};
+
+// XFG destroyed into its own counter, apart from HEAT, the SWF and the Eternal
+// Flame, and re-minted to the dev fund once a quarter in one coinbase output.
+// Any transaction may carry one; an alias registration must, to pay its fee.
+struct TransactionExtraRemintBurn {
+  uint64_t amountXfg;
 };
 
 struct DepositCommitmentKeys {
@@ -532,7 +553,7 @@ bool addDepositSecretToExtra(std::vector<uint8_t>& tx_extra,
 bool getDepositSecretFromExtra(const std::vector<uint8_t>& tx_extra,
                                 TransactionExtraDepositSecret& out);
 
-typedef boost::variant<CryptoNote::TransactionExtraPadding, CryptoNote::TransactionExtraPublicKey, CryptoNote::TransactionExtraNonce, CryptoNote::TransactionExtraMergeMiningTag, CryptoNote::tx_extra_message, CryptoNote::TransactionExtraTTL, CryptoNote::TransactionExtraMinerBasketVote, CryptoNote::TransactionExtraMinerParadioVote, CryptoNote::TransactionExtraAliasRegistration, CryptoNote::TransactionExtraAliasRelease, CryptoNote::TransactionExtraAliasTransfer, CryptoNote::TransactionExtraHeatCommitment, /* TransactionExtraSimpleCD REMOVED */ /* TransactionExtraColdCommitment REMOVED */ /* TransactionExtraColdMigration REMOVED */ /* TransactionExtraDepositReceipt REMOVED */ CryptoNote::TransactionExtraBurnReceipt, /* TransactionExtraLegacyBond REMOVED */ /* TransactionExtraLegacyBondClaim REMOVED */ CryptoNote::TransactionExtraCdBonusClaim, CryptoNote::TransactionExtraAmmSwap, CryptoNote::TransactionExtraAmmAddLiquidity, CryptoNote::TransactionExtraAmmRemoveLiquidity, CryptoNote::TransactionExtraAmmCompound, CryptoNote::TransactionExtraAmmClaim, CryptoNote::TransactionExtraHeatMintAuth, CryptoNote::TransactionExtraHeatSendAuth, CryptoNote::TransactionExtraAmmSwapAuth, CryptoNote::TransactionExtraLpAddAuth, CryptoNote::TransactionExtraLpRemoveAuth, CryptoNote::TransactionExtraOrderPlace, CryptoNote::TransactionExtraOrderCancel, CryptoNote::TransactionExtraMarketBuyAuth, CryptoNote::TransactionExtraMarketSellAuth, CryptoNote::TransactionExtraLimitDeposit, CryptoNote::TransactionExtraLimitWithdraw, CryptoNote::TransactionExtraTreasuryFund> TransactionExtraField;
+typedef boost::variant<CryptoNote::TransactionExtraPadding, CryptoNote::TransactionExtraPublicKey, CryptoNote::TransactionExtraNonce, CryptoNote::TransactionExtraMergeMiningTag, CryptoNote::tx_extra_message, CryptoNote::TransactionExtraTTL, CryptoNote::TransactionExtraMinerBasketVote, CryptoNote::TransactionExtraMinerParadioVote, CryptoNote::TransactionExtraAliasRegistration, CryptoNote::TransactionExtraAliasRelease, CryptoNote::TransactionExtraAliasTransfer, CryptoNote::TransactionExtraHeatCommitment, /* TransactionExtraSimpleCD REMOVED */ /* TransactionExtraColdCommitment REMOVED */ /* TransactionExtraColdMigration REMOVED */ /* TransactionExtraDepositReceipt REMOVED */ CryptoNote::TransactionExtraBurnReceipt, /* TransactionExtraLegacyBond REMOVED */ /* TransactionExtraLegacyBondClaim REMOVED */ CryptoNote::TransactionExtraCdBonusClaim, CryptoNote::TransactionExtraAmmSwap, CryptoNote::TransactionExtraAmmAddLiquidity, CryptoNote::TransactionExtraAmmRemoveLiquidity, CryptoNote::TransactionExtraAmmCompound, CryptoNote::TransactionExtraAmmClaim, CryptoNote::TransactionExtraHeatMintAuth, CryptoNote::TransactionExtraHeatSendAuth, CryptoNote::TransactionExtraAmmSwapAuth, CryptoNote::TransactionExtraLpAddAuth, CryptoNote::TransactionExtraLpRemoveAuth, CryptoNote::TransactionExtraOrderPlace, CryptoNote::TransactionExtraOrderCancel, CryptoNote::TransactionExtraMarketBuyAuth, CryptoNote::TransactionExtraMarketSellAuth, CryptoNote::TransactionExtraLimitDeposit, CryptoNote::TransactionExtraLimitWithdraw, CryptoNote::TransactionExtraTreasuryFund, CryptoNote::TransactionExtraCdCreationFee, CryptoNote::TransactionExtraRemintBurn> TransactionExtraField;
 
 template<typename T>
 bool findTransactionExtraFieldByType(const std::vector<TransactionExtraField>& tx_extra_fields, T& field) {
@@ -590,11 +611,38 @@ bool addLpAddAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t amountXfg, uin
 bool addLpRemoveAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t lpSharesBurned,
                             uint64_t minXfg, uint64_t minHeat);
 bool addOrderPlaceToExtra(std::vector<uint8_t>& tx_extra, uint8_t side, uint64_t price, uint32_t expiration);
-bool addOrderCancelToExtra(std::vector<uint8_t>& tx_extra, const Crypto::Hash& orderId);
+bool addOrderCancelToExtra(std::vector<uint8_t>& tx_extra, const Crypto::Hash& orderId,
+                           const Crypto::PublicKey& spendPublicKey, const Crypto::PublicKey& viewPublicKey,
+                           const Crypto::Signature& proof);
+bool addCdCreationFeeToExtra(std::vector<uint8_t>& tx_extra, uint64_t amountXfg);
+bool addRemintBurnToExtra(std::vector<uint8_t>& tx_extra, uint64_t amountXfg);
+Crypto::Hash getLimitCancelAuthHash(const Crypto::Hash& orderId, const Crypto::Hash& addressHash);
+// The order key pair hashes to the deposit's addressHash and signed `authHash`.
+bool limitOrderKeysProve(const Crypto::Hash& addressHash, const Crypto::PublicKey& spendPublicKey,
+                         const Crypto::PublicKey& viewPublicKey, const Crypto::Hash& authHash,
+                         const Crypto::Signature& proof);
 bool addMarketBuyAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t xfgWanted, uint64_t maxHeatCost);
 bool addMarketSellAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t xfgToSell, uint64_t minHeatReceive);
 bool addLimitDepositToExtra(std::vector<uint8_t>& tx_extra, uint8_t side, uint64_t amount, uint64_t targetPrice, uint32_t expiration, const Crypto::Hash& orderId, const Crypto::Hash& addressHash);
 Crypto::Hash getLimitWithdrawOutputHash(const std::vector<CryptoNote::TransactionOutput>& outputs);
+// One-time keys for one limit order. The deposit's addressHash commits to them
+// and the withdraw reveals and signs with them, so no two orders share an
+// addressHash and a withdraw reveals no wallet key. Derived from the funding
+// wallet's spend secret and the order id, so a restored wallet finds its
+// orders again.
+struct LimitOrderKeys {
+  Crypto::PublicKey spendPublicKey;
+  Crypto::SecretKey spendSecretKey;
+  Crypto::PublicKey viewPublicKey;
+  Crypto::Hash addressHash;
+};
+LimitOrderKeys deriveLimitOrderKeys(const Crypto::SecretKey& walletSpendSecret, const Crypto::Hash& orderId);
+void wipeSecretKey(Crypto::SecretKey& key);
+void wipeLimitOrderSecret(LimitOrderKeys& keys);
+Crypto::Hash limitOrderAddressHash(const Crypto::SecretKey& walletSpendSecret, const Crypto::Hash& orderId);
+bool isOwnLimitOrder(const Crypto::SecretKey& walletSpendSecret, const Crypto::Hash& orderId,
+                     const Crypto::Hash& addressHash);
+
 Crypto::Hash getLimitWithdrawAuthHash(const Crypto::Hash& orderId,
                                       const Crypto::Hash& addressHash,
                                       const Crypto::Hash& outputsHash);

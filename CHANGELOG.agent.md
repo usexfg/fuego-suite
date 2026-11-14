@@ -6714,3 +6714,599 @@ Sign-off table:
 | Build compiles | PENDING — rebuild required |
 | Tests pass | PENDING — rebuild required |
 | All tasks done | DONE (code changes) |
+
+## Hearth critical fixes (audit 2026-11-11: C1, C2, C3)
+
+**Feature name**: Hearth pool-band pricing, pool fee conservation, orderbook state persistence
+**Agent**: Claude
+**Start date**: 2026-11-11
+**Plan**: `docs/review/2026-11-11-hearth-heat-mint-audit.md` (recommendations 1-4)
+**Consensus impact**: v11+ only (not live). Cache archive version 17 -> 18 forces a replay.
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | C2: pool orders are always makers in `runAuction`; the side trading against the pool pays the 1% fee | Claude | 2026-11-11 | DONE |
+| 2 | C2: pool-fill settlement credits the maker rebate to `reserveHeat`; rollback mirrors it (also corrects the H1 sell-side sign) | Claude | 2026-11-11 | DONE |
+| 3 | C1: `generatePoolOrders` prices each tier from the constant-product curve at pool spot; band regenerates every block; `g_poolBandFilledLastBlock` wired; regeneration counters orphaned by per-block regeneration removed | Claude | 2026-11-11 | DONE |
+| 4 | C3: persist orderbook globals, `m_orderbookSnapshots`, `m_blockOrderFills` in the block cache; bump cache version | Claude | 2026-11-11 | DONE |
+| 5 | Regression tests: HEAT conservation on pool fills, `k` never falls on a band sweep, cache round-trip of orderbook state | Claude | 2026-11-11 | DONE |
+| 6 | Pool orders returned in `orderId` order so cached state serializes canonically | Claude | 2026-11-11 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j4` full build rc=0 (Release, Boost 1.83, vendored secp256k1) |
+| Tests pass | DONE — core_tests 301/301, test_hearth_amm 38/38, phase3 rc=0. test_orderbook_auction 62/63: `testFeeSplitFlipsAtV12` fails identically on HEAD's matcher (atom-sized fixture floors the v11 CD share to 0); pre-existing, not touched |
+| Mutation check | DONE — 6 deliberate breaks (pool-maker rule off, flat band at spot, rebate dropped, revert sign flipped, bootstrap flag and fill records not persisted) each fail a test |
+| All tasks done | DONE |
+
+Not covered:
+- The tests call `serializeOrderbookState` directly. That the block cache invokes it is shown by reading `BlockCacheSerializer`, not by a restart test.
+- popBlock still logs and continues when fill records were evicted (reorg deeper than 1,000 blocks). Audit recommendation 3 (refuse the pop, rebuild) is not done.
+- Orderbook state stays in file-static globals shared by every `Blockchain` in a process; only persistence was added.
+- `PoolOrderOrchestrator::shouldRegenerate` no longer has a consensus caller; left in place (covered by `Phase3_OrderbookTest`).
+- `Phase5_AdversarialTests.cpp` has `int main() { return 0; }`; it tests nothing.
+
+## Hearth oracle and bounds (audit 2026-11-11: H2, H3)
+
+**Feature name**: Median mint oracle, per-block mint cap, reserve-bounded backstop, oracle-priced epoch work
+**Agent**: Claude
+**Start date**: 2026-11-11
+**Plan**: `docs/review/2026-11-11-hearth-heat-mint-audit.md` (recommendation 5)
+**Consensus impact**: v11+ only (not live).
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `twapBefore` → `hearthOraclePriceBefore`: min(8-block lower median, epoch lower median) of end-of-block spots; used by mint validation, mint premium, swap/backstop CD fee conversion, wallet price RPC | Claude | 2026-11-11 | DONE |
+| 2 | Per-block mint cap `HEARTH_MINT_MAX_BPS_PER_BLOCK` (5% of pool HEAT at block open) in `validateSettlement` and block templates (`blockMintCapHeat`) | Claude | 2026-11-11 | DONE |
+| 3 | Backstop always ≤ `HEARTH_BACKSTOP_MAX_BPS` of `reserveXfg`, auction volume can only lower it | Claude | 2026-11-11 | DONE |
+| 4 | Epoch conversions (bonus vault, CD fee rate, CD yield mint) priced at the oracle; AuntPoL pairing skipped when spot is > 2% from the oracle | Claude | 2026-11-11 | DONE |
+| 5 | Wallet/RPC wording updated from "8-block TWAP" to "Hearth oracle price" | Claude | 2026-11-11 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j4` full build rc=0 |
+| Tests pass | DONE — core_tests 319/319 (new: oracle pump, mint cap, AuntPoL pushed pool, backstop bound; AuntPoL pairing test now seeds price history) |
+| Mutation check | DONE — 4 breaks (short median only, cap check off, auction-volume backstop, AuntPoL guard off) each fail a test |
+| All tasks done | DONE |
+
+Not covered:
+- The block-template mint cap (`TransactionPool::fill_block_template`) has no test; `tests/UnitTests/TransactionPool.cpp` is not built (BUILD_TESTS=OFF).
+- The per-block 2× price band still applies to direct swaps only. Auction and backstop moves are not banded; the medians make single-block moves irrelevant to pricing, not impossible.
+- Parameters (5% mint cap, 2% AuntPoL deviation, epoch-long median) are initial values, not derived from simulation.
+
+## Limit-order set bounds (audit 2026-11-11: H4)
+
+**Feature name**: Bounded limit-deposit set; wallet order expiry fix
+**Agent**: Claude
+**Start date**: 2026-11-11
+**Plan**: `docs/review/2026-11-11-hearth-heat-mint-audit.md` (recommendation 6)
+**Consensus impact**: v11+ only (not live). Cache archive 18 -> 19 (forces replay).
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Deposit rules: min 1 XFG / 0.1 HEAT, required expiry `height < expiration ≤ height + LIMIT_ORDER_MAX_TTL_BLOCKS` (5,400), ≤ 100 new deposits per block (validation + template) | Claude | 2026-11-11 | DONE |
+| 2 | Withdrawn deposits pruned past the 1,000-block rollback window; pruned entries kept in the block's orderbook snapshot and restored by popBlock (`restoreOrderbookSnapshotFor` extracted) | Claude | 2026-11-11 | DONE |
+| 3 | `LimitDepositInfo.withdrawnHeight` set on withdraw, cleared on pop, serialized | Claude | 2026-11-11 | DONE |
+| 4 | Wallets: SimpleWallet converted its TTL into an absolute height (it passed the TTL itself, which consensus reads as a height, so its orders expired at once); WalletGreen/WalletLegacy map 0 to `LIMIT_ORDER_DEFAULT_TTL_BLOCKS` and pre-check size and expiry | Claude | 2026-11-11 | DONE |
+| 5 | Removed `ORDERBOOK_DEFAULT_EXPIRY` / `ORDERBOOK_MAX_ENDURANCE` (no users left); `docs/Hearth/HEARTH_LIMIT_ORDER_GUIDE.md` band and expiry sections rewritten | Claude | 2026-11-11 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j4` full build rc=0 |
+| Tests pass | DONE — core_tests 332/332, test_hearth_amm 38/38 |
+| Mutation check | DONE — 5 breaks (min size, expiry, per-block cap, pruning, pop restore) each fail a test |
+| All tasks done | DONE |
+
+Not covered:
+- Wallet expiry and size pre-checks have no automated test (no wallet test harness built).
+- Expired-but-unclaimed deposits stay in the set; their number is bounded by the minimum size each one locks.
+- The template's per-block deposit cap has no test (`tests/UnitTests/TransactionPool.cpp` not built).
+
+## Per-order limit keys (audit 2026-11-11: H5)
+
+**Feature name**: One-time keys per limit order
+**Agent**: Claude
+**Start date**: 2026-11-11
+**Plan**: `docs/review/2026-11-11-hearth-heat-mint-audit.md` (recommendation 7)
+**Consensus impact**: none (wallet-only; consensus already accepts any key pair that hashes to `addressHash`).
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `deriveLimitOrderKeys` / `isOwnLimitOrder` in `TransactionExtra`: spend and view scalars = `hash_to_scalar(domain ‖ walletSpendSecret ‖ orderId)`, preimage wiped | Claude | 2026-11-11 | DONE |
+| 2 | WalletGreen and WalletLegacy: deposits commit to the derived pair; withdraws reveal and sign with it | Claude | 2026-11-11 | DONE |
+| 3 | WalletGreen, WalletLegacy, wallet RPC `get_limit_orders`, SimpleWallet order list: ownership by derivation instead of the wallet's master-key hash | Claude | 2026-11-11 | DONE |
+| 4 | Test: distinct orders → distinct hashes; derivation reproducible; only the owner secret matches; a derived-key withdraw passes `validateSettlement`, a master-key one does not | Claude | 2026-11-11 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j4` full build rc=0 |
+| Tests pass | DONE — core_tests 341/341 |
+| Mutation check | DONE — dropping `orderId` from the derivation fails 2 checks |
+| All tasks done | DONE |
+
+Not covered:
+- Orders placed by wallets built before this change (master-key `addressHash`, testnet only — v11 is not live on mainnet) are not recognized by updated wallets and must be withdrawn with the old build.
+- View-only / tracking wallets cannot list orders (derivation needs the spend secret).
+- Self-trade exclusion in `runAuction` keys on `addressHash`; with per-order hashes it no longer matches two orders of one wallet (audit M7; it was already bypassable with a second hash).
+- The wallet code paths have no automated test; the derivation and consensus acceptance do.
+
+## HEAT supply accounting (audit 2026-11-11: M3)
+
+**Feature name**: Count only XFG-valued CD fees as new HEAT supply
+**Agent**: Claude
+**Start date**: 2026-11-11
+**Consensus impact**: none on validity (`m_heatSupply` feeds `/heat_metrics`, the public audit snapshot and an overflow guard). Cache archive 19 -> 20.
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `m_cdFeeHeatFromXfg`: the XFG-valued part of `cdHearthFeeAccumulator` (HEAT→XFG swaps, backstop buys); push/pop symmetric, cached, in epoch snapshots | Claude | 2026-11-11 | DONE |
+| 2 | Epoch mint adds only `cdYield HEAT + m_cdFeeHeatFromXfg` to `m_heatSupply`; the HEAT-sourced part of the accumulator already existed | Claude | 2026-11-11 | DONE |
+| 3 | Test: mixed HEAT/XFG-sourced fees → supply grows by exactly the XFG-sourced part | Claude | 2026-11-11 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j4` full build rc=0 |
+| Tests pass | DONE — core_tests 347/347 |
+| Mutation check | DONE — reverting to whole-accumulator counting fails the test |
+| All tasks done | DONE |
+
+Not covered:
+- The XFG removed from reserves as a CD fee stays in pool marker outputs that nothing can spend, but is not added to the burn tally. Changing that moves the Eternal Flame and therefore the block reward, so it was left for a separate decision.
+- Pops of a backstop buy and of a HEAT→XFG swap restore `m_cdFeeHeatFromXfg` by code reading; no pop test drives them.
+
+## Price tick and auction atomicity (audit 2026-11-11: M1, M2)
+
+**Feature name**: 0.00001 HEAT/XFG price tick; all-or-nothing auction settlement
+**Agent**: Claude
+**Start date**: 2026-11-11
+**Consensus impact**: v11+ only (not live).
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | M1: `ORDER_PRICE_TICK` COIN/100 → COIN/100000 (0.008% of the 0.125 launch price; was 8%); wallet messages and Hearth docs updated | Claude | 2026-11-11 | DONE |
+| 2 | M2: `auctionFillsSettle` checks every fill (order live, side, per-order escrow, total escrow, pool reserves) before any applies; otherwise the block runs no auction fills | Claude | 2026-11-11 | DONE |
+| 3 | Tests: near-launch price valid; whole-or-nothing settle check on per-order escrow, unknown order and pool reserve | Claude | 2026-11-11 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j4` full build rc=0 |
+| Tests pass | DONE — core_tests 353/353, test_hearth_amm 38/38 |
+| Mutation check | DONE — old tick fails the near-launch test; dropping the per-order escrow check fails the settle test (the first test version did not isolate it; fixed) |
+| All tasks done | DONE |
+
+Not covered:
+- The wiring that skips the auction when `auctionFillsSettle` is false is not exercised by a test: no input reachable through validated deposits makes it false.
+- The per-fill `continue` guards inside the apply loop remain; after the pre-check they cannot fire.
+
+## Minimum HEAT mint in consensus (audit 2026-11-11: L2, part)
+
+**Feature name**: Consensus minimum mint
+**Agent**: Claude
+**Start date**: 2026-11-11
+**Consensus impact**: v11+ only (not live).
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `validateSettlement` rejects mints below `HEAT_MINT_MIN_HEAT` (testnet: `TESTNET_HEAT_MINT_MIN_HEAT`); was wallet-only | Claude | 2026-11-11 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — core_tests target rc=0 |
+| Tests pass | DONE — core_tests 354/354 |
+| Mutation check | DONE — disabling the check fails the dust-mint test |
+| All tasks done | DONE |
+
+Not done (other half of L2): bill denominations stay wallet-only. Enforcing them on every HEAT output would also bind limit-withdraw, LP-remove and swap outputs, which wallets build as single exact amounts today; that needs wallet changes on every HEAT output path first.
+
+## Two-step limit-order cancel (audit 2026-11-11: M4)
+
+**Feature name**: Signed stop tag for limit orders
+**Agent**: Claude
+**Start date**: 2026-11-11
+**Plan**: `docs/review/2026-11-11-hearth-heat-mint-audit.md` (recommendation 9)
+**Consensus impact**: v11+ only (not live). Tag 0x0F (`TransactionExtraOrderCancel`) redefined: it was unauthenticated, rejected before v11 and had no effect at v11.
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | 0x0F carries orderId + order one-time keys + signature over `getLimitCancelAuthHash`; settlement tag; valid only for a live order, at most one cancel/withdraw per order per block (validation and template) | Claude | 2026-11-11 | DONE |
+| 2 | Settlement sets the order stopped (`expired`): it stops filling, escrow and proceeds stay claimable by the existing withdraw; popTransaction clears it | Claude | 2026-11-11 | DONE |
+| 3 | Wallets: `stop_only` on WalletLegacy `cancelOrderV13`, WalletGreen `cancelLimitOrderV13`, wallet RPC and walletd `cancel_limit_order`; SimpleWallet `stop_order` command | Claude | 2026-11-11 | DONE |
+| 4 | Test: owner-signed cancel valid; second in same block, wrong key and already-stopped order refused; tag round-trips | Claude | 2026-11-11 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j4` full build rc=0 |
+| Tests pass | DONE — core_tests 361/361 |
+| Mutation check | DONE — disabling the ownership check fails the wrong-key test |
+| All tasks done | DONE |
+
+Not covered:
+- push/pop of the cancel (set/clear `expired`) is exercised by code reading only; no test drives pushTransaction/popTransaction.
+- The wallet stop paths have no automated test.
+- A stop costs a second transaction fee; one-step withdraw still works when no fill lands before inclusion.
+
+## CD creation fee → AuntPoL XFG leg; v12 one funding source per leg
+
+**Feature name**: Consensus-enforced, term-scaled CD creation fee funding AuntPoL
+**Agent**: Claude
+**Start date**: 2026-11-12
+**Decision**: owner, 2026-11-12 — no dev tax; CD fee funds the AuntPoL XFG leg; from v12 the mint premium funds the HEAT leg only.
+**Consensus impact**: v11+ (CD outputs exist from v12); v12 mint-premium routing. Neither version is live.
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `cdCreationFeeXfg`: 0.25% at 6 epochs rising linearly to 1% at 72, on the CD's HEAT valued at the mint oracle price, paid in XFG | Claude | 2026-11-12 | DONE |
+| 2 | `validateSettlement` withholds it from the XFG fee (rejects a CD creation that does not cover it, or with no oracle price); push credits `m_treasuryLpPendingXfg`, pop debits it | Claude | 2026-11-12 | DONE |
+| 3 | v12: mint premium XFG is burned (counted in the burn tally) instead of funding the XFG leg; premium HEAT still funds the HEAT leg | Claude | 2026-11-12 | DONE |
+| 4 | Wallets (WalletGreen, WalletLegacy, SimpleWallet): drop the dev-fund output; pay the fee in the transaction fee with the mint-price margin | Claude | 2026-11-12 | DONE |
+| 5 | AGENTS.md / DEPOSIT_ARCHITECTURE.md updated | Claude | 2026-11-12 | DONE |
+| 6 | Tests: fee schedule, under-paid CD rejected, fee withheld from miner, v11 vs v12 premium routing | Claude | 2026-11-12 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j4` full build rc=0 |
+| Tests pass | DONE — core_tests 366/366, test_hearth_amm 45/45 |
+| Mutation check | DONE — dropping the withholding fails both CD fee tests |
+| All tasks done | DONE (see Not covered) |
+
+Not covered:
+- **SimpleWallet / WalletLegacy CD deposits cannot produce a valid transaction**, before and after this change: `doSendHeatDepositV10Transaction` adds no XFG inputs, so it pays neither the network fee nor the CD fee. This change fixed what it touched there (the fee was selected as HEAT, which unbalanced HEAT; the term used the testnet epoch length on every network) but the XFG input selection is still missing. WalletGreen (walletd) builds them correctly.
+- push/pop crediting of `m_treasuryLpPendingXfg` and the v12 premium burn are verified by reading; no test drives pushTransaction/popTransaction.
+- Correction (2026-11-12): from v12 a mint counts its whole declared burn, exactly as a mint without a premium would; the premium only redirects 1% of the HEAT minted. v11 is the exception: it withholds 1% of the XFG from the burn as the AuntPoL XFG leg.
+- Tests reuse the shared prior-block oracle; a wallet pays a 0.5% margin (`WALLET_MINT_TWAP_MARGIN_BPS`) over the computed fee, which the miner keeps.
+
+## PoW-committed Hearth state (audit 2026-11-11: M6)
+
+**Feature name**: 32-byte Hearth state commitment in the block hashing blob
+**Agent**: Claude
+**Start date**: 2026-11-12
+**Decision**: owner, 2026-11-12 — commit the per-block price and FCI values to proof of work; no CPI feed (M5 closed: no redemption, FCI-only Hearthstone, 18-epoch re-base kept).
+**Consensus impact**: v11+ block format and block hash (not live). Testnet nodes holding v11 blocks must resync from before v11: those blocks' hashes change and their stored form no longer parses.
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `HearthState` {mint price, reserves, clearing price, Hearthstone cents, FCI index} as the parent block left it; serialized in v11+ blocks | Claude | 2026-11-12 | DONE |
+| 2 | `get_block_hashing_blob` appends `getHearthStateHash` (domain-separated) at v11+, so block id and merge-mining aux hash commit to it | Claude | 2026-11-12 | DONE |
+| 3 | `pushBlock` rejects a v11+ block whose state differs from `currentHearthState()`; `get_block_template` fills it | Claude | 2026-11-12 | DONE |
+| 4 | Block header RPC returns the values and their hash | Claude | 2026-11-12 | DONE |
+| 5 | Test: tampering changes block id and aux hash at v11, not at v10; serialization round-trip; state matches the chain | Claude | 2026-11-12 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j4` full build rc=0 |
+| Tests pass | DONE — core_tests 380/380, test_hearth_amm 45/45 |
+| Mutation check | DONE — dropping the hash from the hashing blob fails both tamper checks |
+| All tasks done | DONE |
+
+Not covered:
+- The `pushBlock` rejection of a mismatched state has no test (no harness mines a valid v11 block); it is verified by reading.
+- The older unhashed v11 block fields (`orderbookClearingPrice`, `hearthPoolRatio`, depth) remain; nodes overwrite them locally and nothing should trust them over `hearthState`.
+- The commitment describes the parent's state: the price committed in block H is the one H's mints use, not the post-auction price of H.
+
+## Declared CD creation fee (whole fee to AuntPoL)
+
+**Feature name**: `TransactionExtraCdCreationFee` (tag 0x0E)
+**Agent**: Claude
+**Start date**: 2026-11-12
+**Reason**: the wallet pads the computed fee for oracle movement; withholding only the computed fee sent that padding to the miner. The network fee must be its own fee.
+**Consensus impact**: v11+ (CD outputs from v12). Not live.
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Tag 0x0E `{amountXfg}`; parse/serialize; rejected before v11 (heatwave tag list) | Claude | 2026-11-12 | DONE |
+| 2 | Settlement: a CD-creating tx must declare a fee ≥ `cdCreationFeeXfg`, covered by its XFG surplus; the whole declared amount is withheld from the miner; a declaration without a CD output, or two declarations, are refused | Claude | 2026-11-12 | DONE |
+| 3 | Push credits / pop debits the declared amount to `m_treasuryLpPendingXfg` | Claude | 2026-11-12 | DONE |
+| 4 | WalletGreen and WalletLegacy declare the padded fee | Claude | 2026-11-12 | DONE |
+| 5 | `docs/V12_LAUNCH_TODO.md` (CLI XFG inputs, Bonus Vault review, alias re-mint); AGENTS.md notes | Claude | 2026-11-12 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j4` full build rc=0 |
+| Tests pass | DONE — core_tests 384/384, test_hearth_amm 45/45 |
+| Mutation check | DONE — withholding only the required fee fails the over-declared case |
+| All tasks done | DONE |
+
+## Alias registration fee burned from v11; alias tag parser fix
+
+**Feature name**: Alias fee burn with its own total; `parseTransactionExtra` alias cases
+**Agent**: Claude
+**Start date**: 2026-11-12
+**Decision**: owner, 2026-11-12 — burn the alias fee and track it as its own total, re-mint to the dev fund later, so no alias transaction pays the dev wallet directly.
+**Consensus impact**: v11+ fee rule (not live). Parser fix applies to all heights; v10 is live (mainnet height 1,028,599), see below. Cache archive 20 -> 21 (forces replay).
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Settlement: each non-reserved alias registration must leave `ALIAS_REGISTRATION_FEE` in the XFG surplus; it is withheld from the miner (burned). Testnet stays free, as before | Claude | 2026-11-12 | DONE |
+| 2 | `m_aliasBurnedXfg`: push adds, pop subtracts, cached; outside the Eternal Flame and the mint-burn tally; `alias_burned_xfg` in `/heat_metrics` | Claude | 2026-11-12 | DONE |
+| 3 | Pre-v11 dev-output check kept for pre-v11 blocks only; coinbase alias registrations refused from v11 (the coinbase skips settlement) | Claude | 2026-11-12 | DONE |
+| 4 | WalletGreen and SimpleWallet: from v11 on mainnet, no dev output; the fee rides in the transaction fee | Claude | 2026-11-12 | DONE |
+| 5 | Parser fix: the `TX_EXTRA_ALIAS` / `_RELEASE` / `_TRANSFER` cases rescanned the whole extra for the first tag byte and never consumed the payload, so every transaction carrying one failed `parseTransactionExtra`. They now read a size-bounded payload from the stream | Claude | 2026-11-12 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j4` full build rc=0 |
+| Tests pass | DONE — core_tests 396/396, test_hearth_amm 45/45 |
+| Mutation check | DONE — coinbase guard off, burn not withheld, old parser each fail tests |
+| All tasks done | DONE |
+
+Parser fix and history (v10 is live):
+- The bug is why no alias ever registered: `pushToBankingIndex` only sees aliases through `parseTransactionExtra`.
+- Before v11 consensus reads parsed fields only to detect HEAT/Hearth settlement tags and 0x08 burns. A wallet-built alias transaction (alias + tx key + optional nonce) carries none of them, so the fix changes no historical block's validity. It would only if a historical alias transaction also carried a settlement tag; the chain was not scanned for that here.
+- What changes on replay: past alias attempts that paid the 1 XFG dev-fund output register, and wallets now find those transactions' public key and see their change outputs.
+- The earlier coinbase alias test passed only because the alias extra failed to parse ("malformed extra"); it now fails on the alias rule itself (checked by mutation).
+
+Not covered:
+- No harness drives pushTransaction/popTransaction for the alias-burn total.
+- Re-minting the total to the dev fund is not implemented (`docs/V12_LAUNCH_TODO.md` item 3).
+
+## Push/pop tests for AuntPoL and the alias-burn total
+
+**Feature name**: Production push/pop harness for AuntPoL ledgers
+**Agent**: Claude
+**Start date**: 2026-11-12
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Test access drives `pushTransaction` / `popTransaction` / `pushToBankingIndex` on a synthetic block entry | Claude | 2026-11-12 | DONE |
+| 2 | CD creation fee: push credits the declared fee to the XFG leg, pop removes it | Claude | 2026-11-12 | DONE |
+| 3 | Mint premium: v11 credits both legs and banks 99% of the burn; v12 credits only the HEAT leg and banks 100%; pop restores both legs | Claude | 2026-11-12 | DONE |
+| 4 | Alias burn total: push adds the fee, pop removes it | Claude | 2026-11-12 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — core_tests target rc=0 |
+| Tests pass | DONE — core_tests 420/420 |
+| Mutation check | DONE — 5 breaks (CD fee pop, v12 premium XFG credit, v12 burn tally, alias pop, premium HEAT pop) each fail a test |
+| All tasks done | DONE |
+
+Not covered: the burn tally on pop (`popFromBankingIndex` path) is not asserted.
+
+## Quarterly alias re-mint to the dev fund
+
+**Feature name**: Alias-burn total re-minted to the dev fund each quarter
+**Agent**: Claude
+**Start date**: 2026-11-12
+**Decision**: owner, 2026-11-12 — quarterly.
+**Consensus impact**: v11+ coinbase rule (not live). Cache archive 21 -> 22.
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `aliasRemintDue(height, version)`: at each FCI quarter boundary from v11, `m_aliasBurnedXfg − m_aliasRemintedXfg`, read from the parent state | Claude | 2026-11-12 | DONE |
+| 2 | `validate_miner_transaction`: when due, the last coinbase output must pay exactly it to the dev fund (dev view key derivation); it is excluded from the reward comparison and from emission | Claude | 2026-11-12 | DONE |
+| 3 | `recordAliasRemint` after a block connects (push path and cache replay); `unrecordAliasRemint` in popBlock; per-height record cached | Claude | 2026-11-12 | DONE |
+| 4 | `Currency::constructMinerTx(..., aliasRemint)` appends the dev-fund output; `get_block_template` passes the due amount | Claude | 2026-11-12 | DONE |
+| 5 | `alias_reminted_xfg` in `/heat_metrics` | Claude | 2026-11-12 | DONE |
+| 6 | Test harness fix: synthetic transactions carried no signature slot, so they did not serialize and all hashed to zero; now each has one and the helper asserts a real hash | Claude | 2026-11-12 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j4` full build rc=0 |
+| Tests pass | DONE — core_tests 439/439, test_hearth_amm 45/45 |
+| Mutation check | DONE — 5 breaks (validator check off, boundary ignored, unrecord kept, template omits output, output key ignored) each fail a test |
+| All tasks done | DONE |
+
+Not covered:
+- No test mines a full block through `pushBlock` / `popBlock`, so the calls to `recordAliasRemint` / `unrecordAliasRemint` from those functions are verified by reading.
+- The re-mint output sits under the coinbase unlock window like the miner outputs.
+- Testnet registers aliases free, so it never accrues a re-mint.
+
+## Generic re-mint burn (replaces the alias-specific burn)
+
+**Feature name**: `TX_EXTRA_REMINT_BURN` (0x0D) with its own counter
+**Agent**: Claude
+**Start date**: 2026-11-12
+**Decision**: owner, 2026-11-12 — the burn must be its own transaction type with its own counter, not associated with HEAT, the SWF or the Eternal Flame, so alias transactions are not traceable to the dev wallet.
+**Consensus impact**: v11+ (not live). Cache archive 22 -> 23.
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Tag 0x0D `{amountXfg}`; rejected before v11 and in the coinbase (heatwave tag list); one per transaction; non-zero | Claude | 2026-11-12 | DONE |
+| 2 | Settlement withholds the declared burn from the miner; an alias registration must carry a burn ≥ its fees; any transaction may burn | Claude | 2026-11-12 | DONE |
+| 3 | Counter and re-mint renamed to neutral names (`m_remintBurnedXfg`, `m_remintedXfg`, `remintDue`, `coinbasePaysRemint`); RPC `remint_burned_xfg`, `reminted_xfg` | Claude | 2026-11-12 | DONE |
+| 4 | WalletGreen and SimpleWallet add the burn tag to alias registrations from v11 | Claude | 2026-11-12 | DONE |
+| 5 | Tests: alias without/short burn refused, standalone burn accepted, double burn refused, coinbase burn refused, push/pop of alias and standalone burns | Claude | 2026-11-12 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j4` full build rc=0 |
+| Tests pass | DONE — core_tests 448/448, test_hearth_amm 45/45 |
+| Mutation check | DONE — 4 breaks (alias fee requirement, push count, miner withholding, coinbase guard) each fail a test |
+| All tasks done | DONE |
+
+Not covered:
+- No wallet command sends a standalone re-mint burn yet, so in practice the quarterly re-mint still equals 1 XFG × aliases registered that quarter (`docs/V12_LAUNCH_TODO.md`).
+- An alias registration and its burn sit in the same transaction: consensus can only verify a fee it can see.
+
+## Standalone re-mint burn command
+
+**Feature name**: `remint_burn` in SimpleWallet and walletd
+**Agent**: Claude
+**Start date**: 2026-11-12
+**Consensus impact**: none (wallet and walletd API).
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `WalletGreen::remintBurn(amount)`: one self output of the network minimum, fee = minimum + amount, `TX_EXTRA_REMINT_BURN` extra; refused before v11 | Claude | 2026-11-12 | DONE |
+| 2 | walletd JSON-RPC `remint_burn` `{amount}` → `{tx_hash, status}` | Claude | 2026-11-12 | DONE |
+| 3 | SimpleWallet `remint_burn <amount>` (same transaction shape through WalletLegacy) | Claude | 2026-11-12 | DONE |
+| 4 | `docs/getting-started/wallet-setup.mdx` command table; `docs/V12_LAUNCH_TODO.md` updated | Claude | 2026-11-12 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j4` full build rc=0 |
+| Tests pass | Consensus side covered by `testAliasRegistrationFeeBurned` (standalone burn accepted, counted, withheld from the miner) and `testAliasBurnTotalPushPop`. The wallet commands have no automated test (no wallet harness; live RPC hangs per AGENTS.md Known Issues) |
+| All tasks done | DONE |
+
+## Dev fund burn command name
+
+**Feature name**: `remint_burn` → `dev_fund_burn` (CLI command and walletd JSON-RPC method)
+**Agent**: Claude
+**Start date**: 2026-11-12
+**Decision**: owner, 2026-11-12 — the command is a dev fund burn; consensus names (`TX_EXTRA_REMINT_BURN`, re-mint counter) unchanged.
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | SimpleWallet `dev_fund_burn <amount>`; walletd `dev_fund_burn` `{amount}`; `WalletGreen::devFundBurn`; docs | Claude | 2026-11-12 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j4` full build rc=0 |
+| Tests pass | DONE — core_tests 448/448 (wallet/API rename only) |
+| All tasks done | DONE |
+
+## Code review fixes for PR #79
+
+**Feature name**: fixes from the 2026-11-12 code review of PR #79 and its adversarial re-check
+**Agent**: Claude
+**Start date**: 2026-11-12
+**Consensus impact**: spot-history depth (retention only: the oracle reads the same entries); dev-fund address parsing (mainnet unchanged; testnet can now build and accept a quarter-boundary re-mint). No cache version change: the spot history format is unchanged and refills to the new depth as blocks arrive.
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Wallets judge activation by the next block's version (`Currency::blockMajorVersionAtHeight`, `height >` like consensus): `dev_fund_burn` and alias burn (WalletGreen, SimpleWallet), CD deposits (WalletGreen, WalletLegacy). At the upgrade height itself the block is still the old version | Claude | 2026-11-12 | DONE |
+| 2 | walletd `get_limit_orders` matches orders by per-order keys (`isOwnLimitOrder` over every wallet address) instead of the old wallet-wide hash, which matched none of them | Claude | 2026-11-12 | DONE |
+| 3 | End-of-block spot history kept for `MAX_ROLLBACK_HISTORY + EPOCH_DURATION_BLOCKS` (was `+ 8`, sized for the old 8-block mean): a rollback deeper than 108 blocks left the epoch oracle a short window. `recordBlockSpot` / `dropBlockSpot` | Claude | 2026-11-12 | DONE |
+| 4 | `Currency::devFundAddress` parses the dev fund's keys on every network. Testnet's own parser rejected the mainnet prefix, so any re-mint burn on testnet made the next quarter-boundary block impossible to build or accept | Claude | 2026-11-12 | DONE |
+| 5 | Per-order key derivation: one reserved preimage buffer (a reallocation freed an unwiped copy of the wallet spend secret); view secret and signing secrets wiped after use (`wipeSecretKey`, `wipeLimitOrderSecret`, `limitOrderAddressHash`) | Claude | 2026-11-12 | DONE |
+| 6 | Removed the unused regeneration gate (`PoolOrderOrchestrator::shouldRegenerate`, `lastRegenPclear`, `restoreLastRegenPclear`, their members and constants, and their tests in the compiled-out Phase 3 file) | Claude | 2026-11-12 | DONE |
+| 7 | Docs: AGENTS.md data flow and AuntPoL funding (no CD fee before v12), AuntPoL comment in `processBlockEpochWork`, the stale 0.1%-to-dev-fund CD fee in 10 docs and the v11 release notes | Claude | 2026-11-12 | DONE |
+| 8 | Tests: `testBlockConnectEnforcesHearthStateAndRemint` (mines testnet blocks through `pushBlock`/`popBlock`: forged Hearth state refused, quarter block without the re-mint refused, re-mint recorded, reversed on pop, re-applied), `testSpotHistoryCoversDeepestRollback`, `testLimitOrderAddressHashMatchesKeys` | Claude | 2026-11-12 | DONE |
+| 9 | Expired-but-unwithdrawn deposits are never pruned: recorded in `docs/V12_LAUNCH_TODO.md` with the cost and the fix's consensus risk; not changed | Claude | 2026-11-12 | DONE |
+
+Not changed (review findings judged not to need it): late `pushTransaction` failures after the new counter updates are unreachable because `validateSettlement` checks the same conditions first; order-listing cost and oracle recomputation are small at realistic sizes; the `m_cdFeeHeatFromXfg` split would not reduce the update sites.
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j8` full build rc=0 |
+| Tests pass | DONE — core_tests 657/657; test_hearth_amm 45/45; test_orderbook 44/44; test_orderbook_auction 62/63 (the pre-existing `cdV11 > 0 && rebV11 > 0 ...` fee-split failure, unchanged) |
+| Mutation checks | DONE — each of: Hearth-state check, re-mint record on push, unrecord on pop, coinbase re-mint check, spot depth, dev-fund prefix, key wipe, when broken, fails a test |
+| All tasks done | DONE |
+
+## Merge master into PR #79 (F29 and swap work)
+
+**Feature name**: resolve PR #79 conflicts with master (`fe8a84f6`)
+**Agent**: Claude
+**Start date**: 2026-11-12
+**Consensus impact**: none beyond the two branches' own changes; the resolution keeps both.
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `processBlockEpochWork` CD yield conversion: master moved it off the live spot onto `twapBefore(height)`; this branch had replaced `twapBefore` with the mint oracle. Kept master's shape (no live spot, no pool-state guard) priced at `epochRate` = `hearthOraclePriceBefore(height)` | Claude | 2026-11-12 | DONE |
+| 2 | Master zeroes `cdHearthFeeAccumulator` only when the epoch mint lands; `m_cdFeeHeatFromXfg` now resets in the same branch, so both carry forward together when the supply guard skips the mint | Claude | 2026-11-12 | DONE |
+| 3 | Docs: master's "two streams today, not a closed list" wording kept with this branch's CD fee facts (`how-swaps-work.mdx`, `supported-pairs.mdx`); AGENTS.md hard rule no longer calls the CD fee a dev-fund payment; `interest-and-yield.mdx` CD fee corrected; stale `twapBefore` comment in `accumulateTwap` | Claude | 2026-11-12 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — CMake regenerated for master's new sources and cargo library; `make -j8` full build rc=0 |
+| Tests pass | DONE — core_tests 657/657; test_hearth_amm 45/45; test_orderbook 44/44; test_orderbook_auction 66/66 (master's F29 fix clears the fee-split failure that was failing before this PR); test_cross_dleq, test_cross_dleq_inhouse, test_adaptor_roundtrip pass |
+| All tasks done | DONE |
+
+## Merge master 609d68a5 (fixed per-epoch mint rate) into PR #79
+
+**Feature name**: fix the PR #79 CI build break against master `609d68a5`
+**Agent**: Claude
+**Start date**: 2026-11-12
+**Consensus impact**: none added by this merge. Master's rule is kept as committed; only its fallback call is renamed.
+
+CI builds the PR merged with current master. Master `609d68a5` ("Use fixed per-epoch HEAT mint rate from previous epoch average") calls `twapBefore`, which this branch replaced with `hearthOraclePriceBefore`, so `Blockchain.cpp` failed to compile in every job (Ubuntu GCC and Clang, sanitizers, macOS, Windows, all transport gates).
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `validateSettlement` HEAT mint: `useEpochRate ? m_epochMintRate : hearthOraclePriceBefore(height)` (master's rule, this branch's fallback); stale "8-block TWAP only" comment corrected | Claude | 2026-11-12 | DONE |
+
+Open — master's rule, reported to the owner, not changed here:
+- `m_epochMintRate` is not saved in the block cache, not in `EpochStateSnapshot` (a pop of the boundary block keeps the new rate), and not set by the `rebuildCache` replay. A restarted or replayed node prices mints at the fallback while running nodes use the epoch rate: mint validity differs, and the chain forks once v11 mints exist.
+- `useEpochRate` reads `m_epochSnapshots.size()`, a rollback-history deque that a failed cache load clears.
+- The mint is bounded at `m_epochMintRate`, but `pushTransaction` credits the premium HEAT at `hearthOraclePriceBefore`, and `HearthState.mintPrice` commits the oracle, not the rate mints use.
+- The rate is a mean of end-of-block spots, fixed for 900 blocks: a mean moves linearly with time spent off-market, and a 5-day-old price lets anyone mint at a stale rate after the market moves.
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — GCC `make -j8` full build rc=0 on the merged tree; Clang and ASan+UBSan local runs still in progress at commit time, CI runs both |
+| Tests pass | DONE — `ctest -LE manual` 59/59 (GCC) |
+| All tasks done | DONE |
+
+## Remove the fixed per-epoch HEAT mint rate
+
+**Feature name**: drop master `609d68a5`'s fixed per-epoch mint rate from PR #79; mints priced by the Hearth oracle only
+**Agent**: Claude
+**Start date**: 2026-11-13
+**Decision**: owner, 2026-11-13.
+**Consensus impact**: HEAT mints are validated at `hearthOraclePriceBefore(height)` (the lower of the 8-block and epoch median end-of-block spot) at all heights, as before `609d68a5`. v11 is not live, so no mined block is affected.
+
+Why: minting holds the pool at the mint rate (anyone can mint and sell HEAT into the pool when the pool gives fewer HEAT per XFG than the mint). A rate fixed to the previous epoch's average therefore sets the next epoch's average within the ~2% fee band (1% premium + 1% Hearth fee): it rises freely but can fall only ~2% per 900-block epoch (~11% a month; a 50% XFG drop takes ~34 epochs, ~170 days, to reach the mint). In that window minters burn devalued XFG, mint HEAT at the stale rate and sell it into the pool; LPs and AuntPoL pay the difference and HEAT supply grows unbacked. The oracle follows a fall within blocks (8-block median) and lags only on a rise (epoch median), where lagging costs the protocol nothing. The rate was also not cached, snapshotted or replayed (restarted and replayed nodes priced mints differently), the premium HEAT and `HearthState.mintPrice` used the oracle, and a mean over an epoch moves linearly with time spent off-market.
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Removed `m_epochMintRate` (member, init reset, epoch-boundary assignment) and the `useEpochRate` branch in `validateSettlement`; the mint price is `hearthOraclePriceBefore(height)` | Claude | 2026-11-13 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j4` full build rc=0 |
+| Tests pass | DONE — core_tests 657/657; `ctest -LE manual` 59/59 |
+| All tasks done | DONE |
+
+## Mint and backstop caps to 8%; Currency testnet flag initialised
+
+**Feature name**: `HEARTH_MINT_MAX_BPS_PER_BLOCK` and `HEARTH_BACKSTOP_MAX_BPS` 500 → 800; `Currency::m_testnet` initialised
+**Agent**: Claude
+**Start date**: 2026-11-14
+**Decision**: owner, 2026-11-13 (both caps 8%; flag fix yes; note the CD-terms/ring-size reset for after the new privacy methods).
+**Consensus impact**: v11 limits only (not live): all mints in a block ≤ 8% of pool HEAT at block open; backstop per block ≤ the lower of 8× auction volume and 8% of pool XFG (one constant sets both). `m_testnet` was read uninitialised by the `CurrencyBuilder` constructor, which picks the minimum ring size and network ID from it; mainnet now always takes the mainnet branch.
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Both caps 800 bps; comments in `CryptoNoteConfig.h` and the backstop block; `how-hearth-works.mdx` table | Claude | 2026-11-14 | DONE |
+| 2 | `testHearthMintCapPerBlock`: cap 80 HEAT at the 1,000 HEAT seed, six 12-HEAT mints accepted, the seventh refused | Claude | 2026-11-14 | DONE |
+| 3 | `bool m_testnet = false;` in `Currency.h` | Claude | 2026-11-14 | DONE |
+| 4 | `docs/V12_LAUNCH_TODO.md`: revisit the CD-terms / ring-size reset in `CurrencyBuilder` after the new privacy methods | Claude | 2026-11-14 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j4` full build rc=0 |
+| Tests pass | DONE — core_tests 657/657; test_hearth_amm 45/45; `ctest -LE manual` 59/59 |
+| All tasks done | DONE |

@@ -83,6 +83,8 @@ namespace CryptoNote
 
     // @ Alias system commands
     bool register_alias(const std::vector<std::string> &args);
+    bool dev_fund_burn(const std::vector<std::string> &args);
+    uint8_t nextBlockMajorVersion() const;
     bool lookup_alias(const std::vector<std::string> &args);
     bool list_aliases(const std::vector<std::string> &args);
     void printConnectionError() const;
@@ -185,6 +187,7 @@ namespace CryptoNote
     // Hearth orderbook commands (v11+)
     bool place_order(const std::vector<std::string> &args);
     bool cancel_order(const std::vector<std::string> &args);
+    bool stop_order(const std::vector<std::string> &args);
     bool orderbook(const std::vector<std::string> &args);
     bool show_orders(const std::vector<std::string> &args);
 

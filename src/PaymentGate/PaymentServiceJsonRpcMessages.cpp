@@ -691,6 +691,7 @@ void CancelLimitOrder::Request::serialize(CryptoNote::ISerializer &serializer)
   serializer(order_id, "order_id");
   serializer(fee, "fee");
   serializer(mixin, "mixin");
+  serializer(stop_only, "stop_only");
 }
 
 void CancelLimitOrder::Response::serialize(CryptoNote::ISerializer &serializer)
@@ -714,6 +715,19 @@ void GetLimitOrders::LimitOrderInfo::serialize(CryptoNote::ISerializer &serializ
 void GetLimitOrders::Response::serialize(CryptoNote::ISerializer &serializer)
 {
   serializer(orders, "orders");
+  serializer(status, "status");
+}
+
+void DevFundBurn::Request::serialize(CryptoNote::ISerializer &serializer)
+{
+  if (!serializer(amount, "amount")) {
+    throw RequestSerializationError();
+  }
+}
+
+void DevFundBurn::Response::serialize(CryptoNote::ISerializer &serializer)
+{
+  serializer(tx_hash, "tx_hash");
   serializer(status, "status");
 }
 

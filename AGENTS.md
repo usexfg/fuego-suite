@@ -37,7 +37,7 @@ fuego-suite/
 - **Balanced LP deposits only** — single-sided deposits mint no shares (no dilution); shares are fair pro-rata at the pool ratio
 - Taker pays the 1% fee; the split is versioned (`hearthCdSharePct`): **v11 pays 30% CD / 70% maker**, **v12 flips to 70% CD / 30% maker**. The CD share is debited into the HEAT-denominated `cdHearthFeeAccumulator` → minted into `CD_APY_POOL` at the epoch boundary; the maker share is the rebate (auction makers, or LPs on pool fills); consumed XFG burned 50/50 (EF/SWF)
 - The gossiped in-band CLOB matcher, `MIN_DISTINCT_PARTIES`, and unbacked orders are **retired**
-- **Treasury LP Manager (AuntPoL)**: the protocol's own ratio-paired LP position. **Both legs are funded by the 1% mint premium**: the withheld premium XFG is the **XFG leg** and the HEAT it buys is the **HEAT leg** (plus HEAT donations). The two pair at the pool ratio; no SWF transfer and no cross-conversion. Compounds and drives bootstrap repayment (two-leg owned-reserves check)
+- **Treasury LP Manager (AuntPoL)**: the protocol's own ratio-paired LP position. **v11:** the 1% mint premium funds both legs (withheld premium XFG = **XFG leg**, the HEAT it buys = **HEAT leg**); CDs, and with them the CD creation fee, start at v12. **v12+: one source per leg** — the CD creation fee is the **XFG leg**, the mint premium's HEAT is the **HEAT leg** and its XFG is burned. Plus HEAT donations. The two pair at the pool ratio; no SWF transfer and no cross-conversion. Compounds and drives bootstrap repayment (two-leg owned-reserves check)
 
 ### HEAT Flatcoin (colored coin)
 - Not fiat based, peg targets purchasing power only; adjusts for inflation/CPI
@@ -47,7 +47,7 @@ fuego-suite/
 - Fuego Cost Index (FCI): miners vote a 6-item consumer basket in integer cents (power, gas, rice, milk, bread, eggs) via `TX_EXTRA_MINER_BASKET_VOTE`; trimmed median per category, 3-of-6 fresh-quorum gate per quarter, 5.04% max quarterly move
 - Certificates of Deposit (CD): V12 activation, epoch-term-locked HEAT earning protocol revenue yield
 - **SWAP FEE ROUTING (v11+)**: 80% CD Yield Pool / 20% Bonus Vault / 0% Treasury. Pre-v11 blocks settled 69/11/20 and reorg replay keeps that split (`SWAP_FEE_*_PRE_V11`).
-- **BONUS VAULT**: 20% of swap fees (v11+) fund tier-based loyalty bonuses (2.5× for 72 epochs, 2× for 36, 1.5× for 18, 1.25× for 6)
+- **BONUS VAULT**: 20% of swap fees (v11+) fund tier-based loyalty bonuses (2.5× for 72 epochs, 2× for 36, 1.5× for 18, 1.25× for 6). **Review before v12 CDs go live**: these multipliers pull HEAT into long locks, against the goal of liquid HEAT (see `docs/V12_LAUNCH_TODO.md`).
 - **DEPOSIT MODEL**: See `DEPOSIT_ARCHITECTURE.md` for full details. Key points:
   - "HEAT" has TWO meanings in code: current flatcoin (dynamic TWAP pricing) vs legacy Embers_Heat (fixed 10M:1 ratio)
   - **Two-step process**: burn XFG → mint HEAT → deposit HEAT as CD (you CANNOT deposit a deposit)
@@ -68,7 +68,7 @@ implemented, and then the hard rules on what may never fund yield.
 - **Burn-derived value.** A mint burn is already fully claimed by the HEAT issued
   against it, so paying yield out of it issues a second claim on spent collateral.
   This covers `bankedBurn`, the Eternal Flame share, and the SWF burn tally.
-- **The CD creation fee.** It is a dev-fund payment, not revenue.
+- **The CD creation fee.** It funds the AuntPoL XFG leg (protocol LP inventory), not revenue.
 - **Inflation.** Yield comes from fees earned, never from minting HEAT that nothing
   backs. A new stream must be value someone actually paid the protocol.
 
@@ -76,12 +76,15 @@ Any genuinely new stream is fine — and should be considered — provided it cl
 that bar: real value received, with no HEAT claim already issued against it.
 
 NOT protocol earnings:
-- **Mint premium**: 1% of the declared burn (`HEAT_MINT_PREMIUM_BPS = 100`, v11+). It is a haircut **inside** the burn, not a surcharge: the withheld `premiumXfg` is the **AuntPoL XFG leg** (`m_treasuryLpPendingXfg`, not burned), and the `heat(premiumXfg)` it buys is the **AuntPoL HEAT leg** (`m_treasuryHeatReserve`). Not revenue — it is the protocol's own LP inventory.
-- **CD creation fee**: 0.1% of the HEAT being deposited, charged in **XFG** as a KeyOutput to `FUEGO_DEV_FUND_ADDRESS`. NOT protocol revenue, NOT CD yield, NOT a treasury reserve credit.
+- **Mint premium**: 1% of the declared burn (`HEAT_MINT_PREMIUM_BPS = 100`, v11+). It is a haircut **inside** the burn, not a surcharge: at v11 the withheld `premiumXfg` is the **AuntPoL XFG leg** (`m_treasuryLpPendingXfg`, not burned); from v12 it is burned (`mintPremiumFundsXfgLeg`). The `heat(premiumXfg)` it buys is the **AuntPoL HEAT leg** (`m_treasuryHeatReserve`). Not revenue — it is the protocol's own LP inventory.
+- **CD creation fee**: consensus-enforced, 0.25% (6-epoch CD) rising linearly to 1% (72-epoch CD) of the HEAT deposited, valued at the mint oracle price and paid in **XFG** (`cdCreationFeeXfg`). Declared in `TransactionExtraCdCreationFee` (must cover the computed fee); the whole declared amount is credited to the **AuntPoL XFG leg** (`m_treasuryLpPendingXfg`). The network fee is separate: only the XFG surplus beyond the declared CD fee goes to the miner. No dev tax: nothing goes to `FUEGO_DEV_FUND_ADDRESS`. NOT protocol revenue, NOT CD yield — protocol LP inventory.
+
+- **Re-mint burn** (`TX_EXTRA_REMINT_BURN`, v11+): its own burn type and counter (`m_remintBurnedXfg`), apart from HEAT, the SWF and the Eternal Flame. Any transaction may carry one; consensus withholds it from the miner. At each FCI quarter boundary (every 18 epochs) the coinbase must end with one output paying the not-yet-re-minted total to the dev fund (`remintDue`, checked with the dev view key; outside the block reward and emission; reversed on pop). `/heat_metrics`: `remint_burned_xfg`, `reminted_xfg`.
+- **Alias registration fee**: 1 XFG (`ALIAS_REGISTRATION_FEE`). Before v11 it is an output to `FUEGO_DEV_FUND_ADDRESS`. From v11 a registration must carry a re-mint burn covering it, so no alias transaction pays the dev wallet and the counter does not count aliases.
 
 ### Hearth Exchange — Data Flow Per Block (v11+)
-1. `PoolOrderOrchestrator`: record pool spot (volatility), decide regeneration, compute adaptive spread
-2. `generatePoolOrders()` → `setPoolOrders()` — depth-band makers from AMM reserves (executed, not display-only)
+1. `PoolOrderOrchestrator`: record pool spot (volatility), compute adaptive spread
+2. `generatePoolOrders()` → `setPoolOrders()` — depth-band makers rebuilt every block from the AMM reserves, priced on the curve (executed, not display-only)
 3. Height-based expiry on `m_limitDeposits` (expired stay claimable, skip this block's fills)
 4. Call auction: user deposits + 0xF0 pool orders; user-vs-user fills move escrow/proceeds; pool fills move `reserve*`
 5. AMM backstop: unfilled user deposits vs constant-product curve at live spot, capped by `HEARTH_BACKSTOP_MAX_BPS`
@@ -134,6 +137,8 @@ NOT protocol earnings:
 | `/addswapfee` | restricted | Fee configuration |
 
 ## Known Issues
+
+- **v12 open items** are tracked in `docs/V12_LAUNCH_TODO.md` (CLI wallet CD deposits lack XFG inputs, Bonus Vault review, alias-burn re-mint).
 
 - **Block-serving RPC hang (pre-existing, not DIGM-related).** Every binary tested — including the month-old Jul-10 daemon on 18180 while idle and fully synced — hangs on `queryblockslite.bin` / `queryblocks.bin` / `getblocks.bin`. This blocks live sync/send e2e testing only; verification is done against the C++ production code directly (unit/integration harnesses), not live RPC.
 

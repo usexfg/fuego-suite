@@ -52,6 +52,9 @@ namespace CryptoNote {
     // exactly and the fee is the XFG surplus. Earlier: inputs minus outputs,
     // false when outputs exceed inputs.
     virtual bool checkTransactionSettlement(const CryptoNote::Transaction& tx, uint64_t& fee) = 0;
+    // HEAT the next block may mint in total; block templates stop adding
+    // mints once it is reached.
+    virtual uint64_t blockMintCapHeat() { return UINT64_MAX; }
   };
 
 }

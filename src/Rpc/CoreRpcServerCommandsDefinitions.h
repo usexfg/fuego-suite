@@ -620,8 +620,23 @@ struct block_header_response {
   std::string hash;
   difficulty_type difficulty;
   uint64_t reward;
+  // v11+: the PoW-committed Hearth state (as the parent block left it).
+  uint64_t mint_price = 0;
+  uint64_t reserve_xfg = 0;
+  uint64_t reserve_heat = 0;
+  uint64_t clearing_price = 0;
+  uint64_t hearthstone_cents = 0;
+  uint64_t fci_index_cents = 0;
+  std::string hearth_state_hash;
 
   void serialize(ISerializer &s) {
+    KV_MEMBER(mint_price)
+    KV_MEMBER(reserve_xfg)
+    KV_MEMBER(reserve_heat)
+    KV_MEMBER(clearing_price)
+    KV_MEMBER(hearthstone_cents)
+    KV_MEMBER(fci_index_cents)
+    KV_MEMBER(hearth_state_hash)
     KV_MEMBER(major_version)
     KV_MEMBER(minor_version)
     KV_MEMBER(timestamp)
@@ -2560,6 +2575,8 @@ struct COMMAND_RPC_GET_HEAT_METRICS {
 
   struct response {
     uint64_t heat_supply;
+    uint64_t remint_burned_xfg = 0;
+    uint64_t reminted_xfg = 0;
     uint64_t heat_on_deposit;
     uint64_t burned_xfg;
     uint64_t total_burned_xfg;
@@ -2582,6 +2599,8 @@ struct COMMAND_RPC_GET_HEAT_METRICS {
 
     void serialize(ISerializer &s) {
       KV_MEMBER(heat_supply)
+      KV_MEMBER(remint_burned_xfg)
+      KV_MEMBER(reminted_xfg)
       KV_MEMBER(heat_on_deposit)
       KV_MEMBER(burned_xfg)
       KV_MEMBER(total_burned_xfg)
@@ -2726,8 +2745,8 @@ struct COMMAND_RPC_AMM_QUOTE {
     uint64_t expected_output;
     uint64_t price_impact_bps;
     uint64_t fee;
-    // Selling XFG only: the HEAT burning the same XFG would mint at the 8-block
-    // TWAP (no pool, no price impact). 0 when there is no TWAP yet.
+    // Selling XFG only: the HEAT burning the same XFG would mint at the Hearth
+    // oracle price (no pool, no price impact). 0 when there is no price yet.
     uint64_t mint_output = 0;
     std::string status;
     void serialize(ISerializer &s) {

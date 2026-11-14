@@ -16,7 +16,7 @@ LP income is the **pool’s own trading P&L**:
 - Reserve appreciation from limit-order execution at the spot price.
 - No separate “spread reward” formula exists anymore (the old `|fill.price − P_clear| × amount` reward belonged to the retired in-band matcher). Your share is realized on withdrawal via proportional share redemption.
 
-You also do **not** earn the atomic-swap fee stream (2% = 1% + 1% per swap) unless you hold HEAT CDs or Bonus Vault rights — those are separate. Protocol earnings are exactly two streams: this 1% Hearth fee and the 2% atomic swap fee. The 1% mint premium is not a third stream: it is a haircut inside the mint burn that funds both AuntPoL legs (withheld XFG → XFG leg, the HEAT it buys → HEAT leg). The 0.1% CD creation fee is charged in XFG to the dev fund. Neither is protocol revenue.
+You also do **not** earn the atomic-swap fee stream (2% = 1% + 1% per swap) unless you hold HEAT CDs or Bonus Vault rights — those are separate. Protocol earnings are exactly two streams: this 1% Hearth fee and the 2% atomic swap fee. The 1% mint premium is not a third stream: it is a haircut inside the mint burn that funds both AuntPoL legs at v11 (withheld XFG → XFG leg, the HEAT it buys → HEAT leg); from v12 its XFG is burned and it funds only the HEAT leg. The CD creation fee (0.25%–1% by term, from v12) is paid in XFG to the AuntPoL XFG leg. Neither is protocol revenue.
 
 ## Deposits
 

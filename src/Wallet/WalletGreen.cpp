@@ -1548,12 +1548,12 @@ namespace CryptoNote
     // Dynamax: probe at maxMixin (32); wallet ring construction uses available outs
     mixin = normalizeMixinProbe(mixin, m_currency.maxMixin());
 
-    // Auto-compute heatMinted using the rolling 8-block TWAP of Hearth spot price.
+    // Auto-compute heatMinted at the Hearth oracle price (getHearthTwap).
     // Canonical scale: price = HEAT atomics per XFG atomic × COIN.
     // expectedHeat = xfgBurned × price / COIN.
     // Falls back to spot pool rate if TWAP unavailable. Fail closed if no price.
     {
-      // Consensus prices a mint at the 8-block TWAP and refuses one without
+      // Consensus prices a mint at the oracle price and refuses one without
       // it. Build a little under it, so the TWAP moving before inclusion does
       // not invalidate the mint.
       const uint64_t twap = m_node.getHearthTwap();
@@ -1662,6 +1662,14 @@ namespace CryptoNote
     if (targetPrice % parameters::ORDER_PRICE_TICK != 0) {
       throw std::system_error(make_error_code(error::WRONG_PARAMETERS), "Limit price must be a multiple of the price tick");
     }
+    if (amount < limitOrderMinAmount(side)) {
+      throw std::system_error(make_error_code(error::WRONG_PARAMETERS), "Limit order below the minimum size");
+    }
+    const uint32_t nextHeight = m_node.getLastKnownBlockHeight() + 1;
+    expiration = limitOrderExpiryFor(expiration, nextHeight);
+    if (!limitOrderExpiryValid(expiration, nextHeight)) {
+      throw std::system_error(make_error_code(error::WRONG_PARAMETERS), "Limit order expiry must be a height within LIMIT_ORDER_MAX_TTL_BLOCKS");
+    }
     if (side == 0) {
       // BUY_XFG escrows HEAT: HEAT deposits fund the escrow and XFG pays the
       // fee. It used to fund a HEAT escrow with XFG, which consensus refuses.
@@ -1685,11 +1693,7 @@ namespace CryptoNote
       const auto &owner = getWalletRecord(getTransactionTransfer(firstDeposit.creatingTransactionId, 0).address);
       Crypto::Hash orderId{};
       Crypto::generate_random_bytes(sizeof(orderId.data), orderId.data);
-      Crypto::Hash addressHash{};
-      uint8_t keyData[64];
-      memcpy(keyData, owner.spendPublicKey.data, 32);
-      memcpy(keyData + 32, m_viewPublicKey.data, 32);
-      Crypto::cn_fast_hash(keyData, 64, addressHash);
+      const Crypto::Hash addressHash = limitOrderAddressHash(owner.spendSecretKey, orderId);
       std::vector<uint8_t> extra;
       addLimitDepositToExtra(extra, side, amount, targetPrice, expiration, orderId, addressHash);
       transaction->appendExtra(CryptoNote::BinaryArray(extra.begin(), extra.end()));
@@ -1731,13 +1735,8 @@ namespace CryptoNote
 
     Crypto::Hash orderId{};
     Crypto::generate_random_bytes(sizeof(orderId.data), orderId.data);
-    Crypto::Hash addressHash{};
-    {
-      uint8_t keyData[64];
-      memcpy(keyData, selectedTransfers[0].wallet->spendPublicKey.data, 32);
-      memcpy(keyData + 32, m_viewPublicKey.data, 32);
-      Crypto::cn_fast_hash(keyData, 64, addressHash);
-    }
+    const Crypto::Hash addressHash =
+        limitOrderAddressHash(selectedTransfers[0].wallet->spendSecretKey, orderId);
     std::vector<uint8_t> extra;
     addLimitDepositToExtra(extra, side, amount, targetPrice, expiration, orderId, addressHash);
     transaction->appendExtra(CryptoNote::BinaryArray(extra.begin(), extra.end()));
@@ -1762,7 +1761,8 @@ namespace CryptoNote
       const Crypto::Hash &orderId,
       uint64_t fee,
       uint64_t mixin,
-      std::string &transactionHash)
+      std::string &transactionHash,
+      bool stopOnly)
   {
     throwIfNotInitialized();
     throwIfTrackingMode();
@@ -1808,13 +1808,7 @@ namespace CryptoNote
 
     const WalletRecord* ownerWallet = nullptr;
     for (const auto& wallet : m_walletsContainer.get<RandomAccessIndex>()) {
-      uint8_t keyData[sizeof(wallet.spendPublicKey.data) + sizeof(m_viewPublicKey.data)];
-      memcpy(keyData, wallet.spendPublicKey.data, sizeof(wallet.spendPublicKey.data));
-      memcpy(keyData + sizeof(wallet.spendPublicKey.data),
-             m_viewPublicKey.data, sizeof(m_viewPublicKey.data));
-      Crypto::Hash candidateHash{};
-      Crypto::cn_fast_hash(keyData, sizeof(keyData), candidateHash);
-      if (memcmp(candidateHash.data, ownerAddressHash.data, sizeof(candidateHash.data)) == 0) {
+      if (isOwnLimitOrder(wallet.spendSecretKey, orderId, ownerAddressHash)) {
         ownerWallet = &wallet;
         break;
       }
@@ -1849,7 +1843,9 @@ namespace CryptoNote
       transaction->addOutput(heatAmount, heatOut);
     };
 
-    if (orderSide == 1) {
+    if (stopOnly) {
+      // Stop only: no payout; the escrow waits frozen for the withdraw.
+    } else if (orderSide == 1) {
       if (orderAmount > 0) {
         transaction->addOutput(orderAmount, AccountPublicAddress{ownerWallet->spendPublicKey, m_viewPublicKey});
       }
@@ -1865,14 +1861,22 @@ namespace CryptoNote
       }
     }
 
-    Crypto::Hash outputsHash = getLimitWithdrawOutputHash(transaction->getTransactionPrefix().outputs);
-    Crypto::Hash authHash = getLimitWithdrawAuthHash(orderId, ownerAddressHash, outputsHash);
-    Crypto::Signature proof;
-    Crypto::generate_signature(authHash, ownerWallet->spendPublicKey,
-                               ownerWallet->spendSecretKey, proof);
+    LimitOrderKeys orderKeys = deriveLimitOrderKeys(ownerWallet->spendSecretKey, orderId);
     std::vector<uint8_t> extra;
-    addLimitWithdrawToExtra(extra, orderId, ownerWallet->spendPublicKey,
-                            m_viewPublicKey, outputsHash, proof);
+    if (stopOnly) {
+      Crypto::Signature proof;
+      Crypto::generate_signature(getLimitCancelAuthHash(orderId, ownerAddressHash),
+                                 orderKeys.spendPublicKey, orderKeys.spendSecretKey, proof);
+      addOrderCancelToExtra(extra, orderId, orderKeys.spendPublicKey, orderKeys.viewPublicKey, proof);
+    } else {
+      Crypto::Hash outputsHash = getLimitWithdrawOutputHash(transaction->getTransactionPrefix().outputs);
+      Crypto::Hash authHash = getLimitWithdrawAuthHash(orderId, ownerAddressHash, outputsHash);
+      Crypto::Signature proof;
+      Crypto::generate_signature(authHash, orderKeys.spendPublicKey, orderKeys.spendSecretKey, proof);
+      addLimitWithdrawToExtra(extra, orderId, orderKeys.spendPublicKey,
+                              orderKeys.viewPublicKey, outputsHash, proof);
+    }
+    wipeLimitOrderSecret(orderKeys);
     transaction->appendExtra(CryptoNote::BinaryArray(extra.begin(), extra.end()));
     typedef CryptoNote::COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount outs_for_amount;
     std::vector<outs_for_amount> mixinResult;
@@ -1909,19 +1913,13 @@ namespace CryptoNote
     if (termEpochs == parameters::HEAT_TERM) {
       throw std::system_error(make_error_code(error::WRONG_PARAMETERS), "term_epochs must not be HEAT_TERM");
     }
-    // Consensus rejects CD outputs below the activation height; say so plainly
-    // instead of building a transaction the network will refuse.
-    if (getBlockCount() < m_currency.cdActivationHeight()) {
+    if (nextBlockMajorVersion() < BLOCK_MAJOR_VERSION_12) {
       throw std::system_error(make_error_code(error::WRONG_STATE),
-          "HEAT CDs activate at block " + std::to_string(m_currency.cdActivationHeight()) +
-          " (current height " + std::to_string(getBlockCount()) + ")");
+          "HEAT CDs activate at block " + std::to_string(m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_12) + 1) +
+          " (next block " + std::to_string(m_node.getLastKnownBlockHeight() + 1) + ")");
     }
 
     fee = m_currency.minimumFee();
-    if (bankingFee == 0) {
-      bankingFee = amount / 1000; // 0.1% default (matches SimpleWallet heat_deposit)
-      if (bankingFee == 0) bankingFee = 1;
-    }
 
     const uint64_t epochBlocks = m_currency.isTestnet()
       ? parameters::TESTNET_EPOCH_DURATION_BLOCKS
@@ -1930,6 +1928,15 @@ namespace CryptoNote
     if (cdTermBlocks == 0) {
       throw std::system_error(make_error_code(error::WRONG_PARAMETERS), "CD term blocks underflow");
     }
+    // CD creation fee: declared in its own tag and paid whole to the AuntPoL XFG
+    // leg, on top of the network fee. Pad it like a mint, so the oracle moving
+    // before inclusion does not leave it short; the padding goes to AuntPoL too.
+    const uint64_t requiredCdFee = cdCreationFeeXfg(amount, cdTermBlocks, epochBlocks, m_node.getHearthTwap());
+    if (requiredCdFee == 0) {
+      throw std::system_error(make_error_code(error::WRONG_STATE), "No Hearth oracle price yet to value the CD creation fee");
+    }
+    bankingFee = std::max(bankingFee, static_cast<uint64_t>(
+        ((uint128_t)requiredCdFee * (10000 + parameters::WALLET_MINT_TWAP_MARGIN_BPS) + 9999) / 10000));
 
     const uint64_t neededHeat = amount;
     uint32_t currentHeight = getBlockCount();
@@ -1962,23 +1969,6 @@ namespace CryptoNote
       transaction->addOutput(amount, cdOut);
     }
 
-    // CD creation fee → dev fund, paid in XFG. It is 0.1% of the HEAT being
-    // deposited and is charged alongside the network fee, not carved out of the
-    // HEAT inputs: the dev fund is an XFG address and has no HEAT claim, so a
-    // HEAT-denominated fee credited to a protocol reserve would not be the dev
-    // fund's money. (v11 used to route it to m_treasuryHeatReserve through a
-    // TreasuryFund tag; the dev fund's share must not fund protocol reserves.)
-    if (bankingFee > 0) {
-      AccountPublicAddress devAddr{};
-      if (m_currency.parseAccountAddressString(CryptoNote::FUEGO_DEV_FUND_ADDRESS, devAddr)) {
-        transaction->addOutput(bankingFee, devAddr);
-      } else {
-        m_logger(WARNING, BRIGHT_YELLOW)
-            << "CD creation fee skipped: FUEGO_DEV_FUND_ADDRESS did not parse";
-        bankingFee = 0;
-      }
-    }
-
     // HEAT change remains FOREVER HEAT_TERM
     if (changeAmount > 0) {
       const size_t chIdx = static_cast<size_t>(transaction->getOutputCount());
@@ -1989,7 +1979,9 @@ namespace CryptoNote
     }
 
     transaction->setUnlockTime(0);
-
+    std::vector<uint8_t> cdFeeExtra;
+    addCdCreationFeeToExtra(cdFeeExtra, bankingFee);
+    transaction->appendExtra(CryptoNote::BinaryArray(cdFeeExtra.begin(), cdFeeExtra.end()));
 
     // XFG pays the network fee and the CD creation fee — HEAT must balance
     // exactly — and every input goes in before any is signed.
@@ -6691,6 +6683,45 @@ namespace CryptoNote
   // Alias methods
   // ============================================================================
 
+  uint8_t WalletGreen::nextBlockMajorVersion() const {
+    return m_currency.blockMajorVersionAtHeight(m_node.getLastKnownBlockHeight() + 1);
+  }
+
+  std::error_code WalletGreen::devFundBurn(uint64_t amount, Crypto::Hash& txHashOut) {
+    throwIfNotInitialized();
+    throwIfTrackingMode();
+    throwIfStopped();
+    if (amount == 0) {
+      return make_error_code(error::ZERO_DESTINATION);
+    }
+    if (nextBlockMajorVersion() < CryptoNote::BLOCK_MAJOR_VERSION_11) {
+      return make_error_code(error::WRONG_STATE);
+    }
+    std::vector<uint8_t> extraVec;
+    CryptoNote::addRemintBurnToExtra(extraVec, amount);
+
+    TransactionParameters params;
+    WalletOrder selfOutput;
+    selfOutput.address = getAddress(0);
+    selfOutput.amount = m_currency.minimumFee();
+    params.destinations.push_back(selfOutput);
+    params.fee = m_currency.minimumFee() + amount;
+    params.mixIn = m_currency.minMixin(CryptoNote::BLOCK_MAJOR_VERSION_10);
+    params.extra = std::string(extraVec.begin(), extraVec.end());
+
+    Crypto::SecretKey txSK;
+    size_t txIdx;
+    try {
+      txIdx = transfer(params, txSK);
+    } catch (const std::system_error& e) {
+      return e.code();
+    } catch (...) {
+      return make_error_code(std::errc::io_error);
+    }
+    txHashOut = getTransaction(txIdx).hash;
+    return {};
+  }
+
   std::error_code WalletGreen::registerAlias(const std::string& alias,
                                               const std::string& ownerAddress,
                                               Crypto::Hash& txHashOut) {
@@ -6764,10 +6795,22 @@ namespace CryptoNote
       return make_error_code(std::errc::invalid_argument);
     }
 
+    // From v11 the registration fee is a re-mint burn: it rides in the
+    // transaction fee and consensus withholds it, so no output pays the dev
+    // wallet.
+    const bool burnsFee = !m_currency.isTestnet() && nextBlockMajorVersion() >= CryptoNote::BLOCK_MAJOR_VERSION_11;
+    if (burnsFee) {
+      CryptoNote::addRemintBurnToExtra(extraVec, CryptoNote::parameters::ALIAS_REGISTRATION_FEE);
+    }
     std::string extra(extraVec.begin(), extraVec.end());
 
     TransactionParameters params;
-    if (!m_currency.isTestnet()) {
+    if (burnsFee) {
+      WalletOrder selfOutput;
+      selfOutput.address = aliasReg.ownerAddress;
+      selfOutput.amount  = m_currency.minimumFee();
+      params.destinations.push_back(selfOutput);
+    } else if (!m_currency.isTestnet()) {
       WalletOrder devFundOutput;
       devFundOutput.address = CryptoNote::FUEGO_DEV_FUND_ADDRESS;
       uint64_t randomDust = 0;
@@ -6787,7 +6830,7 @@ namespace CryptoNote
       selfOutput.amount  = m_currency.minimumFee();
       params.destinations.push_back(selfOutput);
     }
-    params.fee   = m_currency.minimumFee();
+    params.fee   = m_currency.minimumFee() + (burnsFee ? CryptoNote::parameters::ALIAS_REGISTRATION_FEE : 0);
     params.mixIn = m_currency.minMixin(CryptoNote::BLOCK_MAJOR_VERSION_10);
     params.extra = extra;
 

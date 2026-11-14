@@ -43,6 +43,7 @@
 #include "Common/Util.h"
 #include "CryptoNoteCore/CryptoNoteFormatUtils.h"
 #include "CryptoNoteCore/CryptoNoteTools.h"
+#include "CryptoNoteCore/TransactionExtra.h"
 #include "CryptoNoteProtocol/CryptoNoteProtocolHandler.h"
 #include "Common/CommandLine.h"
 #include "Common/StringTools.h"
@@ -1404,7 +1405,7 @@ bool wallet_rpc_server::on_place_limit_order(const wallet_rpc::COMMAND_RPC_PLACE
             ? (roundedPrice - req.target_price) : (req.target_price - roundedPrice);
         if (drift > tick / 20) {
           throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR,
-              "target_price must be a multiple of the order tick (0.01)");
+              "target_price must be a multiple of the order tick (0.00001)");
         }
       }
     }
@@ -1450,7 +1451,7 @@ bool wallet_rpc_server::on_cancel_limit_order(const wallet_rpc::COMMAND_RPC_CANC
     CryptoNote::WalletHelper::SendCompleteResultObserver sent;
     WalletHelper::IWalletRemoveObserverGuard removeGuard(m_wallet, sent);
 
-    CryptoNote::TransactionId txId = m_wallet.cancelOrderV13(orderId, fee, mixin);
+    CryptoNote::TransactionId txId = m_wallet.cancelOrderV13(orderId, fee, mixin, req.stop_only);
 
     if (txId == WALLET_INVALID_TRANSACTION_ID) {
       throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Failed to cancel limit order");
@@ -1489,18 +1490,15 @@ bool wallet_rpc_server::on_get_limit_orders(const wallet_rpc::COMMAND_RPC_GET_LI
       return true;
     }
 
-    // Compute wallet's own address_hash = cn_fast_hash(spendKey||viewKey)
     AccountKeys accountKeys;
     m_wallet.getAccountKeys(accountKeys);
-    std::vector<uint8_t> keyData(sizeof(accountKeys.address.spendPublicKey.data) + sizeof(accountKeys.address.viewPublicKey.data));
-    memcpy(keyData.data(), accountKeys.address.spendPublicKey.data, sizeof(accountKeys.address.spendPublicKey.data));
-    memcpy(keyData.data() + sizeof(accountKeys.address.spendPublicKey.data), accountKeys.address.viewPublicKey.data, sizeof(accountKeys.address.viewPublicKey.data));
-    Crypto::Hash myAddrHash = Crypto::cn_fast_hash(keyData.data(), keyData.size());
-    std::string myAddressHash = Common::podToHex(myAddrHash);
 
-    // Return only orders belonging to this wallet
+    // Each order has its own one-time keys (deriveLimitOrderKeys); only this
+    // wallet's spend key reproduces an order's addressHash.
     for (const auto& dep : allDeposits) {
-      if (dep.address_hash != myAddressHash) continue;
+      Crypto::Hash orderId{}, addressHash{};
+      if (!Common::podFromHex(dep.order_id, orderId) || !Common::podFromHex(dep.address_hash, addressHash) ||
+          !isOwnLimitOrder(accountKeys.spendSecretKey, orderId, addressHash)) continue;
       wallet_rpc::COMMAND_RPC_GET_LIMIT_ORDERS::LimitOrderInfo info;
       info.order_id = dep.order_id;
       info.side = dep.side;

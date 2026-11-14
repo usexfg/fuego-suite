@@ -70,7 +70,7 @@ This is O(n log n) over distinct price levels with prefix sums — trivially wit
 | Rule | Behavior |
 |---|---|
 | Price-time priority | Within a price level, earlier deposits fill first |
-| Min price tick | Orders must price at multiples of `ORDER_PRICE_TICK` (e.g., COIN / 100); prevents sub-tick queue-jumping |
+| Min price tick | Orders must price at multiples of `ORDER_PRICE_TICK` (COIN / 100000); prevents sub-tick queue-jumping |
 | Post-only flag (optional v11.1) | Deposit with `postOnly=1` never crosses; the auction skips it if it would take |
 | Self-trade rejection | Same `addressHash` on both sides of a crossing → the later deposit is skipped (or matched amounts are excluded) |
 | Sybil mitigation | Wash-trading across fresh keypairs costs per-block tx fees; P_clear volume-weighting makes manipulation cost scale with attempted move. Documented as the privacy-chain floor |

@@ -1349,7 +1349,14 @@ void testCommitmentSpendRingMemberRulesFromV11() {
   TEST(!spendSingleMemberRing(t.chain, parameters::DEPOSIT_TERM_POOL_HEAT, REGULAR_TX_AT_HEIGHT_3, V11));
   TEST(!spendSingleMemberRing(t.chain, parameters::DEPOSIT_MIN_TERM, REGULAR_TX_AT_GENESIS, V11));
   TEST(!spendSingleMemberRing(t.chain, LP, REGULAR_TX_AT_HEIGHT_3, V11, 1));
-  TEST(!spendSingleMemberRing(t.chain, parameters::HEAT_TERM, REGULAR_TX_AT_GENESIS, V11));
+  // From v11 HEAT_TERM is HEAT money: a ring of HEAT outputs is spendable.
+  // Before v11 it kept its burn-marker meaning.
+  TEST(spendSingleMemberRing(t.chain, parameters::HEAT_TERM, REGULAR_TX_AT_GENESIS, V11));
+  TEST(spendRing(t.chain, {{parameters::HEAT_TERM, REGULAR_TX_AT_GENESIS},
+                           {parameters::HEAT_TERM, REGULAR_TX_AT_HEIGHT_3}}, 1, V11));
+  TEST(!spendSingleMemberRing(t.chain, parameters::HEAT_TERM, REGULAR_TX_AT_GENESIS, V10));
+  TEST(!spendSingleMemberRing(t.chain, parameters::HEAT_TERM, COINBASE_AT_GENESIS, V11));
+  TEST(transferRing(t.chain, {{parameters::HEAT_TERM, REGULAR_TX_AT_GENESIS}}, 0, V11));
 
   // A coinbase HEAT_TERM output is a burn marker the miner holds the key to.
   // Alone it trips the burn guard; ringed with any spendable HEAT decoy it was

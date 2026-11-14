@@ -3084,9 +3084,10 @@ bool CryptoNote::Blockchain::checkCommitmentSpendInput(const TransactionInputCom
       youngestTermInitialized = false;
     }
 
-    if (ref.term != CryptoNote::parameters::HEAT_TERM) {
+    if (isSpendableMember(ref.term, validatingBlockVersion)) {
       hasNonForever = true;
-
+    }
+    if (ref.term != CryptoNote::parameters::HEAT_TERM) {
       // Auto-roll is disabled until v13; maturity and interest use term only.
       bool rolled = false;
 #if 0 // TODO(v13): auto-roll
@@ -3391,8 +3392,10 @@ bool CryptoNote::Blockchain::checkCommitmentTransferInput(
       return false;
     }
 
-    if (ref.term != CryptoNote::parameters::HEAT_TERM) {
+    if (isSpendableMember(ref.term, validatingBlockVersion)) {
       hasNonForever = true;
+    }
+    if (ref.term != CryptoNote::parameters::HEAT_TERM) {
       if (hasMaturityLock(ref.term, validatingBlockVersion)) {
         uint32_t memberHeight = ref.transactionIndex.block;
         uint32_t maturityHeight = memberHeight + ref.term;
@@ -3458,6 +3461,12 @@ bool CryptoNote::Blockchain::hasMaturityLock(uint32_t term, uint8_t validatingBl
     return isFiniteCdTerm(term);
   }
   return term > 0;
+}
+
+// HEAT_TERM was the burn marker before v11 ("FOREVER": key scalars
+// discarded). From v11 every HEAT output carries it, so it is spendable HEAT.
+bool CryptoNote::Blockchain::isSpendableMember(uint32_t term, uint8_t validatingBlockVersion) {
+  return term != parameters::HEAT_TERM || validatingBlockVersion >= BLOCK_MAJOR_VERSION_11;
 }
 
 bool CryptoNote::Blockchain::isPoolOwnedTerm(uint32_t term) {

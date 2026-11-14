@@ -874,6 +874,7 @@ namespace CryptoNote {
     bool isFiniteCdTerm(uint32_t term) const;
     bool hasMaturityLock(uint32_t term, uint8_t validatingBlockVersion) const;
     static bool isPoolOwnedTerm(uint32_t term);
+    static bool isSpendableMember(uint32_t term, uint8_t validatingBlockVersion);
     static bool isMintedByCoinbase(const CommitmentOutputRef& ref);
     bool removeLastBlock();
     bool checkCheckpoints(uint32_t &lastValidCheckpointHeight);

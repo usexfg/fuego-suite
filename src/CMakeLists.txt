@@ -757,6 +757,16 @@ target_link_libraries(test_orderbook_auction PRIVATE
 target_include_directories(test_orderbook_auction PRIVATE
     ${CMAKE_SOURCE_DIR}/src)
 
+# Real-chain harness: mines a testnet chain through the production core and
+# checks restart / reorg equivalence (tests/CoreTests/v11_chain_checks.sh).
+add_executable(v11_chain_harness
+    ../tests/CoreTests/V11ChainHarness.cpp)
+target_link_libraries(v11_chain_harness PRIVATE
+    CryptoNoteCore BlockchainExplorer P2P Rpc Http Transfers Serialization
+    Crypto Common Logging System OpenSSL::SSL OpenSSL::Crypto)
+target_include_directories(v11_chain_harness PRIVATE
+    ${CMAKE_SOURCE_DIR}/src)
+
 # Treasury/core consensus unit tests (F0-F3 invariants)
 add_executable(core_tests
     ../tests/CoreTests/TreasuryCoreTests.cpp)

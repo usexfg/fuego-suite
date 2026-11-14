@@ -799,6 +799,8 @@ namespace CryptoNote {
 
 
     bool switch_to_alternative_blockchain(std::list<blocks_ext_by_hash::iterator> &alt_chain, bool discard_disconnected_chain);
+    static std::vector<Crypto::Hash> alternativeChainIds(const std::list<blocks_ext_by_hash::iterator>& altChain);
+    std::list<blocks_ext_by_hash::iterator> findAlternativeChainEntries(const std::vector<Crypto::Hash>& ids);
     bool handle_alternative_block(const Block &b, const Crypto::Hash &id, block_verification_context &bvc, bool sendNewAlternativeBlockMessage = true);
     // Lets the core tests exercise prevalidate_miner_transaction, which guards the
     // coinbase against settlement tags. It was previously untested, which is how

@@ -1378,7 +1378,7 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
       }
 
       if (b > 0 && b % epochDuration == 0) {
-        EpochStateSnapshot preEpoch;
+        EpochStateSnapshot preEpoch{};
         preEpoch.heatSupply = m_heatSupply;
         preEpoch.heatOnDeposit = m_heatOnDeposit;
         preEpoch.heatCdFeePool = m_heatCdFeePool;
@@ -1715,6 +1715,22 @@ double calc_poisson_ln(double lam, uint64_t k)
   return logx;
 }
 
+std::vector<Crypto::Hash> CryptoNote::Blockchain::alternativeChainIds(const std::list<blocks_ext_by_hash::iterator>& altChain) {
+  std::vector<Crypto::Hash> ids;
+  ids.reserve(altChain.size());
+  for (const auto& entry : altChain) ids.push_back(entry->first);
+  return ids;
+}
+
+// m_alternative_chains is a flat hash map: an insert may resize it and move
+// every element, so iterators taken before an insert are re-found by key.
+std::list<CryptoNote::Blockchain::blocks_ext_by_hash::iterator>
+CryptoNote::Blockchain::findAlternativeChainEntries(const std::vector<Crypto::Hash>& ids) {
+  std::list<blocks_ext_by_hash::iterator> entries;
+  for (const auto& id : ids) entries.push_back(m_alternative_chains.find(id));
+  return entries;
+}
+
 bool CryptoNote::Blockchain::switch_to_alternative_blockchain(std::list<blocks_ext_by_hash::iterator>& alt_chain, bool discard_disconnected_chain) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
 
@@ -1846,6 +1862,19 @@ bool CryptoNote::Blockchain::switch_to_alternative_blockchain(std::list<blocks_e
     }
   }
 
+  // The switched-in blocks leave the alternative map before the old chain
+  // enters it: inserting can resize the flat map and invalidate alt_chain.
+  std::vector<Crypto::Hash> blocksFromCommonRoot;
+  blocksFromCommonRoot.reserve(alt_chain.size() + 1);
+  blocksFromCommonRoot.push_back(alt_chain.front()->second.bl.previousBlockHash);
+
+  //removing all_chain entries from alternative chain
+  for (auto ch_ent : alt_chain) {
+    blocksFromCommonRoot.push_back(get_block_hash(ch_ent->second.bl));
+    m_orthanBlocksIndex.remove(ch_ent->second.bl);
+    m_alternative_chains.erase(ch_ent);
+  }
+
   if (!discard_disconnected_chain) {
     //pushing old chain as alternative chain
     for (auto& old_ch_ent : disconnected_chain) {
@@ -1856,17 +1885,6 @@ bool CryptoNote::Blockchain::switch_to_alternative_blockchain(std::list<blocks_e
         break;
       }
     }
-  }
-
-  std::vector<Crypto::Hash> blocksFromCommonRoot;
-  blocksFromCommonRoot.reserve(alt_chain.size() + 1);
-  blocksFromCommonRoot.push_back(alt_chain.front()->second.bl.previousBlockHash);
-
-  //removing all_chain entries from alternative chain
-  for (auto ch_ent : alt_chain) {
-    blocksFromCommonRoot.push_back(get_block_hash(ch_ent->second.bl));
-    m_orthanBlocksIndex.remove(ch_ent->second.bl);
-    m_alternative_chains.erase(ch_ent);
   }
 
   sendMessage(BlockchainMessage(ChainSwitchMessage(std::move(blocksFromCommonRoot))));
@@ -2263,12 +2281,14 @@ bool CryptoNote::Blockchain::handle_alternative_block(const Block& b, const Cryp
     if (!(i_dres == m_alternative_chains.end())) { logger(ERROR, BRIGHT_RED) << "insertion of new alternative block returned as it already exists"; return false; }
 #endif
 
+    const std::vector<Crypto::Hash> altChainIds = alternativeChainIds(alt_chain);
     auto i_res = m_alternative_chains.insert(blocks_ext_by_hash::value_type(id, bei));
     if (!(i_res.second)) { logger(ERROR, BRIGHT_RED) << "insertion of new alternative block returned as it already exists"; return false; }
 
     m_orthanBlocksIndex.add(bei.bl);
 
-    alt_chain.push_back(i_res.first);
+    alt_chain = findAlternativeChainEntries(altChainIds);
+    alt_chain.push_back(m_alternative_chains.find(id));
 
     if (is_a_checkpoint) {
       //do reorganize!
@@ -3874,7 +3894,7 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
         ? CryptoNote::parameters::TESTNET_EPOCH_DURATION_BLOCKS
         : CryptoNote::parameters::EPOCH_DURATION_BLOCKS;
     if (height > 0 && height % epochDuration == 0) {
-      EpochStateSnapshot preEpoch;
+      EpochStateSnapshot preEpoch{};
       preEpoch.heatSupply = m_heatSupply;
       preEpoch.heatOnDeposit = m_heatOnDeposit;
       preEpoch.heatCdFeePool = m_heatCdFeePool;
@@ -4510,6 +4530,11 @@ CryptoNote::Blockchain::OrderbookRollbackSnapshot CryptoNote::Blockchain::captur
   state.lastRegenPclear = g_poolOrchestrator.lastRegenPclear();
   state.orders = g_orderbookMempool.getAllUserOrders();
   state.poolOrders = g_orderbookMempool.getAllPoolOrders();
+  // The mempool holds pool orders in a hash map; ordering by id keeps
+  // snapshots and the cache identical across restarts.
+  std::sort(state.poolOrders.begin(), state.poolOrders.end(), [](const Order& a, const Order& b) {
+    return memcmp(a.orderId.data, b.orderId.data, sizeof(a.orderId.data)) < 0;
+  });
   return state;
 }
 
@@ -6361,6 +6386,13 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
   if (!m_blockSwapFeeContributions.empty()) {
     uint64_t contribution = m_blockSwapFeeContributions.back();
     m_blockSwapFeeContributions.pop_back();
+    // Pushed for every block alongside the swap-fee contribution, so it is
+    // popped for every block; only a boundary block's entry carries a share.
+    std::pair<uint64_t, uint64_t> epochDistribution{0, 0};
+    if (!m_blockEpochDistributions.empty()) {
+      epochDistribution = m_blockEpochDistributions.back();
+      m_blockEpochDistributions.pop_back();
+    }
 
     uint64_t epochDuration = m_currency.isTestnet()
         ? CryptoNote::parameters::TESTNET_EPOCH_DURATION_BLOCKS
@@ -6375,12 +6407,8 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
       // Reverse treasury distribution. treasuryShare is routed to
       // m_treasuryLpPendingXfg, not m_treasuryBalance — reverse the right counter.
       // m_totalTreasuryAccrued is never incremented anywhere; do not decrement it.
-      if (!m_blockEpochDistributions.empty()) {
-        auto dist = m_blockEpochDistributions.back();
-        m_blockEpochDistributions.pop_back();
-        if (dist.first > 0 && m_treasuryLpPendingXfg >= dist.first) {
-          m_treasuryLpPendingXfg -= dist.first;
-        }
+      if (epochDistribution.first > 0 && m_treasuryLpPendingXfg >= epochDistribution.first) {
+        m_treasuryLpPendingXfg -= epochDistribution.first;
       }
     } else {
       // Non-boundary block: simply subtract the fee delta that was added.
@@ -7624,12 +7652,6 @@ void CryptoNote::Blockchain::popTransactions(const BlockEntry& block, const Cryp
   }
 
   popTransaction(block.bl.baseTransaction, minerTransactionHash, block.height, block.bl.majorVersion);
-  
-  // Clean index manager outputs after popping transactions to prevent phantom index persistence
-  m_indexManager.outputs().clear();
-  m_indexManager.multisigOutputs().clear();
-  m_indexManager.commitmentOutputs().clear();
-  m_indexManager.swapEscrowOutputs().clear();
 }
 
   bool CryptoNote::Blockchain::validateSwapEscrowInput(const TransactionInputSwapEscrow &input, const Crypto::Hash &transactionHash, const Crypto::Hash &transactionPrefixHash, const std::vector<Crypto::Signature> &transactionSignatures) {

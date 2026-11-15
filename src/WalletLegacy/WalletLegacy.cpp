@@ -1052,10 +1052,11 @@ TransactionId WalletLegacy::lpRemoveV10(uint64_t lpShares, uint64_t minXfg, uint
   std::deque<std::unique_ptr<WalletLegacyEvent>> events;
 
   fee = m_currency.minimumFee();
+  const auto payout = WalletTransactionSender::lpRemovePayout(m_node, lpShares);
 
   {
     std::unique_lock<std::mutex> lock(m_cacheMutex);
-    request = m_sender->makeLpRemoveV10Request(txId, events, lpShares, minXfg, minHeat, fee, mixIn);
+    request = m_sender->makeLpRemoveV10Request(txId, events, lpShares, minXfg, minHeat, payout, fee, mixIn);
     if (request != nullptr) pushBalanceUpdatedEvents(events);
   }
 
@@ -1316,9 +1317,9 @@ void WalletLegacy::onTransactionUpdated(ITransfersSubscription* object, const Ha
       if (!haveTxInfo) { txInfo = ti; haveTxInfo = true; }
       totalIn  += cIn;
       totalOut += cOut;
-      auto deps = c.getTransactionOutputs(transactionHash, ITransfersContainer::IncludeTypeDeposit | ITransfersContainer::IncludeStateAll);
+      auto deps = c.getTransactionOutputs(transactionHash, ITransfersContainer::IncludeTypeDeposit | ITransfersContainer::IncludeTypeHeat | ITransfersContainer::IncludeStateAll);
       allDepositOuts.insert(allDepositOuts.end(), deps.begin(), deps.end());
-      auto spent = c.getTransactionInputs(transactionHash, ITransfersContainer::IncludeTypeDeposit);
+      auto spent = c.getTransactionInputs(transactionHash, ITransfersContainer::IncludeTypeDeposit | ITransfersContainer::IncludeTypeHeat);
       allSpentDeposits.insert(allSpentDeposits.end(), spent.begin(), spent.end());
     }
   };
@@ -1723,13 +1724,13 @@ uint64_t WalletLegacy::calculatePendingInvestmentBalance() {
 
 uint64_t WalletLegacy::calculateActualHeatBalance() {
   std::vector<TransactionOutputInformation> transfers;
-  m_transferDetails->getOutputs(transfers, ITransfersContainer::IncludeTypeDeposit | ITransfersContainer::IncludeStateUnlocked);
+  m_transferDetails->getOutputs(transfers, ITransfersContainer::IncludeTypeHeat | ITransfersContainer::IncludeStateUnlocked);
   return calculateHeatAmount(transfers) - m_transactionsCache.countUnconfirmedSpentDepositsTotalAmount();
 }
 
 uint64_t WalletLegacy::calculatePendingHeatBalance() {
   std::vector<TransactionOutputInformation> transfers;
-  m_transferDetails->getOutputs(transfers, ITransfersContainer::IncludeTypeDeposit
+  m_transferDetails->getOutputs(transfers, ITransfersContainer::IncludeTypeHeat
                                 | ITransfersContainer::IncludeStateLocked
                                 | ITransfersContainer::IncludeStateSoftLocked);
   return calculateHeatAmount(transfers);

@@ -1347,6 +1347,7 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
       Crypto::Hash blockHash = get_block_hash(block.bl);
 
       Crypto::Hash minerTransactionHash = getObjectHash(block.bl.baseTransaction);
+      startBlockVaultSequence();
       if (!pushTransaction(block, minerTransactionHash, TxIndex{b, static_cast<uint16_t>(0)})) {
         logger(ERROR, BRIGHT_RED) << "Cache rebuild replay failed at miner tx, height " << b;
         return;
@@ -3457,6 +3458,23 @@ uint64_t CryptoNote::Blockchain::get_adjusted_time() {
   return time(NULL);
 }
 
+// A vault UTXO's index is (height << 32) | its position among the vault UTXOs
+// its block creates. Counting from each block's start makes the index a
+// function of the chain alone; a running counter differed between a node that
+// had reorged and one that had not.
+// Every epoch-boundary push records a snapshot; only a boundary block can
+// find its snapshot missing.
+bool CryptoNote::Blockchain::isEpochBoundary(uint32_t height) const {
+  const uint64_t epochDuration = m_currency.isTestnet()
+      ? CryptoNote::parameters::TESTNET_EPOCH_DURATION_BLOCKS
+      : CryptoNote::parameters::EPOCH_DURATION_BLOCKS;
+  return height > 0 && height % epochDuration == 0;
+}
+
+void CryptoNote::Blockchain::startBlockVaultSequence() {
+  m_vaultUtxoCounter = 0;
+}
+
 void CryptoNote::Blockchain::mintVaultChangeUtxo(const VaultUtxoSet::SpendResult& spendResult,
                                                  VaultPartition partition, AssetType asset,
                                                  uint32_t height, const Crypto::Hash& txHash) {
@@ -3861,6 +3879,7 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
   block.transactions.resize(1);
   block.transactions[0].tx = blockData.baseTransaction;
   TxIndex transactionIndex = { block.height, static_cast<uint16_t>(0) };
+  startBlockVaultSequence();
   try {
     pushTransaction(block, minerTransactionHash, transactionIndex);
   } catch (const std::exception& e) {
@@ -6446,7 +6465,7 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
     m_ammPool.cdHearthFeeAccumulator = snap.cdHearthFeeAccumulator;
     m_vault.removeAboveIndex(uint64_t(poppedHeight) << 32);
     m_epochSnapshots.pop_back();
-  } else if (!m_epochSnapshots.empty() && m_epochSnapshots.back().first < poppedHeight) {
+  } else if (isEpochBoundary(poppedHeight)) {
     logger(ERROR, BRIGHT_RED)
       << "popBlock: epoch snapshot records evicted before height "
       << poppedHeight << " — consensus state may diverge (reorg deeper than rollback history)";
@@ -6689,19 +6708,10 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
           m_indexManager.transactionMap().erase(transactionHash);
         return false;
       }
-    } else if (inv.type() == typeid(TransactionInputCommitmentSpend)) {
-      if (have_tx_keyimg_as_spent(::boost::get<TransactionInputCommitmentSpend>(inv).keyImage)) {
-        logger(ERROR, BRIGHT_RED) << "Double spending commitment transaction was pushed to blockchain.";
-          m_indexManager.transactionMap().erase(transactionHash);
-        return false;
-      }
-    } else if (inv.type() == typeid(TransactionInputCommitmentTransfer)) {
-      if (have_tx_keyimg_as_spent(::boost::get<TransactionInputCommitmentTransfer>(inv).keyImage)) {
-        logger(ERROR, BRIGHT_RED) << "Double spending commitment transfer was pushed to blockchain.";
-          m_indexManager.transactionMap().erase(transactionHash);
-        return false;
-      }
     }
+    // Commitment spend and transfer key images were already claimed in the
+    // spent-key pass above, which refuses a true double spend. Asking here
+    // whether they are spent would find this transaction's own claim.
   }
 
   VaultSpendRecord vaultSpendRecord;
@@ -6908,7 +6918,7 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
       const auto& commitOut = ::boost::get<TransactionOutputCommitment>(transaction.tx.outputs[output].target);
       auto& amountOutputs = m_indexManager.commitmentOutputs()[transaction.tx.outputs[output].amount];
       transaction.m_global_output_indexes[output] = static_cast<uint32_t>(amountOutputs.size());
-      CommitmentOutputRef ref;
+      CommitmentOutputRef ref{};
       ref.transactionIndex    = transactionIndex;
       ref.outputInTransaction = output;
       ref.commitKey           = commitOut.commitKey;

@@ -120,6 +120,11 @@ private:
   void updateUnconfirmedTransactions();
 
   void restoreTransactionOutputToBankingIndex();
+  void recordOwnSendDeposits(TransactionId id,
+                             const std::vector<TransactionOutputInformation>& newDepositOutputs,
+                             const std::vector<TransactionOutputInformation>& spentDepositOutputs,
+                             const Currency& currency,
+                             std::deque<std::unique_ptr<WalletLegacyEvent>>& events);
   std::vector<DepositId> createNewDeposits(TransactionId creatingTransactionId,
                                            const std::vector<TransactionOutputInformation>& depositOutputs,
                                            const Currency& currency,

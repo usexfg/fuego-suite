@@ -80,7 +80,7 @@ struct CommitmentOutputRef {
     Crypto::PublicKey          commitKey;
     uint32_t                   term;
     bool                       isSlashed = false;
-    Crypto::EllipticCurvePoint commitment_ec;  // cached Pedersen commitment for ring verification
+    Crypto::EllipticCurvePoint commitment_ec{};  // cached Pedersen commitment for ring verification
 
     void serialize(ISerializer& s) {
         s(transactionIndex, "txindex");

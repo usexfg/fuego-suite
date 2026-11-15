@@ -762,7 +762,7 @@ target_include_directories(test_orderbook_auction PRIVATE
 add_executable(v11_chain_harness
     ../tests/CoreTests/V11ChainHarness.cpp)
 target_link_libraries(v11_chain_harness PRIVATE
-    CryptoNoteCore BlockchainExplorer P2P Rpc Http Transfers Serialization
+    Wallet InProcessNode CryptoNoteCore BlockchainExplorer P2P Rpc Http Transfers Serialization
     Crypto Common Logging System OpenSSL::SSL OpenSSL::Crypto)
 target_include_directories(v11_chain_harness PRIVATE
     ${CMAKE_SOURCE_DIR}/src)

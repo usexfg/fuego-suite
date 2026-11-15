@@ -100,12 +100,12 @@ namespace {
     return TransferIteratorList<TIterator>(itPair.first, itPair.second);
   }
 
-  TransferUnlockJob makeTransferUnlockJob(const TransactionOutputInformationEx& output, uint32_t transactionSpendableAge) {
+  TransferUnlockJob makeTransferUnlockJob(const TransactionOutputInformationEx& output, uint32_t transactionSpendableAge, bool maturesAtTerm) {
     TransferUnlockJob job;
 
     uint32_t unlockTime = static_cast<uint32_t>(output.unlockTime == 0 ? output.blockHeight : output.unlockTime);
 
-    if ((output.type == TransactionTypes::OutputType::Multisignature || output.type == TransactionTypes::OutputType::Commitment) && output.term != 0) {
+    if (maturesAtTerm) {
       job.unlockHeight = std::max({ unlockTime, output.blockHeight + output.term, output.blockHeight + transactionSpendableAge + 1 });
     } else {
       job.unlockHeight = std::max(unlockTime, output.blockHeight + transactionSpendableAge + 1);
@@ -170,13 +170,17 @@ bool SpentOutputDescriptor::isValid() const {
   return m_type != TransactionTypes::OutputType::Invalid;
 }
 
+// Key and commitment outputs are both spent by key image, and an input names
+// only the key image, so a lookup built from one must find either kind.
+bool SpentOutputDescriptor::tracksKeyImage() const {
+  return m_type == TransactionTypes::OutputType::Key || m_type == TransactionTypes::OutputType::Commitment;
+}
+
 bool SpentOutputDescriptor::operator==(const SpentOutputDescriptor& other) const {
-  if (m_type == TransactionTypes::OutputType::Key) {
-    return other.m_type == m_type && *other.m_keyImage == *m_keyImage;
+  if (tracksKeyImage()) {
+    return other.tracksKeyImage() && *other.m_keyImage == *m_keyImage;
   } else if (m_type == TransactionTypes::OutputType::Multisignature) {
     return other.m_type == m_type && other.m_amount == m_amount && other.m_globalOutputIndex == m_globalOutputIndex;
-  } else if (m_type == TransactionTypes::OutputType::Commitment) {
-    return other.m_type == m_type && *other.m_keyImage == *m_keyImage;
   } else {
     assert(false);
     return false;
@@ -982,14 +986,26 @@ void TransfersContainer::rebuildTransfersUnlockJobs(TransfersUnlockMultiIndex& t
     const SpentTransfersMultiIndex& spentTransfers) {
 
   for (auto it = availableTransfers.begin(); it != availableTransfers.end(); ++it) {
-    TransferUnlockJob job = makeTransferUnlockJob(*it, static_cast<uint32_t>(m_transactionSpendableAge));
+    TransferUnlockJob job = makeTransferUnlockJob(*it, static_cast<uint32_t>(m_transactionSpendableAge), maturesAtTerm(*it));
     transfersUnlockJobs.emplace(std::move(job));
   }
 
   for (auto it = spentTransfers.begin(); it != spentTransfers.end(); ++it) {
-    TransferUnlockJob job = makeTransferUnlockJob(*it, static_cast<uint32_t>(m_transactionSpendableAge));
+    TransferUnlockJob job = makeTransferUnlockJob(*it, static_cast<uint32_t>(m_transactionSpendableAge), maturesAtTerm(*it));
     transfersUnlockJobs.emplace(std::move(job));
   }
+}
+
+// Mirrors consensus (Blockchain::hasMaturityLock at v11+): only a finite CD
+// term is a lock length. HEAT, LP, swap-receive and DIGM terms are asset
+// markers and spend after the normal spendable age. Legacy multisignature
+// deposits keep their term as a lock length.
+bool TransfersContainer::maturesAtTerm(const TransactionOutputInformationEx& info) const {
+  if (info.type == TransactionTypes::OutputType::Multisignature) {
+    return info.term != 0;
+  }
+  return info.type == TransactionTypes::OutputType::Commitment &&
+         info.term >= m_currency.depositMinTerm() && info.term <= m_currency.depositMaxTerm();
 }
 
 bool TransfersContainer::isSpendTimeUnlocked(const TransactionOutputInformationEx& info) const {
@@ -1003,9 +1019,8 @@ bool TransfersContainer::isSpendTimeUnlocked(const TransactionOutputInformationE
     return current_time + m_currency.lockedTxAllowedDeltaSeconds_v2() >= info.unlockTime;
   }
 
-  if (isOuputUnlocked && (info.type == TransactionTypes::OutputType::Multisignature || info.type == TransactionTypes::OutputType::Commitment) && info.term != 0 && info.term != parameters::HEAT_TERM) {
+  if (isOuputUnlocked && maturesAtTerm(info)) {
     // Deposit matures when currentHeight >= creationHeight + term.
-    // HEAT_TERM (0xFFFFFFFF) outputs are mints/burns, NOT time-locked CDs.
     // The +1 offset was removed to align with consensus (Blockchain.cpp:checkCommitmentSpendInput)
     // which also requires currentHeight >= maturityHeight (strict >=, no off-by-one).
     isOuputUnlocked = m_currentHeight >= info.blockHeight + info.term;
@@ -1034,7 +1049,8 @@ bool TransfersContainer::isIncluded(const TransactionOutputInformationEx& output
     ((flags & IncludeTypeKey) != 0            && output.type == TransactionTypes::OutputType::Key) ||
     ((flags & IncludeTypeMultisignature) != 0 && output.type == TransactionTypes::OutputType::Multisignature && output.term == 0) ||
     ((flags & IncludeTypeDeposit) != 0        && output.type == TransactionTypes::OutputType::Multisignature && output.term > 0) ||
-    ((flags & IncludeTypeDeposit) != 0        && output.type == TransactionTypes::OutputType::Commitment && output.term > 0 && output.term != parameters::HEAT_TERM)
+    ((flags & IncludeTypeDeposit) != 0        && output.type == TransactionTypes::OutputType::Commitment && output.term > 0 && output.term != parameters::HEAT_TERM) ||
+    ((flags & IncludeTypeHeat) != 0           && output.type == TransactionTypes::OutputType::Commitment && output.term == parameters::HEAT_TERM)
     )
     &&
     // filter by state
@@ -1045,7 +1061,7 @@ bool TransfersContainer::isIncluded(const TransactionOutputInformationEx& output
  *  \pre m_mutex is locked
  */
 void TransfersContainer::addUnlockJob(const TransactionOutputInformationEx& output) {
-  TransferUnlockJob job = makeTransferUnlockJob(output, static_cast<uint32_t>(m_transactionSpendableAge));
+  TransferUnlockJob job = makeTransferUnlockJob(output, static_cast<uint32_t>(m_transactionSpendableAge), maturesAtTerm(output));
 
   auto r = m_transfersUnlockJobs.emplace(std::move(job));
   assert(r.second);

@@ -59,6 +59,8 @@ struct SendTransactionContext
   bool isV10LpAdd = false;  // LP add (reuses heat mint fields, separate flag for routing)
   uint64_t v10LpShares = 0;       // LP add: shares declared, from the pool formula
   uint64_t v10HeatSelected = 0;   // LP add: HEAT selected; the excess returns as change
+  uint64_t v10HeatDecoyAmount = 0; // LP add: amount of the HEAT output the commitment decoys share
+  uint64_t v10KeyRingMixIn = 0;   // LP add: XFG ring size, kept apart from the HEAT ring size
   bool isV10AmmSwap = false;
   bool isV10HeatDeposit = false; // HEAT CD deposit: routes to the CD commitment-spend sender
   uint8_t v10SwapDirection = 0;
@@ -71,6 +73,8 @@ struct SendTransactionContext
   uint64_t v10LpSharesBurned = 0;
   uint64_t v10LpMinXfg = 0;
   uint64_t v10LpMinHeat = 0;
+  uint64_t v10LpPayoutXfg = 0;    // LP remove: XFG the pool pays, before the fee
+  uint64_t v10LpPayoutHeat = 0;   // LP remove: HEAT the pool pays
 
   // v10 LP fee claim
   bool isV10LpClaim = false;

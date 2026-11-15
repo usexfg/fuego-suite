@@ -20,6 +20,7 @@
 #include "crypto/hash.h"
 #include "CryptoNoteConfig.h"
 #include "CryptoNoteCore/TransactionExtra.h"
+#include "CryptoNoteCore/CryptoNoteTools.h"
 #include "Wallet/WalletErrors.h"
 #include "WalletLegacy/WalletUserTransactionsCache.h"
 #include "WalletLegacy/WalletLegacySerialization.h"
@@ -227,6 +228,7 @@ TransactionId WalletUserTransactionsCache::addNewTransaction(uint64_t amount,
                                                              uint64_t unlockTime,
                                                              const std::vector<TransactionMessage>& messages) {
   WalletLegacyTransaction transaction;
+  transaction.hash = NULL_HASH;
 
   if (!transfers.empty()) {
     transaction.firstTransferId = insertTransfers(transfers);
@@ -259,6 +261,7 @@ void WalletUserTransactionsCache::updateTransaction(
   // update extra field from created transaction
   auto& txInfo = m_transactions.at(transactionId);
   txInfo.extra.assign(tx.extra.begin(), tx.extra.end());
+  txInfo.hash = getObjectHash(tx);
   m_unconfirmedTransactions.add(tx, transactionId, amount, usedOutputs);
 }
 
@@ -345,6 +348,8 @@ std::deque<std::unique_ptr<WalletLegacyEvent>> WalletUserTransactionsCache::onTr
         m_unconfirmedTransactions.eraseCreatedDeposit(id);
       }
     }
+
+    recordOwnSendDeposits(id, newDepositOutputs, spentDepositOutputs, currency, events);
   }
 
   if (canInsertTransactionToIndex(getTransaction(id)) && paymentIdIsSet(txInfo.paymentId)) {
@@ -431,12 +436,6 @@ std::vector<DepositId> WalletUserTransactionsCache::unlockDeposits(const std::ve
     }
 
     auto id = it->second;
-
-    // FOREVER (burn) deposits are permanently locked — never unlock them
-    if (m_deposits[id].deposit.term == CryptoNote::parameters::HEAT_TERM) {
-      continue;
-    }
-
     unlockedDeposits.push_back(id);
     m_deposits[id].deposit.locked = false;
   }
@@ -625,6 +624,29 @@ bool WalletUserTransactionsCache::getDepositInTransactionInfo(DepositId depositI
   transactionHash = m_transactions[m_deposits[depositId].deposit.creatingTransactionId].hash;
 
   return true;
+}
+
+// A send path that does not insert its own deposit records (HEAT mint, swap,
+// LP add/remove, HEAT transfer) still creates and spends commitment outputs.
+// insertNewDeposit returns the existing id for an output a send path already
+// recorded, so this only fills in what is missing.
+void WalletUserTransactionsCache::recordOwnSendDeposits(TransactionId id,
+    const std::vector<TransactionOutputInformation>& newDepositOutputs,
+    const std::vector<TransactionOutputInformation>& spentDepositOutputs,
+    const Currency& currency,
+    std::deque<std::unique_ptr<WalletLegacyEvent>>& events) {
+  auto& tr = getTransaction(id);
+  auto createdIds = createNewDeposits(id, newDepositOutputs, currency, tr.blockHeight);
+  if (!createdIds.empty() && tr.firstDepositId == WALLET_LEGACY_INVALID_DEPOSIT_ID) {
+    tr.firstDepositId = createdIds.front();
+    tr.depositCount = createdIds.size();
+  }
+
+  auto updatedIds = processSpentDeposits(id, spentDepositOutputs);
+  updatedIds.insert(updatedIds.end(), createdIds.begin(), createdIds.end());
+  if (!updatedIds.empty()) {
+    events.push_back(std::unique_ptr<WalletLegacyEvent>(new WalletDepositsUpdatedEvent(std::move(updatedIds))));
+  }
 }
 
 std::vector<DepositId> WalletUserTransactionsCache::createNewDeposits(TransactionId creatingTransactionId, const std::vector<TransactionOutputInformation>& depositOutputs,

@@ -264,13 +264,28 @@ namespace CryptoNote
     // against the tip and takes the XFG surplus; before v11 it is inputs minus
     // outputs. Admitting outputs above inputs for mint and swap tags let the
     // fee underflow into the block template's coinbase.
+    //
+    // A transaction kept by a block settles against the state that block sees,
+    // not the tip: during a chain switch the pool carries the disconnected
+    // chain's transactions and the incoming chain's, and an exact settlement
+    // (an LP removal's payout) holds only at its own block. Refusing it here
+    // left the switching block, and the rollback's re-added block, with no
+    // transaction to load. It is kept as unverifiable now, like a kept input
+    // check failure below; the block template re-checks settlement before
+    // including any pooled transaction.
     uint64_t fee = 0;
-    if (!m_validator.checkTransactionSettlement(tx, fee))
+    const bool settlesAtTip = m_validator.checkTransactionSettlement(tx, fee);
+    if (!settlesAtTip)
     {
-      logger(WARNING, BRIGHT_YELLOW) << "Transaction " << id
-                                     << " rejected: outputs exceed inputs or its settlement is invalid";
-      tvc.m_verification_failed = true;
-      return false;
+      if (!keptByBlock)
+      {
+        logger(WARNING, BRIGHT_YELLOW) << "Transaction " << id
+                                       << " rejected: outputs exceed inputs or its settlement is invalid";
+        tvc.m_verification_failed = true;
+        return false;
+      }
+      fee = 0;
+      tvc.m_verification_impossible = true;
     }
 
     std::vector<TransactionExtraField> txExtraFields;
@@ -309,7 +324,7 @@ namespace CryptoNote
 
     // Check minimum fee based on current block version
     // For mempool transactions, use the latest version rules
-    if (!isFusionTransaction && fee < m_currency.minimumFee()) {
+    if (settlesAtTip && !isFusionTransaction && fee < m_currency.minimumFee()) {
       logger(DEBUGGING) << "transaction fee is not enough: " << m_currency.formatAmount(fee) <<
         ", minimum fee: " << m_currency.formatAmount(m_currency.minimumFee());
       tvc.m_verification_failed = true;

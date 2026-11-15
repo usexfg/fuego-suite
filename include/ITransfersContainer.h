@@ -95,6 +95,7 @@ namespace CryptoNote
       IncludeTypeKey = 0x100,
       IncludeTypeMultisignature = 0x200,
       IncludeTypeDeposit = 0x400,
+      IncludeTypeHeat = 0x800,
       // combinations
       IncludeStateAll = 0xff,
       IncludeTypeAll = 0xff00,

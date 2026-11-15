@@ -123,6 +123,8 @@ namespace CryptoNote {
     CdClaimEstimate estimateCdClaim(uint64_t amount, uint32_t creationHeight,
                                     uint32_t currentHeight, uint32_t term) const;
 
+    void startBlockVaultSequence();
+    bool isEpochBoundary(uint32_t height) const;
     // W-3: mints the vault-spend surplus back to the source partition as a
     // change UTXO (indexed above the current block height, so popBlock's
     // removeAboveIndex rolls it back with the block).

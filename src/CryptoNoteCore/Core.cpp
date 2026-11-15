@@ -385,6 +385,14 @@ bool core::check_tx_fee(const Transaction& tx, size_t blobSize, uint8_t blockMaj
 	return true;
 }
 
+// From v11 a settlement-tagged transaction is balanced per asset by the pool's
+// settlement check (Blockchain::validateSettlement). Pool payouts such as an LP
+// removal or a limit-order withdrawal legitimately create more than the inputs
+// carry, so the aggregate inputs-cover-outputs rule does not apply to them.
+bool core::isSettledPerAsset(const Transaction& tx, uint32_t height) {
+  return m_blockchain.getBlockMajorVersionForHeight(height) >= BLOCK_MAJOR_VERSION_11 && carriesHeatwaveTag(tx);
+}
+
 bool core::check_tx_semantic(const Transaction& tx, bool keeped_by_block, uint32_t &height) {
   if (!tx.inputs.size()) {
     logger(ERROR) << "tx with empty inputs, rejected for tx id= " << getObjectHash(tx);
@@ -459,7 +467,7 @@ bool core::check_tx_semantic(const Transaction& tx, bool keeped_by_block, uint32
         return false;
       }
     }
-  } else if (amount_in < amount_out) {
+  } else if (amount_in < amount_out && !isSettledPerAsset(tx, height)) {
     logger(ERROR) << "tx with wrong amounts: ins " << amount_in << ", outs " << amount_out << ", rejected for tx id= " << getObjectHash(tx);
     return false;
   }

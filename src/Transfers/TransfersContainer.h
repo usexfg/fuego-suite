@@ -83,6 +83,7 @@ public:
   bool isValid() const;
 
   bool operator==(const SpentOutputDescriptor& other) const;
+  bool tracksKeyImage() const;
   size_t hash() const;
 
 private:
@@ -392,6 +393,7 @@ private:
   bool addTransactionInputs(const TransactionBlockInfo& block, const ITransactionReader& tx);
   void deleteTransactionTransfers(const Crypto::Hash& transactionHash);
   bool isSpendTimeUnlocked(const TransactionOutputInformationEx& info) const;
+  bool maturesAtTerm(const TransactionOutputInformationEx& info) const;
   bool isIncluded(const TransactionOutputInformationEx& info, uint32_t flags) const;
   static bool isIncluded(const TransactionOutputInformationEx& output, uint32_t state, uint32_t flags);
   void updateTransfersVisibility(const Crypto::KeyImage& keyImage);

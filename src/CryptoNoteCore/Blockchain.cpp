@@ -76,7 +76,7 @@ bool operator<(const Crypto::KeyImage& keyImage1, const Crypto::KeyImage& keyIma
 }
 }
 
-#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 18  // v18: orderbook state and every per-block rollback journal persisted (forces replay so no restarted node resumes the auction in bootstrap or loses reorg reversal)
+#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 19  // v19: no protocol pool seed (seedboot); v18: orderbook state and rollback journals persisted
 #define CURRENT_BLOCKCHAININDICES_STORAGE_ARCHIVE_VER 1
 
 namespace CryptoNote {
@@ -480,7 +480,7 @@ public:
       s(m_bs.m_cdExpiryByEpoch, "cd_expiry_by_epoch");
       s(m_bs.m_digmSupply, "digm_supply");
       s(m_bs.m_ammPool, "amm_pool");
-      s(m_bs.m_seedLpShares, "seed_lp_shares");
+      s(m_bs.m_lockedLpShares, "locked_lp_shares");
       s(m_bs.m_poolLockedXfg, "pool_locked_xfg");
       s(m_bs.m_poolLockedHeat, "pool_locked_heat");
       s(m_bs.m_lpCommitmentShares, "lp_commitment_shares");
@@ -505,9 +505,7 @@ public:
       s(m_bs.m_heatCdFeePool, "heat_cd_fee_pool");
       s(m_bs.m_protocolLpShares, "protocol_lp_shares");
       s(m_bs.m_treasuryLpYield, "treasury_lp_yield");
-      s(m_bs.m_bootstrapRepaid, "bootstrap_repaid");
-      s(m_bs.m_bootstrapXfgOwed, "bootstrap_xfg_owed");
-      s(m_bs.m_bootstrapHeatOwed, "bootstrap_heat_owed");
+      s(m_bs.m_seedbootFilled, "seedboot_filled");
       s(m_bs.m_bootstrapRepaymentVault, "bootstrap_repayment_vault");
 
       // Resting limit-order deposits are consensus escrow state: without
@@ -823,28 +821,7 @@ private:
                           m_aliasIndex() {
   m_vaultKeys = deriveVaultKeys(m_currency.genesisBlockHash());
   m_vault.setSpendKey(m_vaultKeys.spendKey);
-  seedHearthPool();
 } // upgradekit
-
-// The Hearth pool starts from a fixed seed, not from any transaction, so the
-// seed is part of the initial consensus state. Every path that starts from
-// scratch must apply it: the constructor (fresh sync) and rebuildCache()
-// (replay). A replay that skipped it ran the whole chain against an empty
-// pool — no spot price, so every v11+ epoch deferred its CD yield and
-// recorded a zero fee rate — and diverged from nodes that synced normally.
-void CryptoNote::Blockchain::seedHearthPool() {
-  m_ammPool.reserveXfg = parameters::HEARTH_POOL_SEED_XFG * parameters::COIN;
-  m_ammPool.reserveHeat = parameters::HEARTH_POOL_SEED_HEAT * parameters::COIN;
-  // The seed is its provider's liquidity and carries LP shares like any
-  // first deposit. With none, the first LP to deposit anything owned every
-  // share, and so the whole pool; and the Treasury's first provisioning did,
-  // which made the bootstrap-repaid check pass at once.
-  m_seedLpShares = ammInitialLpShares(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
-  m_ammPool.totalLpShares = m_seedLpShares;
-  // Bootstrap: protocol owes the seed provider in both legs (XFG and HEAT).
-  m_bootstrapXfgOwed = m_ammPool.reserveXfg;
-  m_bootstrapHeatOwed = m_ammPool.reserveHeat;
-}
 
 namespace {
 
@@ -1266,11 +1243,9 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
     m_heatCdFeePool = 0;
     m_protocolLpShares = 0;
     m_treasuryLpYield = 0;
-    m_bootstrapRepaid = false;
-    m_bootstrapXfgOwed = 0;
-    m_bootstrapHeatOwed = 0;
+    m_seedbootFilled = false;
+    m_lockedLpShares = 0;
     m_bootstrapRepaymentVault = 0;
-    seedHearthPool();  // same initial pool as a fresh sync (see seedHearthPool)
     m_bonusVaultBalance = 0;
     m_bonusVaultPendingXfg = 0;
     m_swfBurnedXfgPendingHeat = 0;
@@ -1394,7 +1369,7 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
         preEpoch.protocolLpShares = m_protocolLpShares;
         preEpoch.treasuryLpYield = m_treasuryLpYield;
         preEpoch.bootstrapRepaymentVault = m_bootstrapRepaymentVault;
-        preEpoch.bootstrapRepaid = m_bootstrapRepaid;
+        preEpoch.seedbootFilled = m_seedbootFilled;
         preEpoch.bonusVaultBalance = m_bonusVaultBalance;
         preEpoch.bonusVaultPendingXfg = m_bonusVaultPendingXfg;
          preEpoch.swfBurnedXfgPendingHeat = m_swfBurnedXfgPendingHeat;
@@ -3919,7 +3894,7 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
       preEpoch.protocolLpShares = m_protocolLpShares;
       preEpoch.treasuryLpYield = m_treasuryLpYield;
       preEpoch.bootstrapRepaymentVault = m_bootstrapRepaymentVault;
-      preEpoch.bootstrapRepaid = m_bootstrapRepaid;
+      preEpoch.seedbootFilled = m_seedbootFilled;
       preEpoch.bonusVaultBalance = m_bonusVaultBalance;
       preEpoch.bonusVaultPendingXfg = m_bonusVaultPendingXfg;
        preEpoch.swfBurnedXfgPendingHeat = m_swfBurnedXfgPendingHeat;
@@ -4438,6 +4413,20 @@ uint64_t CryptoNote::Blockchain::getHearthSpotPrice() const {
 uint64_t CryptoNote::Blockchain::getPoolTwap() const {
   if (m_twapBlockCount == 0) return 0;
   return static_cast<uint64_t>(m_twapAccumulator / m_twapBlockCount);
+}
+
+uint64_t CryptoNote::Blockchain::launchMintPrice() {
+  return static_cast<uint64_t>((static_cast<uint128_t>(parameters::HEARTH_SEEDBOOT_HEAT) * parameters::COIN) /
+                               parameters::HEARTH_SEEDBOOT_XFG);
+}
+
+uint64_t CryptoNote::Blockchain::mintPriceBefore(uint32_t height) const {
+  const uint64_t twap = twapBefore(height);
+  return twap != 0 ? twap : launchMintPrice();
+}
+
+uint64_t CryptoNote::Blockchain::getMintPrice() const {
+  return mintPriceBefore(static_cast<uint32_t>(m_blocks.size()));
 }
 
 uint64_t CryptoNote::Blockchain::getRollingTwap() const {
@@ -6016,22 +6005,15 @@ bool CryptoNote::Blockchain::processBlockEpochWork(const Block& block, uint32_t 
     // The protocol's LP shares appreciate proportionally with all other LPs.
     // No separate drain required.
 
-    // Bootstrap repayment (v11+): the Treasury LP Manager provisions the
-    // protocol's own Hearth LP position from the treasury fee share. Its value
-    // compounds inside the reserves; repayment is complete once the Treasury's
-    // owned reserves (BOTH legs, actual amounts) cover the seed:
-    //   bootstrapRepaid ⇔ owned.xfg ≥ owed.xfg && owned.heat ≥ owed.heat
-    if (block.majorVersion >= BLOCK_MAJOR_VERSION_11 &&
-        !m_bootstrapRepaid && (m_bootstrapXfgOwed > 0 || m_bootstrapHeatOwed > 0)) {
-      auto owned = getTreasuryLpValue();
-      if (owned.xfg >= m_bootstrapXfgOwed && owned.heat >= m_bootstrapHeatOwed) {
-        m_bootstrapRepaid = true;
-        logger(INFO) << "=== Bootstrap liquidity repaid: Treasury-owned LP reserves "
-                     << m_currency.formatAmount(owned.xfg) << " XFG + "
-                     << m_currency.formatAmount(owned.heat) << " HEAT ≥ owed "
-                     << m_currency.formatAmount(m_bootstrapXfgOwed) << " XFG + "
-                     << m_currency.formatAmount(m_bootstrapHeatOwed) << " HEAT ===";
-      }
+    // Seedboot (v11+): filled once the pool's reserves reach the target the
+    // first liquidity providers deposit toward. Latched; informational.
+    if (block.majorVersion >= BLOCK_MAJOR_VERSION_11 && !m_seedbootFilled &&
+        m_ammPool.reserveXfg >= parameters::HEARTH_SEEDBOOT_XFG * parameters::COIN &&
+        m_ammPool.reserveHeat >= parameters::HEARTH_SEEDBOOT_HEAT * parameters::COIN) {
+      m_seedbootFilled = true;
+      logger(INFO) << "=== Seedboot filled: pool reserves "
+                   << m_currency.formatAmount(m_ammPool.reserveXfg) << " XFG + "
+                   << m_currency.formatAmount(m_ammPool.reserveHeat) << " HEAT ===";
     }
 
     // Record the full epoch accumulator as this block's contribution before resetting.
@@ -6451,7 +6433,7 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
     m_protocolLpShares = snap.protocolLpShares;
     m_treasuryLpYield = snap.treasuryLpYield;
     m_bootstrapRepaymentVault = snap.bootstrapRepaymentVault;
-    m_bootstrapRepaid = snap.bootstrapRepaid;
+    m_seedbootFilled = snap.seedbootFilled;
     m_bonusVaultBalance = snap.bonusVaultBalance;
     m_bonusVaultPendingXfg = snap.bonusVaultPendingXfg;
      m_swfBurnedXfgPendingHeat = snap.swfBurnedXfgPendingHeat;
@@ -6877,7 +6859,7 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
           const uint64_t premiumXfg = heatMintPremiumXfg(
               auth.xfgBurned, block.bl.majorVersion);
           const uint64_t premiumHeat = m_heatMintEngine.premiumHeatFor(
-              auth.xfgBurned, twapBefore(block.height), block.bl.majorVersion);
+              auth.xfgBurned, mintPriceBefore(block.height), block.bl.majorVersion);
           m_heatSupply = (m_heatSupply > UINT64_MAX - auth.heatMinted) ? UINT64_MAX : m_heatSupply + auth.heatMinted;
           m_heatSupply = (m_heatSupply > UINT64_MAX - premiumHeat) ? UINT64_MAX : m_heatSupply + premiumHeat;
           if (premiumXfg > 0) {
@@ -7091,6 +7073,10 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
         // The declared shares — validateSettlement held them to at most what
         // the deposit earns — so the reversal can remove exactly these.
         const uint64_t shares = authLpAddShares;
+        if (m_ammPool.totalLpShares == 0) {
+          m_lockedLpShares = AMM_MINIMUM_LIQUIDITY;
+          m_ammPool.totalLpShares = AMM_MINIMUM_LIQUIDITY;
+        }
         m_ammPool.reserveXfg += authLpAddXfg;
         m_ammPool.reserveHeat += authLpAddHeat;
         m_ammPool.totalLpShares += shares;
@@ -7577,6 +7563,12 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
           if (m_ammPool.reserveHeat >= a.amountHeat) m_ammPool.reserveHeat -= a.amountHeat;
           if (m_ammPool.reserveXfg >= a.amountXfg) m_ammPool.reserveXfg -= a.amountXfg;
           if (m_ammPool.totalLpShares >= shares) m_ammPool.totalLpShares -= shares;
+          // Undoing the first deposit releases the shares it locked.
+          if (m_ammPool.reserveXfg == 0 && m_ammPool.reserveHeat == 0 &&
+              m_ammPool.totalLpShares == m_lockedLpShares) {
+            m_ammPool.totalLpShares = 0;
+            m_lockedLpShares = 0;
+          }
           auto lpIt = m_lpCommitTxGidx.find(transactionHash);
           if (lpIt != m_lpCommitTxGidx.end()) {
             m_lpCommitmentShares.erase(lpIt->second);
@@ -8385,9 +8377,10 @@ bool CryptoNote::Blockchain::validateSettlement(const Transaction& tx, uint32_t 
   // failure, so none may be left for settlement to discover.
   if (kind == typeid(TransactionExtraHeatMintAuth)) {
     const auto& a = boost::get<TransactionExtraHeatMintAuth>(*tag);
-    // Priced by the 8-block TWAP only. The spot fallback let a swap earlier in
-    // the same block set the price a mint pays.
-    const uint64_t price = twapBefore(height);
+    // Priced by the 8-block TWAP, or the launch ratio before the pool has
+    // one. No spot fallback: a swap earlier in the same block must not set the
+    // price a mint pays.
+    const uint64_t price = mintPriceBefore(height);
     if (price == 0) {
       error = "HEAT mint: no TWAP price yet";
       return false;
@@ -8526,9 +8519,14 @@ bool CryptoNote::Blockchain::validateSettlement(const Transaction& tx, uint32_t 
               std::to_string(shares) + " the deposit earns";
       return false;
     }
-    if (!ammValidateDepositRatio(a.amountXfg, a.amountHeat, m_ammPool.reserveXfg,
-                                 m_ammPool.reserveHeat, 100)) {
-      error = "LP add: deposit ratio out of tolerance";
+    // The first deposit into an empty pool sets the opening price, so it is
+    // held to the launch ratio; later deposits to the pool ratio.
+    const bool firstDeposit = m_ammPool.totalLpShares == 0;
+    const uint64_t ratioXfg = firstDeposit ? parameters::HEARTH_SEEDBOOT_XFG : m_ammPool.reserveXfg;
+    const uint64_t ratioHeat = firstDeposit ? parameters::HEARTH_SEEDBOOT_HEAT : m_ammPool.reserveHeat;
+    if (!ammValidateDepositRatio(a.amountXfg, a.amountHeat, ratioXfg, ratioHeat, 100)) {
+      error = firstDeposit ? "LP add: first deposit must match the launch ratio"
+                           : "LP add: deposit ratio out of tolerance";
       return false;
     }
     if (m_ammPool.reserveXfg > UINT64_MAX - a.amountXfg ||

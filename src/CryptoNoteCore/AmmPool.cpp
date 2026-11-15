@@ -107,8 +107,7 @@ uint64_t ammMintLpShares(uint64_t amountA, uint64_t amountB,
   if (totalShares == 0) {
     uint128_t product = (uint128_t)amountA * amountB;
     uint64_t shares = isqrt128(product);
-    const uint64_t MIN_LIQUIDITY = 1000;
-    return shares > MIN_LIQUIDITY ? shares - MIN_LIQUIDITY : 0;
+    return shares > AMM_MINIMUM_LIQUIDITY ? shares - AMM_MINIMUM_LIQUIDITY : 0;
   }
 
   // Invariant guard: a live share supply with an empty reserve is invalid state;

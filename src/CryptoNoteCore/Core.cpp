@@ -1545,7 +1545,7 @@ std::error_code core::getAmmPoolReserves(AmmPoolReserves& out) {
 }
 
 uint64_t core::getHearthTwap() {
-  return m_blockchain.getRollingTwap();
+  return m_blockchain.getMintPrice();
 }
 
 size_t core::getCommitmentCount() const {
@@ -1677,7 +1677,7 @@ core::AmmQuote core::getAmmQuote(uint64_t inputAmount, uint8_t direction) const 
   // TWAP, with no price impact — for a large sale, often far more HEAT.
   if (direction == 0) {
     q.mintOutput = static_cast<uint64_t>(
-        ((uint128_t)inputAmount * m_blockchain.getRollingTwap()) / parameters::COIN);
+        ((uint128_t)inputAmount * m_blockchain.getMintPrice()) / parameters::COIN);
   }
   const auto& pool = m_blockchain.getAmmPool();
   const uint64_t reserveIn = direction == 0 ? pool.reserveXfg : pool.reserveHeat;

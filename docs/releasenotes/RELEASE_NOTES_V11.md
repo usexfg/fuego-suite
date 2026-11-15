@@ -45,7 +45,7 @@ treasury-vault drain primitive.
 - The taker pays a 1% fee (`HEARTH_FEE_BPS = 100`). The split is versioned so that reorg replay recomputes the split the block settled. At v11, 30% accrues in the HEAT-denominated `cdHearthFeeAccumulator` and is minted into `CD_APY_POOL` at the epoch boundary, while 70% is the maker rebate paid to auction makers (or to LPs when the pool is the counterparty). At v12 the split flips to 70% CD and 30% maker.
 - Consumed XFG is burned 50/50 between the Eternal Flame and the SWF.
 - The bootstrap window runs 144 blocks of AMM-only operation after the upgrade.
-- The **Treasury LP Manager (AuntPoL)** maintains the protocol's own ratio-paired LP position. **Both legs are funded by the 1% mint premium**: the withheld premium XFG is the XFG leg, and the HEAT it buys is the HEAT leg (plus HEAT donations). The two legs are never cross-converted, and no SWF transfer is involved. The position compounds and drives bootstrap repayment through the two-leg owned-reserves check.
+- The **Treasury LP Manager (AuntPoL)** maintains the protocol's own ratio-paired LP position. **Both legs are funded by the 1% mint premium**: the withheld premium XFG is the XFG leg, and the HEAT it buys is the HEAT leg (plus HEAT donations). The two legs are never cross-converted, and no SWF transfer is involved. The position compounds inside the pool reserves. The protocol creates no seed reserves: the pool starts empty, mints price at the 8:1 launch ratio until the pool has a TWAP, and the first deposit must match the launch ratio.
 
 ---
 

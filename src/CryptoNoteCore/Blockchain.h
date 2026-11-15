@@ -214,7 +214,10 @@ namespace CryptoNote {
     uint64_t getCdYieldPool() const { return m_cdYieldPool; }
     uint64_t getTreasuryLpYield() const { return m_treasuryLpYield; }
     uint64_t getBootstrapRepaymentVault() const { return m_bootstrapRepaymentVault; }
-    bool isBootstrapRepaid() const { return m_bootstrapRepaid; }
+    bool isSeedbootFilled() const { return m_seedbootFilled; }
+    // Mint price for the next block: the 8-block spot TWAP, or the launch
+    // ratio while the pool has none (before and just after the first deposit).
+    uint64_t getMintPrice() const;
 
     // Treasury LP Manager: the protocol's own Hearth LP position, provisioned
     // from the treasury fee share, compounding inside the reserves.
@@ -532,7 +535,7 @@ namespace CryptoNote {
       uint64_t swfHeatBalance;
       uint64_t feePoolBalance;
       uint64_t cdHearthFeeAccumulator;
-      bool bootstrapRepaid;
+      bool seedbootFilled;
       uint64_t bonusVaultBalance;
       uint64_t bonusVaultPendingXfg;
 
@@ -558,7 +561,7 @@ namespace CryptoNote {
         s(swfHeatBalance, "swf_heat_balance");
         s(feePoolBalance, "fee_pool_balance");
         s(cdHearthFeeAccumulator, "cd_hearth_fee_accumulator");
-        s(bootstrapRepaid, "bootstrap_repaid");
+        s(seedbootFilled, "seedboot_filled");
         s(bonusVaultBalance, "bonus_vault_balance");
         s(bonusVaultPendingXfg, "bonus_vault_pending_xfg");
       }
@@ -595,9 +598,8 @@ namespace CryptoNote {
 
     // Hearth AMM state
     CryptoNote::AmmPoolState m_ammPool;
-    // LP shares of the genesis seed, held by the seed provider. The seed used
-    // to have none, so the first LP deposit — by anyone — owned the whole pool.
-    uint64_t m_seedLpShares = 0;
+    // Shares the first deposit locked permanently (AMM_MINIMUM_LIQUIDITY).
+    uint64_t m_lockedLpShares = 0;
     uint64_t m_poolLockedXfg = 0;    // sum of DEPOSIT_TERM_POOL_XFG outputs
     uint64_t m_poolLockedHeat = 0;   // sum of DEPOSIT_TERM_POOL_HEAT outputs
     uint128_t m_twapAccumulator = 0;
@@ -618,10 +620,8 @@ namespace CryptoNote {
     uint64_t m_heatCdFeePool = 0;
     uint64_t m_protocolLpShares = 0;
     uint64_t m_treasuryLpYield = 0;
-    bool     m_bootstrapRepaid = false;
-    uint64_t m_bootstrapHeatOwed = 0;
+    bool     m_seedbootFilled = false;  // pool reserves reached the seedboot target
     uint64_t m_bonusVaultPendingXfg = 0;  // XFG awaiting conversion (no pool rate at epoch)
-    uint64_t m_bootstrapXfgOwed = 0;
     uint64_t m_bootstrapRepaymentVault = 0;
     uint64_t m_swfBurnedXfgPendingHeat = 0; // SWF-owned XFG already burned, pending HEAT conversion
     IndexManager m_indexManager;
@@ -854,7 +854,8 @@ namespace CryptoNote {
     void processFciBlock(const Block& block, uint32_t height, uint32_t epochBlocks);
     void rebuildFciState(uint32_t blockCount);
     void rollbackFciBlock(uint32_t poppedHeight);
-    void seedHearthPool();
+    uint64_t mintPriceBefore(uint32_t height) const;
+    static uint64_t launchMintPrice();
     void accumulateTwap(const Block& block, uint32_t height);
     void popTransaction(const Transaction &transaction, const Crypto::Hash &transactionHash,
                         uint32_t height, uint8_t majorVersion);

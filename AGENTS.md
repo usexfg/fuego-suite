@@ -37,12 +37,12 @@ fuego-suite/
 - **Balanced LP deposits only** — single-sided deposits mint no shares (no dilution); shares are fair pro-rata at the pool ratio
 - Taker pays the 1% fee; the split is versioned (`hearthCdSharePct`): **v11 pays 30% CD / 70% maker**, **v12 flips to 70% CD / 30% maker**. The CD share is debited into the HEAT-denominated `cdHearthFeeAccumulator` → minted into `CD_APY_POOL` at the epoch boundary; the maker share is the rebate (auction makers, or LPs on pool fills); consumed XFG burned 50/50 (EF/SWF)
 - The gossiped in-band CLOB matcher, `MIN_DISTINCT_PARTIES`, and unbacked orders are **retired**
-- **Treasury LP Manager (AuntPoL)**: the protocol's own ratio-paired LP position. **Both legs are funded by the 1% mint premium**: the withheld premium XFG is the **XFG leg** and the HEAT it buys is the **HEAT leg** (plus HEAT donations). The two pair at the pool ratio; no SWF transfer and no cross-conversion. Compounds and drives bootstrap repayment (two-leg owned-reserves check)
+- **Treasury LP Manager (AuntPoL)**: the protocol's own ratio-paired LP position. **Both legs are funded by the 1% mint premium**: the withheld premium XFG is the **XFG leg** and the HEAT it buys is the **HEAT leg** (plus HEAT donations). The two pair at the pool ratio; no SWF transfer and no cross-conversion. Compounds inside the pool reserves; the protocol never withdraws it (`withdrawTreasuryLp` has no caller)
 
 ### HEAT Flatcoin (colored coin)
 - Not fiat based, peg targets purchasing power only; adjusts for inflation/CPI
 - Mint by burning XFG at hearth pool price. No launch premium (PI controller removed); from v11 a 1% **mint premium** (`HEAT_MINT_PREMIUM_BPS = 100`) is a haircut inside the burn that mints the AuntPoL HEAT leg
-- Launch ratio: 1 HEAT = 8 XFG (8:1 XFG per HEAT); genesis Hearth seed 8,000 XFG / 1,000 HEAT
+- Launch ratio: 1 HEAT = 8 XFG (8:1 XFG per HEAT); no protocol seed: the pool starts empty, mints price at the 8:1 launch ratio until the pool has a TWAP, the first deposit must match the launch ratio and locks `AMM_MINIMUM_LIQUIDITY` shares, and `seedbootFilled` latches when reserves reach the 8,000 XFG / 1,000 HEAT seedboot target
 - Hearthstone reference: $1.58 USD at launch (`FCI_HEARTHSTONE_INITIAL_CENTS = 158`), re-based quarterly from the on-chain Fuego Cost Index (see below)
 - Fuego Cost Index (FCI): miners vote a 6-item consumer basket in integer cents (power, gas, rice, milk, bread, eggs) via `TX_EXTRA_MINER_BASKET_VOTE`; trimmed median per category, 3-of-6 fresh-quorum gate per quarter, 5.04% max quarterly move
 - Certificates of Deposit (CD): V12 activation, epoch-term-locked HEAT earning protocol revenue yield

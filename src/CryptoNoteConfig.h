@@ -447,10 +447,12 @@ const uint64_t HEARTH_CD_SHARE_PCT_V12 = 70; // v12: 70% CD yield / 30% maker
 const uint64_t ORDER_PRICE_TICK = COIN / 100; // min price granularity (1%)
 const uint64_t HEARTH_BACKSTOP_MAX_BPS =
     500; // backstop fills ≤ 5× auction volume per block
-constexpr uint64_t HEARTH_POOL_SEED_XFG =
-    8000; // 8,000 XFG at genesis (COIN units)
-constexpr uint64_t HEARTH_POOL_SEED_HEAT =
-    1000; // 1,000 HEAT at genesis (8:1 ratio, 8 XFG = 1 HEAT @ $1.58 CPI-adj)
+// Seedboot: the launch ratio and the reserve target the first liquidity
+// providers fill. The protocol creates no reserves; the pool starts empty.
+constexpr uint64_t HEARTH_SEEDBOOT_XFG =
+    8000; // 8,000 XFG target (COIN units)
+constexpr uint64_t HEARTH_SEEDBOOT_HEAT =
+    1000; // 1,000 HEAT target (8:1 launch ratio, 8 XFG = 1 HEAT)
 const uint64_t HEARTH_MIN_XFG_DEPTH =
     5000; // 5,000 XFG minimum (aspirational depth target)
 const uint64_t HEARTH_MIN_HEAT_DEPTH =

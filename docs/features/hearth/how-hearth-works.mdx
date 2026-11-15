@@ -50,7 +50,7 @@ On auction fills the taker is the rationed side; the maker side receives the reb
 | LP | Provides a **balanced** XFG+HEAT deposit (single-sided deposits are rejected); earns the pool’s trading P&L and appreciation, realized on withdrawal via share redemption — not the flat fee |
 | Minter | Uses Hearth TWAP when burning XFG to mint HEAT (canonical price = HEAT/XFG × COIN) |
 | CD holder | Receives the CD share of the 1% Hearth flat fee (30% at v11, 70% at v12) via the CD yield vault |
-| Protocol / Treasury | The **Treasury LP Manager (AuntPoL)** maintains the protocol's own ratio-paired LP position. **Both legs are funded by the 1% mint premium**: the withheld premium XFG is the XFG leg and the HEAT it buys is the HEAT leg (plus HEAT donations). It compounds and drives bootstrap repayment |
+| Protocol / Treasury | The **Treasury LP Manager (AuntPoL)** maintains the protocol's own ratio-paired LP position. **Both legs are funded by the 1% mint premium**: the withheld premium XFG is the XFG leg and the HEAT it buys is the HEAT leg (plus HEAT donations). It compounds inside the pool reserves |
 
 ## Privacy
 

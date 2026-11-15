@@ -30,7 +30,7 @@ The unusual parts worth calling out:
 - **Price-time priority on a privacy chain.** The auction orders fills by price, then by deposit block height, then by order hash — a fair queue without revealing the owner (the owner is only an `addressHash`, a hash of spend+view keys).
 - **Self-trade exclusion by construction.** A key may participate on only one side of the auction per block (its latest order's side wins), closing the trivial wash-trade path without KYC.
 - **The mint price reads discovered prices.** The HEAT mint TWAP is fed from `P_clear` (the auction's last price), falling back to the pool ratio only during bootstrap. Money creation is priced by what people actually paid, not by an inventory curve.
-- **A treasury that is a market maker.** The Treasury LP Manager takes protocol fee income in both assets, pairs them at the pool ratio, and deposits as the protocol's own LP position — compounding, and driving bootstrap repayment by an owned-reserves check in both legs.
+- **A treasury that is a market maker.** The Treasury LP Manager takes protocol fee income in both assets, pairs them at the pool ratio, and deposits as the protocol's own LP position — compounding inside the pool reserves.
 
 ## 3. Architecture
 
@@ -104,7 +104,7 @@ The unusual parts worth calling out:
 | `HEARTH_BACKSTOP_MAX_BPS` | 500 |
 | `ORDER_PRICE_TICK` | COIN/100 |
 | `BOOTSTRAP_BLOCKS` | 144 |
-| `HEARTH_POOL_SEED_XFG/HEAT` | 8,000 XFG / 1,000 HEAT (8:1) |
+| `HEARTH_SEEDBOOT_XFG/HEAT` | 8,000 XFG / 1,000 HEAT: launch ratio (8:1) and seedboot target. The protocol creates no reserves; liquidity providers fill the pool from an empty start |
 | Price scale | HEAT/XFG × COIN (1e7), integer-only |
 
 ## 6. Key files

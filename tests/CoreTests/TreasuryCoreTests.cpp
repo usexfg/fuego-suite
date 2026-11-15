@@ -755,7 +755,8 @@ struct TestChain {
   std::filesystem::path dir;
   bool ok = false;
 
-  explicit TestChain(const std::string& tag)
+  enum class Pool { Empty, Seedbooted };
+  explicit TestChain(const std::string& tag, Pool poolState = Pool::Seedbooted)
       : currency(CurrencyBuilder(log).currency()),
         pool(currency, chain, timeProvider, log),
         chain(currency, pool, log, false, false),
@@ -764,38 +765,36 @@ struct TestChain {
     std::filesystem::remove_all(dir);
     std::filesystem::create_directories(dir);
     ok = chain.init(dir.string(), false);
+    if (ok && poolState == Pool::Seedbooted) seedbootDeposit();
   }
+  // The state an 8,000 XFG / 1,000 HEAT first deposit settles to: √(x·y)
+  // shares in total, AMM_MINIMUM_LIQUIDITY of them locked.
+  void seedbootDeposit();
   ~TestChain() {
     std::error_code ec;
     std::filesystem::remove_all(dir, ec);
   }
 };
 
-// rebuildCache() replays the chain from scratch and must start from the same
-// Hearth pool a fresh sync starts from. It used to reset the pool to empty and
-// never re-seed it, so every node that rebuilt its cache — including every
-// node crossing a cache-version bump — diverged from the rest of the network.
-void testRebuildCacheKeepsHearthSeed() {
-  TestChain t("rebuild");
+// The protocol creates no pool reserves: a fresh sync and a rebuild both start
+// from an empty pool, which only a first deposit fills.
+void testPoolStartsEmptyWithoutProtocolSeed() {
+  TestChain t("rebuild", TestChain::Pool::Empty);
   TEST(t.ok);
-  const uint64_t seedXfg = parameters::HEARTH_POOL_SEED_XFG * parameters::COIN;
-  const uint64_t seedHeat = parameters::HEARTH_POOL_SEED_HEAT * parameters::COIN;
-  TEST(t.chain.getAmmPool().reserveXfg == seedXfg);
-  TEST(t.chain.getAmmPool().reserveHeat == seedHeat);
-
-  // The seed carries its provider's LP shares: √(xfg · heat).
-  const uint64_t seedShares = ammInitialLpShares(seedXfg, seedHeat);
-  TEST(seedShares > 0 && t.chain.getAmmPool().totalLpShares == seedShares);
+  TEST(t.chain.getAmmPool().reserveXfg == 0);
+  TEST(t.chain.getAmmPool().reserveHeat == 0);
+  TEST(t.chain.getAmmPool().totalLpShares == 0);
+  TEST(!t.chain.isSeedbootFilled());
 
   t.chain.rebuildCache();
-  TEST(t.chain.getAmmPool().reserveXfg == seedXfg);
-  TEST(t.chain.getAmmPool().reserveHeat == seedHeat);
-  TEST(t.chain.getAmmPool().totalLpShares == seedShares);
+  TEST(t.chain.getAmmPool().reserveXfg == 0);
+  TEST(t.chain.getAmmPool().reserveHeat == 0);
+  TEST(t.chain.getAmmPool().totalLpShares == 0);
 }
 
-// With seed shares, a first LP deposit earns its fair slice: 1% of both
-// reserves earns 1% of the shares. Without them it earned every share — and
-// with them the whole pool, seed included.
+// After the first deposit, a later deposit earns its fair slice: 1% of both
+// reserves earns 1% of the shares. The locked minimum keeps the first
+// depositor from owning every share.
 void testSeedLpSharesMakeFirstDepositFair() {
   TestChain t("seedshares");
   TEST(t.ok);
@@ -803,12 +802,13 @@ void testSeedLpSharesMakeFirstDepositFair() {
   const uint64_t shares = ammMintLpShares(pool.reserveXfg / 100, pool.reserveHeat / 100,
                                           pool.totalLpShares, pool.reserveXfg, pool.reserveHeat);
   TEST(shares == pool.totalLpShares / 100);
-  // Without the seed's shares the same deposit took everything.
-  TEST(ammMintLpShares(pool.reserveXfg / 100, pool.reserveHeat / 100, 0, 0, 0) > 0);
+  // Into an empty pool a deposit earns √(x·y) minus the locked minimum.
+  TEST(ammMintLpShares(pool.reserveXfg / 100, pool.reserveHeat / 100, 0, 0, 0) ==
+       ammInitialLpShares(pool.reserveXfg / 100, pool.reserveHeat / 100) - AMM_MINIMUM_LIQUIDITY);
 }
 
 // The /heat_metrics redemption price is the pool's XFG-per-HEAT ratio at COIN
-// scale. At the genesis seed it must be exactly 80,000,000 / 10,000,000.
+// scale. With no protocol seed the genesis pool is empty and reports 0 / 1.
 void testHeatMetricsSeedRedemptionPrice() {
   Logging::LoggerGroup log;
   Currency currency(CurrencyBuilder(log).currency());
@@ -816,12 +816,11 @@ void testHeatMetricsSeedRedemptionPrice() {
 
   const uint64_t C = parameters::COIN;
   const auto& pool = heatCore.get_blockchain_storage().getAmmPool();
-  TEST(pool.reserveXfg == 8000 * C);
-  TEST(pool.reserveHeat == 1000 * C);
+  TEST(pool.reserveXfg == 0 && pool.reserveHeat == 0);
 
   const auto metrics = heatCore.getHeatMetrics();
-  TEST(metrics.redemptionPriceNum == 80000000);
-  TEST(metrics.redemptionPriceDenom == C);
+  TEST(metrics.redemptionPriceNum == 0);
+  TEST(metrics.redemptionPriceDenom == 1);
 }
 
 
@@ -920,10 +919,18 @@ void testValidateSettlementBasics() {
   // A plain transaction cannot turn XFG into HEAT.
   TEST(!check(settlementTx({100 * C}, {commitmentOut(90 * C, parameters::HEAT_TERM)}, {})));
 
-  // A mint is priced by the 8-block TWAP; at genesis there is none.
+  // A mint is priced by the 8-block TWAP; before the pool has one it prices
+  // at the 8:1 launch ratio. Burning 10 XFG earns 1.25 HEAT (height 1 is
+  // below v11, so no mint premium is withheld).
   std::vector<uint8_t> mint;
   addHeatMintAuthToExtra(mint, 10 * C, 1 * C);
-  TEST(!check(settlementTx({11 * C}, {commitmentOut(1 * C, parameters::HEAT_TERM)}, mint)));
+  TEST(check(settlementTx({11 * C}, {commitmentOut(1 * C, parameters::HEAT_TERM)}, mint)));
+  std::vector<uint8_t> maxMint;
+  addHeatMintAuthToExtra(maxMint, 10 * C, 12500000);
+  TEST(check(settlementTx({11 * C}, {commitmentOut(12500000, parameters::HEAT_TERM)}, maxMint)));
+  std::vector<uint8_t> overMint;
+  addHeatMintAuthToExtra(overMint, 10 * C, 12500001);
+  TEST(!check(settlementTx({11 * C}, {commitmentOut(12500001, parameters::HEAT_TERM)}, overMint)));
 
   // The retired 0x08 burn tag is refused: its amount was never checked
   // against a burn, yet it raised the Eternal Flame and the block reward.
@@ -1167,6 +1174,12 @@ public:
     return chain.m_currency.isTestnet() ? parameters::TESTNET_EPOCH_DURATION_BLOCKS
                                         : parameters::EPOCH_DURATION_BLOCKS;
   }
+  static void applyFirstDeposit(Blockchain& chain, uint64_t xfg, uint64_t heat) {
+    chain.m_ammPool.reserveXfg = xfg;
+    chain.m_ammPool.reserveHeat = heat;
+    chain.m_ammPool.totalLpShares = ammInitialLpShares(xfg, heat);
+    chain.m_lockedLpShares = AMM_MINIMUM_LIQUIDITY;
+  }
   static CommitmentOutputIndex& commitmentOutputs(Blockchain& chain) {
     return chain.m_indexManager.commitmentOutputs();
   }
@@ -1198,6 +1211,11 @@ public:
   static auto& orderbookSnapshots(Blockchain& chain) { return chain.m_orderbookSnapshots; }
 };
 } // namespace CryptoNote
+
+void TestChain::seedbootDeposit() {
+  VaultCoreTestAccess::applyFirstDeposit(chain, parameters::HEARTH_SEEDBOOT_XFG * parameters::COIN,
+                                         parameters::HEARTH_SEEDBOOT_HEAT * parameters::COIN);
+}
 
 namespace {
 
@@ -1380,6 +1398,46 @@ void testCommitmentSpendRingMemberRulesFromV11() {
   TEST(!transferRing(t.chain, coinbaseHeatWithDecoy, 0, V11));
   TEST(transferRing(t.chain, regularHeatWithDecoy, 1, V11));
   TEST(!transferRing(t.chain, {{LP, REGULAR_TX_AT_HEIGHT_3}}, 0, V10));
+}
+
+// An indexed HEAT output spent as a commitment input: validateSettlement
+// values it as HEAT from its ring's term without resolving the signature.
+TransactionInput heatInput(Blockchain& chain, uint64_t amount) {
+  CommitmentOutputRef ref{};
+  ref.transactionIndex = {0, 1};
+  ref.term = parameters::HEAT_TERM;
+  auto& refs = VaultCoreTestAccess::commitmentOutputs(chain)[amount];
+  refs.push_back(ref);
+  TransactionInputCommitmentSpend in;
+  in.amount = amount;
+  in.outputIndexes = {static_cast<uint32_t>(refs.size() - 1)};
+  return in;
+}
+
+// With no protocol seed the first deposit opens the pool, so it sets the
+// opening price: it is held to the 8:1 launch ratio and earns at most
+// √(x·y) minus the locked minimum.
+void testFirstDepositHeldToLaunchRatio() {
+  TestChain t("first_deposit", TestChain::Pool::Empty);
+  TEST(t.ok);
+  const uint64_t C = parameters::COIN;
+  AssetFlows flows;
+  uint64_t fee = 0;
+  std::string err;
+  auto deposit = [&](uint64_t xfg, uint64_t heat, uint64_t shares) {
+    std::vector<uint8_t> extra;
+    addLpAddAuthToExtra(extra, xfg, heat, shares);
+    Transaction tx = settlementTx({xfg + C}, {commitmentOut(shares, parameters::DEPOSIT_TERM_LP)}, extra);
+    tx.inputs.push_back(heatInput(t.chain, heat));
+    Blockchain::SettlementScratch scratch;
+    return t.chain.validateSettlement(tx, 1, scratch, flows, fee, err);
+  };
+  const uint64_t xfg = 4000 * C, heat = 500 * C;
+  const uint64_t earned = ammInitialLpShares(xfg, heat) - AMM_MINIMUM_LIQUIDITY;
+  TEST(deposit(xfg, heat, earned));
+  TEST(!deposit(xfg, heat, earned + 1));
+  TEST(!deposit(xfg, 400 * C, ammInitialLpShares(xfg, 400 * C) - AMM_MINIMUM_LIQUIDITY));
+  TEST(!deposit(xfg, 600 * C, ammInitialLpShares(xfg, 600 * C) - AMM_MINIMUM_LIQUIDITY));
 }
 
 namespace {
@@ -1628,8 +1686,8 @@ void testAuntPolPairsAtV11EpochBoundary() {
   TEST(pool.totalLpShares == sharesBefore + shares);
   TEST(t.chain.getTreasuryLpPendingXfg() == 0);
   TEST(t.chain.getTreasuryHeatReserve() == legHeat - pairedHeat);
-  // Owned value is far below the two-leg seed obligation: not repaid yet.
-  TEST(!t.chain.isBootstrapRepaid());
+  // The pool now holds the 8,000 / 1,000 seedboot target and more.
+  TEST(t.chain.isSeedbootFilled());
 }
 
 // Regression: a coinbase must not be able to create AMM pool state, at any version.
@@ -2019,7 +2077,7 @@ int main() {
   testCdYieldFloor();
   testCdEarningWindowMatchesPayout();
   testCommitmentAssetClassification();
-  testRebuildCacheKeepsHearthSeed();
+  testPoolStartsEmptyWithoutProtocolSeed();
   testSettleAssetFlows();
   testValidateSettlementBasics();
   testCoinbaseRejectsEverySettlementTag();
@@ -2056,6 +2114,7 @@ int main() {
   testCoinbaseMintsOnlyKeyOutputsFromV11();
   testCommitmentSpendRingMemberRulesFromV11();
   testPoolOrdersAreFullyDeterministic();
+  testFirstDepositHeldToLaunchRatio();
   testDigmOutputsAreRejectedBeforeActivationVersion();
   testOrderbookStateSurvivesCacheReload();
   testRollbackHistoriesSurviveCacheReload();

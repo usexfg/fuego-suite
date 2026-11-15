@@ -83,8 +83,12 @@ public:
                                                        std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
                                                        uint64_t amountXfg,
                                                        uint64_t amountHeat,
+                                                       uint64_t lpShares,
                                                        uint64_t fee,
                                                        uint64_t mixIn);
+  // Shares an LP add earns against the node's pool; 0 if it would be refused.
+  // Queries the node, so callers run it before taking the wallet cache lock.
+  static uint64_t lpAddShares(INode& node, uint64_t amountXfg, uint64_t amountHeat);
 
   std::unique_ptr<WalletRequest> makeLpRemoveV10Request(TransactionId& transactionId,
                                                          std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
@@ -205,6 +209,16 @@ private:
                                                                         uint64_t inputAmount,
                                                                         uint64_t outputAmount,
                                                                         uint64_t minOutput);
+  struct HeatRingSpend {
+    TransactionInputCommitmentSpend input;
+    std::vector<Crypto::PublicKey> ringKeyStorage;
+    std::vector<const Crypto::PublicKey*> ringKeys;
+    KeyPair keyPair;
+    size_t realPosition = 0;
+  };
+  HeatRingSpend buildHeatRingSpend(const TransactionOutputInformation& transfer,
+      const std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>& decoys,
+      uint64_t ringSize);
   std::unique_ptr<WalletRequest> doSendLpAddV10Transaction(std::shared_ptr<SendTransactionContext>&& context,
                                                             std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
                                                             uint64_t amountXfg,

@@ -1026,10 +1026,11 @@ TransactionId WalletLegacy::lpAddV10(uint64_t amountXfg, uint64_t amountHeat, ui
   std::deque<std::unique_ptr<WalletLegacyEvent>> events;
 
   fee = m_currency.minimumFee();
+  const uint64_t lpShares = WalletTransactionSender::lpAddShares(m_node, amountXfg, amountHeat);
 
   {
     std::unique_lock<std::mutex> lock(m_cacheMutex);
-    request = m_sender->makeLpAddV10Request(txId, events, amountXfg, amountHeat, fee, mixIn);
+    request = m_sender->makeLpAddV10Request(txId, events, amountXfg, amountHeat, lpShares, fee, mixIn);
     if (request != nullptr) pushBalanceUpdatedEvents(events);
   }
 

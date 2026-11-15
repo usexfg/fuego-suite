@@ -16,6 +16,7 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "CryptoNoteCore/TransactionExtra.h"
+#include "CryptoNoteCore/AmmPool.h"
 #include "INode.h"
 #include "crypto/crypto.h" //for rand()
 #include <iostream>
@@ -2030,15 +2031,32 @@ namespace CryptoNote
     return makeGetRandomCommitmentOutsRequest(std::move(context), depositAmount, selectedIds);
   }
 
+  // The shares this deposit earns, by the consensus rule: the first deposit
+  // into an empty pool must match the launch ratio within 1% and earns
+  // sqrt(x*y) minus the locked minimum; later deposits must match the pool
+  // ratio within 1% and earn their pro-rata share. 0 when the node cannot be
+  // read or the deposit would be refused.
+  uint64_t WalletTransactionSender::lpAddShares(INode &node, uint64_t amountXfg, uint64_t amountHeat)
+  {
+    INode::AmmPoolInfo pool;
+    if (node.getAmmPoolInfo(pool)) return 0;
+    const bool firstDeposit = pool.totalLpShares == 0;
+    const uint64_t ratioXfg = firstDeposit ? parameters::HEARTH_SEEDBOOT_XFG : pool.reserveXfg;
+    const uint64_t ratioHeat = firstDeposit ? parameters::HEARTH_SEEDBOOT_HEAT : pool.reserveHeat;
+    if (!ammValidateDepositRatio(amountXfg, amountHeat, ratioXfg, ratioHeat, 100)) return 0;
+    return ammMintLpShares(amountXfg, amountHeat, pool.totalLpShares, pool.reserveXfg, pool.reserveHeat);
+  }
+
   std::unique_ptr<WalletRequest> WalletTransactionSender::makeLpAddV10Request(
       TransactionId &transactionId,
       std::deque<std::unique_ptr<WalletLegacyEvent>> &events,
       uint64_t amountXfg,
       uint64_t amountHeat,
+      uint64_t lpShares,
       uint64_t fee,
       uint64_t mixIn)
   {
-    throwIf(amountXfg == 0 || amountHeat == 0, error::WRONG_AMOUNT);
+    throwIf(amountXfg == 0 || amountHeat == 0 || lpShares == 0, error::WRONG_AMOUNT);
 
     uint64_t neededXfg = getSumWithOverflowCheck(amountXfg, fee);
     std::shared_ptr<SendTransactionContext> context = std::make_shared<SendTransactionContext>();
@@ -2076,6 +2094,8 @@ namespace CryptoNote
     context->isV10LpAdd = true;
     context->v10XfgBurned = amountXfg;
     context->v10HeatMinted = amountHeat;
+    context->v10LpShares = lpShares;
+    context->v10HeatSelected = totalHeat;
     setSpendingTransactionToDeposits(transactionId, selectedHeatIds);
 
     Crypto::SecretKey transactionSK;
@@ -2529,131 +2549,72 @@ namespace CryptoNote
     }
     try {
       std::unique_ptr<ITransaction> transaction = createTransaction();
-      uint64_t fee = m_currency.minimumFee();
+      const uint64_t fee = m_currency.minimumFee();
 
-      uint64_t xfgChange = context->foundMoney - amountXfg - fee;
-      std::vector<uint64_t> decomposedChange = splitAmount(xfgChange, context->dustPolicy.dustThreshold);
+      // The XFG and HEAT transfers were selected together; the decoy sets in
+      // context->outs follow selectedTransfers position by position.
+      throwIf(!context->outs.empty() && context->outs.size() != context->selectedTransfers.size(),
+              error::INTERNAL_WALLET_ERROR);
+      std::vector<TransactionOutputInformation> xfgTransfers, heatTransfers;
+      std::vector<COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount> xfgOuts;
+      uint64_t xfgFound = 0;
+      for (size_t i = 0; i < context->selectedTransfers.size(); ++i) {
+        const auto &transfer = context->selectedTransfers[i];
+        if (transfer.type == TransactionTypes::OutputType::Key) {
+          xfgTransfers.push_back(transfer);
+          if (!context->outs.empty()) xfgOuts.push_back(context->outs[i]);
+          xfgFound += transfer.amount;
+        } else if (transfer.type == TransactionTypes::OutputType::Commitment &&
+                   transfer.term == parameters::HEAT_TERM) {
+          heatTransfers.push_back(transfer);
+        }
+      }
+      throwIf(xfgFound < amountXfg + fee, error::WRONG_AMOUNT);
 
-      // Compute LP shares: for first deposit, shares = sqrt(amountXfg * amountHeat)
-      // For simplicity, shares = amountXfg + amountHeat (proportional fallback)
-      uint64_t computedShares = amountXfg + amountHeat;
-
-      // XFG change outputs
-      for (uint64_t changeOut : decomposedChange)
+      for (uint64_t changeOut : splitAmount(xfgFound - amountXfg - fee, context->dustPolicy.dustThreshold))
         transaction->addOutput(changeOut, m_keys.address);
 
-      // LP shares commitment output (term=LP)
-      const uint32_t lpIdx = static_cast<uint32_t>(transaction->getOutputCount());
-      std::array<uint8_t, 32> lpSecret;
-      {
-        Crypto::SecretKey txSecretKey;
-        transaction->getTransactionSecretKey(txSecretKey);
-        Crypto::KeyDerivation ecdh;
-        Crypto::generate_key_derivation(m_keys.address.viewPublicKey, txSecretKey, ecdh);
-        uint8_t preimage[36];
-        memcpy(preimage, &ecdh, 32);
-        preimage[32] = lpIdx & 0xFF; preimage[33] = (lpIdx >> 8) & 0xFF;
-        preimage[34] = (lpIdx >> 16) & 0xFF; preimage[35] = (lpIdx >> 24) & 0xFF;
-        Crypto::Hash h = Crypto::cn_fast_hash(preimage, sizeof(preimage));
-        memcpy(lpSecret.data(), h.data, 32);
+      if (context->v10HeatSelected > amountHeat) {
+        const size_t heatChangeIdx = transaction->getOutputCount();
+        CryptoNote::TransactionOutputCommitment heatChange;
+        heatChange.commitKey = deriveSelfCommitmentKey(*transaction, heatChangeIdx);
+        heatChange.term = parameters::HEAT_TERM;
+        transaction->addOutput(context->v10HeatSelected - amountHeat, heatChange);
       }
+
+      const size_t lpIdx = transaction->getOutputCount();
       CryptoNote::TransactionOutputCommitment lpOut;
       lpOut.commitKey = deriveSelfCommitmentKey(*transaction, lpIdx);
       lpOut.term = parameters::DEPOSIT_TERM_LP;
-      transaction->addOutput(computedShares, lpOut);
+      transaction->addOutput(context->v10LpShares, lpOut);
       transaction->setUnlockTime(0);
 
-      // Auth tag extra
       std::vector<uint8_t> extra;
-      addLpAddAuthToExtra(extra, amountXfg, amountHeat, computedShares);
+      addLpAddAuthToExtra(extra, amountXfg, amountHeat, context->v10LpShares);
       CryptoNote::BinaryArray extraData(extra.begin(), extra.end());
       transaction->appendExtra(extraData);
 
-      // XFG KeyInput ring signing
+      // Every input is added before any is signed: a signature covers the
+      // whole prefix.
       std::vector<TransactionSourceEntry> sources;
-      prepareKeyInputs(context->selectedTransfers, context->outs, sources, context->mixIn);
-      std::vector<TransactionTypes::InputKeyInfo> inputs = convertSources(std::vector<TransactionSourceEntry>(sources));
+      prepareKeyInputs(xfgTransfers, xfgOuts, sources, context->mixIn);
+      std::vector<TransactionTypes::InputKeyInfo> keyInputs = convertSources(std::move(sources));
+      std::vector<KeyPair> ephKeys(keyInputs.size());
+      for (size_t i = 0; i < keyInputs.size(); ++i)
+        transaction->addInput(m_keys, keyInputs[i], ephKeys[i]);
 
-      std::vector<KeyPair> ephKeys;
-      for (size_t i = 0; i < inputs.size(); ++i) {
-        KeyPair ephKey;
-        transaction->addInput(m_keys, inputs[i], ephKey);
-        ephKeys.push_back(std::move(ephKey));
+      std::vector<HeatRingSpend> heatSpends;
+      heatSpends.reserve(heatTransfers.size());
+      for (const auto &transfer : heatTransfers) {
+        heatSpends.push_back(buildHeatRingSpend(transfer, context->commitmentOuts, context->mixIn));
+        transaction->addInput(heatSpends.back().input);
       }
-      for (size_t i = 0; i < inputs.size(); ++i)
-        transaction->signInputKey(i, inputs[i], ephKeys[i]);
 
-      // HEAT commitment spend inputs
-      const size_t ringSize = static_cast<size_t>(context->mixIn);
-      const auto& decoys = context->commitmentOuts;
-      size_t commitmentDepositIdx = 0;
-      for (size_t depIdx = 0; depIdx < context->selectedTransfers.size(); ++depIdx) {
-        const auto& transfer = context->selectedTransfers[depIdx];
-        if (transfer.type != TransactionTypes::OutputType::Commitment) continue;
-        if (transfer.term != parameters::HEAT_TERM) continue;
-
-        Crypto::KeyDerivation ecdh;
-        Crypto::generate_key_derivation(transfer.transactionPublicKey, m_keys.viewSecretKey, ecdh);
-        uint8_t preimage[36];
-        memcpy(preimage, &ecdh, 32);
-        const uint32_t outIdx = transfer.outputInTransaction;
-        preimage[32] = outIdx & 0xFF; preimage[33] = (outIdx >> 8) & 0xFF;
-        preimage[34] = (outIdx >> 16) & 0xFF; preimage[35] = (outIdx >> 24) & 0xFF;
-        Crypto::Hash h = Crypto::cn_fast_hash(preimage, sizeof(preimage));
-        std::array<uint8_t, 32> depositSecret;
-        memcpy(depositSecret.data(), h.data, 32);
-        KeyPair commitmentKeyPair;
-        Crypto::KeyImage commitKeyImage;
-        resolveCommitmentSpendKey(ecdh, transfer.outputInTransaction,
-                                   transfer.commitmentKey, m_keys.spendSecretKey,
-                                   commitmentKeyPair, commitKeyImage);
-
-        std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry> filteredDecoys;
-        for (const auto& d : decoys)
-          if (d.global_amount_index != static_cast<uint32_t>(transfer.globalOutputIndex))
-            filteredDecoys.push_back(d);
-        const size_t numDecoys = std::min(filteredDecoys.size(), ringSize - 1);
-        const size_t actualRing = numDecoys + 1;
-        const size_t realPos = Crypto::rand<size_t>() % actualRing;
-
-        std::vector<uint32_t> absIndices;
-        std::vector<const Crypto::PublicKey*> ringKeys;
-        size_t decoyPos = 0;
-        for (size_t slot = 0; slot < actualRing; ++slot) {
-          if (slot == realPos) {
-            absIndices.push_back(transfer.globalOutputIndex);
-            ringKeys.push_back(&commitmentKeyPair.publicKey);
-          } else {
-            absIndices.push_back(filteredDecoys[decoyPos].global_amount_index);
-            ringKeys.push_back(&filteredDecoys[decoyPos].commit_key);
-            ++decoyPos;
-          }
-        }
-
-        std::vector<size_t> order(actualRing);
-        std::iota(order.begin(), order.end(), 0);
-        std::sort(order.begin(), order.end(), [&](size_t a, size_t b) { return absIndices[a] < absIndices[b]; });
-        size_t sortedRealPos = 0;
-        std::vector<uint32_t> sortedAbs(actualRing);
-        std::vector<const Crypto::PublicKey*> sortedKeys(actualRing);
-        for (size_t s = 0; s < actualRing; ++s) {
-          sortedAbs[s] = absIndices[order[s]];
-          sortedKeys[s] = ringKeys[order[s]];
-          if (order[s] == realPos) sortedRealPos = s;
-        }
-
-        std::vector<uint32_t> relOffsets(actualRing);
-        relOffsets[0] = sortedAbs[0];
-        for (size_t s = 1; s < actualRing; ++s) relOffsets[s] = sortedAbs[s] - sortedAbs[s - 1];
-
-        TransactionInputCommitmentSpend csInput;
-        csInput.amount = transfer.amount;
-        csInput.outputIndexes = relOffsets;
-        csInput.keyImage = commitKeyImage;
-        transaction->addInput(csInput);
-        transaction->signInputCommitmentSpend(commitmentDepositIdx, sortedKeys, commitmentKeyPair, sortedRealPos);
-        commitmentDepositIdx++;
-      }
+      for (size_t i = 0; i < keyInputs.size(); ++i)
+        transaction->signInputKey(i, keyInputs[i], ephKeys[i]);
+      for (size_t k = 0; k < heatSpends.size(); ++k)
+        transaction->signInputCommitmentSpend(keyInputs.size() + k, heatSpends[k].ringKeys,
+                                              heatSpends[k].keyPair, heatSpends[k].realPosition);
 
       Transaction lowlevelTransaction = convertTransaction(*transaction, static_cast<size_t>(m_upperTransactionSizeLimit));
       m_transactionsCache.updateTransaction(context->transactionId, lowlevelTransaction, amountXfg + amountHeat, context->selectedTransfers);
@@ -2666,6 +2627,47 @@ namespace CryptoNote
       events.push_back(makeCompleteEvent(m_transactionsCache, context->transactionId, make_error_code(error::INTERNAL_WALLET_ERROR)));
       return {};
     }
+  }
+
+  // One HEAT output as a ring spend: the real output among same-amount
+  // decoys, sorted by global index, offsets delta-encoded.
+  WalletTransactionSender::HeatRingSpend WalletTransactionSender::buildHeatRingSpend(
+      const TransactionOutputInformation &transfer,
+      const std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry> &decoys,
+      uint64_t ringSize)
+  {
+    HeatRingSpend spend;
+    Crypto::KeyDerivation ecdh;
+    Crypto::generate_key_derivation(transfer.transactionPublicKey, m_keys.viewSecretKey, ecdh);
+    Crypto::KeyImage keyImage;
+    resolveCommitmentSpendKey(ecdh, transfer.outputInTransaction, transfer.commitmentKey,
+                              m_keys.spendSecretKey, spend.keyPair, keyImage);
+
+    std::vector<std::pair<uint32_t, Crypto::PublicKey>> members;
+    for (const auto &d : decoys) {
+      if (members.size() + 1 >= ringSize) break;
+      if (d.global_amount_index != static_cast<uint32_t>(transfer.globalOutputIndex))
+        members.push_back({d.global_amount_index, d.commit_key});
+    }
+    const uint32_t realIndex = static_cast<uint32_t>(transfer.globalOutputIndex);
+    members.push_back({realIndex, spend.keyPair.publicKey});
+    std::sort(members.begin(), members.end(),
+              [](const std::pair<uint32_t, Crypto::PublicKey> &a, const std::pair<uint32_t, Crypto::PublicKey> &b) {
+                return a.first < b.first;
+              });
+
+    spend.ringKeyStorage.reserve(members.size());
+    uint32_t previous = 0;
+    for (size_t s = 0; s < members.size(); ++s) {
+      if (members[s].first == realIndex) spend.realPosition = s;
+      spend.input.outputIndexes.push_back(members[s].first - previous);
+      previous = members[s].first;
+      spend.ringKeyStorage.push_back(members[s].second);
+    }
+    for (const auto &key : spend.ringKeyStorage) spend.ringKeys.push_back(&key);
+    spend.input.amount = transfer.amount;
+    spend.input.keyImage = keyImage;
+    return spend;
   }
 
   std::unique_ptr<WalletRequest> WalletTransactionSender::doSendLpRemoveV10Transaction(

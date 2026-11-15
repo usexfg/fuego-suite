@@ -1716,6 +1716,7 @@ std::error_code core::getAmmPoolInfo(ICore::AmmPoolInfo& info) {
   const auto& pool = m_blockchain.getAmmPool();
   info.reserveXfg = pool.reserveXfg;
   info.reserveHeat = pool.reserveHeat;
+  info.totalLpShares = pool.totalLpShares;
    info.spotPrice = m_blockchain.getHearthSpotPrice();
    return {};
 }

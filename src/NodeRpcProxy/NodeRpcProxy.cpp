@@ -841,6 +841,7 @@ std::error_code NodeRpcProxy::getAmmPoolInfo(INode::AmmPoolInfo& info) {
   info.reserveXfg = res.reserve_xfg;
   info.reserveHeat = res.reserve_heat;
   info.spotPrice = res.spot_price;
+  info.totalLpShares = res.total_lp_shares;
   return {};
 }
 

@@ -1,0 +1,51 @@
+name: Junie Tag
+
+on:
+  issue_comment:
+    types: [created]
+  issues:
+    types: [opened, edited]
+  pull_request_target:
+    types: [opened, edited, synchronize]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  junie:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: |
+      (github.event_name == 'issue_comment' &&
+        contains(github.event.comment.body, '@junie-agent') &&
+        (github.event.comment.author_association == 'MEMBER' || github.event.comment.author_association == 'OWNER')) ||
+      (github.event_name == 'issues' &&
+        (github.event.action == 'opened' || github.event.action == 'edited') &&
+        (github.event.sender.author_association == 'MEMBER' || github.event.sender.author_association == 'OWNER')) ||
+      (github.event_name == 'pull_request_target' &&
+        (github.event.action == 'opened' || github.event.action == 'edited' || github.event.action == 'synchronize') &&
+        (github.event.sender.author_association == 'MEMBER' || github.event.sender.author_association == 'OWNER'))
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 1
+          ref: ${{ github.event_name == 'issue_comment' && github.event.issue.pull_request && format('refs/pull/{0}/head', github.event.issue.number) || github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || '' }}
+
+      - name: Run Junie
+        id: junie
+        uses: JetBrains/junie-github-action@1059393cad108df68635b0c7a689fa86ecd53d82
+        with:
+          junie_api_key: ${{ secrets.JUNIE_API_KEY }}
+
+      - name: Use outputs
+        if: steps.junie.outputs.should_skip != 'true'
+        run: |
+          echo "Branch: ${{ steps.junie.outputs.branch_name }}"
+          echo "Title: ${{ steps.junie.outputs.junie_title }}"
+          echo "Summary: ${{ steps.junie.outputs.junie_summary }}"
+          if [ "${{ steps.junie.outputs.pr_url }}" != "" ]; then
+            echo "PR created: ${{ steps.junie.outputs.pr_url }}"
+          fi

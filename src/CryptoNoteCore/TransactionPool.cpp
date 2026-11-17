@@ -40,6 +40,7 @@
 #include "IWallet.h"
 #include "Blockchain.h"
 #include "TransactionExtra.h"
+#include "SubaddressTx.h"
 
 using namespace Logging;
 
@@ -629,6 +630,13 @@ namespace CryptoNote
       if (!m_validator.checkTransactionSettlement(txd.tx, txFee))
       {
         logger(DEBUGGING) << "Transaction " << txd.id << " no longer settles and will not be included in the block template";
+        continue;
+      }
+      // A tx admitted inside the F8 grace window may lack the janus base the
+      // template's height now requires.
+      if (!validateSubaddressTxExtra(txd.tx, bl.majorVersion, m_currency.janusBaseRequiredAtHeight(height), nullptr))
+      {
+        logger(DEBUGGING) << "Transaction " << txd.id << " no longer meets the subaddress extra rules and will not be included in the block template";
         continue;
       }
       // Each candidate is checked against the tip alone, so the template keeps

@@ -1,8 +1,42 @@
+## funsa F8: a 0x09 Janus base on every key-input transaction
+
+**Started**: 2026-11-17
+**Agent**: Claude Code
+**Status**: DONE (Linux GCC build and tests; not pushed).
+**Plan**: `docs/developer/funsa-subaddress-rollout-plan.md` section 4.1 (F8, owner approval 2026-11-17). F6 closed there: no aliases are registered, so none needs moving.
+**Owner decision (2026-11-17)**: F8 yes. This is a consensus change and a hard fork for every tx builder.
+**Scope**: `src/CryptoNoteConfig.h`, `src/crypto/subaddress.{h,cpp}`, `src/CryptoNoteCore/{SubaddressTx,Currency,Transaction,TransactionApi,TransactionPool,CryptoNoteFormatUtils,Blockchain,Core}`, `include/ITransaction.h`, `src/Wallet/WalletGreen.cpp`, `src/WalletLegacy/WalletTransactionSender.cpp`, `src/Transfers/TransfersConsumer.cpp`, `src/PaymentGate/WalletService.cpp`, `src/SwapDaemon/{SwapTxBuilder.{h,cpp},SwapDaemon.cpp}`, `tests/UnitTests/{SubaddressScannerTest,SubaddressV2Test}.cpp`, `docs/developer/funsa-subaddress-rollout-plan.md`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Filler `J = H_s("FuegoJanusFiller" ‖ r)·G` (`Crypto::janusFillerForTxSecret`, preimage, scalar and filler secret wiped); `addJanusFillerWhenMissing` writes it through the same field writer as a real Janus base and leaves an existing 0x09 alone | Claude Code | 2026-11-17 | DONE |
+| 2 | Consensus: after `upgradeHeight(11) + JANUS_BASE_GRACE_BLOCKS` (720), a tx with a `KeyInput` needs an extra that parses and contains 0x09; coinbase and txs without key inputs are exempt. `Currency::janusBaseRequiredAtHeight` adds in 64 bits, so an unscheduled v11 height never wraps into enforcement. Block validation, mempool admission and `fill_block_template` each apply it at the height they target | Claude Code | 2026-11-17 | DONE |
+| 3 | Builders add the filler once the tip block is v11: `createOutgoingTransaction` for all 25 WalletGreen and WalletLegacy tx sites, where `TransactionImpl` seals the filler before the first signature (per-output txs keep their own list); `constructTransaction` (new `janusBaseRequired` argument); SwapDaemon `fundEscrow` and `buildUnsignedEscrowSpend`, which fail if the daemon cannot report its tip version. Swap claim and refund txs have no key inputs and are unchanged | Claude Code | 2026-11-17 | DONE |
+| 4 | `messageTransactionKey` takes the recipient kind: only a funsa recipient of a single-key tx uses the 0x09 key. Without this, every standard recipient would lose its messages once a filler is present | Claude Code | 2026-11-17 | DONE |
+| 5 | Tests (`subaddress_scanner_tests`, 11 new): rule on and off, exemptions, unparseable extra, grace boundary and overflow, filler determinism and idempotence, `TransactionImpl` sealing, per-output txs under the rule, tip gating of `createOutgoingTransaction`, `constructTransaction` filler, standard-recipient message beside a filler, block template dropping a grace-era tx after the window | Claude Code | 2026-11-17 | DONE |
+
+**Review findings and open items:**
+- HIGH (consequence, accepted by the owner): after v11 + 720, any wallet, exchange, pool payout script or third-party builder that does not add 0x09 has its txs rejected. Valise V5 must ship the filler before then.
+- MEDIUM: SwapDaemon `buildUnsignedEscrowSpend` draws a random tx key, yet its header says both parties build identical prefixes. Either one side's tx is used for both signatures or the collaborative ring signature cannot complete; not resolved here. If the tx key becomes shared, both parties must also agree on the filler, which they decide from their own node's tip.
+- LOW: a key-input tx whose extra uses a tag the parser refuses is rejected after the grace window. No builder in this repository writes one (checked: every tag written in `src/` parses).
+- LOW: a grace-era tx without 0x09 stays in the mempool until it expires (12 h) but is never placed in a template that enforces the rule.
+- Not covered by tests: the SwapDaemon builders (need a running daemon) and the call wiring in `Blockchain`/`Core` (one line each, compiled).
+
+**Mutation checks**: disabling the consensus check, the seal, the recipient-kind selector, the template filter, the grace comparison (`>=`), the tip gate, and the `constructTransaction` filler each fail the matching test; restoring the code passes again.
+
+| Gate | Status | Signed |
+|------|--------|--------|
+| Build compiles | Linux GCC Release with `BUILD_TESTS=ON`: all targets | Claude Code 2026-11-17 |
+| Tests pass | ctest 72/73 (`subaddress_scanner_tests` 28/28); the failure is `commitment_owner_bound_tests`, present on `master` since 33e787a5 | Claude Code 2026-11-17 |
+| All tasks done | F8 DONE; Valise V5 filler, xfg-api, explorer pending | Claude Code 2026-11-17 |
+
+---
+
 ## funsa V2 subaddresses: remediation against the plan
 
 **Started**: 2026-11-12
 **Agent**: Claude Code
-**Status**: fuego-suite core DONE (Linux GCC build and tests; not pushed). fuego-valise, xfg-api and explorer work is planned in `docs/developer/funsa-subaddress-rollout-plan.md`, not started.
+**Status**: fuego-suite core DONE (Linux GCC build and tests); on `master` since 8b7d084c (owner approval 2026-11-17). fuego-valise, xfg-api and explorer work is planned in `docs/developer/funsa-subaddress-rollout-plan.md`, not started.
 **Plan**: the funsa subaddress plan (owner upload, 2026-11-12) plus the gaps found in review: per-output Janus keys, strict crediting, fail-closed address parsing, coinbase refusal, deterministic per-output tx secrets, reload re-subscription, Valise send support.
 **Owner decisions (2026-11-12)**: v11 is still upcoming, so the v11 gate stays. Full wallets credit a V2 subaddress output only when its Janus check passes; view-only wallets credit it flagged `unverified`. Change from a funsa source returns to that subaddress. Scope: fuego-suite core plus fuego-valise.
 **Scope**: `src/crypto/subaddress.*`, `src/CryptoNoteCore/{SubaddressTx,SubaddressTxProof,TransactionExtra,Transaction,Currency,CryptoNoteFormatUtils,Blockchain}`, `src/Transfers/{TransfersConsumer,TransfersContainer,TransfersSubscription}`, `src/Wallet/{WalletGreen,WalletIndices,WalletUtils,WalletRpcServer}`, `src/WalletLegacy/{WalletLegacy,WalletTransactionSender}`, `src/PaymentGate/{WalletService,PaymentServiceJsonRpcMessages}`, `src/Rpc/RpcServer.*`, `src/SimpleWallet/{SimpleWallet,TransferCmd}`, `include/{IWallet,IWalletLegacy,ITransfersContainer,ITransfersSynchronizer}.h`, `tests/UnitTests/{SubaddressV2Test,SubaddressScannerTest,SubaddressWalletTest,CommitmentPersistenceTest,TestWalletService}.cpp`, `tests/CMakeLists.txt`, `.github/workflows/check.yml`

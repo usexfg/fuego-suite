@@ -1768,6 +1768,10 @@ bool SwapDaemon::fundEscrow(SwapParams& params) {
   CryptoNote::KeyPair txKey;
   Crypto::generate_keys(txKey.publicKey, txKey.secretKey);
   CryptoNote::addTransactionPublicKeyToExtra(tx.extra, txKey.publicKey);
+  if (!SwapTxBuilder::addJanusFillerAtChainTip(m_rpc, tx, txKey.secretKey)) {
+    m_logger(Logging::ERROR) << "Cannot add the janus base filler to the escrow funding tx";
+    return false;
+  }
 
   CryptoNote::KeyInput input;
   input.amount = params.xfgAmount;

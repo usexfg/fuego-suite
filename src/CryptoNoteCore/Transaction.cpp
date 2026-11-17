@@ -22,6 +22,7 @@
 #include "Account.h"
 #include "CryptoNoteCore/CryptoNoteTools.h"
 #include "CryptoNoteConfig.h"
+#include "Currency.h"
 #include "SubaddressTx.h"
 #include "crypto/subaddress.h"
 
@@ -127,6 +128,7 @@ namespace CryptoNote {
     // secret key
     virtual bool getTransactionSecretKey(SecretKey& key) const override;
     virtual void setTransactionSecretKey(const SecretKey& key) override;
+    virtual void requireJanusBase() override;
 
   private:
 
@@ -156,6 +158,7 @@ namespace CryptoNote {
     void switchToPerOutputTxKeys();
     PublicKey keyOutputWithOwnTxKey(size_t outputIndex, const AccountPublicAddress& to, bool toSubaddress);
     void writeOutputTxKeys();
+    void sealJanusBaseBeforeSigning();
 
     CryptoNote::Transaction transaction;
     boost::optional<SecretKey> secretKey;
@@ -163,6 +166,7 @@ namespace CryptoNote {
     TransactionExtra extra;
     std::vector<boost::optional<AddressedOutput>> outputDestinations;
     bool perOutputTxKeys = false;
+    bool janusBaseRequired = false;
     SubaddressTxKeys outputTxKeys;
   };
 
@@ -173,6 +177,18 @@ namespace CryptoNote {
 
   std::unique_ptr<ITransaction> createTransaction() {
     return std::unique_ptr<ITransaction>(new TransactionImpl());
+  }
+
+  bool janusBaseExpectedAtTip(const Currency& currency, uint32_t tipHeight) {
+    return funsaSubaddressActivated(currency.blockMajorVersionAtHeight(tipHeight));
+  }
+
+  std::unique_ptr<ITransaction> createOutgoingTransaction(const Currency& currency, uint32_t tipHeight) {
+    std::unique_ptr<ITransaction> transaction = createTransaction();
+    if (janusBaseExpectedAtTip(currency, tipHeight)) {
+      transaction->requireJanusBase();
+    }
+    return transaction;
   }
 
   std::unique_ptr<ITransaction> createTransaction(const BinaryArray& transactionBlob) {
@@ -271,6 +287,24 @@ namespace CryptoNote {
     }
 
     secretKey = key;
+  }
+
+  void TransactionImpl::requireJanusBase() {
+    checkIfSigning();
+    janusBaseRequired = true;
+  }
+
+  void TransactionImpl::sealJanusBaseBeforeSigning() {
+    if (!janusBaseRequired || !transaction.signatures.empty()) {
+      return;
+    }
+    std::vector<uint8_t> sealed = transaction.extra;
+    if (!secretKey || !addJanusFillerWhenMissing(sealed, *secretKey)) {
+      throw std::runtime_error("Janus base filler needs the tx secret key and an extra that parses");
+    }
+    transaction.extra = sealed;
+    extra.parse(transaction.extra);
+    invalidateHash();
   }
 
   size_t TransactionImpl::addInput(const KeyInput& input) {
@@ -463,6 +497,7 @@ namespace CryptoNote {
   }
 
   void TransactionImpl::signInputKey(size_t index, const TransactionTypes::InputKeyInfo& info, const KeyPair& ephKeys) {
+    sealJanusBaseBeforeSigning();
     const auto& input = boost::get<KeyInput>(getInputChecked(transaction, index, TransactionTypes::InputType::Key));
     Hash prefixHash = getTransactionPrefixHash();
 
@@ -489,6 +524,7 @@ namespace CryptoNote {
 
   void TransactionImpl::signInputCommitmentSpend(size_t index, const std::vector<const Crypto::PublicKey*>& ringKeys,
                                                   const KeyPair& commitmentKeys, size_t realIndex) {
+    sealJanusBaseBeforeSigning();
     // Verify the input at this index is a TransactionInputCommitmentSpend.
     const auto& input = boost::get<TransactionInputCommitmentSpend>(
       getInputChecked(transaction, index, TransactionTypes::InputType::CommitmentSpend));
@@ -509,6 +545,7 @@ namespace CryptoNote {
 
   void TransactionImpl::signInputCommitmentTransfer(size_t index, const std::vector<const Crypto::PublicKey*>& ringKeys,
                                                      const KeyPair& commitmentKeys, size_t realIndex) {
+    sealJanusBaseBeforeSigning();
     const auto& input = boost::get<TransactionInputCommitmentTransfer>(
       getInputChecked(transaction, index, TransactionTypes::InputType::CommitmentTransfer));
     Hash prefixHash = getTransactionPrefixHash();
@@ -527,6 +564,7 @@ namespace CryptoNote {
   }
 
   void TransactionImpl::signInputMultisignature(size_t index, const PublicKey& sourceTransactionKey, size_t outputIndex, const AccountKeys& accountKeys) {
+    sealJanusBaseBeforeSigning();
     KeyDerivation derivation;
     PublicKey ephemeralPublicKey;
     SecretKey ephemeralSecretKey;
@@ -552,6 +590,7 @@ namespace CryptoNote {
   }
 
   void TransactionImpl::signInputMultisignature(size_t index, const KeyPair& ephemeralKeys) {
+    sealJanusBaseBeforeSigning();
     Signature signature;
     auto txPrefixHash = getTransactionPrefixHash();
 

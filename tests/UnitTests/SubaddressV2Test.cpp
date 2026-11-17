@@ -155,8 +155,8 @@ TEST(SubaddressV2, ExtraRejectedBeforeV11) {
   ASSERT_TRUE(addJanusBasesToExtra(tx.extra, {pk}));
 
   std::string err;
-  EXPECT_FALSE(validateSubaddressTxExtra(tx, BLOCK_MAJOR_VERSION_10, &err));
-  EXPECT_TRUE(validateSubaddressTxExtra(tx, BLOCK_MAJOR_VERSION_11, &err));
+  EXPECT_FALSE(validateSubaddressTxExtra(tx, BLOCK_MAJOR_VERSION_10, false, &err));
+  EXPECT_TRUE(validateSubaddressTxExtra(tx, BLOCK_MAJOR_VERSION_11, false, &err));
 }
 
 TEST(SubaddressV2, AdditionalCountMustMatchOutputs) {
@@ -167,7 +167,7 @@ TEST(SubaddressV2, AdditionalCountMustMatchOutputs) {
   ASSERT_TRUE(addAdditionalPubKeysToExtra(tx.extra, {pk}));
 
   std::string err;
-  EXPECT_FALSE(validateSubaddressTxExtra(tx, BLOCK_MAJOR_VERSION_11, &err));
+  EXPECT_FALSE(validateSubaddressTxExtra(tx, BLOCK_MAJOR_VERSION_11, false, &err));
 }
 
 TEST(SubaddressV2, FunsaActivationHelper) {

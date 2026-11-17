@@ -76,6 +76,11 @@ public:
   // Minimum fee in atomic units (0.001 XFG)
   static constexpr uint64_t MIN_FEE = 10000;
 
+  // F8: once the daemon's tip block is v11, a key-input tx carries the filler
+  // 0x09 janus base of its tx secret. Fails if the daemon cannot be asked.
+  static bool addJanusFillerAtChainTip(FuegoRpcClient& rpc, CryptoNote::Transaction& tx,
+                                       const Crypto::SecretKey& txSecret);
+
   // ── Step 1: Build unsigned transaction skeleton ──────────────────────
 
   // Construct the unsigned transaction spending the escrow output.

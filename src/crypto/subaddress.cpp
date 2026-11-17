@@ -100,6 +100,23 @@ SecretKey additionalTxSecret(const SecretKey& txSecret, uint64_t outputIndex) {
   return secret;
 }
 
+bool janusFillerForTxSecret(const SecretKey& txSecret, PublicKey& filler) {
+  static const char domain[] = "FuegoJanusFiller";
+  const size_t domainLen = sizeof(domain) - 1;
+  uint8_t preimage[sizeof(domain) - 1 + sizeof(SecretKey)];
+  memcpy(preimage, domain, domainLen);
+  memcpy(preimage + domainLen, &txSecret, sizeof(SecretKey));
+  EllipticCurveScalar scalar;
+  hash_to_scalar(preimage, sizeof(preimage), scalar);
+  SecretKey fillerSecret;
+  memcpy(&fillerSecret, &scalar, sizeof(SecretKey));
+  const bool derived = secret_key_to_public_key(fillerSecret, filler);
+  wipeSecret(preimage, sizeof(preimage));
+  wipeSecret(&scalar, sizeof(scalar));
+  wipeSecret(&fillerSecret, sizeof(fillerSecret));
+  return derived;
+}
+
 bool janusCheck(const PublicKey& txPubKey, const PublicKey& janusBase, const SecretKey& subSpendSecret) {
   PublicKey expected;
   if (!scalarmultKeyNoCofactor(janusBase, subSpendSecret, expected)) {

@@ -119,4 +119,8 @@ bool janusCheck(
 // sender can rebuild every per-output key for a payment proof without storing them.
 SecretKey additionalTxSecret(const SecretKey& txSecret, uint64_t outputIndex);
 
+// J = H_s("FuegoJanusFiller" || r)*G: the 0x09 key of a tx with no subaddress
+// destination. Without r it cannot be told apart from the r*G of a subaddress tx.
+bool janusFillerForTxSecret(const SecretKey& txSecret, PublicKey& filler);
+
 } // namespace Crypto

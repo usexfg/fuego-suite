@@ -163,6 +163,12 @@ namespace CryptoNote
 		return m_testnet ? m_upgradeHeightV11 : parameters::HEATWAVE_TAG_CUTOFF_HEIGHT;
 	}
 
+	bool Currency::janusBaseRequiredAtHeight(uint32_t height) const {
+		const uint64_t lastOptionalHeight =
+			static_cast<uint64_t>(upgradeHeight(BLOCK_MAJOR_VERSION_11)) + parameters::JANUS_BASE_GRACE_BLOCKS;
+		return height > lastOptionalHeight;
+	}
+
 	uint32_t Currency::upgradeHeight(uint8_t majorVersion) const {
 		if (majorVersion == BLOCK_MAJOR_VERSION_2) {
 			return m_upgradeHeightV2;

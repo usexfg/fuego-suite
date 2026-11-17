@@ -520,7 +520,7 @@ namespace CryptoNote
       }
     }
 
-    std::unique_ptr<ITransaction> transaction = createTransaction();
+    std::unique_ptr<ITransaction> transaction = createOutgoingTransaction(m_currency, m_node.getLastKnownBlockHeight());
 
     // A CD is HEAT, principal and interest alike: it pays out in full as a
     // HEAT_TERM commitment. HEAT must balance exactly, so the XFG fee comes
@@ -815,7 +815,7 @@ namespace CryptoNote
       << " newTerm=" << newTerm
       << " globalOutputIndex=" << transfer.globalOutputIndex;
 
-    std::unique_ptr<ITransaction> transaction = createTransaction();
+    std::unique_ptr<ITransaction> transaction = createOutgoingTransaction(m_currency, m_node.getLastKnownBlockHeight());
 
     // Output: reinvested amount (original + interest)
     uint64_t reinvestedAmount = deposit.amount + interest;
@@ -1038,7 +1038,7 @@ namespace CryptoNote
       << " newTerm=" << newTerm
       << " globalOutputIndex=" << transfer.globalOutputIndex;
 
-    std::unique_ptr<ITransaction> transaction = createTransaction();
+    std::unique_ptr<ITransaction> transaction = createOutgoingTransaction(m_currency, m_node.getLastKnownBlockHeight());
 
     uint64_t reinvestedAmount = deposit.amount + interest;
     const uint64_t fee = m_currency.minimumFee();
@@ -1228,7 +1228,7 @@ namespace CryptoNote
     CryptoNote::AccountPublicAddress destAddr = parseAddress(destinationAddress);
 
     /* Create the transaction */
-    std::unique_ptr<ITransaction> transaction = createTransaction();
+    std::unique_ptr<ITransaction> transaction = createOutgoingTransaction(m_currency, m_node.getLastKnownBlockHeight());
 
     /* Select the wallet - If no source address was specified then it will pick funds from anywhere
      and the change will go to the primary address of the wallet container */
@@ -1619,7 +1619,7 @@ namespace CryptoNote
     }
 
     // Create the transaction
-    std::unique_ptr<ITransaction> transaction = createTransaction();
+    std::unique_ptr<ITransaction> transaction = createOutgoingTransaction(m_currency, m_node.getLastKnownBlockHeight());
 
     // Build HEAT commitment outputs — split into bill denominations
     std::vector<uint64_t> heatBills = decomposeHeatIntoBills(heatMinted);
@@ -1697,7 +1697,7 @@ namespace CryptoNote
       if (heat < amount) {
         throw std::system_error(make_error_code(error::WRONG_AMOUNT), "Insufficient HEAT for limit order");
       }
-      std::unique_ptr<ITransaction> transaction = createTransaction();
+      std::unique_ptr<ITransaction> transaction = createOutgoingTransaction(m_currency, m_node.getLastKnownBlockHeight());
       CryptoNote::TransactionOutputCommitment poolOut;
       poolOut.commitKey = CryptoNote::computePoolCommitKey();
       poolOut.term = parameters::DEPOSIT_TERM_POOL_HEAT;
@@ -1738,7 +1738,7 @@ namespace CryptoNote
       throw std::system_error(make_error_code(error::WRONG_AMOUNT), "Insufficient funds for limit order");
     }
 
-    std::unique_ptr<ITransaction> transaction = createTransaction();
+    std::unique_ptr<ITransaction> transaction = createOutgoingTransaction(m_currency, m_node.getLastKnownBlockHeight());
     Crypto::PublicKey poolKey = CryptoNote::computePoolCommitKey();
     uint32_t poolTerm = (side == 1)
       ? parameters::DEPOSIT_TERM_POOL_XFG
@@ -1857,7 +1857,7 @@ namespace CryptoNote
     if (foundMoney < fee) {
       throw std::system_error(make_error_code(error::WRONG_AMOUNT), "Insufficient funds for cancel fee");
     }
-    std::unique_ptr<ITransaction> transaction = createTransaction();
+    std::unique_ptr<ITransaction> transaction = createOutgoingTransaction(m_currency, m_node.getLastKnownBlockHeight());
     transaction->setUnlockTime(0);
     uint64_t changeAmount = foundMoney - fee;
     if (changeAmount > 0) {
@@ -1977,7 +1977,7 @@ namespace CryptoNote
       throw std::system_error(make_error_code(error::WRONG_AMOUNT), "Insufficient unlocked HEAT for CD deposit");
     }
 
-    std::unique_ptr<ITransaction> transaction = createTransaction();
+    std::unique_ptr<ITransaction> transaction = createOutgoingTransaction(m_currency, m_node.getLastKnownBlockHeight());
     const uint64_t changeAmount = totalHeat - neededHeat;
 
     // Finite-term HEAT CD commitment (epoch-mapped blocks)
@@ -2064,7 +2064,7 @@ namespace CryptoNote
         throw std::system_error(make_error_code(error::WRONG_AMOUNT),
                                 "Swap quote is below the requested minimum output");
       }
-      std::unique_ptr<ITransaction> transaction = createTransaction();
+      std::unique_ptr<ITransaction> transaction = createOutgoingTransaction(m_currency, m_node.getLastKnownBlockHeight());
       CryptoNote::TransactionOutputCommitment poolOut;
       poolOut.commitKey = CryptoNote::computePoolCommitKey();
       poolOut.term = parameters::DEPOSIT_TERM_POOL_XFG;
@@ -2122,7 +2122,7 @@ namespace CryptoNote
       throw std::system_error(make_error_code(error::WRONG_AMOUNT), "Insufficient unlocked HEAT for AMM swap");
     }
 
-    std::unique_ptr<ITransaction> transaction = createTransaction();
+    std::unique_ptr<ITransaction> transaction = createOutgoingTransaction(m_currency, m_node.getLastKnownBlockHeight());
 
     // Pool receives HEAT
     Crypto::PublicKey poolKey = CryptoNote::computePoolCommitKey();
@@ -2215,7 +2215,7 @@ namespace CryptoNote
     }
 
     // Create the transaction
-    std::unique_ptr<ITransaction> transaction = createTransaction();
+    std::unique_ptr<ITransaction> transaction = createOutgoingTransaction(m_currency, m_node.getLastKnownBlockHeight());
     uint64_t changeAmount = (totalHeat > amount) ? (totalHeat - amount) : 0;
 
     Crypto::SecretKey txSecret;
@@ -4733,7 +4733,7 @@ namespace CryptoNote
                                                                          std::vector<InputInfo> &keysInfo, const std::vector<WalletMessage> &messages, const std::string &extra, uint64_t unlockTimestamp, Crypto::SecretKey &transactionSK)
   {
 
-    std::unique_ptr<ITransaction> tx = createTransaction();
+    std::unique_ptr<ITransaction> tx = createOutgoingTransaction(m_currency, m_node.getLastKnownBlockHeight());
 
     tx->getTransactionSecretKey(transactionSK);
     Crypto::PublicKey publicKey = tx->getTransactionPublicKey();

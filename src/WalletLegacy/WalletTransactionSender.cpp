@@ -95,7 +95,8 @@ namespace
   }
 
   void constructTx(const AccountKeys keys, const std::vector<TransactionSourceEntry> &sources, const std::vector<TransactionDestinationEntry> &splittedDests,
-                   const std::string &extra, uint64_t unlockTimestamp, uint64_t sizeLimit, Transaction &tx, const std::vector<tx_message_entry> &messages, uint64_t ttl, Crypto::SecretKey &transactionSK)
+                   const std::string &extra, uint64_t unlockTimestamp, uint64_t sizeLimit, Transaction &tx, const std::vector<tx_message_entry> &messages, uint64_t ttl, Crypto::SecretKey &transactionSK,
+                   bool janusBaseRequired)
   {
     std::vector<uint8_t> extraVec;
     extraVec.reserve(extra.size());
@@ -103,7 +104,7 @@ namespace
 
     Logging::LoggerGroup nullLog;
     Crypto::SecretKey txSK;
-    bool r = constructTransaction(keys, sources, splittedDests, messages, ttl, extraVec, tx, unlockTimestamp, nullLog, txSK);
+    bool r = constructTransaction(keys, sources, splittedDests, messages, ttl, extraVec, tx, unlockTimestamp, nullLog, txSK, janusBaseRequired);
     transactionSK = txSK;
 
     throwIf(!r, error::INTERNAL_WALLET_ERROR);
@@ -837,7 +838,8 @@ namespace CryptoNote
       splitDestinations(transaction.firstTransferId, transaction.transferCount, changeDts, context->dustPolicy, splittedDests);
 
       Transaction tx;
-      constructTx(m_keys, sources, splittedDests, transaction.extra, transaction.unlockTime, m_upperTransactionSizeLimit, tx, context->messages, context->ttl, transactionSK);
+      constructTx(m_keys, sources, splittedDests, transaction.extra, transaction.unlockTime, m_upperTransactionSizeLimit, tx, context->messages, context->ttl, transactionSK,
+                  janusBaseExpectedAtTip(m_currency, m_node.getLastKnownBlockHeight()));
 
       getObjectHash(tx, transaction.hash);
       transaction.secretKey = transactionSK;
@@ -962,7 +964,7 @@ namespace CryptoNote
     try
     {
       WalletLegacyTransaction &transactionInfo = m_transactionsCache.getTransaction(context->transactionId);
-      std::unique_ptr<ITransaction> transaction = createTransaction();
+      std::unique_ptr<ITransaction> transaction = createOutgoingTransaction(m_currency, m_node.getLastKnownBlockHeight());
 
       uint64_t totalAmount = std::abs(transactionInfo.totalAmount);
       uint64_t depositAmount = totalAmount - transactionInfo.fee;
@@ -1098,7 +1100,7 @@ namespace CryptoNote
     {
       WalletLegacyTransaction &transactionInfo = m_transactionsCache.getTransaction(context->transactionId);
 
-      std::unique_ptr<ITransaction> transaction = createTransaction();
+      std::unique_ptr<ITransaction> transaction = createOutgoingTransaction(m_currency, m_node.getLastKnownBlockHeight());
       std::vector<MultisignatureInput> inputs = prepareMultisignatureInputs(context->selectedTransfers);
 
       std::vector<uint64_t> outputAmounts = splitAmount(context->foundMoney - transactionInfo.fee, context->dustPolicy.dustThreshold);
@@ -1166,7 +1168,7 @@ namespace CryptoNote
 
     try {
       WalletLegacyTransaction& transactionInfo = m_transactionsCache.getTransaction(context->transactionId);
-      std::unique_ptr<ITransaction> transaction = createTransaction();
+      std::unique_ptr<ITransaction> transaction = createOutgoingTransaction(m_currency, m_node.getLastKnownBlockHeight());
 
       // ── Calculate accrued CD interest for each deposit ──────────────────────
       // The blockchain debits the fee pool and vault CD_APY_POOL when
@@ -1863,7 +1865,7 @@ namespace CryptoNote
 
     try {
       WalletLegacyTransaction &transactionInfo = m_transactionsCache.getTransaction(context->transactionId);
-      std::unique_ptr<ITransaction> transaction = createTransaction();
+      std::unique_ptr<ITransaction> transaction = createOutgoingTransaction(m_currency, m_node.getLastKnownBlockHeight());
       uint64_t fee = m_currency.minimumFee();
 
       uint64_t changeAmount = context->foundMoney - xfgBurned - fee;
@@ -2271,7 +2273,7 @@ namespace CryptoNote
     }
 
     try {
-      std::unique_ptr<ITransaction> transaction = createTransaction();
+      std::unique_ptr<ITransaction> transaction = createOutgoingTransaction(m_currency, m_node.getLastKnownBlockHeight());
       uint64_t fee = m_currency.minimumFee();
 
       uint64_t changeAmount = context->foundMoney - inputAmount - fee;
@@ -2361,7 +2363,7 @@ namespace CryptoNote
     }
 
     try {
-      std::unique_ptr<ITransaction> transaction = createTransaction();
+      std::unique_ptr<ITransaction> transaction = createOutgoingTransaction(m_currency, m_node.getLastKnownBlockHeight());
       uint64_t fee = m_currency.minimumFee();
 
       // Build pool-deposit HEAT output (POOL_HEAT term, pool commitKey)
@@ -2535,7 +2537,7 @@ namespace CryptoNote
       return {};
     }
     try {
-      std::unique_ptr<ITransaction> transaction = createTransaction();
+      std::unique_ptr<ITransaction> transaction = createOutgoingTransaction(m_currency, m_node.getLastKnownBlockHeight());
       uint64_t fee = m_currency.minimumFee();
 
       uint64_t xfgChange = context->foundMoney - amountXfg - fee;
@@ -2687,7 +2689,7 @@ namespace CryptoNote
       return {};
     }
     try {
-      std::unique_ptr<ITransaction> transaction = createTransaction();
+      std::unique_ptr<ITransaction> transaction = createOutgoingTransaction(m_currency, m_node.getLastKnownBlockHeight());
       uint64_t fee = m_currency.minimumFee();
 
       // Auth tag extra: TransactionExtraAmmRemoveLiquidity
@@ -2833,7 +2835,7 @@ namespace CryptoNote
       return {};
     }
     try {
-      std::unique_ptr<ITransaction> transaction = createTransaction();
+      std::unique_ptr<ITransaction> transaction = createOutgoingTransaction(m_currency, m_node.getLastKnownBlockHeight());
       uint64_t totalHeat = context->foundMoney;
       uint64_t needed = cdAmount + bankingFee;
       uint64_t changeAmount = (totalHeat > needed) ? (totalHeat - needed) : 0;
@@ -2984,7 +2986,7 @@ namespace CryptoNote
       return {};
     }
     try {
-      std::unique_ptr<ITransaction> transaction = createTransaction();
+      std::unique_ptr<ITransaction> transaction = createOutgoingTransaction(m_currency, m_node.getLastKnownBlockHeight());
       uint64_t totalHeat = context->foundMoney;
       uint64_t changeAmount = (totalHeat > amount) ? (totalHeat - amount) : 0;
 
@@ -3293,7 +3295,7 @@ namespace CryptoNote
 
     try {
       WalletLegacyTransaction& transactionInfo = m_transactionsCache.getTransaction(context->transactionId);
-      std::unique_ptr<ITransaction> transaction = createTransaction();
+      std::unique_ptr<ITransaction> transaction = createOutgoingTransaction(m_currency, m_node.getLastKnownBlockHeight());
       uint64_t fee = m_currency.minimumFee();
 
       // Deposit output → pool commit key (one-sided deposit, tracked by m_limitDeposits)
@@ -3358,7 +3360,7 @@ namespace CryptoNote
 
     try {
       WalletLegacyTransaction& transactionInfo = m_transactionsCache.getTransaction(context->transactionId);
-      std::unique_ptr<ITransaction> transaction = createTransaction();
+      std::unique_ptr<ITransaction> transaction = createOutgoingTransaction(m_currency, m_node.getLastKnownBlockHeight());
       uint64_t fee = m_currency.minimumFee();
 
       // Cancel tx only needs TX_EXTRA_LIMIT_WITHDRAW — the blockchain

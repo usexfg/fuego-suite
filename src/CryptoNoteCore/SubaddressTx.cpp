@@ -22,6 +22,11 @@ size_t countFieldsOfType(const std::vector<TransactionExtraField>& fields, const
       [&type](const TransactionExtraField& f) { return f.type() == type; }));
 }
 
+bool hasKeyInput(const Transaction& tx) {
+  return std::any_of(tx.inputs.begin(), tx.inputs.end(),
+      [](const TransactionInput& input) { return input.type() == typeid(KeyInput); });
+}
+
 bool isNonChangeDestination(const TransactionDestinationEntry& dest, const Crypto::PublicKey& senderSpendPublicKey) {
   return dest.isSubaddress || dest.addr.spendPublicKey != senderSpendPublicKey;
 }
@@ -197,7 +202,13 @@ bool janusBaseForOutput(
   return true;
 }
 
-Crypto::PublicKey messageTransactionKey(const std::vector<uint8_t>& extra, const Crypto::PublicKey& mainTxPubKey) {
+Crypto::PublicKey messageTransactionKey(
+    const std::vector<uint8_t>& extra,
+    const Crypto::PublicKey& mainTxPubKey,
+    bool recipientIsSubaddress) {
+  if (!recipientIsSubaddress) {
+    return mainTxPubKey;
+  }
   const SubaddressTxKeys keys = readSubaddressTxKeys(extra);
   if (keys.additionalPubKeys.empty() && keys.janusBases.size() == 1) {
     return keys.janusBases.front();
@@ -260,9 +271,24 @@ bool applySubaddressTxExtra(std::vector<uint8_t>& extra, const SubaddressOutputP
   return replaceSubaddressFields(extra, nullptr, plan.txKeys);
 }
 
+bool addJanusFillerWhenMissing(std::vector<uint8_t>& extra, const Crypto::SecretKey& txSecret) {
+  std::vector<TransactionExtraField> fields;
+  if (!parseTransactionExtra(extra, fields)) {
+    return false;
+  }
+  if (countFieldsOfType(fields, typeid(TransactionExtraJanusBase)) > 0) {
+    return true;
+  }
+  SubaddressTxKeys fillerOnly;
+  fillerOnly.janusBases.resize(1);
+  return Crypto::janusFillerForTxSecret(txSecret, fillerOnly.janusBases[0]) &&
+         replaceSubaddressFields(extra, nullptr, fillerOnly);
+}
+
 bool validateSubaddressTxExtra(
     const Transaction& tx,
     uint8_t blockMajorVersion,
+    bool janusBaseRequired,
     std::string* error) {
   auto fail = [&](const char* msg) {
     if (error) {
@@ -271,9 +297,10 @@ bool validateSubaddressTxExtra(
     return false;
   };
 
+  const bool mustCarryJanusBase = janusBaseRequired && hasKeyInput(tx);
   std::vector<TransactionExtraField> fields;
   if (!parseTransactionExtra(tx.extra, fields)) {
-    return true;
+    return mustCarryJanusBase ? fail("a key-input transaction extra must parse once the janus base is required") : true;
   }
 
   if (countFieldsOfType(fields, typeid(TransactionExtraAdditionalPubKeys)) > 1) {
@@ -290,6 +317,9 @@ bool validateSubaddressTxExtra(
 
   if ((hasAdditional || hasJanus) && !funsaSubaddressActivated(blockMajorVersion)) {
     return fail("subaddress extra tags not active before block major version 11");
+  }
+  if (mustCarryJanusBase && !hasJanus) {
+    return fail("a key-input transaction must carry a janus base");
   }
 
   if (hasAdditional) {

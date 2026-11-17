@@ -203,6 +203,9 @@ public:
   // First height at which a pre-v11 block may not carry HEAT, Hearth or
   // legacy-burn tags (parameters::HEATWAVE_TAG_CUTOFF_HEIGHT; testnet: v11).
   uint32_t heatwaveTagCutoffHeight() const;
+  // F8: from this rule on, every key-input tx must carry a 0x09 Janus base, so a
+  // single-key subaddress payment is not recognisable by the tag alone.
+  bool janusBaseRequiredAtHeight(uint32_t height) const;
   uint8_t blockMajorVersionAtHeight(uint32_t height) const;
   unsigned int upgradeVotingThreshold() const { return m_upgradeVotingThreshold; }
   uint32_t upgradeVotingWindow() const { return m_upgradeVotingWindow; }

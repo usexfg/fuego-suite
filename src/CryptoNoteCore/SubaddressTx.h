@@ -48,9 +48,12 @@ bool janusBaseForOutput(
     bool matchedViaAdditionalKey,
     Crypto::PublicKey& janusBase);
 
+// Every v11 tx may carry a lone 0x09 (F8 filler), so only a funsa recipient of a
+// single-key tx decrypts messages with it; everyone else uses the main key.
 Crypto::PublicKey messageTransactionKey(
     const std::vector<uint8_t>& extra,
-    const Crypto::PublicKey& mainTxPubKey);
+    const Crypto::PublicKey& mainTxPubKey,
+    bool recipientIsSubaddress);
 
 bool writeSubaddressTxKeys(std::vector<uint8_t>& extra, const SubaddressTxKeys& keys);
 
@@ -74,9 +77,14 @@ bool applySubaddressTxExtra(
     std::vector<uint8_t>& extra,
     const SubaddressOutputPlan& plan);
 
+// F8: give a tx that has no 0x09 the filler janus base of its tx secret. Leaves a
+// tx that already carries 0x09 untouched; fails on an extra that does not parse.
+bool addJanusFillerWhenMissing(std::vector<uint8_t>& extra, const Crypto::SecretKey& txSecret);
+
 bool validateSubaddressTxExtra(
     const Transaction& tx,
     uint8_t blockMajorVersion,
+    bool janusBaseRequired,
     std::string* error);
 
 } // namespace CryptoNote

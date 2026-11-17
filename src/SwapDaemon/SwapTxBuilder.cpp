@@ -19,6 +19,7 @@
 #include "Common/StringTools.h"
 #include "Serialization/BinarySerializationTools.h"
 #include "CryptoNoteConfig.h"
+#include "CryptoNoteCore/SubaddressTx.h"
 
 #include <algorithm>
 #include <cstring>
@@ -93,6 +94,16 @@ static unsigned int signerIndex(SwapRole role) {
 }
 
 // ─── Step 1: Build unsigned tx ───────────────────────────────────────
+
+bool SwapTxBuilder::addJanusFillerAtChainTip(FuegoRpcClient& rpc, CryptoNote::Transaction& tx,
+                                             const Crypto::SecretKey& txSecret) {
+  NodeInfo tip;
+  if (!rpc.getInfo(tip)) {
+    return false;
+  }
+  return !CryptoNote::funsaSubaddressActivated(tip.blockMajorVersion) ||
+         CryptoNote::addJanusFillerWhenMissing(tx.extra, txSecret);
+}
 
 bool SwapTxBuilder::buildUnsignedEscrowSpend(
     FuegoRpcClient& rpc,
@@ -205,6 +216,9 @@ bool SwapTxBuilder::buildUnsignedEscrowSpend(
   CryptoNote::KeyPair txKey;
   Crypto::generate_keys(txKey.publicKey, txKey.secretKey);
   CryptoNote::addTransactionPublicKeyToExtra(tx.extra, txKey.publicKey);
+  if (!addJanusFillerAtChainTip(rpc, tx, txKey.secretKey)) {
+    return false;
+  }
 
   // Input: KeyInput referencing the escrow with decoy ring.
   // Key image will be filled in after collaborative computation.

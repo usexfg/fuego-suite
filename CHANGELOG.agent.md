@@ -7450,3 +7450,24 @@ Sign-off table:
 | Build compiles | DONE — `make -j4` full build rc=0 |
 | Tests pass | DONE — core_tests 657/657; test_hearth_amm 45/45; `ctest -LE manual` 59/59 |
 | All tasks done | DONE |
+
+## Restore the CD fee and re-mint burn extra types after the subaddress merge
+
+**Feature name**: fix the build break in merge `aba01a69` (master's funsa V2 subaddresses into PR #79)
+**Agent**: Claude
+**Start date**: 2026-11-17
+**Consensus impact**: none; restores the two PR #79 types in the `TransactionExtraField` variant.
+
+The merge took master's `TransactionExtraField` typedef, which adds `TransactionExtraAdditionalPubKeys` and `TransactionExtraJanusBase` but drops `TransactionExtraCdCreationFee` and `TransactionExtraRemintBurn`, so `boost::get` on them failed to compile. Redoing the same merge independently gives one conflict, that typedef; every other file matches `aba01a69` exactly.
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Variant holds both sides' types (35; `BOOST_MPL_LIMIT_LIST_SIZE` is 40). New tags 0x06 / 0x09 do not collide with 0x0D / 0x0E | Claude | 2026-11-17 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j4` full build rc=0 |
+| Tests pass | DONE — core_tests 657/657; `ctest -LE manual` 59/59 |
+| All tasks done | DONE |

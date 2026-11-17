@@ -23,19 +23,6 @@ class PoolOrderOrchestrator {
 public:
   PoolOrderOrchestrator();
 
-  // Update with latest market state, returns true if pool orders should be regenerated
-  bool shouldRegenerate(
-    uint64_t currentPclear,
-    uint64_t priorPclear,
-    uint64_t poolXfgReserve,
-    uint64_t poolHeatReserve,
-    uint64_t priorPoolXfgReserve,
-    uint64_t priorPoolHeatReserve,
-    uint64_t bandFilledThisBlock,   // how much of pool band was consumed
-    uint64_t totalBandPlaced,        // total band depth placed last cycle
-    uint32_t blocksSinceLastRegen
-  );
-
   // Compute adaptive spread in bps (basis points, 1 = 0.01%)
   uint32_t computeSpreadBps(
     uint64_t P_clear,
@@ -60,23 +47,9 @@ public:
     m_priceHistory = std::move(history);
   }
 
-  // shouldRegenerate() treats m_lastRegenPclear == 0 as its first-run
-  // sentinel, so a node that pops back past the first regeneration takes the
-  // threshold path where a fresh node returns true immediately — a different
-  // spread, different pool prices, different header. Must be rolled back too.
-  uint64_t lastRegenPclear() const { return m_lastRegenPclear; }
-  void restoreLastRegenPclear(uint64_t p) { m_lastRegenPclear = p; }
-
 private:
   std::deque<uint64_t> m_priceHistory;  // last 30 blocks of P_clear
-  uint64_t m_lastRegenPclear = 0;
-  uint64_t m_lastRegenXfgReserve = 0;
-  uint64_t m_lastRegenHeatReserve = 0;
 
-  static constexpr uint32_t MAX_BLOCKS_WITHOUT_REGEN = 10;
-  static constexpr uint32_t PRICE_CHANGE_THRESHOLD_BPS = 50;   // 0.5%
-  static constexpr uint32_t RESERVE_CHANGE_THRESHOLD_BPS = 100; // 1%
-  static constexpr uint32_t BAND_CONSUMPTION_THRESHOLD_PCT = 50; // 50%
   static constexpr uint32_t PRICE_HISTORY_SIZE = 30;
   static constexpr uint32_t BASE_SPREAD_BPS = 30;               // 0.3% base
   static constexpr uint32_t MAX_SPREAD_BPS = 300;               // 3% ceiling

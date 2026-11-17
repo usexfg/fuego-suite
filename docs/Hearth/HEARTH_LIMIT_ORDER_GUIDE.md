@@ -292,42 +292,37 @@ and receive exactly their target price when filled.
 
 #### What happens when the band is filled?
 
-When pool orders (the auto-generated depth band) are consumed by trades:
+The depth band is the pool quoting its own reserves as auction makers
+(`generatePoolOrders`, 0xF0 order ids):
 
-1. **bandFilled is tracked** — each block, `g_orderbookLastBandFilled` records
-   the total XFG amount of pool orders filled in the prior block
-2. **Spread widens** — the adaptive spread's consumption multiplier kicks in,
-   increasing the spread (base 30 bps → up to 300 bps). A consumed band means
-   the pool's liquidity is thinner, so the spread reflects that risk
-3. **Regeneration triggers** — if consumption exceeds 50% of the band
-   (`bandFilled > 0.5 × bandPlaced`), pool orders are regenerated at the next block
-   with the widened spread
-4. **Pool reserves adjust** — pool order fills directly update `reserveXfg`/`reserveHeat`,
-   so a filled band shifts the pool's reserve ratio
-
-In short: filling the band costs the taker more (wider spread) and the pool
-refreshes its liquidity at the new price level.
+1. **Rebuilt every block** from the reserves as the block's transactions left
+   them, centred on the pool's spot price — not on the last clearing price.
+2. **Priced on the curve** — each of the 10 tiers per side sits at what the
+   constant-product curve pays (bids) or charges (asks) for that tier once the
+   nearer tiers are gone, less/plus half the spread. A band fill never beats a
+   swap of the same size, so the product of the reserves cannot fall.
+3. **Spread widens with consumption** — `g_poolBandFilledLastBlock` records the
+   XFG of pool orders filled in the prior block; the spread rises from 30 bps
+   toward 300 bps as more of the band is consumed.
+4. **The pool is always the maker** — whoever trades against the band pays the
+   1% taker fee; the pool keeps the maker rebate in its reserves (LPs).
 
 #### Why and when does an order expire?
 
-Orders expire because this is a **P2P orderbook** — orders live in the mempool
-and propagate via P2P gossip. If orders never expired, stale orders from
-offline nodes would permanently clutter the book and waste validator work.
+Every resting deposit is scanned in every block (expiry, auction, backstop),
+so consensus bounds the set:
 
-| Setting | Value | Meaning |
-|---------|-------|---------|
-| Default expiry | 4,320 blocks (~3 days) | `ORDERBOOK_DEFAULT_EXPIRY` |
-| Maximum endurance | 20,160 blocks (~14 days) | `ORDERBOOK_MAX_ENDURANCE` |
-| No expiry | `expiration = 0` | Disabled (not recommended for P2P) |
+| Rule | Value | Constant |
+|------|-------|----------|
+| Expiry required | `height < expiration ≤ height + 5,400` (~30 days) | `LIMIT_ORDER_MAX_TTL_BLOCKS` |
+| Wallet default | 1,260 blocks (~7 days) when the caller passes 0 | `LIMIT_ORDER_DEFAULT_TTL_BLOCKS` |
+| Minimum size | 1 XFG (sell) / 0.1 HEAT (buy) | `LIMIT_ORDER_MIN_XFG`, `LIMIT_ORDER_MIN_HEAT` |
+| New deposits per block | 100 | `LIMIT_DEPOSITS_MAX_PER_BLOCK` |
 
-At each block, `OrderbookMempool::expireOrders(currentHeight)` removes any
-order where `expiration != 0 && currentHeight > expiration`. The deposit
-stays in `pendingXfg`/`pendingHeat` until the user calls `cancel_order`.
-
-**Why 3 days?** Nobody wants to re-add orders constantly, but P2P mempool
-orders shouldn't sit forever. 3 days gives market makers enough runway
-without polluting the mempool. Users can set shorter expiry for short-term
-trades or longer (up to 14 days) for passive strategies.
+`expiration` is an absolute block height. At that height the order stops
+filling; the remaining deposit and all proceeds stay claimable with
+`TransactionExtraLimitWithdraw`. Withdrawn orders are pruned from the set once
+they are older than the 1,000-block rollback window.
 
 ### Testing Strategy
 

@@ -10,6 +10,9 @@
 
 #include "CryptoNoteCore/BankingIndex.h"
 #include "CryptoNoteCore/AmmPool.h"
+#include "CryptoNoteCore/CryptoNoteFormatUtils.h"
+#include "CryptoNoteCore/CryptoNoteTools.h"
+#include "CryptoNoteCore/OrderbookAuction.h"
 #include "CryptoNoteConfig.h"
 #include "CryptoNoteCore/TransactionExtra.h"
 #include "CryptoNoteCore/CommitmentIndex.h"
@@ -23,6 +26,10 @@
 #include "CryptoNoteCore/TransactionPool.h"
 #include "Serialization/ISerializer.h"
 #include "Serialization/BinarySerializationTools.h"
+#include "Serialization/BinaryInputStreamSerializer.h"
+#include "Serialization/BinaryOutputStreamSerializer.h"
+#include "Common/MemoryInputStream.h"
+#include "Common/VectorOutputStream.h"
 
 #include <cassert>
 #include <cstdio>
@@ -754,8 +761,8 @@ struct TestChain {
   std::filesystem::path dir;
   bool ok = false;
 
-  explicit TestChain(const std::string& tag)
-      : currency(CurrencyBuilder(log).currency()),
+  explicit TestChain(const std::string& tag, bool testnet = false)
+      : currency(testnet ? CurrencyBuilder(log).testnet(true).currency() : CurrencyBuilder(log).currency()),
         pool(currency, chain, timeProvider, log),
         chain(currency, pool, log, false, false),
         dir(std::filesystem::temp_directory_path() /
@@ -1032,6 +1039,10 @@ void testValidateSettlementLimitDeposit() {
   // Off-tick prices are refused.
   Blockchain::SettlementScratch fresh;
   TEST(!t.chain.validateSettlement(deposit(10 * parameters::ORDER_PRICE_TICK + 1), 1, fresh, flows, fee, err));
+  // Audit 2026-11-11 M1: a 0.01 tick put the 0.125 launch price on an 8% grid.
+  // 0.12512 HEAT/XFG — 0.1% off it — is a valid limit price.
+  Blockchain::SettlementScratch nearLaunch;
+  TEST(t.chain.validateSettlement(deposit(1251200), 1, nearLaunch, flows, fee, err));
 }
 
 // CDs open on their own height after HEAT and Hearth have run alone. Mainnet
@@ -1166,6 +1177,109 @@ public:
     return chain.m_currency.isTestnet() ? parameters::TESTNET_EPOCH_DURATION_BLOCKS
                                         : parameters::EPOCH_DURATION_BLOCKS;
   }
+  static void runOrderbookBlock(Blockchain& chain, uint32_t height) {
+    Block b{};
+    b.majorVersion = BLOCK_MAJOR_VERSION_11;
+    chain.processOrderbookForBlock(b, {}, height);
+  }
+  static void addLimitDeposit(Blockchain& chain, const Crypto::Hash& orderId, uint8_t side,
+                              uint64_t amount, uint64_t targetPrice, uint32_t height,
+                              const Crypto::Hash* addressHash = nullptr) {
+    Blockchain::LimitDepositInfo dep{side, amount, targetPrice, 0, addressHash ? *addressHash : orderId, false};
+    dep.depositedAmount = amount;
+    dep.createdHeight = height;
+    chain.m_limitDeposits[orderId] = dep;
+    (side == 1 ? chain.m_ammPool.pendingXfg : chain.m_ammPool.pendingHeat) += amount;
+  }
+  static uint64_t proceedsHeat(const Blockchain& chain, const Crypto::Hash& orderId) {
+    return chain.m_limitDeposits.at(orderId).proceedsHeat;
+  }
+  static uint64_t proceedsXfg(const Blockchain& chain, const Crypto::Hash& orderId) {
+    return chain.m_limitDeposits.at(orderId).proceedsXfg;
+  }
+  static uint64_t escrowLeft(const Blockchain& chain, const Crypto::Hash& orderId) {
+    return chain.m_limitDeposits.at(orderId).amount;
+  }
+  static std::vector<uint8_t> saveOrderbookState(Blockchain& chain) {
+    std::vector<uint8_t> bytes;
+    Common::VectorOutputStream out(bytes);
+    BinaryOutputStreamSerializer s(out);
+    chain.serializeOrderbookState(s);
+    return bytes;
+  }
+  static void resetToStartup(Blockchain& chain) { chain.rebuildCache(); }
+  static void recordSpots(Blockchain& chain, uint32_t fromHeight, uint32_t count, uint64_t price) {
+    for (uint32_t i = 0; i < count; ++i) chain.m_blockSpotHistory.push_back({fromHeight + i, price});
+  }
+  static void markWithdrawn(Blockchain& chain, const Crypto::Hash& orderId, uint32_t height) {
+    auto& dep = chain.m_limitDeposits.at(orderId);
+    (dep.side == 1 ? chain.m_ammPool.pendingXfg : chain.m_ammPool.pendingHeat) -= dep.amount;
+    dep.withdrawnAmount = dep.amount;
+    dep.withdrawn = true;
+    dep.withdrawnHeight = height;
+  }
+  // One transaction at index 1 of a block at `height`, version `v` (index 0 is
+  // the coinbase slot), driven through the production push/pop.
+  static Blockchain::BlockEntry blockWith(const Transaction& tx, uint32_t height, uint8_t v) {
+    Blockchain::BlockEntry block{};
+    block.bl.majorVersion = v;
+    block.height = height;
+    block.transactions.resize(2);
+    block.transactions[1].tx = tx;
+    return block;
+  }
+  static bool pushTx(Blockchain& chain, Blockchain::BlockEntry& block) {
+    return chain.pushTransaction(block, getObjectHash(block.transactions[1].tx), TxIndex{block.height, 1});
+  }
+  static void popTx(Blockchain& chain, const Blockchain::BlockEntry& block) {
+    chain.popTransaction(block.transactions[1].tx, getObjectHash(block.transactions[1].tx),
+                         block.height, block.bl.majorVersion);
+  }
+  static void recordRemint(Blockchain& chain, uint32_t height, uint64_t amount) {
+    chain.recordRemint(height, amount);
+  }
+  static void unrecordRemint(Blockchain& chain, uint32_t height) { chain.unrecordRemint(height); }
+  static bool validateCoinbase(Blockchain& chain, const Block& b, uint32_t height, uint64_t alreadyGenerated,
+                               uint64_t remint) {
+    uint64_t reward = 0;
+    int64_t emissionChange = 0;
+    return chain.validate_miner_transaction(b, height, 0, alreadyGenerated, 0, reward, emissionChange, {}, remint);
+  }
+  static void bankBlock(Blockchain& chain, const Blockchain::BlockEntry& block) {
+    chain.pushToBankingIndex(block, 0);
+  }
+  static void addHeatRingMember(Blockchain& chain, uint64_t amount) {
+    CommitmentOutputRef ref{};
+    ref.term = parameters::HEAT_TERM;
+    chain.m_indexManager.commitmentOutputs()[amount].push_back(ref);
+  }
+  static void markExpired(Blockchain& chain, const Crypto::Hash& orderId) {
+    chain.m_limitDeposits.at(orderId).expired = true;
+  }
+  static bool hasLimitDeposit(const Blockchain& chain, const Crypto::Hash& orderId) {
+    return chain.m_limitDeposits.count(orderId) > 0;
+  }
+  static uint64_t cdFeeHeatFromXfg(const Blockchain& chain) { return chain.m_cdFeeHeatFromXfg; }
+  static bool auctionFillsSettle(const Blockchain& chain, const AuctionResult& auction) {
+    return chain.auctionFillsSettle(auction);
+  }
+  static void popOrderbookBlock(Blockchain& chain, uint32_t height) {
+    chain.restoreOrderbookSnapshotFor(height);
+  }
+  static void recordBlockSpot(Blockchain& chain, uint32_t height, uint64_t spot) {
+    chain.recordBlockSpot(height, spot);
+  }
+  static void dropBlockSpot(Blockchain& chain, uint32_t height) { chain.dropBlockSpot(height); }
+  static size_t maxRollbackHistory() { return Blockchain::MAX_ROLLBACK_HISTORY; }
+  static void setRemintBurned(Blockchain& chain, uint64_t amount) { chain.m_remintBurnedXfg = amount; }
+  static uint64_t oraclePriceBefore(const Blockchain& chain, uint32_t height) {
+    return chain.hearthOraclePriceBefore(height);
+  }
+  static void loadOrderbookState(Blockchain& chain, const std::vector<uint8_t>& bytes) {
+    Common::MemoryInputStream in(bytes.data(), bytes.size());
+    BinaryInputStreamSerializer s(in);
+    chain.serializeOrderbookState(s);
+  }
 };
 } // namespace CryptoNote
 
@@ -1194,6 +1308,7 @@ void testAuntPolPairsAtV11EpochBoundary() {
   Block b;
   b.majorVersion = BLOCK_MAJOR_VERSION_11;
   const uint32_t h = static_cast<uint32_t>(VaultCoreTestAccess::epochDuration(t.chain));
+  VaultCoreTestAccess::recordSpots(t.chain, 0, h, ammGetSpotPrice(xfgBefore, heatBefore));
   TEST(VaultCoreTestAccess::runEpochWork(t.chain, b, h));
 
   const uint64_t shares = t.chain.getProtocolLpShares();
@@ -1269,6 +1384,18 @@ void testCoinbaseRejectsEverySettlementTag() {
   std::vector<uint8_t> mint;
   TEST(addHeatMintAuthToExtra(mint, 10 * parameters::COIN, 1 * parameters::COIN));
   TEST(!VaultCoreTestAccess::prevalidateCoinbase(t.chain, coinbaseWith(mint), 1));
+
+  // From v11 the alias fee is burned in settlement, which the coinbase skips.
+  TransactionExtraAliasRegistration coinbaseAlias;
+  coinbaseAlias.alias = "minerals";
+  coinbaseAlias.ownerAddress = "miner-owner";
+  coinbaseAlias.aliasType = 1;
+  std::vector<uint8_t> aliasExtra;
+  TEST(addAliasToExtra(aliasExtra, coinbaseAlias));
+  TEST(!VaultCoreTestAccess::prevalidateCoinbase(t.chain, coinbaseWith(aliasExtra), 1));
+  std::vector<uint8_t> coinbaseBurn;
+  TEST(addRemintBurnToExtra(coinbaseBurn, parameters::COIN));
+  TEST(!VaultCoreTestAccess::prevalidateCoinbase(t.chain, coinbaseWith(coinbaseBurn), 1));
 
   // The retired tags are still settlement tags, so they stay covered as the single
   // shared list evolves.
@@ -1588,6 +1715,908 @@ void testVaultSelectUtxosDeterministicTies() {
   TEST(sel[0].globalOutputIndex == 100);
 }
 
+// The Hearth tests below drive the production per-block path
+// (processOrderbookForBlock) on a v11 height past the 144-block bootstrap.
+namespace {
+
+uint32_t enterHearthAuctionPhase(TestChain& t) {
+  uint32_t height = VaultCoreTestAccess::m_currency_upgrade_height_v11(t.chain);
+  for (int i = 0; i < 400 && t.chain.isOrderbookInBootstrap(); ++i) {
+    VaultCoreTestAccess::runOrderbookBlock(t.chain, height++);
+  }
+  VaultCoreTestAccess::runOrderbookBlock(t.chain, height++);
+  return height;
+}
+
+Crypto::Hash hearthOrderId(uint8_t tag) {
+  Crypto::Hash h{};
+  h.data[0] = 0x5A;
+  h.data[1] = tag;
+  return h;
+}
+
+uint128_t poolProduct(const AmmPoolState& pool) {
+  return (uint128_t)pool.reserveXfg * pool.reserveHeat;
+}
+
+// HEAT that the block created (positive) or destroyed (negative) across every
+// ledger a fill can touch: pool reserves, limit escrow, proceeds, CD accumulator.
+int64_t heatCreatedByBlock(const AmmPoolState& before, const AmmPoolState& after,
+                           uint64_t proceedsBefore, uint64_t proceedsAfter) {
+  return (int64_t)(after.reserveHeat - before.reserveHeat) +
+         (int64_t)(after.pendingHeat - before.pendingHeat) +
+         (int64_t)(proceedsAfter - proceedsBefore) +
+         (int64_t)(after.cdHearthFeeAccumulator - before.cdHearthFeeAccumulator);
+}
+
+int64_t xfgCreatedByBlock(const AmmPoolState& before, const AmmPoolState& after,
+                          uint64_t proceedsBefore, uint64_t proceedsAfter) {
+  return (int64_t)(after.reserveXfg - before.reserveXfg) +
+         (int64_t)(after.pendingXfg - before.pendingXfg) +
+         (int64_t)(proceedsAfter - proceedsBefore);
+}
+
+const int64_t HEARTH_ROUNDING_DUST = 64;
+
+} // namespace
+
+// Regression (audit 2026-11-11 C2): a user sell smaller than the pool's bid
+// band left the pool as the rationed side. The pool was then the taker: its
+// fee and the user's maker rebate were paid by nobody, which created 1% of
+// every such fill as HEAT.
+void testHearthSellIntoPoolBandConservesHeat() {
+  TestChain t("hearth_sell");
+  TEST(t.ok);
+  uint32_t height = enterHearthAuctionPhase(t);
+  TEST(!t.chain.isOrderbookInBootstrap());
+
+  const Crypto::Hash id = hearthOrderId(1);
+  VaultCoreTestAccess::addLimitDeposit(t.chain, id, 1, 50 * parameters::COIN,
+                                       parameters::ORDER_PRICE_TICK, height - 1);
+  const AmmPoolState before = t.chain.getAmmPool();
+  VaultCoreTestAccess::runOrderbookBlock(t.chain, height);
+  const AmmPoolState after = t.chain.getAmmPool();
+
+  TEST(VaultCoreTestAccess::escrowLeft(t.chain, id) == 0);
+  const int64_t heatCreated = heatCreatedByBlock(before, after, 0, VaultCoreTestAccess::proceedsHeat(t.chain, id));
+  const int64_t xfgCreated = xfgCreatedByBlock(before, after, 0, VaultCoreTestAccess::proceedsXfg(t.chain, id));
+  TEST(heatCreated <= 0 && heatCreated >= -HEARTH_ROUNDING_DUST);
+  TEST(xfgCreated == 0);
+  TEST(poolProduct(after) >= poolProduct(before));
+}
+
+void testHearthBuyFromPoolBandConservesHeat() {
+  TestChain t("hearth_buy");
+  TEST(t.ok);
+  uint32_t height = enterHearthAuctionPhase(t);
+
+  const Crypto::Hash id = hearthOrderId(2);
+  VaultCoreTestAccess::addLimitDeposit(t.chain, id, 0, 5 * parameters::COIN,
+                                       parameters::COIN, height - 1);
+  const AmmPoolState before = t.chain.getAmmPool();
+  VaultCoreTestAccess::runOrderbookBlock(t.chain, height);
+  const AmmPoolState after = t.chain.getAmmPool();
+
+  TEST(VaultCoreTestAccess::proceedsXfg(t.chain, id) > 0);
+  const int64_t heatCreated = heatCreatedByBlock(before, after, 0, VaultCoreTestAccess::proceedsHeat(t.chain, id));
+  const int64_t xfgCreated = xfgCreatedByBlock(before, after, 0, VaultCoreTestAccess::proceedsXfg(t.chain, id));
+  TEST(heatCreated <= 0 && heatCreated >= -HEARTH_ROUNDING_DUST);
+  TEST(xfgCreated <= 0 && xfgCreated >= -HEARTH_ROUNDING_DUST);
+  TEST(poolProduct(after) >= poolProduct(before));
+}
+
+// Regression (audit 2026-11-11 C1): the band quoted 10% of the reserves at
+// prices inside ±0.42% of P_clear, so one sweep bought it ~10% better than
+// the curve and lowered the product of the reserves. Every sweep size, on
+// either side and over consecutive blocks, must leave the product no lower.
+void testHearthBandSweepsNeverLowerK() {
+  TestChain t("hearth_sweep");
+  TEST(t.ok);
+  uint32_t height = enterHearthAuctionPhase(t);
+  const uint64_t C = parameters::COIN;
+  const uint64_t sellSizes[] = {1 * C, 37 * C, 400 * C, 900 * C, 3000 * C};
+  const uint64_t buyBudgets[] = {1 * C, 9 * C, 60 * C, 140 * C, 400 * C};
+  uint8_t tag = 10;
+  bool kHeld = true, heatHeld = true;
+  for (int round = 0; round < 5; ++round) {
+    const Crypto::Hash sellId = hearthOrderId(tag++);
+    const Crypto::Hash buyId = hearthOrderId(tag++);
+    VaultCoreTestAccess::addLimitDeposit(t.chain, sellId, 1, sellSizes[round], parameters::ORDER_PRICE_TICK, height - 1);
+    AmmPoolState before = t.chain.getAmmPool();
+    VaultCoreTestAccess::runOrderbookBlock(t.chain, height++);
+    AmmPoolState after = t.chain.getAmmPool();
+    kHeld = kHeld && poolProduct(after) >= poolProduct(before);
+    heatHeld = heatHeld && heatCreatedByBlock(before, after, 0, VaultCoreTestAccess::proceedsHeat(t.chain, sellId)) <= 0;
+
+    VaultCoreTestAccess::addLimitDeposit(t.chain, buyId, 0, buyBudgets[round], parameters::COIN, height - 1);
+    before = t.chain.getAmmPool();
+    VaultCoreTestAccess::runOrderbookBlock(t.chain, height++);
+    after = t.chain.getAmmPool();
+    kHeld = kHeld && poolProduct(after) >= poolProduct(before);
+    heatHeld = heatHeld && heatCreatedByBlock(before, after, 0, VaultCoreTestAccess::proceedsHeat(t.chain, buyId)) <= 0;
+  }
+  TEST(kHeld);
+  TEST(heatHeld);
+}
+
+// Regression (audit 2026-11-11 C3): the auction's clearing price, bootstrap
+// counters, depth band, volatility history and fill rollback records were
+// process memory only. A node restarted from its cache re-entered bootstrap
+// and stopped running auctions its peers ran. Restoring the cached state into
+// a process holding start-up state must reproduce the next block exactly.
+void testHearthOrderbookStateSurvivesRestart() {
+  TestChain t("hearth_restart");
+  TEST(t.ok);
+  VaultCoreTestAccess::resetToStartup(t.chain);
+  const std::vector<uint8_t> startupState = VaultCoreTestAccess::saveOrderbookState(t.chain);
+  uint32_t height = enterHearthAuctionPhase(t);
+  VaultCoreTestAccess::addLimitDeposit(t.chain, hearthOrderId(40), 1, 20 * parameters::COIN,
+                                       parameters::ORDER_PRICE_TICK, height - 1);
+  VaultCoreTestAccess::runOrderbookBlock(t.chain, height++);
+
+  const std::vector<uint8_t> cached = VaultCoreTestAccess::saveOrderbookState(t.chain);
+  TEST(cached != startupState);
+  VaultCoreTestAccess::runOrderbookBlock(t.chain, height);
+  const std::vector<uint8_t> nextBlockState = VaultCoreTestAccess::saveOrderbookState(t.chain);
+
+  VaultCoreTestAccess::loadOrderbookState(t.chain, startupState);
+  TEST(t.chain.isOrderbookInBootstrap());
+  VaultCoreTestAccess::loadOrderbookState(t.chain, cached);
+  TEST(!t.chain.isOrderbookInBootstrap());
+  TEST(VaultCoreTestAccess::saveOrderbookState(t.chain) == cached);
+  VaultCoreTestAccess::runOrderbookBlock(t.chain, height);
+  TEST(VaultCoreTestAccess::saveOrderbookState(t.chain) == nextBlockState);
+}
+
+// Audit 2026-11-11 H2: the mint price was the mean of 8 end-of-block spots, so
+// a few blocks of pushed price set what a mint paid. It is now the lower of
+// the 8-block and the epoch median.
+void testHearthOracleResistsShortPump() {
+  TestChain t("hearth_oracle");
+  TEST(t.ok);
+  const uint64_t P = parameters::COIN / 8;
+  const uint32_t epoch = static_cast<uint32_t>(VaultCoreTestAccess::epochDuration(t.chain));
+  TEST(VaultCoreTestAccess::oraclePriceBefore(t.chain, 10) == 0);
+  VaultCoreTestAccess::recordSpots(t.chain, 0, epoch, P);
+  VaultCoreTestAccess::recordSpots(t.chain, epoch, 8, 2 * P);
+  TEST(VaultCoreTestAccess::oraclePriceBefore(t.chain, epoch + 8) == P);
+  VaultCoreTestAccess::recordSpots(t.chain, epoch + 8, 8, P / 2);
+  TEST(VaultCoreTestAccess::oraclePriceBefore(t.chain, epoch + 16) == P / 2);
+  TEST(VaultCoreTestAccess::oraclePriceBefore(t.chain, epoch + 8) == P);
+}
+
+// Audit 2026-11-11 H2: mint size had no bound; one block may now mint at most
+// HEARTH_MINT_MAX_BPS_PER_BLOCK of the pool's HEAT reserve.
+void testHearthMintCapPerBlock() {
+  TestChain t("hearth_mintcap");
+  TEST(t.ok);
+  const uint64_t C = parameters::COIN;
+  const auto& pool = t.chain.getAmmPool();
+  VaultCoreTestAccess::recordSpots(t.chain, 0, 16, ammGetSpotPrice(pool.reserveXfg, pool.reserveHeat));
+  std::vector<uint8_t> mint;
+  addHeatMintAuthToExtra(mint, 100 * C, 12 * C);
+  const Transaction mintTx = settlementTx({101 * C}, {commitmentOut(12 * C, parameters::HEAT_TERM)}, mint);
+
+  Blockchain::SettlementScratch scratch;
+  scratch.mintCapHeatLeft = hearthMintCapHeat(pool.reserveHeat);
+  TEST(scratch.mintCapHeatLeft == 80 * C);
+  AssetFlows flows;
+  uint64_t fee = 0;
+  std::string err;
+  int accepted = 0;
+  for (int i = 0; i < 7; ++i) {
+    if (t.chain.validateSettlement(mintTx, 100, scratch, flows, fee, err)) ++accepted;
+  }
+  TEST(accepted == 6);
+  TEST(err.find("mint cap") != std::string::npos);
+
+  // Audit 2026-11-11 L2: the minimum mint was enforced by wallets only.
+  std::vector<uint8_t> dust;
+  addHeatMintAuthToExtra(dust, 1 * C, parameters::HEAT_MINT_MIN_HEAT - 1);
+  Blockchain::SettlementScratch dustScratch;
+  TEST(!t.chain.validateSettlement(
+      settlementTx({2 * C}, {commitmentOut(parameters::HEAT_MINT_MIN_HEAT - 1, parameters::HEAT_TERM)}, dust),
+      100, dustScratch, flows, fee, err) && err.find("minimum") != std::string::npos);
+  TEST(t.chain.blockMintCapHeat() == 80 * C);
+}
+
+// Audit 2026-11-11 H3: AuntPoL deposits at the pool ratio, so pairing while
+// the pool is pushed off the oracle price sells the protocol's legs to the
+// pusher. The epoch skips the pairing and the legs carry over.
+void testAuntPolSkipsPushedPool() {
+  TestChain t("auntpol_pushed");
+  TEST(t.ok);
+  const uint64_t C = parameters::COIN;
+  const auto& pool = t.chain.getAmmPool();
+  const uint64_t xfgBefore = pool.reserveXfg, heatBefore = pool.reserveHeat;
+  VaultCoreTestAccess::setAuntPolLegs(t.chain, 80 * C, 12 * C);
+  Block b;
+  b.majorVersion = BLOCK_MAJOR_VERSION_11;
+  const uint32_t h = static_cast<uint32_t>(VaultCoreTestAccess::epochDuration(t.chain));
+  VaultCoreTestAccess::recordSpots(t.chain, 0, h, 2 * ammGetSpotPrice(xfgBefore, heatBefore));
+  TEST(VaultCoreTestAccess::runEpochWork(t.chain, b, h));
+  TEST(t.chain.getProtocolLpShares() == 0);
+  TEST(pool.reserveXfg == xfgBefore && pool.reserveHeat == heatBefore);
+  TEST(t.chain.getTreasuryLpPendingXfg() == 80 * C);
+}
+
+// Audit 2026-11-11 H2: the backstop cap was 5× auction volume, so crossing
+// one's own orders lifted it without bound. It is now at most 5% of the XFG
+// reserve per block whatever the auction did.
+void testHearthBackstopBoundedByReserves() {
+  TestChain t("hearth_backstop");
+  TEST(t.ok);
+  uint32_t height = enterHearthAuctionPhase(t);
+  const AmmPoolState before = t.chain.getAmmPool();
+  VaultCoreTestAccess::addLimitDeposit(t.chain, hearthOrderId(60), 1, 3000 * parameters::COIN,
+                                       parameters::ORDER_PRICE_TICK, height - 1);
+  VaultCoreTestAccess::runOrderbookBlock(t.chain, height);
+  const AmmPoolState after = t.chain.getAmmPool();
+  const uint64_t bidBandXfg = before.reserveXfg / 9 + parameters::COIN;
+  const uint64_t backstopBound = (before.reserveXfg + bidBandXfg) * parameters::HEARTH_BACKSTOP_MAX_BPS / 10000;
+  TEST(after.reserveXfg - before.reserveXfg <= bidBandXfg + backstopBound);
+  TEST(VaultCoreTestAccess::escrowLeft(t.chain, hearthOrderId(60)) > 0);
+}
+
+// Audit 2026-11-11 H4: deposits had no minimum, no required expiry and no
+// per-block cap, and every one is scanned every block forever.
+void testLimitDepositBounds() {
+  TestChain t("limit_bounds");
+  TEST(t.ok);
+  const uint64_t C = parameters::COIN;
+  const uint32_t height = 5000;
+  AssetFlows flows;
+  uint64_t fee = 0;
+  std::string err;
+  uint8_t next = 0;
+  auto deposit = [&](uint64_t amount, uint32_t expiration, Blockchain::SettlementScratch& scratch) {
+    Crypto::Hash orderId{};
+    orderId.data[0] = 0x6B;
+    orderId.data[1] = next++;
+    std::vector<uint8_t> extra;
+    addLimitDepositToExtra(extra, 1, amount, 10 * parameters::ORDER_PRICE_TICK, expiration, orderId, Crypto::Hash{});
+    return t.chain.validateSettlement(
+        settlementTx({amount + C}, {commitmentOut(amount, parameters::DEPOSIT_TERM_POOL_XFG)}, extra),
+        height, scratch, flows, fee, err);
+  };
+  Blockchain::SettlementScratch scratch;
+  TEST(deposit(C, height + 100, scratch));
+  TEST(!deposit(C - 1, height + 100, scratch) && err.find("minimum") != std::string::npos);
+  TEST(!deposit(C, 0, scratch) && err.find("expiry") != std::string::npos);
+  TEST(!deposit(C, height, scratch));
+  TEST(!deposit(C, height + parameters::LIMIT_ORDER_MAX_TTL_BLOCKS + 1, scratch));
+  TEST(deposit(C, height + parameters::LIMIT_ORDER_MAX_TTL_BLOCKS, scratch));
+
+  Blockchain::SettlementScratch full;
+  int accepted = 0;
+  for (uint32_t i = 0; i <= parameters::LIMIT_DEPOSITS_MAX_PER_BLOCK; ++i) {
+    if (deposit(C, height + 100, full)) ++accepted;
+  }
+  TEST(accepted == static_cast<int>(parameters::LIMIT_DEPOSITS_MAX_PER_BLOCK));
+  TEST(err.find("cap") != std::string::npos);
+}
+
+// Audit 2026-11-11 H4: withdrawn deposits left the scanned set never. They are
+// pruned past the rollback window, and a pop of the pruning block restores them.
+void testWithdrawnDepositsPrunedAndRestored() {
+  TestChain t("limit_prune");
+  TEST(t.ok);
+  uint32_t height = enterHearthAuctionPhase(t);
+  const Crypto::Hash oldId = hearthOrderId(70), recentId = hearthOrderId(71);
+  VaultCoreTestAccess::addLimitDeposit(t.chain, oldId, 1, parameters::COIN, parameters::ORDER_PRICE_TICK, height - 1);
+  VaultCoreTestAccess::addLimitDeposit(t.chain, recentId, 1, parameters::COIN, parameters::ORDER_PRICE_TICK, height - 1);
+  VaultCoreTestAccess::markWithdrawn(t.chain, oldId, height - 1001);
+  VaultCoreTestAccess::markWithdrawn(t.chain, recentId, height - 999);
+  VaultCoreTestAccess::runOrderbookBlock(t.chain, height);
+  TEST(!VaultCoreTestAccess::hasLimitDeposit(t.chain, oldId));
+  TEST(VaultCoreTestAccess::hasLimitDeposit(t.chain, recentId));
+  VaultCoreTestAccess::popOrderbookBlock(t.chain, height);
+  TEST(VaultCoreTestAccess::hasLimitDeposit(t.chain, oldId));
+}
+
+// Audit 2026-11-11 H5: every order from one wallet carried the same
+// addressHash, and a withdraw published the wallet's spend and view keys.
+// Orders now use one-time keys derived from the wallet spend secret.
+void testLimitOrderKeysUnlinkable() {
+  TestChain t("limit_keys");
+  TEST(t.ok);
+  const uint64_t C = parameters::COIN;
+  Crypto::PublicKey walletSpendPublic, otherSpendPublic;
+  Crypto::SecretKey walletSpendSecret, otherSpendSecret;
+  Crypto::generate_keys(walletSpendPublic, walletSpendSecret);
+  Crypto::generate_keys(otherSpendPublic, otherSpendSecret);
+
+  const Crypto::Hash orderA = hearthOrderId(80), orderB = hearthOrderId(81);
+  const LimitOrderKeys keysA = deriveLimitOrderKeys(walletSpendSecret, orderA);
+  const LimitOrderKeys keysB = deriveLimitOrderKeys(walletSpendSecret, orderB);
+  TEST(memcmp(keysA.addressHash.data, keysB.addressHash.data, sizeof(keysA.addressHash.data)) != 0);
+  TEST(memcmp(keysA.spendPublicKey.data, walletSpendPublic.data, sizeof(walletSpendPublic.data)) != 0);
+  TEST(isOwnLimitOrder(walletSpendSecret, orderA, keysA.addressHash));
+  TEST(!isOwnLimitOrder(otherSpendSecret, orderA, keysA.addressHash));
+  TEST(!isOwnLimitOrder(walletSpendSecret, orderB, keysA.addressHash));
+  const LimitOrderKeys again = deriveLimitOrderKeys(walletSpendSecret, orderA);
+  TEST(memcmp(again.addressHash.data, keysA.addressHash.data, sizeof(again.addressHash.data)) == 0);
+
+  VaultCoreTestAccess::addLimitDeposit(t.chain, orderA, 1, 5 * C, parameters::ORDER_PRICE_TICK, 1, &keysA.addressHash);
+  auto withdrawSignedBy = [&](const Crypto::PublicKey& spendPublic, const Crypto::SecretKey& spendSecret,
+                              const Crypto::PublicKey& viewPublic) {
+    const std::vector<TransactionOutput> outputs{keyOut(5 * C)};
+    const Crypto::Hash outputsHash = getLimitWithdrawOutputHash(outputs);
+    Crypto::Signature proof;
+    Crypto::generate_signature(getLimitWithdrawAuthHash(orderA, keysA.addressHash, outputsHash),
+                               spendPublic, spendSecret, proof);
+    std::vector<uint8_t> extra;
+    addLimitWithdrawToExtra(extra, orderA, spendPublic, viewPublic, outputsHash, proof);
+    Blockchain::SettlementScratch scratch;
+    AssetFlows flows;
+    uint64_t fee = 0;
+    std::string err;
+    return t.chain.validateSettlement(settlementTx({C}, outputs, extra), 100, scratch, flows, fee, err);
+  };
+  TEST(withdrawSignedBy(keysA.spendPublicKey, keysA.spendSecretKey, keysA.viewPublicKey));
+  TEST(!withdrawSignedBy(walletSpendPublic, walletSpendSecret, keysA.viewPublicKey));
+}
+
+// Audit 2026-11-11 M3: the epoch added the whole CD fee accumulator to the
+// HEAT supply, though most of it was HEAT taken from escrow or reserves. Only
+// the part valued from XFG fees is new HEAT.
+void testHeatSupplyCountsOnlyXfgValuedFees() {
+  TestChain t("heat_supply");
+  TEST(t.ok);
+  uint32_t height = enterHearthAuctionPhase(t);
+  const auto& pool = t.chain.getAmmPool();
+  VaultCoreTestAccess::recordSpots(t.chain, height - 16, 16, ammGetSpotPrice(pool.reserveXfg, pool.reserveHeat));
+  VaultCoreTestAccess::addLimitDeposit(t.chain, hearthOrderId(90), 0, 400 * parameters::COIN,
+                                       parameters::COIN, height - 1);
+  VaultCoreTestAccess::runOrderbookBlock(t.chain, height);
+  const uint64_t accumulator = t.chain.getAmmPool().cdHearthFeeAccumulator;
+  const uint64_t fromXfg = VaultCoreTestAccess::cdFeeHeatFromXfg(t.chain);
+  TEST(fromXfg > 0 && accumulator > fromXfg);
+
+  const uint32_t epoch = static_cast<uint32_t>(VaultCoreTestAccess::epochDuration(t.chain));
+  const uint32_t boundary = (height / epoch + 1) * epoch;
+  const uint64_t supplyBefore = t.chain.getHeatSupply();
+  Block b;
+  b.majorVersion = BLOCK_MAJOR_VERSION_11;
+  TEST(VaultCoreTestAccess::runEpochWork(t.chain, b, boundary));
+  TEST(t.chain.getHeatSupply() - supplyBefore == fromXfg);
+  TEST(t.chain.getAmmPool().cdHearthFeeAccumulator == 0);
+  TEST(VaultCoreTestAccess::cdFeeHeatFromXfg(t.chain) == 0);
+}
+
+// Audit 2026-11-11 M2: auction settlement skipped a fill whose escrow or
+// reserve could not cover it while its counterparty's fill still applied —
+// value moved one way. The auction now settles whole or not at all.
+void testAuctionSettlesWholeOrNotAtAll() {
+  TestChain t("auction_whole");
+  TEST(t.ok);
+  const uint64_t C = parameters::COIN;
+  const Crypto::Hash ask = hearthOrderId(100);
+  VaultCoreTestAccess::addLimitDeposit(t.chain, ask, 1, 10 * C, parameters::ORDER_PRICE_TICK, 1);
+  VaultCoreTestAccess::addLimitDeposit(t.chain, hearthOrderId(102), 1, 10 * C, parameters::ORDER_PRICE_TICK, 1);
+  auto result = [&](const Crypto::Hash& userId, uint64_t userXfg, uint64_t poolHeat) {
+    AuctionResult r;
+    r.crossed = true;
+    r.matchedVolume = userXfg;
+    r.hasTaker = true;
+    r.takerIsBid = false;
+    Crypto::Hash poolId{};
+    poolId.data[0] = POOL_ORDER_ID_PREFIX;
+    r.fills.push_back({userId, 1, userXfg, poolHeat, 0, 0});
+    r.fills.push_back({poolId, 0, userXfg, poolHeat, 0, 0});
+    return r;
+  };
+  const uint64_t poolHeat = t.chain.getAmmPool().reserveHeat;
+  TEST(VaultCoreTestAccess::auctionFillsSettle(t.chain, result(ask, 10 * C, 1 * C)));
+  TEST(!VaultCoreTestAccess::auctionFillsSettle(t.chain, result(ask, 10 * C + 1, 1 * C)));
+  TEST(!VaultCoreTestAccess::auctionFillsSettle(t.chain, result(hearthOrderId(101), 1 * C, 1 * C)));
+  TEST(!VaultCoreTestAccess::auctionFillsSettle(t.chain, result(ask, 10 * C, poolHeat + 1)));
+}
+
+// Audit 2026-11-11 M4: a withdraw must match the order's balances exactly, so a
+// fill between signing and inclusion invalidated it and an order trading every
+// block could not be cancelled. A signed cancel now stops the order first.
+void testLimitOrderCancelTag() {
+  TestChain t("limit_cancel");
+  TEST(t.ok);
+  const uint64_t C = parameters::COIN;
+  Crypto::PublicKey walletSpendPublic;
+  Crypto::SecretKey walletSpendSecret;
+  Crypto::generate_keys(walletSpendPublic, walletSpendSecret);
+  const Crypto::Hash orderId = hearthOrderId(110);
+  const LimitOrderKeys keys = deriveLimitOrderKeys(walletSpendSecret, orderId);
+  VaultCoreTestAccess::addLimitDeposit(t.chain, orderId, 1, 5 * C, parameters::ORDER_PRICE_TICK, 1, &keys.addressHash);
+
+  auto cancelSignedBy = [&](const Crypto::PublicKey& spendPublic, const Crypto::SecretKey& spendSecret,
+                            Blockchain::SettlementScratch& scratch, std::string& err) {
+    Crypto::Signature proof;
+    Crypto::generate_signature(getLimitCancelAuthHash(orderId, keys.addressHash), spendPublic, spendSecret, proof);
+    std::vector<uint8_t> extra;
+    addOrderCancelToExtra(extra, orderId, spendPublic, keys.viewPublicKey, proof);
+    AssetFlows flows;
+    uint64_t fee = 0;
+    return t.chain.validateSettlement(settlementTx({2 * C}, {keyOut(1 * C)}, extra), 100, scratch, flows, fee, err) &&
+           fee == 1 * C;
+  };
+  std::string err;
+  Blockchain::SettlementScratch scratch;
+  TEST(cancelSignedBy(keys.spendPublicKey, keys.spendSecretKey, scratch, err));
+  TEST(!cancelSignedBy(keys.spendPublicKey, keys.spendSecretKey, scratch, err) && err.find("this block") != std::string::npos);
+  Blockchain::SettlementScratch other;
+  TEST(!cancelSignedBy(walletSpendPublic, walletSpendSecret, other, err) && err.find("ownership") != std::string::npos);
+
+  std::vector<uint8_t> extra;
+  TEST(addOrderCancelToExtra(extra, orderId, keys.spendPublicKey, keys.viewPublicKey, Crypto::Signature{}));
+  std::vector<TransactionExtraField> fields;
+  TEST(parseTransactionExtra(extra, fields) && fields.size() == 1 &&
+       fields[0].type() == typeid(TransactionExtraOrderCancel));
+
+  VaultCoreTestAccess::markExpired(t.chain, orderId);
+  Blockchain::SettlementScratch afterStop;
+  TEST(!cancelSignedBy(keys.spendPublicKey, keys.spendSecretKey, afterStop, err) && err.find("stopped") != std::string::npos);
+}
+
+// Owner decision 2026-11-12: the CD creation fee is consensus-enforced, scales
+// with the term (0.25% at 6 epochs to 1% at 72) on the HEAT's value at the
+// mint price, is paid in XFG and is withheld from the miner for AuntPoL.
+void testCdCreationFeeWithheldForAuntPol() {
+  TestChain t("cd_fee");
+  TEST(t.ok);
+  const uint64_t C = parameters::COIN;
+  const auto& pool = t.chain.getAmmPool();
+  const uint64_t price = ammGetSpotPrice(pool.reserveXfg, pool.reserveHeat);
+  VaultCoreTestAccess::recordSpots(t.chain, 0, 16, price);
+  VaultCoreTestAccess::addHeatRingMember(t.chain, 100 * C);
+  const uint64_t epochBlocks = VaultCoreTestAccess::epochDuration(t.chain);
+
+  auto createCd = [&](uint64_t xfgIn, uint32_t epochs, uint64_t declaredFee, uint64_t& fee, std::string& err) {
+    std::vector<uint8_t> extra;
+    if (declaredFee > 0) addCdCreationFeeToExtra(extra, declaredFee);
+    Transaction tx = settlementTx({xfgIn}, {commitmentOut(100 * C, static_cast<uint32_t>(epochs * epochBlocks))}, extra);
+    TransactionInputCommitmentSpend heatIn{};
+    heatIn.amount = 100 * C;
+    heatIn.outputIndexes = {0};
+    tx.inputs.push_back(heatIn);
+    Blockchain::SettlementScratch scratch;
+    AssetFlows flows;
+    return t.chain.validateSettlement(tx, 100, scratch, flows, fee, err);
+  };
+  uint64_t fee = 0;
+  std::string err;
+  // 100 HEAT at 0.125 HEAT/XFG is 800 XFG of value: 0.25% → 2 XFG, 1% → 8 XFG.
+  // The declared fee goes whole to AuntPoL; only the surplus beyond it is the
+  // miner's network fee.
+  TEST(createCd(3 * C, 6, 2 * C, fee, err) && fee == 1 * C);
+  TEST(createCd(4 * C, 6, 3 * C, fee, err) && fee == 1 * C);
+  TEST(!createCd(3 * C, 6, 2 * C - 1, fee, err) && err.find("below the required") != std::string::npos);
+  TEST(!createCd(3 * C, 6, 0, fee, err));
+  TEST(!createCd(2 * C, 6, 3 * C, fee, err) && err.find("does not cover") != std::string::npos);
+  TEST(createCd(9 * C, 72, 8 * C, fee, err) && fee == 1 * C);
+  TEST(!createCd(9 * C, 72, 8 * C - 1, fee, err));
+
+  std::vector<uint8_t> strayFee;
+  addCdCreationFeeToExtra(strayFee, 1 * C);
+  Blockchain::SettlementScratch scratch;
+  AssetFlows flows;
+  TEST(!t.chain.validateSettlement(settlementTx({3 * C}, {keyOut(1 * C)}, strayFee), 100, scratch, flows, fee, err) &&
+       err.find("without a CD output") != std::string::npos);
+}
+
+// Audit 2026-11-11 M6: the Hearth price fields in a block were outside the
+// block hash, so any relaying peer could rewrite them. From v11 the block
+// hashing blob carries a 32-byte hash of the Hearth state the parent block
+// left, so the block id and the merge-mining aux hash (proof of work) commit
+// to it.
+void testHearthStateCommittedByProofOfWork() {
+  TestChain t("hearth_commit");
+  TEST(t.ok);
+  const auto& pool = t.chain.getAmmPool();
+  VaultCoreTestAccess::recordSpots(t.chain, 0, 16, ammGetSpotPrice(pool.reserveXfg, pool.reserveHeat));
+  const HearthState state = t.chain.currentHearthState();
+  TEST(state.reserveXfg == pool.reserveXfg && state.reserveHeat == pool.reserveHeat);
+  TEST(state.mintPrice == t.chain.getRollingTwap());
+  TEST(state.hearthstoneCents == parameters::FCI_HEARTHSTONE_INITIAL_CENTS);
+
+  Block block = boost::value_initialized<Block>();
+  block.majorVersion = BLOCK_MAJOR_VERSION_11;
+  block.parentBlock.majorVersion = BLOCK_MAJOR_VERSION_1;
+  block.parentBlock.transactionCount = 1;
+  TransactionExtraMergeMiningTag mmTag = boost::value_initialized<TransactionExtraMergeMiningTag>();
+  TEST(appendMergeMiningTagToExtra(block.parentBlock.baseTransaction.extra, mmTag));
+  block.hearthState = state;
+  block.hearthState.mintPrice = parameters::COIN / 8;
+  Crypto::Hash id{};
+  TEST(get_block_hash(block, id));
+  Crypto::Hash aux{};
+  TEST(get_aux_block_header_hash(block, aux));
+  Block tampered = block;
+  tampered.hearthState.mintPrice += 1;
+  Crypto::Hash tamperedAux{};
+  TEST(get_aux_block_header_hash(tampered, tamperedAux));
+  Crypto::Hash tamperedId{};
+  TEST(get_block_hash(tampered, tamperedId) && tamperedId != id);
+  TEST(tamperedAux != aux);
+
+  Block v10 = block;
+  v10.majorVersion = BLOCK_MAJOR_VERSION_10;
+  Block v10Tampered = v10;
+  v10Tampered.hearthState.mintPrice += 1;
+  TEST(get_block_hash(v10) == get_block_hash(v10Tampered));
+
+  BinaryArray blob;
+  TEST(toBinaryArray(block, blob));
+  Block decoded;
+  TEST(fromBinaryArray(decoded, blob));
+  TEST(decoded.hearthState == block.hearthState && get_block_hash(decoded) == id);
+}
+
+// Owner decision 2026-11-12: the re-mint burn (TX_EXTRA_REMINT_BURN) is its
+// own burn type with its own counter, apart from HEAT, the SWF and the Eternal
+// Flame. Any transaction may burn; an alias registration pays its fee with one,
+// so no alias transaction carries an output to the dev wallet and the counter
+// does not count aliases. Reserved aliases pay none.
+void testAliasRegistrationFeeBurned() {
+  TestChain t("remint_burn");
+  TEST(t.ok);
+  const uint64_t C = parameters::COIN;
+  auto settle = [&](bool withAlias, uint8_t aliasType, uint64_t burn, uint64_t xfgIn, uint64_t& fee, std::string& err) {
+    std::vector<uint8_t> extra;
+    if (withAlias) {
+      TransactionExtraAliasRegistration reg;
+      reg.alias = "abcdefgh";
+      reg.ownerAddress = "owner-address";
+      reg.aliasType = aliasType;
+      addAliasToExtra(extra, reg);
+    }
+    if (burn > 0) addRemintBurnToExtra(extra, burn);
+    Blockchain::SettlementScratch scratch;
+    AssetFlows flows;
+    return t.chain.validateSettlement(settlementTx({xfgIn}, {keyOut(C / 2)}, extra), 100, scratch, flows, fee, err);
+  };
+  uint64_t fee = 0;
+  std::string err;
+  // An alias registration pays its fee with a re-mint burn; only the surplus
+  // beyond the burn is the miner's fee.
+  TEST(settle(true, 1, C, 2 * C, fee, err) && fee == C / 2);
+  TEST(!settle(true, 1, 0, 2 * C, fee, err) && err.find("registration fee") != std::string::npos);
+  TEST(!settle(true, 1, C / 2, 2 * C, fee, err) && err.find("registration fee") != std::string::npos);
+  TEST(!settle(true, 1, C, C + C / 4, fee, err) && err.find("does not cover") != std::string::npos);
+  TEST(settle(true, 0, 0, 2 * C, fee, err) && fee == C + C / 2);
+  // The burn is a type of its own: a transaction with no alias may burn too,
+  // so the counter does not count aliases.
+  TEST(settle(false, 0, C, 2 * C, fee, err) && fee == C / 2);
+  std::vector<uint8_t> twice;
+  addRemintBurnToExtra(twice, C);
+  addRemintBurnToExtra(twice, C);
+  Blockchain::SettlementScratch scratch;
+  AssetFlows flows;
+  TEST(!t.chain.validateSettlement(settlementTx({3 * C}, {keyOut(C / 2)}, twice), 100, scratch, flows, fee, err) &&
+       err.find("twice") != std::string::npos);
+
+  // The alias tag parses, and parsing resumes after it: a public key placed
+  // after the registration is still found. The parser used to rescan the
+  // whole extra and never consume the payload, so any alias transaction failed
+  // to parse and its registration (and its tx key) were never seen.
+  TransactionExtraAliasRegistration reg;
+  reg.alias = "abcdefgh";
+  reg.ownerAddress = "owner-address";
+  reg.aliasType = 1;
+  std::vector<uint8_t> extra;
+  TEST(addAliasToExtra(extra, reg));
+  KeyPair txKey = generateKeyPair();
+  TEST(addTransactionPublicKeyToExtra(extra, txKey.publicKey));
+  std::vector<TransactionExtraField> fields;
+  TEST(parseTransactionExtra(extra, fields) && fields.size() == 2);
+  TEST(fields.size() == 2 && fields[0].type() == typeid(TransactionExtraAliasRegistration) &&
+       boost::get<TransactionExtraAliasRegistration>(fields[0]).alias == "abcdefgh");
+  TEST(getTransactionPublicKeyFromExtra(extra) == txKey.publicKey);
+
+  std::vector<uint8_t> oversized{TX_EXTRA_ALIAS, 0xFF, 0xFF, 0xFF, 0xFF, 0x0F};
+  TEST(!parseTransactionExtra(oversized, fields));
+}
+
+namespace {
+
+KeyInput freshKeyInput(uint64_t amount) {
+  Crypto::PublicKey pub;
+  Crypto::SecretKey sec;
+  Crypto::generate_keys(pub, sec);
+  KeyInput in{};
+  in.amount = amount;
+  in.outputIndexes = {0};
+  Crypto::generate_key_image(pub, sec, in.keyImage);
+  return in;
+}
+
+Transaction auntPolTx(uint64_t xfgIn, const std::vector<TransactionOutput>& outputs, const std::vector<uint8_t>& extra) {
+  Transaction tx{};
+  tx.version = TRANSACTION_VERSION_2;
+  tx.inputs.push_back(freshKeyInput(xfgIn));
+  tx.outputs = outputs;
+  tx.extra = extra;
+  tx.signatures.assign(1, std::vector<Crypto::Signature>(1));
+  return tx;
+}
+
+} // namespace
+
+// The AuntPoL ledgers are credited in pushTransaction and debited in
+// popTransaction; validateSettlement only bounds them. These drive the
+// production push and pop, so a reorg over any of these transactions must put
+// the legs back exactly.
+void testAuntPolCdCreationFeePushPop() {
+  TestChain t("auntpol_cd_pushpop");
+  TEST(t.ok);
+  const uint64_t C = parameters::COIN;
+  const uint32_t epochBlocks = static_cast<uint32_t>(VaultCoreTestAccess::epochDuration(t.chain));
+  std::vector<uint8_t> extra;
+  addCdCreationFeeToExtra(extra, 3 * C);
+  auto block = VaultCoreTestAccess::blockWith(
+      auntPolTx(4 * C, {commitmentOut(100 * C, 6 * epochBlocks)}, extra), 100, BLOCK_MAJOR_VERSION_12);
+  const uint64_t xfgLegBefore = t.chain.getTreasuryLpPendingXfg();
+  TEST(VaultCoreTestAccess::pushTx(t.chain, block));
+  TEST(t.chain.getTreasuryLpPendingXfg() == xfgLegBefore + 3 * C);
+  VaultCoreTestAccess::popTx(t.chain, block);
+  TEST(t.chain.getTreasuryLpPendingXfg() == xfgLegBefore);
+}
+
+// v11: the mint premium funds both legs (withheld XFG + the HEAT it buys) and
+// the burn tally excludes the withheld XFG. v12: only the HEAT leg; the whole
+// declared burn is counted. Pop restores both legs.
+void testAuntPolMintPremiumPushPop() {
+  const uint64_t C = parameters::COIN;
+  for (uint8_t version : {BLOCK_MAJOR_VERSION_11, BLOCK_MAJOR_VERSION_12}) {
+    TestChain t(version == BLOCK_MAJOR_VERSION_11 ? "auntpol_mint_v11" : "auntpol_mint_v12");
+    TEST(t.ok);
+    const auto& pool = t.chain.getAmmPool();
+    const uint64_t price = ammGetSpotPrice(pool.reserveXfg, pool.reserveHeat);
+    VaultCoreTestAccess::recordSpots(t.chain, 0, 16, price);
+    std::vector<uint8_t> extra;
+    addHeatMintAuthToExtra(extra, 100 * C, 12 * C);
+    auto block = VaultCoreTestAccess::blockWith(
+        auntPolTx(101 * C, {commitmentOut(12 * C, parameters::HEAT_TERM)}, extra), 100, version);
+
+    const uint64_t xfgLegBefore = t.chain.getTreasuryLpPendingXfg();
+    const uint64_t heatLegBefore = t.chain.getTreasuryHeatReserve();
+    const uint64_t burnedBefore = t.chain.getTotalBurnedXfg();
+    const uint64_t premiumHeat = static_cast<uint64_t>(((uint128_t)(1 * C) * price) / C);
+    TEST(VaultCoreTestAccess::pushTx(t.chain, block));
+    VaultCoreTestAccess::bankBlock(t.chain, block);
+    TEST(t.chain.getTreasuryHeatReserve() == heatLegBefore + premiumHeat);
+    if (version == BLOCK_MAJOR_VERSION_11) {
+      TEST(t.chain.getTreasuryLpPendingXfg() == xfgLegBefore + 1 * C);
+      TEST(t.chain.getTotalBurnedXfg() == burnedBefore + 99 * C);
+    } else {
+      TEST(t.chain.getTreasuryLpPendingXfg() == xfgLegBefore);
+      TEST(t.chain.getTotalBurnedXfg() == burnedBefore + 100 * C);
+    }
+    VaultCoreTestAccess::popTx(t.chain, block);
+    TEST(t.chain.getTreasuryLpPendingXfg() == xfgLegBefore);
+    TEST(t.chain.getTreasuryHeatReserve() == heatLegBefore);
+  }
+}
+
+void testAliasBurnTotalPushPop() {
+  TestChain t("remint_burn_pushpop");
+  TEST(t.ok);
+  const uint64_t C = parameters::COIN;
+  TransactionExtraAliasRegistration reg;
+  reg.alias = "pushpop1";
+  reg.ownerAddress = "owner-address";
+  reg.aliasType = 1;
+  std::vector<uint8_t> aliasExtra;
+  TEST(addAliasToExtra(aliasExtra, reg));
+  TEST(addRemintBurnToExtra(aliasExtra, parameters::ALIAS_REGISTRATION_FEE));
+  std::vector<uint8_t> burnExtra;
+  TEST(addRemintBurnToExtra(burnExtra, 3 * C));
+  auto aliasBlock = VaultCoreTestAccess::blockWith(auntPolTx(2 * C, {keyOut(C / 2)}, aliasExtra), 100, BLOCK_MAJOR_VERSION_11);
+  auto burnBlock = VaultCoreTestAccess::blockWith(auntPolTx(4 * C, {keyOut(C / 2)}, burnExtra), 101, BLOCK_MAJOR_VERSION_11);
+  TEST(t.chain.getRemintBurnedXfg() == 0);
+  TEST(VaultCoreTestAccess::pushTx(t.chain, aliasBlock));
+  TEST(VaultCoreTestAccess::pushTx(t.chain, burnBlock));
+  TEST(t.chain.getRemintBurnedXfg() == parameters::ALIAS_REGISTRATION_FEE + 3 * C);
+  VaultCoreTestAccess::popTx(t.chain, burnBlock);
+  VaultCoreTestAccess::popTx(t.chain, aliasBlock);
+  TEST(t.chain.getRemintBurnedXfg() == 0);
+}
+
+// Owner decision 2026-11-12: re-mint burns are re-minted to the dev fund once a
+// quarter (every FCI_EPOCHS_PER_QUARTER epochs, from v11), in one coinbase
+// output, so no alias transaction pays the dev wallet. The re-mint is outside
+// the block reward and is reversed on pop.
+void testAliasBurnsRemintedQuarterly() {
+  TestChain t("alias_remint");
+  TEST(t.ok);
+  const uint64_t fee = parameters::ALIAS_REGISTRATION_FEE;
+  const uint32_t quarter = static_cast<uint32_t>(parameters::FCI_EPOCHS_PER_QUARTER *
+                                                 VaultCoreTestAccess::epochDuration(t.chain));
+  auto registerAlias = [&](const std::string& name, uint32_t height) {
+    TransactionExtraAliasRegistration reg;
+    reg.alias = name;
+    reg.ownerAddress = "owner-address";
+    reg.aliasType = 1;
+    std::vector<uint8_t> extra;
+    addAliasToExtra(extra, reg);
+    addRemintBurnToExtra(extra, parameters::ALIAS_REGISTRATION_FEE);
+    auto block = VaultCoreTestAccess::blockWith(auntPolTx(2 * parameters::COIN, {keyOut(parameters::COIN / 2)}, extra),
+                                                height, BLOCK_MAJOR_VERSION_11);
+    return getObjectHash(block.transactions[1].tx) != NULL_HASH && VaultCoreTestAccess::pushTx(t.chain, block);
+  };
+  TEST(registerAlias("remint01", 100));
+  TEST(t.chain.remintDue(quarter, BLOCK_MAJOR_VERSION_11) == fee);
+  TEST(t.chain.remintDue(quarter + 1, BLOCK_MAJOR_VERSION_11) == 0);
+  TEST(t.chain.remintDue(quarter, BLOCK_MAJOR_VERSION_10) == 0);
+
+  VaultCoreTestAccess::recordRemint(t.chain, quarter, fee);
+  TEST(t.chain.getRemintedXfg() == fee);
+  TEST(t.chain.remintDue(2 * quarter, BLOCK_MAJOR_VERSION_11) == 0);
+  TEST(registerAlias("remint02", quarter + 5));
+  TEST(t.chain.remintDue(2 * quarter, BLOCK_MAJOR_VERSION_11) == fee);
+  VaultCoreTestAccess::unrecordRemint(t.chain, quarter);
+  TEST(t.chain.getRemintedXfg() == 0);
+  TEST(t.chain.remintDue(2 * quarter, BLOCK_MAJOR_VERSION_11) == 2 * fee);
+
+  // The template's coinbase ends with the re-mint, provably to the dev fund.
+  AccountPublicAddress miner;
+  KeyPair minerSpend = generateKeyPair(), minerView = generateKeyPair();
+  miner.spendPublicKey = minerSpend.publicKey;
+  miner.viewPublicKey = minerView.publicKey;
+  const uint64_t generated = t.chain.getCoinsInCirculation();
+  Block b = boost::value_initialized<Block>();
+  b.majorVersion = BLOCK_MAJOR_VERSION_1;
+  TEST(t.currency.constructMinerTx(BLOCK_MAJOR_VERSION_1, 1, 0, generated, 0, 0, miner, b.baseTransaction,
+                                   BinaryArray(), 1, UINT64_MAX, 0, 2 * fee));
+  TEST(t.chain.coinbasePaysRemint(b.baseTransaction, 2 * fee));
+  TEST(!t.chain.coinbasePaysRemint(b.baseTransaction, fee));
+  TEST(VaultCoreTestAccess::validateCoinbase(t.chain, b, 1, generated, 2 * fee));
+
+  Block withoutRemint = boost::value_initialized<Block>();
+  withoutRemint.majorVersion = BLOCK_MAJOR_VERSION_1;
+  TEST(t.currency.constructMinerTx(BLOCK_MAJOR_VERSION_1, 1, 0, generated, 0, 0, miner, withoutRemint.baseTransaction));
+  TEST(!t.chain.coinbasePaysRemint(withoutRemint.baseTransaction, 2 * fee));
+  TEST(!VaultCoreTestAccess::validateCoinbase(t.chain, withoutRemint, 1, generated, 2 * fee));
+
+  // A re-mint to the miner's own address in the dev fund's place is refused.
+  Block toMiner = withoutRemint;
+  toMiner.baseTransaction.outputs.back().amount = 2 * fee;
+  TEST(!t.chain.coinbasePaysRemint(toMiner.baseTransaction, 2 * fee));
+}
+
+// The epoch oracle reads 900 end-of-block spots. The history kept only
+// MAX_ROLLBACK_HISTORY + 8, sized for the old 8-block mean, so a rollback
+// deeper than 108 blocks left the epoch median short of a full window and the
+// node priced the re-pushed blocks differently from every other node.
+void testSpotHistoryCoversDeepestRollback() {
+  TestChain t("spot_depth");
+  TestChain fresh("spot_depth_fresh");
+  TEST(t.ok && fresh.ok);
+  const uint32_t rollback = static_cast<uint32_t>(VaultCoreTestAccess::maxRollbackHistory());
+  const uint32_t tip = static_cast<uint32_t>(parameters::EPOCH_DURATION_BLOCKS) + rollback;
+  const uint32_t resumeHeight = tip - rollback + 1;
+  auto risingSpot = [](uint32_t height) { return parameters::COIN / 8 + uint64_t(height) * 100; };
+  for (uint32_t h = 1; h <= tip; ++h) VaultCoreTestAccess::recordBlockSpot(t.chain, h, risingSpot(h));
+  for (uint32_t h = tip; h >= resumeHeight; --h) VaultCoreTestAccess::dropBlockSpot(t.chain, h);
+  for (uint32_t h = 1; h < resumeHeight; ++h) VaultCoreTestAccess::recordBlockSpot(fresh.chain, h, risingSpot(h));
+  const uint64_t freshPrice = VaultCoreTestAccess::oraclePriceBefore(fresh.chain, resumeHeight);
+  TEST(freshPrice < risingSpot(resumeHeight - 8));
+  TEST(VaultCoreTestAccess::oraclePriceBefore(t.chain, resumeHeight) == freshPrice);
+}
+
+AccountPublicAddress newMinerAddress() {
+  AccountPublicAddress address;
+  KeyPair spend = generateKeyPair(), view = generateKeyPair();
+  address.spendPublicKey = spend.publicKey;
+  address.viewPublicKey = view.publicKey;
+  return address;
+}
+
+// Built the way core::get_block_template builds one, so pushBlock sees what a
+// node's own miner would hand it.
+Block nextBlockTemplate(TestChain& t, const AccountPublicAddress& miner, bool payRemint) {
+  Blockchain& chain = t.chain;
+  const uint32_t height = chain.getCurrentBlockchainHeight();
+  Block b = boost::value_initialized<Block>();
+  b.majorVersion = chain.getBlockMajorVersionForHeight(height);
+  b.minorVersion = BLOCK_MINOR_VERSION_0;
+  b.previousBlockHash = chain.getTailId();
+  b.timestamp = chain.getBlockTimestamp(height - 1) + t.currency.difficultyTarget();
+  if (b.majorVersion >= BLOCK_MAJOR_VERSION_2) {
+    b.parentBlock.majorVersion = BLOCK_MAJOR_VERSION_1;
+    b.parentBlock.minorVersion = BLOCK_MINOR_VERSION_0;
+    b.parentBlock.transactionCount = 1;
+  }
+  uint64_t remint = 0;
+  if (b.majorVersion >= BLOCK_MAJOR_VERSION_11) {
+    b.hearthState = chain.currentHearthState();
+    remint = payRemint ? chain.remintDue(height, b.majorVersion) : 0;
+  }
+  const uint64_t burned = chain.getBurnedXfgAtHeight(height - 1);
+  TEST(t.currency.constructMinerTx(b.majorVersion, height, chain.getCurrentCumulativeBlocksizeLimit() / 2,
+                                   chain.getCoinsInCirculation(), 0, 0, miner, b.baseTransaction,
+                                   BinaryArray(), 1, burned, 0, remint));
+  return b;
+}
+
+bool mineAndConnect(TestChain& t, Block b) {
+  if (b.majorVersion >= BLOCK_MAJOR_VERSION_2) {
+    TransactionExtraMergeMiningTag tag = boost::value_initialized<TransactionExtraMergeMiningTag>();
+    if (!get_aux_block_header_hash(b, tag.merkleRoot)) return false;
+    b.parentBlock.baseTransaction.extra.clear();
+    if (!appendMergeMiningTagToExtra(b.parentBlock.baseTransaction.extra, tag)) return false;
+  }
+  const difficulty_type difficulty = t.chain.getDifficultyForNextBlock();
+  Crypto::cn_context context;
+  Crypto::Hash proofOfWork;
+  bool solved = false;
+  for (uint32_t nonce = 0; nonce < 1000000 && !solved; ++nonce) {
+    b.nonce = nonce;
+    solved = t.currency.checkProofOfWork(context, b, difficulty, proofOfWork);
+  }
+  block_verification_context bvc = boost::value_initialized<block_verification_context>();
+  return solved && t.chain.addNewBlock(b, bvc) && bvc.m_added_to_main_chain && !bvc.m_verification_failed;
+}
+
+bool mineUpTo(TestChain& t, const AccountPublicAddress& miner, uint32_t nextHeight) {
+  while (t.chain.getCurrentBlockchainHeight() < nextHeight) {
+    if (!mineAndConnect(t, nextBlockTemplate(t, miner, true))) return false;
+  }
+  return true;
+}
+
+// pushBlock itself must refuse a v11 block whose committed Hearth state is not
+// the chain's, and must enforce, record and on pop reverse the quarterly
+// re-mint. The helpers were tested alone; these blocks go through the node.
+void testBlockConnectEnforcesHearthStateAndRemint() {
+  TestChain t("block_connect", true);
+  TEST(t.ok);
+  const AccountPublicAddress miner = newMinerAddress();
+  const uint32_t firstV11 = t.currency.upgradeHeight(BLOCK_MAJOR_VERSION_11) + 1;
+  TEST(mineUpTo(t, miner, firstV11));
+
+  Block forgedState = nextBlockTemplate(t, miner, true);
+  TEST(forgedState.majorVersion == BLOCK_MAJOR_VERSION_11);
+  forgedState.hearthState.reserveXfg += 1;
+  TEST(!mineAndConnect(t, forgedState));
+  TEST(t.chain.getCurrentBlockchainHeight() == firstV11);
+  TEST(mineAndConnect(t, nextBlockTemplate(t, miner, true)));
+
+  const uint32_t quarter = static_cast<uint32_t>(
+      parameters::FCI_EPOCHS_PER_QUARTER * parameters::TESTNET_EPOCH_DURATION_BLOCKS);
+  TEST(mineUpTo(t, miner, quarter));
+  const uint8_t quarterVersion = t.chain.getBlockMajorVersionForHeight(quarter);
+  TEST(quarterVersion == BLOCK_MAJOR_VERSION_11);
+  const uint64_t burned = 3 * parameters::COIN;
+  VaultCoreTestAccess::setRemintBurned(t.chain, burned);
+  TEST(t.chain.remintDue(quarter, quarterVersion) == burned);
+
+  TEST(!mineAndConnect(t, nextBlockTemplate(t, miner, false)));
+  TEST(t.chain.getCurrentBlockchainHeight() == quarter && t.chain.getRemintedXfg() == 0);
+  TEST(mineAndConnect(t, nextBlockTemplate(t, miner, true)));
+  TEST(t.chain.getRemintedXfg() == burned);
+
+  TEST(t.chain.rollbackBlockchainTo(quarter - 1));
+  TEST(t.chain.getCurrentBlockchainHeight() == quarter);
+  TEST(t.chain.getRemintedXfg() == 0);
+  TEST(t.chain.remintDue(quarter, quarterVersion) == burned);
+  TEST(mineAndConnect(t, nextBlockTemplate(t, miner, true)));
+  TEST(t.chain.getRemintedXfg() == burned);
+}
+
+// The per-order address hash a wallet publishes must be the one the full key
+// derivation gives, since ownership checks compare against it.
+void testLimitOrderAddressHashMatchesKeys() {
+  const KeyPair wallet = generateKeyPair();
+  Crypto::Hash orderId{};
+  orderId.data[0] = 7;
+  const LimitOrderKeys keys = deriveLimitOrderKeys(wallet.secretKey, orderId);
+  TEST(limitOrderAddressHash(wallet.secretKey, orderId) == keys.addressHash);
+  TEST(isOwnLimitOrder(wallet.secretKey, orderId, keys.addressHash));
+  LimitOrderKeys wiped = keys;
+  wipeLimitOrderSecret(wiped);
+  TEST(wiped.spendSecretKey == Crypto::SecretKey{});
+  TEST(wiped.addressHash == keys.addressHash);
+}
+
 int main() {
   testCdInterestCompounding();
   testLegacyDepositWithdrawsForPrincipal();
@@ -1629,6 +2658,30 @@ int main() {
   testVaultSetSpendKeyRebuildsKeyImageIndex();
   testVaultAllBalancesSaturate();
   testVaultSelectUtxosDeterministicTies();
+  testHearthSellIntoPoolBandConservesHeat();
+  testHearthBuyFromPoolBandConservesHeat();
+  testHearthBandSweepsNeverLowerK();
+  testHearthOrderbookStateSurvivesRestart();
+  testHearthOracleResistsShortPump();
+  testHearthMintCapPerBlock();
+  testAuntPolSkipsPushedPool();
+  testHearthBackstopBoundedByReserves();
+  testLimitDepositBounds();
+  testWithdrawnDepositsPrunedAndRestored();
+  testLimitOrderKeysUnlinkable();
+  testHeatSupplyCountsOnlyXfgValuedFees();
+  testAuctionSettlesWholeOrNotAtAll();
+  testLimitOrderCancelTag();
+  testCdCreationFeeWithheldForAuntPol();
+  testHearthStateCommittedByProofOfWork();
+  testSpotHistoryCoversDeepestRollback();
+  testBlockConnectEnforcesHearthStateAndRemint();
+  testLimitOrderAddressHashMatchesKeys();
+  testAliasRegistrationFeeBurned();
+  testAuntPolCdCreationFeePushPop();
+  testAuntPolMintPremiumPushPop();
+  testAliasBurnTotalPushPop();
+  testAliasBurnsRemintedQuarterly();
   fprintf(stderr, "=== Treasury/Core Tests ===\nPassed: %d / %d\n", tests_passed, tests_run);
   return tests_passed == tests_run ? 0 : 1;
 }

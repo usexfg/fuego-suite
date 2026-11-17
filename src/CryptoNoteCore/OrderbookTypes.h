@@ -33,6 +33,8 @@ struct Order {
   uint32_t outputIndex;
   Crypto::Hash addressHash; // cn_fast_hash(spendKey||viewKey) — sender identity (privacy-preserving)
   std::vector<Crypto::Signature> partialSigs;
+
+  void serialize(ISerializer& s);
 };
 
 struct SenderKey {

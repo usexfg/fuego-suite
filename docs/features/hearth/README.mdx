@@ -91,7 +91,7 @@ The unusual parts worth calling out:
 | Swap fees (cross-chain) | 80% CD yield / 20% bonus vault at v11 (pre-v11 replay: 69/11/20) |
 | Mint premium | 1% of every HEAT mint's burn (`HEAT_MINT_PREMIUM_BPS`) → withheld premium XFG to the AuntPoL XFG leg (`m_treasuryLpPendingXfg`) and the HEAT it buys to the HEAT leg (`m_treasuryHeatReserve`) |
 | Treasury LP Manager | Premium XFG (XFG leg) + premium HEAT (HEAT leg, plus donations) → ratio-paired LP position; compounds; repays bootstrap |
-| CD creation fee | 0.1% of the deposit, charged in XFG → dev fund |
+| CD creation fee | 0.25% (6 epochs) to 1% (72 epochs) of the deposit, paid in XFG → AuntPoL XFG leg (v12+) |
 | Burns | Every XFG→HEAT conversion burns consumed XFG 50% EF / 50% SWF; all burns tally in `total_burned_xfg` |
 
 ## 5. Key constants (v11)
@@ -102,7 +102,7 @@ The unusual parts worth calling out:
 | `HEARTH_CD_SHARE_PCT_V11` | 30 |
 | `HEARTH_CD_SHARE_PCT_V12` | 70 |
 | `HEARTH_BACKSTOP_MAX_BPS` | 500 |
-| `ORDER_PRICE_TICK` | COIN/100 |
+| `ORDER_PRICE_TICK` | COIN/100000 (0.00001 HEAT/XFG) |
 | `BOOTSTRAP_BLOCKS` | 144 |
 | `HEARTH_POOL_SEED_XFG/HEAT` | 8,000 XFG / 1,000 HEAT (8:1) |
 | Price scale | HEAT/XFG × COIN (1e7), integer-only |

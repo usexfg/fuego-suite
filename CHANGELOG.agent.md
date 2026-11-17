@@ -7500,3 +7500,29 @@ Sign-off table:
 | Tests pass | DONE — core_tests 676/676; `ctest -LE manual` 59/59 |
 | Mutation checks | DONE — dropping `indexLimitOrder` at any of its 10 sites fails a test; ignoring claims, counting unconfirmed deposits, counting failed withdraws, or ignoring stops in `limitOrdersDueForWithdraw` each fail a test |
 | All tasks done | DONE |
+
+### fuego-guardian review (2026-11-17, depth 2: consensus, wallet, security, adversarial, quality)
+
+Scope: `origin/master..HEAD` (variant-type build fix, resting-order list, auto-withdraw, `dev_donate`).
+
+| # | Severity | Finding | Fix | Status |
+|---|----------|---------|-----|--------|
+| G1 | HIGH (present on `master` before this branch) | `rebuildCache` reset every consensus field except `m_limitDeposits`. The cache loader reads `limit_deposits` before later sections; when a later section fails, `rebuildCache` replays from genesis holding deposits from heights it has not reached, and those orders rest in and fill at earlier auctions, so the node computes state its peers do not | `rebuildCache` clears `m_limitDeposits` and rebuilds both lists; `testRebuildCacheForgetsUnreplayedDeposits` | DONE; removing the clear fails 2 checks |
+| G2 | HIGH (walletd availability) | `refresh()` ran the auto-withdraw under `EventLock(readyEvent)`. `resetWallet`/`replaceWithNewWallet` hold that lock and wait for `refresh()` to finish, so a sync landing during a reset deadlocked walletd | the pass returns at once when `readyEvent` is held, and retries after the next sync; any exception is logged instead of ending the refresh loop | DONE; not covered by a test |
+| G3 | MEDIUM | SimpleWallet's auto-withdraw thread was joined only in `close_wallet`; TestnetWallet returns from `run()` without `deinit()`, so a joinable `std::thread` was destroyed and the process aborted at exit. An exception from the pass also escaped the thread | `~simple_wallet()` stops and joins the thread; the loop catches and reports exceptions | DONE; not covered by a test |
+| G4 | LOW | An order the node does not list (in-process node, which has no `getLimitDeposits`) was retried every 10 blocks with a warning each time | one `getLimitDeposits` call per pass with due orders; an unlisted order is reported once and skipped until restart | DONE; not covered by a test |
+| G5 | LOW | `pruneSettledLimitDeposits` dereferenced `find` without an end check | `at()` | DONE |
+
+Informational, not changed:
+- `/get_limit_orders` reports `withdrawn = withdrawn || expired`, and `NodeRpcProxy` sets `expired = false`, so a wallet cannot tell an expired order from a withdrawn one over RPC. Auto-withdraw does not depend on that field (it reads its own history); `get_limit_orders` in walletd shows expired orders as withdrawn.
+- SimpleWallet's thread calls WalletLegacy and `NodeRpcProxy` while the console thread may also call them; `cancel_order` already runs the same calls from the console thread.
+- A withdraw sent at the first sync after expiry ties the wallet's online time to the order's expiry height.
+
+Score: 84/100 after fixes. Verdict: merge after CI. Open: the wallet hooks have no automated test (no walletd or SimpleWallet harness); Clang, macOS and Windows were not built locally.
+
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j8` full build rc=0 |
+| Tests pass | DONE — core_tests 681/681; `ctest -LE manual` 59/59; ASan+UBSan core_tests 681/681, no ASan/LSan reports (UBSan misaligned-load report in `crypto/crypto.h`, unchanged code) |
+| Mutation check | DONE — G1 |
+| Signed | Claude, 2026-11-17 |

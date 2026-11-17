@@ -787,8 +787,8 @@ std::vector<std::pair<Crypto::Hash, CryptoNote::Blockchain::LimitDepositInfo>>
 CryptoNote::Blockchain::pruneSettledLimitDeposits(uint32_t height) {
   std::vector<std::pair<Crypto::Hash, LimitDepositInfo>> pruned;
   for (const Crypto::Hash& orderId : m_withdrawnLimitOrders) {
-    const auto it = m_limitDeposits.find(orderId);
-    if (it->second.withdrawnHeight + MAX_ROLLBACK_HISTORY < height) pruned.push_back(*it);
+    const LimitDepositInfo& deposit = m_limitDeposits.at(orderId);
+    if (deposit.withdrawnHeight + MAX_ROLLBACK_HISTORY < height) pruned.emplace_back(orderId, deposit);
   }
   for (const auto& entry : pruned) {
     m_limitDeposits.erase(entry.first);
@@ -1370,6 +1370,8 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
     m_aliasIndex.reset();
     m_aliasUndoLog.clear();
     m_blockEpochDistributions.clear();
+    m_limitDeposits.clear();
+    rebuildLimitOrderIndex();
 
     // Orderbook globals: same initial values as a fresh sync.
     g_orderbookMempool.clear();

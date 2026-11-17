@@ -2860,18 +2860,51 @@ namespace PaymentService
 
   void WalletService::withdrawEndedLimitOrders()
   {
-    System::EventLock lk(readyEvent);
-    auto *green = dynamic_cast<CryptoNote::WalletGreen *>(&wallet);
-    if (!green || wallet.getAddressCount() == 0) {
+    const bool walletBusyWithRequest = !readyEvent.get();
+    if (walletBusyWithRequest) {
       return;
     }
+    try {
+      System::EventLock lk(readyEvent);
+      auto *green = dynamic_cast<CryptoNote::WalletGreen *>(&wallet);
+      if (!green || wallet.getAddressCount() == 0 || walletIsViewOnly()) {
+        return;
+      }
+      const uint32_t nextHeight = node.getLastKnownBlockHeight() + 1;
+      const std::vector<Crypto::Hash> ordersToTry = limitOrdersToTryWithdrawing(nextHeight);
+      if (ordersToTry.empty()) {
+        return;
+      }
+      std::unordered_set<std::string> nodeOrderIds;
+      if (!fetchNodeLimitOrderIds(nodeOrderIds)) {
+        return;
+      }
+      for (const Crypto::Hash &orderId : ordersToTry) {
+        const std::string orderIdHex = Common::podToHex(orderId);
+        if (nodeOrderIds.count(orderIdHex) == 0) {
+          limitOrdersUnknownToNode.insert(orderIdHex);
+          logger(Logging::WARNING, Logging::BRIGHT_YELLOW) << "Ended limit order " << orderIdHex
+                                                           << " is not known to the node; withdraw it manually";
+          continue;
+        }
+        limitOrderWithdrawRetryHeight[orderIdHex] = nextHeight + CryptoNote::parameters::LIMIT_ORDER_WITHDRAW_RETRY_BLOCKS;
+        withdrawEndedLimitOrder(*green, orderId);
+      }
+    } catch (std::exception &x) {
+      logger(Logging::WARNING, Logging::BRIGHT_YELLOW) << "Ended limit order withdrawals skipped: " << x.what();
+    }
+  }
+
+  bool WalletService::walletIsViewOnly()
+  {
     CryptoNote::KeyPair spendKeys = wallet.getAddressSpendKey(0);
     const bool viewOnly = spendKeys.secretKey == CryptoNote::NULL_SECRET_KEY;
     CryptoNote::wipeSecretKey(spendKeys.secretKey);
-    if (viewOnly) {
-      return;
-    }
-    const uint32_t nextHeight = node.getLastKnownBlockHeight() + 1;
+    return viewOnly;
+  }
+
+  std::vector<Crypto::Hash> WalletService::limitOrdersToTryWithdrawing(uint32_t nextHeight)
+  {
     std::vector<CryptoNote::WalletOrderTransaction> history;
     for (size_t i = 0; i < wallet.getTransactionCount(); ++i) {
       const CryptoNote::WalletTransaction transaction = wallet.getTransaction(i);
@@ -2880,22 +2913,43 @@ namespace PaymentService
                              transaction.state == CryptoNote::WalletTransactionState::CANCELLED ||
                              transaction.state == CryptoNote::WalletTransactionState::DELETED});
     }
+    std::vector<Crypto::Hash> ordersToTry;
     for (const Crypto::Hash &orderId : CryptoNote::limitOrdersDueForWithdraw(history, nextHeight)) {
       const std::string orderIdHex = Common::podToHex(orderId);
       const auto retry = limitOrderWithdrawRetryHeight.find(orderIdHex);
-      if (retry != limitOrderWithdrawRetryHeight.end() && retry->second > nextHeight) {
-        continue;
+      const bool waitingToRetry = retry != limitOrderWithdrawRetryHeight.end() && retry->second > nextHeight;
+      if (!waitingToRetry && limitOrdersUnknownToNode.count(orderIdHex) == 0) {
+        ordersToTry.push_back(orderId);
       }
-      limitOrderWithdrawRetryHeight[orderIdHex] = nextHeight + CryptoNote::parameters::LIMIT_ORDER_WITHDRAW_RETRY_BLOCKS;
-      try {
-        std::string transactionHash;
-        green->cancelLimitOrderV13(orderId, currency.minimumFee(), CryptoNote::parameters::MIN_TX_MIXIN_SIZE,
-                                   transactionHash, false);
-        logger(Logging::INFO) << "Withdrawing ended limit order " << orderIdHex << " in transaction " << transactionHash;
-      } catch (std::exception &x) {
-        logger(Logging::WARNING, Logging::BRIGHT_YELLOW) << "Could not withdraw ended limit order " << orderIdHex
-                                                         << ": " << x.what();
-      }
+    }
+    return ordersToTry;
+  }
+
+  bool WalletService::fetchNodeLimitOrderIds(std::unordered_set<std::string> &orderIds)
+  {
+    std::vector<CryptoNote::INode::LimitDepositRpcEntry> deposits;
+    const std::error_code lookupError = node.getLimitDeposits(deposits);
+    if (lookupError) {
+      logger(Logging::DEBUGGING) << "Limit order lookup failed: " << lookupError.message();
+      return false;
+    }
+    for (const auto &deposit : deposits) {
+      orderIds.insert(deposit.order_id);
+    }
+    return true;
+  }
+
+  void WalletService::withdrawEndedLimitOrder(CryptoNote::WalletGreen &green, const Crypto::Hash &orderId)
+  {
+    const std::string orderIdHex = Common::podToHex(orderId);
+    try {
+      std::string transactionHash;
+      green.cancelLimitOrderV13(orderId, currency.minimumFee(), CryptoNote::parameters::MIN_TX_MIXIN_SIZE,
+                                transactionHash, false);
+      logger(Logging::INFO) << "Withdrawing ended limit order " << orderIdHex << " in transaction " << transactionHash;
+    } catch (std::exception &x) {
+      logger(Logging::WARNING, Logging::BRIGHT_YELLOW) << "Could not withdraw ended limit order " << orderIdHex
+                                                       << ": " << x.what();
     }
   }
 

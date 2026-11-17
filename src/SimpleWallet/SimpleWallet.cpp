@@ -25,6 +25,7 @@
 #include <iomanip>
 #include <thread>
 #include <set>
+#include <unordered_set>
 #include <sstream>
 #include <regex>
 #include <array>
@@ -2873,6 +2874,10 @@ void simple_wallet::synchronizationCompleted(std::error_code result) {
   m_limitOrderWithdrawCV.notify_one();
 }
 
+simple_wallet::~simple_wallet() {
+  stopLimitOrderWithdrawals();
+}
+
 void simple_wallet::startLimitOrderWithdrawals() {
   m_limitOrderWithdrawStop = false;
   m_limitOrderWithdrawThread = std::thread([this] { limitOrderWithdrawLoop(); });
@@ -2898,21 +2903,50 @@ void simple_wallet::limitOrderWithdrawLoop() {
     }
     m_limitOrderWithdrawDue = false;
     lock.unlock();
-    withdrawEndedLimitOrders();
+    try {
+      withdrawEndedLimitOrders();
+    } catch (const std::exception& e) {
+      fail_msg_writer() << "Ended limit order withdrawals skipped: " << e.what();
+    }
     lock.lock();
   }
 }
 
 void simple_wallet::withdrawEndedLimitOrders() {
+  if (walletIsViewOnly()) {
+    return;
+  }
+  const uint32_t nextHeight = m_node->getLastKnownBlockHeight() + 1;
+  const std::vector<Crypto::Hash> ordersToTry = limitOrdersToTryWithdrawing(nextHeight);
+  if (ordersToTry.empty()) {
+    return;
+  }
+  std::unordered_set<std::string> nodeOrderIds;
+  if (!fetchNodeLimitOrderIds(nodeOrderIds)) {
+    return;
+  }
+  for (const Crypto::Hash& orderId : ordersToTry) {
+    const std::string orderIdHex = Common::podToHex(orderId);
+    if (nodeOrderIds.count(orderIdHex) == 0) {
+      m_limitOrdersUnknownToNode.insert(orderIdHex);
+      fail_msg_writer() << "Ended limit order " << orderIdHex << " is not known to the node; withdraw it manually";
+      continue;
+    }
+    m_limitOrderWithdrawRetryHeight[orderIdHex] = nextHeight + parameters::LIMIT_ORDER_WITHDRAW_RETRY_BLOCKS;
+    withdrawEndedLimitOrder(orderId);
+  }
+}
+
+bool simple_wallet::walletIsViewOnly() {
   AccountKeys keys;
   m_wallet->getAccountKeys(keys);
   const bool viewOnly = keys.spendSecretKey == NULL_SECRET_KEY;
   CryptoNote::wipeSecretKey(keys.spendSecretKey);
   CryptoNote::wipeSecretKey(keys.viewSecretKey);
-  if (viewOnly) {
-    return;
-  }
-  const uint32_t nextHeight = m_node->getLastKnownBlockHeight() + 1;
+  return viewOnly;
+}
+
+std::vector<Crypto::Hash> simple_wallet::limitOrdersToTryWithdrawing(uint32_t nextHeight) {
   std::vector<CryptoNote::WalletOrderTransaction> history;
   for (TransactionId id = 0; id < m_wallet->getTransactionCount(); ++id) {
     WalletLegacyTransaction transaction;
@@ -2924,23 +2958,40 @@ void simple_wallet::withdrawEndedLimitOrders() {
                            transaction.state == WalletLegacyTransactionState::Failed ||
                            transaction.state == WalletLegacyTransactionState::Deleted});
   }
+  std::vector<Crypto::Hash> ordersToTry;
   for (const Crypto::Hash& orderId : CryptoNote::limitOrdersDueForWithdraw(history, nextHeight)) {
     const std::string orderIdHex = Common::podToHex(orderId);
     const auto retry = m_limitOrderWithdrawRetryHeight.find(orderIdHex);
-    if (retry != m_limitOrderWithdrawRetryHeight.end() && retry->second > nextHeight) {
-      continue;
+    const bool waitingToRetry = retry != m_limitOrderWithdrawRetryHeight.end() && retry->second > nextHeight;
+    if (!waitingToRetry && m_limitOrdersUnknownToNode.count(orderIdHex) == 0) {
+      ordersToTry.push_back(orderId);
     }
-    m_limitOrderWithdrawRetryHeight[orderIdHex] = nextHeight + parameters::LIMIT_ORDER_WITHDRAW_RETRY_BLOCKS;
-    try {
-      const TransactionId tx = m_wallet->cancelOrderV13(orderId, m_currency.minimumFee(), parameters::MIN_TX_MIXIN_SIZE, false);
-      if (tx == WALLET_LEGACY_INVALID_TRANSACTION_ID) {
-        fail_msg_writer() << "Could not withdraw ended limit order " << orderIdHex;
-      } else {
-        success_msg_writer() << "Withdrawing ended limit order " << orderIdHex << " (transaction " << tx << ")";
-      }
-    } catch (const std::exception& e) {
-      fail_msg_writer() << "Could not withdraw ended limit order " << orderIdHex << ": " << e.what();
+  }
+  return ordersToTry;
+}
+
+bool simple_wallet::fetchNodeLimitOrderIds(std::unordered_set<std::string>& orderIds) {
+  std::vector<INode::LimitDepositRpcEntry> deposits;
+  if (m_node->getLimitDeposits(deposits)) {
+    return false;
+  }
+  for (const auto& deposit : deposits) {
+    orderIds.insert(deposit.order_id);
+  }
+  return true;
+}
+
+void simple_wallet::withdrawEndedLimitOrder(const Crypto::Hash& orderId) {
+  const std::string orderIdHex = Common::podToHex(orderId);
+  try {
+    const TransactionId tx = m_wallet->cancelOrderV13(orderId, m_currency.minimumFee(), parameters::MIN_TX_MIXIN_SIZE, false);
+    if (tx == WALLET_LEGACY_INVALID_TRANSACTION_ID) {
+      fail_msg_writer() << "Could not withdraw ended limit order " << orderIdHex;
+    } else {
+      success_msg_writer() << "Withdrawing ended limit order " << orderIdHex << " (transaction " << tx << ")";
     }
+  } catch (const std::exception& e) {
+    fail_msg_writer() << "Could not withdraw ended limit order " << orderIdHex << ": " << e.what();
   }
 }
 

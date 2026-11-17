@@ -135,7 +135,7 @@ At each block:
 
 #### Withdrawing a Limit Order
 
-Wallets withdraw their own orders automatically once an order expires or is stopped: walletd and SimpleWallet check after each sync and send the withdraw, paying the network fee in XFG. A failed attempt is retried after `LIMIT_ORDER_WITHDRAW_RETRY_BLOCKS` (10) blocks. `cancel_order` still withdraws on demand.
+Wallets withdraw their own orders automatically once an order expires or is stopped: walletd and SimpleWallet check after each sync and send the withdraw, paying the network fee in XFG. A failed attempt is retried after `LIMIT_ORDER_WITHDRAW_RETRY_BLOCKS` (10) blocks. An order the node does not list is reported once and left for a manual withdraw until the wallet restarts. walletd skips a pass while it is serving a request and tries again after the next sync. `cancel_order` still withdraws on demand.
 
 ```
 User                                   Pool

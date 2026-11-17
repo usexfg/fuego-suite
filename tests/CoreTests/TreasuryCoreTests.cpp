@@ -2098,6 +2098,22 @@ void testRestingOrderListFollowsEveryChange() {
   wipeLimitOrderSecret(keys);
 }
 
+// Replay from genesis must not see deposits from heights it has not reached
+// yet: a deposit left in memory would rest in, and fill at, earlier auctions.
+void testRebuildCacheForgetsUnreplayedDeposits() {
+  TestChain t("limit_rebuild");
+  TEST(t.ok);
+  const Crypto::Hash orderId = hearthOrderId(140);
+  const uint32_t height = enterHearthAuctionPhase(t);
+  VaultCoreTestAccess::addLimitDeposit(t.chain, orderId, 1, 20 * parameters::COIN,
+                                       parameters::ORDER_PRICE_TICK, height);
+  TEST(VaultCoreTestAccess::isResting(t.chain, orderId));
+  VaultCoreTestAccess::resetToStartup(t.chain);
+  TEST(!VaultCoreTestAccess::hasLimitDeposit(t.chain, orderId));
+  TEST(!VaultCoreTestAccess::isResting(t.chain, orderId));
+  TEST(VaultCoreTestAccess::limitOrderIndexMatchesDeposits(t.chain));
+}
+
 // Audit 2026-11-11 H5: every order from one wallet carried the same
 // addressHash, and a withdraw published the wallet's spend and view keys.
 // Orders now use one-time keys derived from the wallet spend secret.
@@ -2805,6 +2821,7 @@ int main() {
   testBlockConnectEnforcesHearthStateAndRemint();
   testLimitOrderAddressHashMatchesKeys();
   testRestingOrderListFollowsEveryChange();
+  testRebuildCacheForgetsUnreplayedDeposits();
   testLimitOrdersDueForWithdraw();
   testAliasRegistrationFeeBurned();
   testAuntPolCdCreationFeePushPop();

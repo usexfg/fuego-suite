@@ -6851,7 +6851,7 @@ namespace CryptoNote
     return m_currency.blockMajorVersionAtHeight(m_node.getLastKnownBlockHeight() + 1);
   }
 
-  std::error_code WalletGreen::devFundBurn(uint64_t amount, Crypto::Hash& txHashOut) {
+  std::error_code WalletGreen::devDonate(uint64_t amount, Crypto::Hash& txHashOut) {
     throwIfNotInitialized();
     throwIfTrackingMode();
     throwIfStopped();

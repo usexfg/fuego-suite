@@ -449,6 +449,7 @@ const uint64_t LIMIT_ORDER_MIN_HEAT = COIN / 10;    // smallest BUY_XFG deposit 
 const uint32_t LIMIT_ORDER_MAX_TTL_BLOCKS = 5400;   // ~30 days: expiry required, at most this far out
 const uint32_t LIMIT_ORDER_DEFAULT_TTL_BLOCKS = 1260; // ~7 days when a wallet caller names no expiry
 const uint32_t LIMIT_DEPOSITS_MAX_PER_BLOCK = 100;
+const uint32_t LIMIT_ORDER_WITHDRAW_RETRY_BLOCKS = 10; // wallet waits this long before retrying a failed auto-withdraw
 const uint64_t HEARTH_BACKSTOP_MAX_BPS =
     800; // backstop fills per block ≤ the lower of 8× auction volume and 8% of the pool's XFG reserve
 constexpr uint64_t HEARTH_POOL_SEED_XFG =

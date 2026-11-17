@@ -517,7 +517,7 @@ std::string simple_wallet::get_commands_str() {
     {"claim_lp_fees", "Claim LP swap fee earnings"},
     {"place_order", "Place limit order on Hearth"},
     {"cancel_order", "Cancel limit order by transaction hash"},
-    {"dev_fund_burn", "Dev fund burn: burn XFG into the re-mint counter (re-minted to the dev fund each quarter; no output to any dev wallet)"},
+    {"dev_donate", "Dev donation: burn XFG into the dev donation counter (re-minted to the dev fund each quarter; no output to any dev wallet)"},
     {"stop_order", "Stop a limit order filling; withdraw it afterwards with cancel_order"},
     {"orderbook", "Show Hearth CLOB orderbook"},
     {"show_orders", "Show your open limit orders on Hearth"}
@@ -615,7 +615,7 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
 
   // @ Alias system commands
   m_consoleHandler.setHandler("register_alias", boost::bind(&simple_wallet::register_alias, this, boost::arg<1>()), "register_alias <alias> - Register an @ alias (8 chars [a-z0-9&], costs 1 XFG). Auto-derives a fresh subaddress; master is never used on-chain.");
-  m_consoleHandler.setHandler("dev_fund_burn", boost::bind(&simple_wallet::dev_fund_burn, this, boost::arg<1>()), "dev_fund_burn <amount> - Burn XFG into the re-mint counter (v11+); re-minted to the dev fund each quarter in one coinbase output");
+  m_consoleHandler.setHandler("dev_donate", boost::bind(&simple_wallet::dev_donate, this, boost::arg<1>()), "dev_donate <amount> - Burn XFG into the dev donation counter (v11+); re-minted to the dev fund each quarter in one coinbase output");
   m_consoleHandler.setHandler("lookup_alias", boost::bind(&simple_wallet::lookup_alias, this, boost::arg<1>()), "lookup_alias <alias_or_address> - Look up an @ alias by name or wallet address");
   m_consoleHandler.setHandler("list_aliases", boost::bind(&simple_wallet::list_aliases, this, boost::arg<1>()), "list_aliases - List all registered @ aliases on the network");
   m_consoleHandler.setHandler("gen_new_sub", boost::bind(&simple_wallet::gen_new_sub, this, boost::arg<1>()), "gen_new_sub [major] [minor] - Generate a sub-address at index (major, minor). Omit args for auto-increment (0, N).");
@@ -1305,6 +1305,7 @@ bool simple_wallet::create_cold_secret(const std::vector<std::string> &args) {
 //----------------------------------------------------------------------------------------------------
 bool simple_wallet::close_wallet()
 {
+  stopLimitOrderWithdrawals();
   try {
     CryptoNote::WalletHelper::storeWallet(*m_wallet, m_wallet_file);
   } catch (const std::exception& e) {
@@ -2862,9 +2863,85 @@ void simple_wallet::externalTransactionCreated(CryptoNote::TransactionId transac
 
 //----------------------------------------------------------------------------------------------------
 void simple_wallet::synchronizationCompleted(std::error_code result) {
-  std::unique_lock<std::mutex> lock(m_walletSynchronizedMutex);
-  m_walletSynchronized = true;
-  m_walletSynchronizedCV.notify_one();
+  {
+    std::unique_lock<std::mutex> lock(m_walletSynchronizedMutex);
+    m_walletSynchronized = true;
+    m_walletSynchronizedCV.notify_one();
+  }
+  std::lock_guard<std::mutex> lock(m_limitOrderWithdrawMutex);
+  m_limitOrderWithdrawDue = true;
+  m_limitOrderWithdrawCV.notify_one();
+}
+
+void simple_wallet::startLimitOrderWithdrawals() {
+  m_limitOrderWithdrawStop = false;
+  m_limitOrderWithdrawThread = std::thread([this] { limitOrderWithdrawLoop(); });
+}
+
+void simple_wallet::stopLimitOrderWithdrawals() {
+  {
+    std::lock_guard<std::mutex> lock(m_limitOrderWithdrawMutex);
+    m_limitOrderWithdrawStop = true;
+    m_limitOrderWithdrawCV.notify_one();
+  }
+  if (m_limitOrderWithdrawThread.joinable()) {
+    m_limitOrderWithdrawThread.join();
+  }
+}
+
+void simple_wallet::limitOrderWithdrawLoop() {
+  std::unique_lock<std::mutex> lock(m_limitOrderWithdrawMutex);
+  for (;;) {
+    m_limitOrderWithdrawCV.wait(lock, [this] { return m_limitOrderWithdrawDue || m_limitOrderWithdrawStop; });
+    if (m_limitOrderWithdrawStop) {
+      return;
+    }
+    m_limitOrderWithdrawDue = false;
+    lock.unlock();
+    withdrawEndedLimitOrders();
+    lock.lock();
+  }
+}
+
+void simple_wallet::withdrawEndedLimitOrders() {
+  AccountKeys keys;
+  m_wallet->getAccountKeys(keys);
+  const bool viewOnly = keys.spendSecretKey == NULL_SECRET_KEY;
+  CryptoNote::wipeSecretKey(keys.spendSecretKey);
+  CryptoNote::wipeSecretKey(keys.viewSecretKey);
+  if (viewOnly) {
+    return;
+  }
+  const uint32_t nextHeight = m_node->getLastKnownBlockHeight() + 1;
+  std::vector<CryptoNote::WalletOrderTransaction> history;
+  for (TransactionId id = 0; id < m_wallet->getTransactionCount(); ++id) {
+    WalletLegacyTransaction transaction;
+    if (!m_wallet->getTransaction(id, transaction)) {
+      continue;
+    }
+    history.push_back({transaction.extra, transaction.blockHeight != WALLET_LEGACY_UNCONFIRMED_TRANSACTION_HEIGHT,
+                       transaction.state == WalletLegacyTransactionState::Cancelled ||
+                           transaction.state == WalletLegacyTransactionState::Failed ||
+                           transaction.state == WalletLegacyTransactionState::Deleted});
+  }
+  for (const Crypto::Hash& orderId : CryptoNote::limitOrdersDueForWithdraw(history, nextHeight)) {
+    const std::string orderIdHex = Common::podToHex(orderId);
+    const auto retry = m_limitOrderWithdrawRetryHeight.find(orderIdHex);
+    if (retry != m_limitOrderWithdrawRetryHeight.end() && retry->second > nextHeight) {
+      continue;
+    }
+    m_limitOrderWithdrawRetryHeight[orderIdHex] = nextHeight + parameters::LIMIT_ORDER_WITHDRAW_RETRY_BLOCKS;
+    try {
+      const TransactionId tx = m_wallet->cancelOrderV13(orderId, m_currency.minimumFee(), parameters::MIN_TX_MIXIN_SIZE, false);
+      if (tx == WALLET_LEGACY_INVALID_TRANSACTION_ID) {
+        fail_msg_writer() << "Could not withdraw ended limit order " << orderIdHex;
+      } else {
+        success_msg_writer() << "Withdrawing ended limit order " << orderIdHex << " (transaction " << tx << ")";
+      }
+    } catch (const std::exception& e) {
+      fail_msg_writer() << "Could not withdraw ended limit order " << orderIdHex << ": " << e.what();
+    }
+  }
 }
 
 //----------------------------------------------------------------------------------------------------
@@ -3440,6 +3517,7 @@ bool simple_wallet::run() {
 
   std::cout << std::endl;
 
+  startLimitOrderWithdrawals();
   std::string addr_start = m_wallet->getAddress().substr(0, 6);
   m_consoleHandler.start(false, "[wallet " + addr_start + "]: ", Common::Console::Color::BrightYellow);
   return true;
@@ -3468,10 +3546,10 @@ uint8_t simple_wallet::nextBlockMajorVersion() const {
   return m_currency.blockMajorVersionAtHeight(m_node->getLastKnownBlockHeight() + 1);
 }
 
-bool simple_wallet::dev_fund_burn(const std::vector<std::string> &args) {
+bool simple_wallet::dev_donate(const std::vector<std::string> &args) {
   uint64_t amount = 0;
   if (args.size() != 1 || !m_currency.parseAmount(args[0], amount) || amount == 0) {
-    fail_msg_writer() << "Usage: dev_fund_burn <amount>";
+    fail_msg_writer() << "Usage: dev_donate <amount>";
     return false;
   }
   if (nextBlockMajorVersion() < CryptoNote::BLOCK_MAJOR_VERSION_11) {
@@ -3499,18 +3577,18 @@ bool simple_wallet::dev_fund_burn(const std::vector<std::string> &args) {
   CryptoNote::TransactionId tx = m_wallet->sendTransaction(transactionSK, transfers, fee, extraString,
                                                            CryptoNote::parameters::MIN_TX_MIXIN_SIZE, 0, messages, 0);
   if (tx == WALLET_INVALID_TRANSACTION_ID) {
-    fail_msg_writer() << "Dev fund burn transaction failed";
+    fail_msg_writer() << "Dev donation transaction failed";
     return false;
   }
   std::error_code sendError = sent.wait(tx);
   removeGuard.removeObserver();
   if (sendError) {
-    fail_msg_writer() << "Failed to send dev fund burn: " << sendError.message();
+    fail_msg_writer() << "Failed to send dev donation: " << sendError.message();
     return false;
   }
   CryptoNote::WalletLegacyTransaction txInfo;
   m_wallet->getTransaction(tx, txInfo);
-  success_msg_writer() << "Burned " << m_currency.formatAmount(amount) << " XFG into the re-mint counter, tx "
+  success_msg_writer() << "Donated " << m_currency.formatAmount(amount) << " XFG to the dev fund (re-minted at the next quarter boundary), tx "
                        << Common::podToHex(txInfo.hash);
   return true;
 }

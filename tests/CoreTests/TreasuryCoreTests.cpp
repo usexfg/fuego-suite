@@ -1189,6 +1189,7 @@ public:
     dep.depositedAmount = amount;
     dep.createdHeight = height;
     chain.m_limitDeposits[orderId] = dep;
+    chain.indexLimitOrder(orderId);
     (side == 1 ? chain.m_ammPool.pendingXfg : chain.m_ammPool.pendingHeat) += amount;
   }
   static uint64_t proceedsHeat(const Blockchain& chain, const Crypto::Hash& orderId) {
@@ -1217,6 +1218,7 @@ public:
     dep.withdrawnAmount = dep.amount;
     dep.withdrawn = true;
     dep.withdrawnHeight = height;
+    chain.indexLimitOrder(orderId);
   }
   // One transaction at index 1 of a block at `height`, version `v` (index 0 is
   // the coinbase slot), driven through the production push/pop.
@@ -1255,7 +1257,20 @@ public:
   }
   static void markExpired(Blockchain& chain, const Crypto::Hash& orderId) {
     chain.m_limitDeposits.at(orderId).expired = true;
+    chain.indexLimitOrder(orderId);
   }
+  static bool isResting(const Blockchain& chain, const Crypto::Hash& orderId) {
+    return chain.m_restingLimitOrders.count(orderId) > 0;
+  }
+  static bool limitOrderIndexMatchesDeposits(const Blockchain& chain) {
+    std::set<Crypto::Hash, Blockchain::HashLess> resting, withdrawn;
+    for (const auto& kv : chain.m_limitDeposits) {
+      if (kv.second.withdrawn) withdrawn.insert(kv.first);
+      else if (!kv.second.expired) resting.insert(kv.first);
+    }
+    return resting == chain.m_restingLimitOrders && withdrawn == chain.m_withdrawnLimitOrders;
+  }
+  static void reverseOrderFills(Blockchain& chain, uint32_t height) { chain.reverseOrderFillsFor(height); }
   static bool hasLimitDeposit(const Blockchain& chain, const Crypto::Hash& orderId) {
     return chain.m_limitDeposits.count(orderId) > 0;
   }
@@ -2010,8 +2025,77 @@ void testWithdrawnDepositsPrunedAndRestored() {
   VaultCoreTestAccess::runOrderbookBlock(t.chain, height);
   TEST(!VaultCoreTestAccess::hasLimitDeposit(t.chain, oldId));
   TEST(VaultCoreTestAccess::hasLimitDeposit(t.chain, recentId));
+  TEST(VaultCoreTestAccess::limitOrderIndexMatchesDeposits(t.chain));
   VaultCoreTestAccess::popOrderbookBlock(t.chain, height);
   TEST(VaultCoreTestAccess::hasLimitDeposit(t.chain, oldId));
+  TEST(VaultCoreTestAccess::limitOrderIndexMatchesDeposits(t.chain));
+}
+
+// Expired orders nobody withdraws stayed in the set every block walked, so
+// the per-block cost grew with abandoned orders. Each block now walks only
+// resting orders (neither withdrawn nor expired) and, for pruning, withdrawn
+// ones; every deposit, stop, withdraw, expiry and their reversals keep both
+// lists equal to what the deposits themselves say.
+void testRestingOrderListFollowsEveryChange() {
+  TestChain t("limit_resting");
+  TEST(t.ok);
+  const uint64_t C = parameters::COIN;
+  const uint32_t height = enterHearthAuctionPhase(t);
+  Crypto::PublicKey walletSpendPublic;
+  Crypto::SecretKey walletSpendSecret;
+  Crypto::generate_keys(walletSpendPublic, walletSpendSecret);
+  const Crypto::Hash orderId = hearthOrderId(130);
+  LimitOrderKeys keys = deriveLimitOrderKeys(walletSpendSecret, orderId);
+  auto indexed = [&] { return VaultCoreTestAccess::limitOrderIndexMatchesDeposits(t.chain); };
+  auto spendingOwnKeyImage = [](Transaction tx, uint8_t tag) {
+    boost::get<KeyInput>(tx.inputs[0]).keyImage.data[0] = tag;
+    return tx;
+  };
+
+  std::vector<uint8_t> depositExtra;
+  addLimitDepositToExtra(depositExtra, 1, 5 * C, parameters::ORDER_PRICE_TICK, height + 5, orderId, keys.addressHash);
+  auto deposit = VaultCoreTestAccess::blockWith(
+      spendingOwnKeyImage(settlementTx({6 * C}, {commitmentOut(5 * C, parameters::DEPOSIT_TERM_POOL_XFG)}, depositExtra), 1),
+      height, BLOCK_MAJOR_VERSION_11);
+  TEST(VaultCoreTestAccess::pushTx(t.chain, deposit));
+  TEST(VaultCoreTestAccess::isResting(t.chain, orderId) && indexed());
+
+  Crypto::Signature stopProof;
+  Crypto::generate_signature(getLimitCancelAuthHash(orderId, keys.addressHash), keys.spendPublicKey,
+                             keys.spendSecretKey, stopProof);
+  std::vector<uint8_t> stopExtra;
+  addOrderCancelToExtra(stopExtra, orderId, keys.spendPublicKey, keys.viewPublicKey, stopProof);
+  auto stop = VaultCoreTestAccess::blockWith(spendingOwnKeyImage(settlementTx({2 * C}, {keyOut(1 * C)}, stopExtra), 2), height + 1,
+                                             BLOCK_MAJOR_VERSION_11);
+  TEST(VaultCoreTestAccess::pushTx(t.chain, stop));
+  TEST(!VaultCoreTestAccess::isResting(t.chain, orderId) && indexed());
+  VaultCoreTestAccess::popTx(t.chain, stop);
+  TEST(VaultCoreTestAccess::isResting(t.chain, orderId) && indexed());
+
+  const std::vector<TransactionOutput> payout = {keyOut(5 * C)};
+  const Crypto::Hash outputsHash = getLimitWithdrawOutputHash(payout);
+  Crypto::Signature withdrawProof;
+  Crypto::generate_signature(getLimitWithdrawAuthHash(orderId, keys.addressHash, outputsHash), keys.spendPublicKey,
+                             keys.spendSecretKey, withdrawProof);
+  std::vector<uint8_t> withdrawExtra;
+  addLimitWithdrawToExtra(withdrawExtra, orderId, keys.spendPublicKey, keys.viewPublicKey, outputsHash, withdrawProof);
+  auto withdraw = VaultCoreTestAccess::blockWith(spendingOwnKeyImage(settlementTx({1 * C}, payout, withdrawExtra), 3), height + 1,
+                                                 BLOCK_MAJOR_VERSION_11);
+  TEST(VaultCoreTestAccess::pushTx(t.chain, withdraw));
+  TEST(!VaultCoreTestAccess::isResting(t.chain, orderId) && indexed());
+  VaultCoreTestAccess::popTx(t.chain, withdraw);
+  TEST(VaultCoreTestAccess::isResting(t.chain, orderId) && indexed());
+
+  VaultCoreTestAccess::runOrderbookBlock(t.chain, height + 5);
+  TEST(!VaultCoreTestAccess::isResting(t.chain, orderId) && VaultCoreTestAccess::hasLimitDeposit(t.chain, orderId));
+  TEST(indexed());
+  VaultCoreTestAccess::reverseOrderFills(t.chain, height + 5);
+  VaultCoreTestAccess::popOrderbookBlock(t.chain, height + 5);
+  TEST(VaultCoreTestAccess::isResting(t.chain, orderId) && indexed());
+
+  VaultCoreTestAccess::popTx(t.chain, deposit);
+  TEST(!VaultCoreTestAccess::hasLimitDeposit(t.chain, orderId) && indexed());
+  wipeLimitOrderSecret(keys);
 }
 
 // Audit 2026-11-11 H5: every order from one wallet carried the same
@@ -2617,6 +2701,49 @@ void testLimitOrderAddressHashMatchesKeys() {
   TEST(wiped.addressHash == keys.addressHash);
 }
 
+// Wallets withdraw their own expired or stopped orders on their own. What is
+// due comes only from the wallet's history: its confirmed deposits and stops,
+// less any order a withdraw of its own (pending too) has already claimed. A
+// failed withdraw claims nothing, so the order comes due again.
+void testLimitOrdersDueForWithdraw() {
+  auto orderTx = [](std::vector<uint8_t> extra, bool confirmed, bool failed) {
+    return WalletOrderTransaction{std::string(extra.begin(), extra.end()), confirmed, failed};
+  };
+  auto deposit = [](const Crypto::Hash& id, uint32_t expiration) {
+    std::vector<uint8_t> extra;
+    addLimitDepositToExtra(extra, 1, parameters::COIN, parameters::ORDER_PRICE_TICK, expiration, id, Crypto::Hash{});
+    return extra;
+  };
+  auto withdraw = [](const Crypto::Hash& id) {
+    std::vector<uint8_t> extra;
+    addLimitWithdrawToExtra(extra, id, Crypto::PublicKey{}, Crypto::PublicKey{}, Crypto::Hash{}, Crypto::Signature{});
+    return extra;
+  };
+  auto stop = [](const Crypto::Hash& id) {
+    std::vector<uint8_t> extra;
+    addOrderCancelToExtra(extra, id, Crypto::PublicKey{}, Crypto::PublicKey{}, Crypto::Signature{});
+    return extra;
+  };
+  const Crypto::Hash expired = hearthOrderId(140), live = hearthOrderId(141), stopped = hearthOrderId(142),
+                     withdrawn = hearthOrderId(143), pendingWithdraw = hearthOrderId(144),
+                     failedWithdraw = hearthOrderId(145), unconfirmed = hearthOrderId(146);
+  const std::vector<WalletOrderTransaction> history = {
+      orderTx(deposit(expired, 100), true, false),
+      orderTx(deposit(live, 200), true, false),
+      orderTx(deposit(stopped, 200), true, false), orderTx(stop(stopped), true, false),
+      orderTx(deposit(withdrawn, 100), true, false), orderTx(withdraw(withdrawn), true, false),
+      orderTx(deposit(pendingWithdraw, 100), true, false), orderTx(withdraw(pendingWithdraw), false, false),
+      orderTx(deposit(failedWithdraw, 100), true, false), orderTx(withdraw(failedWithdraw), false, true),
+      orderTx(deposit(unconfirmed, 100), false, false),
+  };
+  const std::vector<Crypto::Hash> due = limitOrdersDueForWithdraw(history, 150);
+  auto isDue = [&](const Crypto::Hash& id) { return std::find(due.begin(), due.end(), id) != due.end(); };
+  TEST(due.size() == 3);
+  TEST(isDue(expired) && isDue(stopped) && isDue(failedWithdraw));
+  TEST(!isDue(live) && !isDue(withdrawn) && !isDue(pendingWithdraw) && !isDue(unconfirmed));
+  TEST(limitOrdersDueForWithdraw(history, 99).size() == 1);
+}
+
 int main() {
   testCdInterestCompounding();
   testLegacyDepositWithdrawsForPrincipal();
@@ -2677,6 +2804,8 @@ int main() {
   testSpotHistoryCoversDeepestRollback();
   testBlockConnectEnforcesHearthStateAndRemint();
   testLimitOrderAddressHashMatchesKeys();
+  testRestingOrderListFollowsEveryChange();
+  testLimitOrdersDueForWithdraw();
   testAliasRegistrationFeeBurned();
   testAuntPolCdCreationFeePushPop();
   testAuntPolMintPremiumPushPop();

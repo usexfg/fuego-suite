@@ -701,6 +701,15 @@ namespace CryptoNote {
       bool expired = false; // auto-returned on expiry (remaining claimable)
     };
     std::map<Crypto::Hash, LimitDepositInfo, HashLess> m_limitDeposits;
+    // Derived from m_limitDeposits by indexLimitOrder, never saved: the orders
+    // each block's expiry, auction and backstop passes walk (neither withdrawn
+    // nor expired), and the withdrawn ones the prune pass walks. Expired orders
+    // nobody withdraws stay claimable in m_limitDeposits and cost no block work.
+    std::set<Crypto::Hash, HashLess> m_restingLimitOrders;
+    std::set<Crypto::Hash, HashLess> m_withdrawnLimitOrders;
+    void indexLimitOrder(const Crypto::Hash& orderId);
+    void rebuildLimitOrderIndex();
+    void reverseOrderFillsFor(uint32_t poppedHeight);
 
     // Rollback-history depth for per-block fill/epoch/orderbook records.
     // Testnet has no checkpoints, so reorg depth is unbounded there; keep the

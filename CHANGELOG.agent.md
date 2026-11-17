@@ -7471,3 +7471,32 @@ Sign-off table:
 | Build compiles | DONE — `make -j4` full build rc=0 |
 | Tests pass | DONE — core_tests 657/657; `ctest -LE manual` 59/59 |
 | All tasks done | DONE |
+
+## Resting-order list, wallet auto-withdraw, `dev_donate`
+
+**Feature name**: abandoned limit orders leave the per-block scan; wallets withdraw their own ended orders; `dev_fund_burn` renamed `dev_donate`
+**Agent**: Claude
+**Start date**: 2026-11-17
+**Decision**: owner, 2026-11-17 (options 2 + 3; name `dev_donate`).
+**Consensus impact**: none to outcomes. The expiry, auction and backstop passes walk `m_restingLimitOrders` instead of every deposit and skip exactly the entries they skipped before (withdrawn or expired), in the same `HashLess` order; pruning walks `m_withdrawnLimitOrders` with the same rule. Both lists are derived from `m_limitDeposits`, never saved, and rebuilt on cache load.
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `indexLimitOrder(id)` recomputes one order's membership from its deposit; called at every write: deposit, stop and withdraw (push and pop), expiry and its reversal, prune, restore; `rebuildLimitOrderIndex` after cache load | Claude | 2026-11-17 | DONE |
+| 2 | Expiry, auction and backstop passes walk the resting list; prune walks the withdrawn list | Claude | 2026-11-17 | DONE |
+| 3 | popBlock's fill reversal extracted, unchanged, as `reverseOrderFillsFor(height)` | Claude | 2026-11-17 | DONE |
+| 4 | `limitOrdersDueForWithdraw`: from a wallet's own history, its confirmed deposits that expired or were stopped and that no own withdraw (pending or confirmed; failed ones excluded) claimed | Claude | 2026-11-17 | DONE |
+| 5 | walletd: on each `SYNC_COMPLETED`, withdraw due orders (skips view-only wallets); SimpleWallet: a background thread woken after each sync does the same, joined in `close_wallet`. Any attempt waits `LIMIT_ORDER_WITHDRAW_RETRY_BLOCKS` (10) before the next for that order | Claude | 2026-11-17 | DONE |
+| 6 | `dev_fund_burn` → `dev_donate`: SimpleWallet command, walletd JSON-RPC method, `WalletGreen::devDonate`, `WalletService::devDonate`, `DevDonate` messages, docs; consensus tag and counter names unchanged | Claude | 2026-11-17 | DONE |
+| 7 | Tests: `testRestingOrderListFollowsEveryChange` (real deposit, stop and withdraw transactions pushed and popped; expiry and its reversal), `testLimitOrdersDueForWithdraw`; index check added to `testWithdrawnDepositsPrunedAndRestored` | Claude | 2026-11-17 | DONE |
+
+Not covered by tests: the walletd and SimpleWallet hooks themselves (no wallet harness; they call the tested function and the existing cancel path).
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j4` full build rc=0 |
+| Tests pass | DONE — core_tests 676/676; `ctest -LE manual` 59/59 |
+| Mutation checks | DONE — dropping `indexLimitOrder` at any of its 10 sites fails a test; ignoring claims, counting unconfirmed deposits, counting failed withdraws, or ignoring stops in `limitOrdersDueForWithdraw` each fail a test |
+| All tasks done | DONE |

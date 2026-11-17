@@ -520,6 +520,9 @@ public:
           throw;
         }
       }
+      if (s.type() == ISerializer::INPUT) {
+        m_bs.rebuildLimitOrderIndex();
+      }
 
       // Alias registry: without persistence, every registered/released/
       // transferred alias was wiped on every normal daemon restart (only
@@ -783,16 +786,33 @@ namespace {
 std::vector<std::pair<Crypto::Hash, CryptoNote::Blockchain::LimitDepositInfo>>
 CryptoNote::Blockchain::pruneSettledLimitDeposits(uint32_t height) {
   std::vector<std::pair<Crypto::Hash, LimitDepositInfo>> pruned;
-  for (auto it = m_limitDeposits.begin(); it != m_limitDeposits.end();) {
-    const LimitDepositInfo& dep = it->second;
-    if (dep.withdrawn && dep.withdrawnHeight + MAX_ROLLBACK_HISTORY < height) {
-      pruned.push_back(*it);
-      it = m_limitDeposits.erase(it);
-    } else {
-      ++it;
-    }
+  for (const Crypto::Hash& orderId : m_withdrawnLimitOrders) {
+    const auto it = m_limitDeposits.find(orderId);
+    if (it->second.withdrawnHeight + MAX_ROLLBACK_HISTORY < height) pruned.push_back(*it);
+  }
+  for (const auto& entry : pruned) {
+    m_limitDeposits.erase(entry.first);
+    indexLimitOrder(entry.first);
   }
   return pruned;
+}
+
+void CryptoNote::Blockchain::indexLimitOrder(const Crypto::Hash& orderId) {
+  m_restingLimitOrders.erase(orderId);
+  m_withdrawnLimitOrders.erase(orderId);
+  const auto it = m_limitDeposits.find(orderId);
+  if (it == m_limitDeposits.end()) return;
+  if (it->second.withdrawn) {
+    m_withdrawnLimitOrders.insert(orderId);
+  } else if (!it->second.expired) {
+    m_restingLimitOrders.insert(orderId);
+  }
+}
+
+void CryptoNote::Blockchain::rebuildLimitOrderIndex() {
+  m_restingLimitOrders.clear();
+  m_withdrawnLimitOrders.clear();
+  for (const auto& kv : m_limitDeposits) indexLimitOrder(kv.first);
 }
 
 // Every fill of an auction moves two parties. Settling some and skipping
@@ -840,7 +860,10 @@ void CryptoNote::Blockchain::restoreOrderbookSnapshotFor(uint32_t poppedHeight) 
       g_orderbookMempool.addOrder(o);
     // Restore pool orders
     g_orderbookMempool.setPoolOrders(snap.poolOrders);
-    for (const auto& pruned : snap.prunedDeposits) m_limitDeposits.insert(pruned);
+    for (const auto& pruned : snap.prunedDeposits) {
+      m_limitDeposits.insert(pruned);
+      indexLimitOrder(pruned.first);
+    }
     m_orderbookSnapshots.pop_back();
   }
 }
@@ -4609,18 +4632,21 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
   // withdraw and do NOT participate in the auction or the backstop in their
   // expiry block (expiry at height H means no fills at H).
   if (block.majorVersion >= BLOCK_MAJOR_VERSION_11) {
-    for (auto& kv : m_limitDeposits) {
-      LimitDepositInfo& dep = kv.second;
-      if (dep.withdrawn || dep.expired) continue;
-      if (dep.expiration > 0 && height >= dep.expiration) {
-        dep.expired = true;
-        OrderFillRecord rec;
-        rec.orderId = kv.first;
-        rec.side = dep.side;
-        rec.xfg = 0; rec.heat = 0; rec.feeHeat = 0;
-        rec.newlyExpired = true;
-        fillsThisBlock.push_back(rec);
-      }
+    std::vector<Crypto::Hash> expiring;
+    for (const Crypto::Hash& orderId : m_restingLimitOrders) {
+      const LimitDepositInfo& dep = m_limitDeposits.at(orderId);
+      if (dep.expiration > 0 && height >= dep.expiration) expiring.push_back(orderId);
+    }
+    for (const Crypto::Hash& orderId : expiring) {
+      LimitDepositInfo& dep = m_limitDeposits.at(orderId);
+      dep.expired = true;
+      indexLimitOrder(orderId);
+      OrderFillRecord rec;
+      rec.orderId = orderId;
+      rec.side = dep.side;
+      rec.xfg = 0; rec.heat = 0; rec.feeHeat = 0;
+      rec.newlyExpired = true;
+      fillsThisBlock.push_back(rec);
     }
   }
 
@@ -4634,12 +4660,11 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
   // backstop below serves the unfilled remainder).
   if (block.majorVersion >= BLOCK_MAJOR_VERSION_11 && !g_orderbookIsInBootstrap) {
     std::vector<CryptoNote::AuctionOrder> auctionBids, auctionAsks;
-    for (const auto& kv : m_limitDeposits) {
-      const LimitDepositInfo& dep = kv.second;
-      if (dep.withdrawn || dep.expired || dep.amount == 0) continue;
-      if (dep.targetPrice == 0) continue;
+    for (const Crypto::Hash& orderId : m_restingLimitOrders) {
+      const LimitDepositInfo& dep = m_limitDeposits.at(orderId);
+      if (dep.amount == 0 || dep.targetPrice == 0) continue;
       CryptoNote::AuctionOrder o;
-      o.orderId = kv.first;
+      o.orderId = orderId;
       o.price = dep.targetPrice;
       o.createdHeight = dep.createdHeight;
       o.addressHash = dep.addressHash;
@@ -4797,9 +4822,9 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
           ((uint128_t)auctionMatchedVolume * parameters::HEARTH_BACKSTOP_MAX_BPS) / 100, UINT64_MAX)));
     }
 
-    for (auto& kv : m_limitDeposits) {
-      LimitDepositInfo& dep = kv.second;
-      if (dep.withdrawn || dep.expired || dep.targetPrice == 0 || backstopRemaining == 0) continue;
+    for (const Crypto::Hash& orderId : m_restingLimitOrders) {
+      LimitDepositInfo& dep = m_limitDeposits.at(orderId);
+      if (dep.targetPrice == 0 || backstopRemaining == 0) continue;
       const uint64_t spot = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
       if (spot == 0) continue;
 
@@ -4836,7 +4861,7 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
         dep.proceedsHeat += heatPaid;
 
         OrderFillRecord rec;
-        rec.orderId = kv.first;
+        rec.orderId = orderId;
         rec.side = 1;
         rec.xfg = fillXfg;
         rec.heat = grossHeat;
@@ -4888,7 +4913,7 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
         dep.proceedsXfg += netXfg;
 
         OrderFillRecord rec;
-        rec.orderId = kv.first;
+        rec.orderId = orderId;
         rec.side = 0;
         rec.xfg = netXfg + cdFeeXfg;
         rec.heat = heatCost;
@@ -6191,25 +6216,7 @@ bool CryptoNote::Blockchain::withdrawTreasuryLp(uint64_t sharesToBurn) {
   return true;
 }
 
-void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
-  if (m_blocks.empty()) {
-    logger(ERROR, BRIGHT_RED) <<
-      "Attempt to pop block from empty blockchain.";
-    return;
-  }
-
-  std::vector<Transaction> transactions(m_blocks.back().transactions.size() - 1);
-  for (size_t i = 0; i < m_blocks.back().transactions.size() - 1; ++i) {
-    transactions[i] = m_blocks.back().transactions[1 + i].tx;
-  }
-
-  uint32_t height = m_blocks.size(); //height of popped block should be same as number of blocks
-  saveTransactions(transactions, height);
-
-  uint32_t poppedHeight = m_blocks.back().height;
-  rollbackFciBlock(poppedHeight);
-  unrecordRemint(poppedHeight);
-
+void CryptoNote::Blockchain::reverseOrderFillsFor(uint32_t poppedHeight) {
   // Reverse OOB limit-order fills BEFORE reversing settlement. The push path
   // settles transactions first and executes fills second, so rollback must
   // undo fills first: this restores the pending escrow exactly when a deposit
@@ -6222,7 +6229,10 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
       const auto& rec = *it;
       auto depIt = m_limitDeposits.find(rec.orderId);
       if (rec.newlyExpired) {
-        if (depIt != m_limitDeposits.end()) depIt->second.expired = false;
+        if (depIt != m_limitDeposits.end()) {
+          depIt->second.expired = false;
+          indexLimitOrder(rec.orderId);
+        }
         continue;
       }
       if (rec.side == 1) {
@@ -6295,6 +6305,28 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
       << "popBlock: order-fill rollback records evicted before height "
       << poppedHeight << " — pool state may diverge (reorg deeper than rollback history)";
   }
+}
+
+void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
+  if (m_blocks.empty()) {
+    logger(ERROR, BRIGHT_RED) <<
+      "Attempt to pop block from empty blockchain.";
+    return;
+  }
+
+  std::vector<Transaction> transactions(m_blocks.back().transactions.size() - 1);
+  for (size_t i = 0; i < m_blocks.back().transactions.size() - 1; ++i) {
+    transactions[i] = m_blocks.back().transactions[1 + i].tx;
+  }
+
+  uint32_t height = m_blocks.size(); //height of popped block should be same as number of blocks
+  saveTransactions(transactions, height);
+
+  uint32_t poppedHeight = m_blocks.back().height;
+  rollbackFciBlock(poppedHeight);
+  unrecordRemint(poppedHeight);
+
+  reverseOrderFillsFor(poppedHeight);
 
   // Reverse this block's alias register/release/transfer mutations. Must
   // undo LIFO (applyAliasUndo's own contract) so a block that both
@@ -7100,6 +7132,7 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
             dep.addressHash, false};
           m_limitDeposits[dep.orderId].depositedAmount = dep.amount;
           m_limitDeposits[dep.orderId].createdHeight = block.height;
+          indexLimitOrder(dep.orderId);
         } else if (field.type() == typeid(TransactionExtraTreasuryFund)) {
           const auto& fund = boost::get<TransactionExtraTreasuryFund>(field);
           if (fund.asset == 0) {
@@ -7124,6 +7157,7 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
           auto depIt = m_limitDeposits.find(cancel.orderId);
           if (depIt != m_limitDeposits.end() && !depIt->second.withdrawn) {
             depIt->second.expired = true;
+            indexLimitOrder(cancel.orderId);
           }
         } else if (field.type() == typeid(TransactionExtraLimitWithdraw)) {
           const auto& wd = boost::get<TransactionExtraLimitWithdraw>(field);
@@ -7155,6 +7189,7 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
             depIt->second.withdrawnAmount = depIt->second.amount;
             depIt->second.withdrawn = true;
             depIt->second.withdrawnHeight = block.height;
+            indexLimitOrder(wd.orderId);
             g_orderbookMempool.cancelOrder(wd.orderId);
           }
         }
@@ -7583,9 +7618,14 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
             m_ammPool.pendingHeat -= deposited;
         }
         m_limitDeposits.erase(dep.orderId);
+        indexLimitOrder(dep.orderId);
       } else if (field.type() == typeid(TransactionExtraOrderCancel)) {
-        auto depIt = m_limitDeposits.find(boost::get<TransactionExtraOrderCancel>(field).orderId);
-        if (depIt != m_limitDeposits.end()) depIt->second.expired = false;
+        const Crypto::Hash& orderId = boost::get<TransactionExtraOrderCancel>(field).orderId;
+        auto depIt = m_limitDeposits.find(orderId);
+        if (depIt != m_limitDeposits.end()) {
+          depIt->second.expired = false;
+          indexLimitOrder(orderId);
+        }
       } else if (field.type() == typeid(TransactionExtraLimitWithdraw)) {
         const auto& wd = boost::get<TransactionExtraLimitWithdraw>(field);
         auto depIt = m_limitDeposits.find(wd.orderId);
@@ -7609,6 +7649,7 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
           depIt->second.withdrawnAmount = 0;
           depIt->second.withdrawn = false;
           depIt->second.withdrawnHeight = 0;
+          indexLimitOrder(wd.orderId);
         }
       }
     }

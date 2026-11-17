@@ -22,6 +22,8 @@
 #include <memory>
 #include <mutex>
 #include <chrono>
+#include <map>
+#include <thread>
 #include <boost/program_options/variables_map.hpp>
 
 #include "../../include/IWalletLegacy.h"
@@ -83,7 +85,7 @@ namespace CryptoNote
 
     // @ Alias system commands
     bool register_alias(const std::vector<std::string> &args);
-    bool dev_fund_burn(const std::vector<std::string> &args);
+    bool dev_donate(const std::vector<std::string> &args);
     uint8_t nextBlockMajorVersion() const;
     bool lookup_alias(const std::vector<std::string> &args);
     bool list_aliases(const std::vector<std::string> &args);
@@ -300,5 +302,16 @@ namespace CryptoNote
     bool m_walletSynchronized;
     std::mutex m_walletSynchronizedMutex;
     std::condition_variable m_walletSynchronizedCV;
+
+    void startLimitOrderWithdrawals();
+    void stopLimitOrderWithdrawals();
+    void limitOrderWithdrawLoop();
+    void withdrawEndedLimitOrders();
+    std::thread m_limitOrderWithdrawThread;
+    std::mutex m_limitOrderWithdrawMutex;
+    std::condition_variable m_limitOrderWithdrawCV;
+    bool m_limitOrderWithdrawDue = false;
+    bool m_limitOrderWithdrawStop = false;
+    std::map<std::string, uint32_t> m_limitOrderWithdrawRetryHeight;
   };
 }

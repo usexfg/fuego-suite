@@ -719,14 +719,14 @@ void GetLimitOrders::Response::serialize(CryptoNote::ISerializer &serializer)
   serializer(status, "status");
 }
 
-void DevFundBurn::Request::serialize(CryptoNote::ISerializer &serializer)
+void DevDonate::Request::serialize(CryptoNote::ISerializer &serializer)
 {
   if (!serializer(amount, "amount")) {
     throw RequestSerializationError();
   }
 }
 
-void DevFundBurn::Response::serialize(CryptoNote::ISerializer &serializer)
+void DevDonate::Response::serialize(CryptoNote::ISerializer &serializer)
 {
   serializer(tx_hash, "tx_hash");
   serializer(status, "status");

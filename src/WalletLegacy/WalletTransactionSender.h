@@ -124,7 +124,8 @@ public:
                                                               const AccountPublicAddress& recipient,
                                                               uint64_t amount,
                                                               uint64_t fee,
-                                                              uint64_t mixIn);
+                                                              uint64_t mixIn,
+                                                              bool isSubaddress = false);
 
   // v11 Orderbook
   std::unique_ptr<WalletRequest> makePlaceOrderV13Request(TransactionId& transactionId,

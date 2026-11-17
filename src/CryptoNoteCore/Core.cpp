@@ -35,6 +35,7 @@
 #include "CryptoNoteStatInfo.h"
 #include "Miner.h"
 #include "TransactionExtra.h"
+#include "SubaddressTx.h"
 #include "IBlock.h"
 #include "Currency.h"
 #include <vector>
@@ -418,6 +419,13 @@ bool core::check_tx_semantic(const Transaction& tx, bool keeped_by_block, uint32
   bool hasAmmSwapAuth = false;
   uint8_t ammSwapDirection = 0;
   bool hasHeatMintAuth = false;
+  std::string subaddrErr;
+  const uint8_t extraMajorVersion = m_currency.blockMajorVersionAtHeight(height);
+  if (!validateSubaddressTxExtra(tx, extraMajorVersion, &subaddrErr)) {
+    logger(ERROR) << "tx subaddress extra rejected for tx id= " << getObjectHash(tx) << ": " << subaddrErr;
+    return false;
+  }
+
   std::vector<TransactionExtraField> tx_extra_fields;
   if (parseTransactionExtra(tx.extra, tx_extra_fields)) {
     for (const auto& field : tx_extra_fields) {

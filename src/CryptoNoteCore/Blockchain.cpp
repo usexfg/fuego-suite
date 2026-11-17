@@ -37,6 +37,7 @@
 #include "../Serialization/SerializationOverloads.h"
 #include "CryptoNoteTools.h"
 #include "TransactionExtra.h"
+#include "SubaddressTx.h"
 #include "../crypto/crypto.h"
 #include "../Common/StringTools.h"
 #include "CommitmentIndex.h"
@@ -182,6 +183,16 @@ bool carriesHeatwaveTag(const Transaction& tx) {
 }
 
 namespace {
+
+// Alias owners are parsed by every node; a funsa owner is a v11 address form.
+bool parseAliasOwnerAddress(const CryptoNote::Currency& currency, const std::string& owner,
+                            uint8_t blockMajorVersion, CryptoNote::AccountPublicAddress& address) {
+  bool isSubaddress = false;
+  if (!currency.parseAccountAddressString(owner, address, isSubaddress)) {
+    return false;
+  }
+  return !isSubaddress || CryptoNote::funsaSubaddressActivated(blockMajorVersion);
+}
 
 // XFG a block's transaction burns into the banking index: a 0x08 tag's
 // amount (historical), or from v11 a HEAT mint's declared burn, which
@@ -4124,6 +4135,17 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
       logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " has at least one invalid output";
     }
 
+    // funsa subaddress extras are consensus from v11: pre-v11 blocks may not
+    // carry 0x06/0x09, and an 0x06 key list must cover every output exactly.
+    {
+      std::string subaddrErr;
+      if (!validateSubaddressTxExtra(transactions[i], block.bl.majorVersion, &subaddrErr)) {
+        isTransactionValid = false;
+        logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
+                                   << " has invalid subaddress extra: " << subaddrErr;
+      }
+    }
+
     // DIGM mint validation: lock HEAT → mint DIGM at 0.10 HEAT per DIGM.
     // Disabled at v12+: DigmMintEngine::validateMint credits `spend.amount`
     // from every TransactionInputCommitmentSpend as HEAT without a term check,
@@ -5259,7 +5281,7 @@ void CryptoNote::Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
               logger(WARNING) << "@ Alias release rejected in block " << block.height << ": invalid data";
             } else {
               AccountPublicAddress ownerAddr;
-              if (!m_currency.parseAccountAddressString(aliasRel.ownerAddress, ownerAddr)) {
+              if (!parseAliasOwnerAddress(m_currency, aliasRel.ownerAddress, block.bl.majorVersion, ownerAddr)) {
                 logger(WARNING) << "@ Alias release rejected: cannot parse owner address for @" << aliasRel.alias;
               } else {
                 uint8_t preimage[64];
@@ -5302,7 +5324,7 @@ void CryptoNote::Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
               logger(WARNING) << "@ Alias transfer rejected in block " << block.height << ": invalid data";
             } else {
               AccountPublicAddress oldOwnerAddr;
-              if (!m_currency.parseAccountAddressString(aliasXfer.oldOwnerAddress, oldOwnerAddr)) {
+              if (!parseAliasOwnerAddress(m_currency, aliasXfer.oldOwnerAddress, block.bl.majorVersion, oldOwnerAddr)) {
                 logger(WARNING) << "@ Alias transfer rejected: cannot parse old owner address";
               } else {
                 uint8_t oldprev[64];
@@ -5327,7 +5349,7 @@ void CryptoNote::Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
                     logger(WARNING) << "@ Alias transfer rejected: invalid ownership proof for @" << aliasXfer.alias;
                   } else {
                     AccountPublicAddress newOwnerAddr;
-                    if (!m_currency.parseAccountAddressString(aliasXfer.newOwnerAddress, newOwnerAddr)) {
+                    if (!parseAliasOwnerAddress(m_currency, aliasXfer.newOwnerAddress, block.bl.majorVersion, newOwnerAddr)) {
                       logger(WARNING) << "@ Alias transfer rejected: cannot parse new owner address";
                     } else {
                       uint8_t newprev[64];

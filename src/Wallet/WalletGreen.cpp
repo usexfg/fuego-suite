@@ -45,6 +45,7 @@
 #include "Common/Int128.h"
 #include "CryptoNoteCore/Account.h"
 #include "CryptoNoteCore/AmmPool.h"
+#include "CryptoNoteCore/SubaddressTx.h"
 #include "CryptoNoteCore/Currency.h"
 #include "CryptoNoteCore/CryptoNoteFormatUtils.h"
 #include "CryptoNoteCore/CryptoNoteTools.h"
@@ -145,12 +146,38 @@ namespace
   void parseAddressString(
       const std::string &string,
       const CryptoNote::Currency &currency,
-      CryptoNote::AccountPublicAddress &address)
+      CryptoNote::AccountPublicAddress &address,
+      bool &isSubaddress)
   {
-    if (!currency.parseAccountAddressString(string, address))
+    if (!currency.parseAccountAddressString(string, address, isSubaddress))
     {
       throw std::system_error(make_error_code(CryptoNote::error::BAD_ADDRESS));
     }
+  }
+
+  void parseAddressString(
+      const std::string &string,
+      const CryptoNote::Currency &currency,
+      CryptoNote::AccountPublicAddress &address)
+  {
+    bool isSubaddress = false;
+    parseAddressString(string, currency, address, isSubaddress);
+  }
+
+  void publishPerOutputTxKeys(CryptoNote::ITransaction &transaction, CryptoNote::SubaddressTxKeys keys)
+  {
+    const Crypto::PublicKey mainTxPublicKey = transaction.getTransactionPublicKey();
+    while (keys.additionalPubKeys.size() < transaction.getOutputCount())
+    {
+      keys.additionalPubKeys.push_back(mainTxPublicKey);
+      keys.janusBases.push_back(CryptoNote::unlinkableJanusFiller());
+    }
+    std::vector<uint8_t> encoded;
+    if (!CryptoNote::encodeSubaddressTxKeys(keys, encoded))
+    {
+      throw std::system_error(make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR), "subaddress tx keys extra failed");
+    }
+    transaction.appendExtra(CryptoNote::BinaryArray(encoded.begin(), encoded.end()));
   }
 
   uint64_t countNeededMoney(
@@ -321,15 +348,14 @@ namespace
 
   CryptoNote::AccountPublicAddress parseAccountAddressString(
       const std::string &addressString,
-      const CryptoNote::Currency &currency)
+      const CryptoNote::Currency &currency,
+      bool &isSubaddress)
   {
     CryptoNote::AccountPublicAddress address;
-
-    if (!currency.parseAccountAddressString(addressString, address))
+    if (!currency.parseAccountAddressString(addressString, address, isSubaddress))
     {
       throw std::system_error(make_error_code(CryptoNote::error::BAD_ADDRESS));
     }
-
     return address;
   }
 
@@ -1317,7 +1343,8 @@ namespace CryptoNote
     for (size_t i = 0; i < messages.size(); ++i)
     {
       CryptoNote::AccountPublicAddress addressBin;
-      if (!m_currency.parseAccountAddressString(messages[i].address, addressBin))
+      bool isSubaddress = false;
+      if (!m_currency.parseAccountAddressString(messages[i].address, addressBin, isSubaddress))
         continue;
       CryptoNote::tx_extra_message tag;
       if (!tag.encrypt(i, messages[i].message, &addressBin, kp))
@@ -1488,7 +1515,7 @@ namespace CryptoNote
     }
     if (found > xfgNeeded) {
       for (uint64_t chunk : split(found - xfgNeeded, m_currency.defaultDustThreshold())) {
-        transaction.addOutput(chunk, AccountPublicAddress{selectedTransfers[0].wallet->spendPublicKey, m_viewPublicKey});
+        transaction.addOutput(chunk, standardDerivationAddressFor(*selectedTransfers[0].wallet));
       }
     }
     std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount> mixinResult;
@@ -1610,7 +1637,7 @@ namespace CryptoNote
     if (changeAmount > 0) {
       std::vector<uint64_t> decomposedChange = split(changeAmount, m_currency.defaultDustThreshold());
       for (uint64_t changeOut : decomposedChange) {
-        transaction->addOutput(changeOut, AccountPublicAddress{selectedTransfers[0].wallet->spendPublicKey, m_viewPublicKey});
+        transaction->addOutput(changeOut, standardDerivationAddressFor(*selectedTransfers[0].wallet));
       }
     }
 
@@ -1728,7 +1755,7 @@ namespace CryptoNote
     uint64_t changeAmount = foundMoney - neededMoney;
     if (changeAmount > 0) {
       for (uint64_t chunk : split(changeAmount, m_currency.defaultDustThreshold())) {
-        transaction->addOutput(chunk, AccountPublicAddress{selectedTransfers[0].wallet->spendPublicKey, m_viewPublicKey});
+        transaction->addOutput(chunk, standardDerivationAddressFor(*selectedTransfers[0].wallet));
       }
     }
     transaction->setUnlockTime(0);
@@ -1829,7 +1856,7 @@ namespace CryptoNote
     uint64_t changeAmount = foundMoney - fee;
     if (changeAmount > 0) {
       for (uint64_t chunk : split(changeAmount, m_currency.defaultDustThreshold())) {
-        transaction->addOutput(chunk, AccountPublicAddress{selectedTransfers[0].wallet->spendPublicKey, m_viewPublicKey});
+        transaction->addOutput(chunk, standardDerivationAddressFor(*selectedTransfers[0].wallet));
       }
     }
 
@@ -1847,14 +1874,14 @@ namespace CryptoNote
       // Stop only: no payout; the escrow waits frozen for the withdraw.
     } else if (orderSide == 1) {
       if (orderAmount > 0) {
-        transaction->addOutput(orderAmount, AccountPublicAddress{ownerWallet->spendPublicKey, m_viewPublicKey});
+        transaction->addOutput(orderAmount, standardDerivationAddressFor(*ownerWallet));
       }
       if (orderProceedsHeat > 0) {
         addHeatCommitmentOutput(orderProceedsHeat);
       }
     } else {
       if (orderProceedsXfg > 0) {
-        transaction->addOutput(orderProceedsXfg, AccountPublicAddress{ownerWallet->spendPublicKey, m_viewPublicKey});
+        transaction->addOutput(orderProceedsXfg, standardDerivationAddressFor(*ownerWallet));
       }
       if (orderAmount > 0) {
         addHeatCommitmentOutput(orderAmount);
@@ -2152,9 +2179,9 @@ namespace CryptoNote
 
     fee = m_currency.minimumFee();
 
-    // Parse recipient address to get view public key
     AccountPublicAddress recipientAddr;
-    if (!m_currency.parseAccountAddressString(recipient, recipientAddr)) {
+    bool recipientIsSubaddress = false;
+    if (!m_currency.parseAccountAddressString(recipient, recipientAddr, recipientIsSubaddress)) {
       throw std::system_error(make_error_code(error::BAD_ADDRESS));
     }
 
@@ -2183,17 +2210,37 @@ namespace CryptoNote
     std::unique_ptr<ITransaction> transaction = createTransaction();
     uint64_t changeAmount = (totalHeat > amount) ? (totalHeat - amount) : 0;
 
-    // HEAT commitment output for the recipient. ECDH delivers it through the
-    // recipient's view key; ownership binds to the recipient's SPEND key, so the
-    // recipient can spend it but the sender and view-key holders cannot.
+    Crypto::SecretKey txSecret;
+    if (!transaction->getTransactionSecretKey(txSecret)) {
+      throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR),
+                              "HEAT send: missing tx secret key");
+    }
+
     const size_t rcptIdx = static_cast<size_t>(transaction->getOutputCount());
+    SubaddressTxKeys outputTxKeys;
+    Crypto::KeyDerivation rcptEcdh;
+    if (recipientIsSubaddress) {
+      OutputTxKey rcptKey;
+      if (!deriveOutputTxKey(txSecret, rcptIdx, recipientAddr, true, rcptKey)) {
+        throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR),
+                                "HEAT send: subaddress tx key derivation failed");
+      }
+      rcptEcdh = rcptKey.derivation;
+      outputTxKeys.additionalPubKeys.push_back(rcptKey.txPublicKey);
+      outputTxKeys.janusBases.push_back(rcptKey.janusBase);
+    } else if (!Crypto::generate_key_derivation(recipientAddr.viewPublicKey, txSecret, rcptEcdh)) {
+      throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR),
+                              "HEAT send: ECDH derivation failed");
+    }
     CryptoNote::TransactionOutputCommitment rcptOut;
-    rcptOut.commitKey = deriveRecipientCommitmentKey(
-      *transaction, rcptIdx, recipientAddr.viewPublicKey, recipientAddr.spendPublicKey);
+    if (!CryptoNote::deriveCommitmentOutputKey(
+          rcptEcdh, rcptIdx, recipientAddr.spendPublicKey, rcptOut.commitKey)) {
+      throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR),
+                              "HEAT send: commitment key derivation failed");
+    }
     rcptOut.term = parameters::HEAT_TERM;
     transaction->addOutput(amount, rcptOut);
 
-    // HEAT change output (sender's view key)
     if (changeAmount > 0) {
       const size_t chIdx = static_cast<size_t>(transaction->getOutputCount());
       CryptoNote::TransactionOutputCommitment chOut;
@@ -2215,6 +2262,9 @@ namespace CryptoNote
     // before any is signed.
     std::vector<InputInfo> keysInfo;
     prepareXfgInputs(*transaction, fee, mixin, keysInfo);
+    if (recipientIsSubaddress) {
+      publishPerOutputTxKeys(*transaction, outputTxKeys);
+    }
     addAndSignInputs(*transaction, keysInfo, prepareHeatSpends(selectedDepositIds, mixin));
 
     transactionHash = Common::podToHex(transaction->getTransactionHash());
@@ -2415,14 +2465,14 @@ namespace CryptoNote
   {
     for (auto spendPublicKey : deletedKeys)
     {
-      AccountPublicAddress deletedAccountAddress;
-      deletedAccountAddress.spendPublicKey = spendPublicKey;
-      deletedAccountAddress.viewPublicKey = m_viewPublicKey;
-      auto deletedAddressString = m_currency.accountAddressAsString(deletedAccountAddress);
-
-      std::vector<size_t> deletedTransactions;
-      std::vector<size_t> updatedTransactions = deleteTransfersForAddress(deletedAddressString, deletedTransactions);
-      deleteFromUncommitedTransactions(deletedTransactions);
+      const std::string standardForm = m_currency.accountAddressAsString({spendPublicKey, m_viewPublicKey});
+      const std::string subaddressForm = m_currency.subAddressAsString({spendPublicKey, expectedViewPublicKey(spendPublicKey, true)});
+      for (const std::string &deletedAddressString : {standardForm, subaddressForm})
+      {
+        std::vector<size_t> deletedTransactions;
+        deleteTransfersForAddress(deletedAddressString, deletedTransactions);
+        deleteFromUncommitedTransactions(deletedTransactions);
+      }
     }
   }
 
@@ -3123,6 +3173,7 @@ namespace CryptoNote
           std::unordered_set<Crypto::PublicKey> addedSpendKeys;
           std::unordered_set<Crypto::PublicKey> deletedSpendKeys;
           loadWalletCache(addedSpendKeys, deletedSpendKeys, extra);
+          applySubaddressJanusPolicy();
 
           if (!addedSpendKeys.empty())
           {
@@ -3253,6 +3304,20 @@ namespace CryptoNote
     }
   }
 
+  // Subscriptions are created before the cache restores subaddress metadata, so the
+  // Janus requirement is applied once that metadata is known.
+  void WalletGreen::applySubaddressJanusPolicy()
+  {
+    for (const auto &wallet : m_walletsContainer.get<RandomAccessIndex>())
+    {
+      ITransfersSubscription *subscription = m_synchronizer.getSubscription(AccountPublicAddress{wallet.spendPublicKey, m_viewPublicKey});
+      if (subscription != nullptr)
+      {
+        subscription->setJanusCheckRequired(isV2SubAddress(wallet));
+      }
+    }
+  }
+
   void WalletGreen::subscribeWallets()
   {
     try
@@ -3265,6 +3330,7 @@ namespace CryptoNote
 
         AccountSubscription sub;
         sub.keys.address.viewPublicKey = m_viewPublicKey;
+        sub.janusCheckRequired = isV2SubAddress(wallet);
         sub.keys.address.spendPublicKey = wallet.spendPublicKey;
         sub.keys.viewSecretKey = m_viewSecretKey;
         sub.keys.spendSecretKey = wallet.spendSecretKey;
@@ -3342,7 +3408,56 @@ namespace CryptoNote
     }
 
     const WalletRecord &wallet = m_walletsContainer.get<RandomAccessIndex>()[index];
-    return m_currency.accountAddressAsString({wallet.spendPublicKey, m_viewPublicKey});
+    return addressStringFor(wallet);
+  }
+
+  bool WalletGreen::hasUnverifiedSubaddressOutputs(const Crypto::Hash &transactionHash) const
+  {
+    throwIfNotInitialized();
+    for (const auto &wallet : m_walletsContainer.get<RandomAccessIndex>())
+    {
+      if (!isV2SubAddress(wallet) || wallet.container == nullptr)
+      {
+        continue;
+      }
+      for (const auto &output : wallet.container->getTransactionOutputs(transactionHash, ITransfersContainer::IncludeAll))
+      {
+        if (output.janusUnverified)
+        {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  bool WalletGreen::isV2SubAddress(const WalletRecord &record)
+  {
+    return record.isSubAddress && record.subaddrVersion == Crypto::SUBADDRESS_VERSION_V2;
+  }
+
+  Crypto::PublicKey WalletGreen::viewPublicKeyFor(const WalletRecord &record) const
+  {
+    if (!isV2SubAddress(record))
+    {
+      return m_viewPublicKey;
+    }
+    const WalletRecord &primary = m_walletsContainer.get<RandomAccessIndex>()[0];
+    return Crypto::deriveSubAddressKeysV2(m_viewSecretKey, primary.spendPublicKey, nullptr,
+                                          record.subaddrMajor, record.subaddrMinor).viewPublicKey;
+  }
+
+  AccountPublicAddress WalletGreen::standardDerivationAddressFor(const WalletRecord &record) const
+  {
+    const WalletRecord &receiver = isV2SubAddress(record) ? m_walletsContainer.get<RandomAccessIndex>()[0] : record;
+    return AccountPublicAddress{receiver.spendPublicKey, m_viewPublicKey};
+  }
+
+  std::string WalletGreen::addressStringFor(const WalletRecord &record) const
+  {
+    const AccountPublicAddress address{record.spendPublicKey, viewPublicKeyFor(record)};
+    return isV2SubAddress(record) ? m_currency.subAddressAsString(address)
+                                  : m_currency.accountAddressAsString(address);
   }
 
   KeyPair WalletGreen::getAddressSpendKey(size_t index) const
@@ -3462,7 +3577,7 @@ namespace CryptoNote
         for (auto &addressData : addressDataList)
         {
           assert(addressData.creationTimestamp <= std::numeric_limits<uint64_t>::max() - m_currency.blockFutureTimeLimit());
-          std::string address = addWallet(addressData.spendPublicKey, addressData.spendSecretKey, addressData.creationTimestamp);
+          std::string address = addWallet(addressData);
           m_logger(INFO, BRIGHT_WHITE) << "New wallet added " << address << ", creation timestamp " << addressData.creationTimestamp;
           addresses.push_back(std::move(address));
 
@@ -3494,18 +3609,24 @@ namespace CryptoNote
 
   std::string WalletGreen::doCreateAddress(const Crypto::PublicKey &spendPublicKey, const Crypto::SecretKey &spendSecretKey, uint64_t creationTimestamp)
   {
-    assert(creationTimestamp <= std::numeric_limits<uint64_t>::max() - m_currency.blockFutureTimeLimit());
+    return doCreateAddress(NewAddressData{spendPublicKey, spendSecretKey, creationTimestamp});
+  }
 
-    std::vector<NewAddressData> addressDataList;
-    addressDataList.push_back(NewAddressData{spendPublicKey, spendSecretKey, creationTimestamp});
-    std::vector<std::string> addresses = doCreateAddressList(addressDataList);
+  std::string WalletGreen::doCreateAddress(const NewAddressData &addressData)
+  {
+    assert(addressData.creationTimestamp <= std::numeric_limits<uint64_t>::max() - m_currency.blockFutureTimeLimit());
+
+    std::vector<std::string> addresses = doCreateAddressList({addressData});
     assert(addresses.size() == 1);
 
     return addresses.front();
   }
 
-  std::string WalletGreen::addWallet(const Crypto::PublicKey &spendPublicKey, const Crypto::SecretKey &spendSecretKey, uint64_t creationTimestamp)
+  std::string WalletGreen::addWallet(const NewAddressData &addressData)
   {
+    const Crypto::PublicKey &spendPublicKey = addressData.spendPublicKey;
+    const Crypto::SecretKey &spendSecretKey = addressData.spendSecretKey;
+    const uint64_t creationTimestamp = addressData.creationTimestamp;
     auto &index = m_walletsContainer.get<KeysIndex>();
 
     auto trackingMode = getTrackingMode();
@@ -3527,10 +3648,20 @@ namespace CryptoNote
     m_containerStorage.push_back(encryptKeyPair(spendPublicKey, spendSecretKey, creationTimestamp));
     incNextIv();
 
+    WalletRecord wallet;
+    wallet.spendPublicKey = spendPublicKey;
+    wallet.spendSecretKey = spendSecretKey;
+    wallet.creationTimestamp = static_cast<time_t>(creationTimestamp);
+    wallet.isSubAddress = addressData.isSubAddress;
+    wallet.subaddrMajor = addressData.subaddrMajor;
+    wallet.subaddrMinor = addressData.subaddrMinor;
+    wallet.subaddrVersion = addressData.subaddrVersion;
+
     try
     {
       AccountSubscription sub;
       sub.keys.address.viewPublicKey = m_viewPublicKey;
+      sub.janusCheckRequired = isV2SubAddress(wallet);
       sub.keys.address.spendPublicKey = spendPublicKey;
       sub.keys.viewSecretKey = m_viewSecretKey;
       sub.keys.spendSecretKey = spendSecretKey;
@@ -3539,16 +3670,10 @@ namespace CryptoNote
       sub.syncStart.timestamp = std::max(creationTimestamp, ACCOUNT_CREATE_TIME_ACCURACY) - ACCOUNT_CREATE_TIME_ACCURACY;
 
       auto &trSubscription = m_synchronizer.addSubscription(sub);
-      ITransfersContainer *container = &trSubscription.getContainer();
-
-      WalletRecord wallet;
-      wallet.spendPublicKey = spendPublicKey;
-      wallet.spendSecretKey = spendSecretKey;
-      wallet.container = container;
-      wallet.creationTimestamp = static_cast<time_t>(creationTimestamp);
+      wallet.container = &trSubscription.getContainer();
       trSubscription.addObserver(this);
 
-      index.insert(insertIt, std::move(wallet));
+      auto inserted = index.insert(insertIt, std::move(wallet));
       m_logger(DEBUGGING) << "Wallet count " << m_walletsContainer.size();
 
       if (index.size() == 1)
@@ -3557,7 +3682,7 @@ namespace CryptoNote
         initBlockchain(m_viewPublicKey);
       }
 
-      auto address = m_currency.accountAddressAsString({spendPublicKey, m_viewPublicKey});
+      auto address = addressStringFor(*inserted);
       m_logger(DEBUGGING) << "Wallet added " << address << ", creation timestamp " << creationTimestamp;
       return address;
     }
@@ -3597,7 +3722,7 @@ namespace CryptoNote
     const Crypto::SecretKey* spendSec = (primary.spendSecretKey != NULL_SECRET_KEY)
                                         ? &primary.spendSecretKey : nullptr;
 
-    Crypto::SubAddressKeys subKeys = Crypto::deriveSubAddressKeys(
+    Crypto::SubAddressKeys subKeys = Crypto::deriveSubAddressKeysV2(
         m_viewSecretKey,
         primary.spendPublicKey,
         spendSec,
@@ -3607,26 +3732,15 @@ namespace CryptoNote
       creationTimestamp = static_cast<uint64_t>(time(nullptr));
     }
 
-    // Register the sub-address spend key as a new wallet entry (reuses multi-wallet infrastructure).
     // The sub spend secret key (b_ij = b + m) is stored so spending works automatically.
-    std::string addr = doCreateAddress(subKeys.spendPublicKey,
-                                       subKeys.hasSpendSecretKey ? subKeys.spendSecretKey : NULL_SECRET_KEY,
-                                       creationTimestamp);
-
-    // Tag the newly-created wallet record with its sub-address index.
-    auto& index = m_walletsContainer.get<KeysIndex>();
-    auto it = index.find(subKeys.spendPublicKey);
-    if (it != index.end()) {
-      index.modify(it, [major, minor](WalletRecord& w) {
-        w.isSubAddress  = true;
-        w.subaddrMajor  = major;
-        w.subaddrMinor  = minor;
-      });
-    }
-
-    // Return address string with sub-address prefix.
-    AccountPublicAddress subAddr{subKeys.spendPublicKey, subKeys.viewPublicKey};
-    return m_currency.subAddressAsString(subAddr);
+    NewAddressData subaddress{subKeys.spendPublicKey,
+                              subKeys.hasSpendSecretKey ? subKeys.spendSecretKey : NULL_SECRET_KEY,
+                              creationTimestamp};
+    subaddress.isSubAddress = true;
+    subaddress.subaddrMajor = major;
+    subaddress.subaddrMinor = minor;
+    subaddress.subaddrVersion = Crypto::SUBADDRESS_VERSION_V2;
+    return doCreateAddress(subaddress);
   }
 
   std::vector<std::tuple<uint32_t, uint32_t, std::string>> WalletGreen::listSubAddresses() const
@@ -3636,17 +3750,7 @@ namespace CryptoNote
     std::vector<std::tuple<uint32_t, uint32_t, std::string>> result;
     for (const auto& w : m_walletsContainer.get<RandomAccessIndex>()) {
       if (!w.isSubAddress) continue;
-      // Reconstruct sub view public key: C_ij = a * D_ij
-      // We use generate_key_derivation which does cofactor-multiply internally,
-      // so we instead derive via deriveSubAddressKeys (view-only, no spend secret needed).
-      Crypto::SubAddressKeys subKeys = Crypto::deriveSubAddressKeys(
-          m_viewSecretKey,
-          m_walletsContainer.get<RandomAccessIndex>()[0].spendPublicKey,
-          nullptr,
-          w.subaddrMajor, w.subaddrMinor);
-      AccountPublicAddress subAddr{w.spendPublicKey, subKeys.viewPublicKey};
-      std::string addrStr = m_currency.subAddressAsString(subAddr);
-      result.emplace_back(w.subaddrMajor, w.subaddrMinor, addrStr);
+      result.emplace_back(w.subaddrMajor, w.subaddrMinor, addressStringFor(w));
     }
     return result;
   }
@@ -3666,14 +3770,17 @@ namespace CryptoNote
 
     stopBlockchainSynchronizer();
 
+    const std::string recordAddress = addressStringFor(*it);
+    const AccountPublicAddress subscriptionAddress{it->spendPublicKey, m_viewPublicKey};
+
     m_actualBalance -= it->actualBalance;
     m_pendingBalance -= it->pendingBalance;
 
-    m_synchronizer.removeSubscription(pubAddr);
+    m_synchronizer.removeSubscription(subscriptionAddress);
 
     deleteContainerFromUnlockTransactionJobs(it->container);
     std::vector<size_t> deletedTransactions;
-    std::vector<size_t> updatedTransactions = deleteTransfersForAddress(address, deletedTransactions);
+    std::vector<size_t> updatedTransactions = deleteTransfersForAddress(recordAddress, deletedTransactions);
     deleteFromUncommitedTransactions(deletedTransactions);
 
     m_walletsContainer.get<KeysIndex>().erase(it);
@@ -3921,11 +4028,13 @@ namespace CryptoNote
     {
       WalletTransfer changeTransfer;
       changeTransfer.type = WalletTransferType::CHANGE;
-      changeTransfer.address = m_currency.accountAddressAsString(changeDestination);
+      const bool changeToSubaddress = isOwnV2SubAddress(changeDestination);
+      changeTransfer.address = changeToSubaddress ? m_currency.subAddressAsString(changeDestination)
+                                                  : m_currency.accountAddressAsString(changeDestination);
       changeTransfer.amount = static_cast<int64_t>(preparedTransaction.changeAmount);
       preparedTransaction.destinations.emplace_back(std::move(changeTransfer));
 
-      auto splittedChange = splitAmount(preparedTransaction.changeAmount, changeDestination, m_currency.defaultDustThreshold());
+      auto splittedChange = splitAmount(preparedTransaction.changeAmount, changeDestination, m_currency.defaultDustThreshold(), changeToSubaddress);
       decomposedOutputs.emplace_back(std::move(splittedChange));
     }
 
@@ -4393,8 +4502,7 @@ namespace CryptoNote
     int64_t myOutputsAmount = 0;
     for (auto containerAmount : containerAmountsList)
     {
-      AccountPublicAddress address{getWalletRecord(containerAmount.container).spendPublicKey, m_viewPublicKey};
-      std::string addressString = m_currency.accountAddressAsString(address);
+      std::string addressString = addressStringFor(getWalletRecord(containerAmount.container));
 
       updated |= updateAddressTransfers(transactionId, firstTransferIdx, addressString, initialTransfers[addressString].input, containerAmount.amounts.input);
       updated |= updateAddressTransfers(transactionId, firstTransferIdx, addressString, initialTransfers[addressString].output, containerAmount.amounts.output);
@@ -4622,10 +4730,40 @@ namespace CryptoNote
     tx->getTransactionSecretKey(transactionSK);
     Crypto::PublicKey publicKey = tx->getTransactionPublicKey();
     CryptoNote::KeyPair kp = {publicKey, transactionSK};
+
+    struct AmountToAddress {
+      const AccountPublicAddress *address;
+      uint64_t amount;
+      bool isSubaddress;
+    };
+    std::vector<AmountToAddress> amountsToAddresses;
+    for (const auto &output : decomposedOutputs)
+    {
+      for (auto amount : output.amounts)
+      {
+        amountsToAddresses.push_back(AmountToAddress{&output.receiver, amount, output.isSubaddress});
+      }
+    }
+
+    std::shuffle(amountsToAddresses.begin(), amountsToAddresses.end(), std::default_random_engine{Crypto::rand<std::default_random_engine::result_type>()});
+    std::sort(amountsToAddresses.begin(), amountsToAddresses.end(), [](const AmountToAddress &left, const AmountToAddress &right) {
+      return left.amount < right.amount;
+    });
+
+    for (const auto &amountToAddress : amountsToAddresses)
+    {
+      tx->addOutput(amountToAddress.amount, *amountToAddress.address, amountToAddress.isSubaddress);
+    }
+
+    // Messages are encrypted against the main tx key above, so they must be
+    // appended after the outputs: addOutput() rewrites the serialized extra
+    // when it publishes per-output additional pubkeys, and appending first
+    // would drop the message tags.
     for (size_t i = 0; i < messages.size(); ++i)
     {
       CryptoNote::AccountPublicAddress addressBin;
-      if (!m_currency.parseAccountAddressString(messages[i].address, addressBin))
+      bool isSubaddress = false;
+      if (!m_currency.parseAccountAddressString(messages[i].address, addressBin, isSubaddress))
         continue;
       CryptoNote::tx_extra_message tag;
       if (!tag.encrypt(i, messages[i].message, &addressBin, kp))
@@ -4634,26 +4772,6 @@ namespace CryptoNote
       toBinaryArray(tag, ba);
       ba.insert(ba.begin(), TX_EXTRA_MESSAGE_TAG);
       tx->appendExtra(ba);
-    }
-
-    typedef std::pair<const AccountPublicAddress *, uint64_t> AmountToAddress;
-    std::vector<AmountToAddress> amountsToAddresses;
-    for (const auto &output : decomposedOutputs)
-    {
-      for (auto amount : output.amounts)
-      {
-        amountsToAddresses.emplace_back(AmountToAddress{&output.receiver, amount});
-      }
-    }
-
-    std::shuffle(amountsToAddresses.begin(), amountsToAddresses.end(), std::default_random_engine{Crypto::rand<std::default_random_engine::result_type>()});
-    std::sort(amountsToAddresses.begin(), amountsToAddresses.end(), [](const AmountToAddress &left, const AmountToAddress &right) {
-      return left.second < right.second;
-    });
-
-    for (const auto &amountToAddress : amountsToAddresses)
-    {
-      tx->addOutput(amountToAddress.second, *amountToAddress.first);
     }
 
     tx->setUnlockTime(unlockTimestamp);
@@ -4921,8 +5039,9 @@ namespace CryptoNote
     for (const auto &destination : destinations)
     {
       AccountPublicAddress address;
-      parseAddressString(destination.address, currency, address);
-      decomposedOutputs.push_back(splitAmount(destination.amount, address, dustThreshold));
+      bool isSubaddress = false;
+      parseAddressString(destination.address, currency, address, isSubaddress);
+      decomposedOutputs.push_back(splitAmount(destination.amount, address, dustThreshold, isSubaddress));
     }
 
     return decomposedOutputs;
@@ -4931,12 +5050,14 @@ namespace CryptoNote
   CryptoNote::WalletGreen::ReceiverAmounts WalletGreen::splitAmount(
       uint64_t amount,
       const AccountPublicAddress &destination,
-      uint64_t dustThreshold)
+      uint64_t dustThreshold,
+      bool isSubaddress)
   {
 
     ReceiverAmounts receiverAmounts;
 
     receiverAmounts.receiver = destination;
+    receiverAmounts.isSubaddress = isSubaddress;
     decomposeAmount(amount, dustThreshold, receiverAmounts.amounts);
     return receiverAmounts;
   }
@@ -5777,7 +5898,7 @@ namespace CryptoNote
 
       /* Keep the logging to debugging */
       m_logger(DEBUGGING, BRIGHT_WHITE) << "Wallet balance updated, address "
-                                        << m_currency.accountAddressAsString({it->spendPublicKey, m_viewPublicKey})
+                                        << addressStringFor(*it)
                                         << ", actual " << m_currency.formatAmount(it->actualBalance) << ", pending "
                                         << m_currency.formatAmount(it->pendingBalance);
       m_logger(DEBUGGING, BRIGHT_WHITE) << "Container balance updated, actual "
@@ -5819,8 +5940,9 @@ namespace CryptoNote
   CryptoNote::AccountPublicAddress WalletGreen::parseAddress(const std::string &address) const
   {
     CryptoNote::AccountPublicAddress pubAddr;
+    bool isSubaddress = false;
 
-    if (!m_currency.parseAccountAddressString(address, pubAddr))
+    if (!m_currency.parseAccountAddressString(address, pubAddr, isSubaddress))
     {
       throw std::system_error(make_error_code(error::BAD_ADDRESS));
     }
@@ -6030,6 +6152,7 @@ namespace CryptoNote
       //transactionAmount = inputsAmount;
 
       ReceiverAmounts decomposedOutputs = decomposeFusionOutputs(destination, inputsAmount);
+      decomposedOutputs.isSubaddress = isOwnV2SubAddress(destination);
       assert(decomposedOutputs.amounts.size() <= MAX_FUSION_OUTPUT_COUNT);
 
       Crypto::SecretKey txkey;
@@ -6455,7 +6578,7 @@ namespace CryptoNote
   {
     if (!changeDestinationAddress.empty())
     {
-      return parseAccountAddressString(changeDestinationAddress, m_currency);
+      return ownReceivingAddress(changeDestinationAddress);
     }
 
     if (m_walletsContainer.size() == 1)
@@ -6464,13 +6587,54 @@ namespace CryptoNote
     }
 
     assert(sourceAddresses.size() == 1 && isMyAddress(sourceAddresses[0]));
-    return parseAccountAddressString(sourceAddresses[0], m_currency);
+    return ownReceivingAddress(sourceAddresses[0]);
+  }
+
+  AccountPublicAddress WalletGreen::ownReceivingAddress(const std::string &addressString) const
+  {
+    const auto &index = m_walletsContainer.get<KeysIndex>();
+    auto it = index.find(parseAddress(addressString).spendPublicKey);
+    if (it == index.end())
+    {
+      throw std::system_error(make_error_code(error::OBJECT_NOT_FOUND));
+    }
+    return AccountPublicAddress{it->spendPublicKey, viewPublicKeyFor(*it)};
+  }
+
+  bool WalletGreen::isOwnV2SubAddress(const AccountPublicAddress &address) const
+  {
+    const auto &index = m_walletsContainer.get<KeysIndex>();
+    auto it = index.find(address.spendPublicKey);
+    return it != index.end() && isV2SubAddress(*it) && address.viewPublicKey == viewPublicKeyFor(*it);
   }
 
   bool WalletGreen::isMyAddress(const std::string &addressString) const
   {
-    CryptoNote::AccountPublicAddress address = parseAccountAddressString(addressString, m_currency);
-    return m_viewPublicKey == address.viewPublicKey && m_walletsContainer.get<KeysIndex>().count(address.spendPublicKey) != 0;
+    bool isSubaddress = false;
+    CryptoNote::AccountPublicAddress address = parseAccountAddressString(addressString, m_currency, isSubaddress);
+
+    const auto &index = m_walletsContainer.get<KeysIndex>();
+    auto it = index.find(address.spendPublicKey);
+    if (it == index.end())
+    {
+      return false;
+    }
+
+    return isSubaddress == isV2SubAddress(*it) && address.viewPublicKey == viewPublicKeyFor(*it);
+  }
+
+  Crypto::PublicKey WalletGreen::expectedViewPublicKey(const Crypto::PublicKey &spendPublicKey, bool isSubaddress) const
+  {
+    if (!isSubaddress)
+    {
+      return m_viewPublicKey;
+    }
+    Crypto::PublicKey subaddressView;
+    if (!Crypto::scalarmultKeyNoCofactor(spendPublicKey, m_viewSecretKey, subaddressView))
+    {
+      throw std::system_error(make_error_code(error::BAD_ADDRESS));
+    }
+    return subaddressView;
   }
 
   void WalletGreen::deleteContainerFromUnlockTransactionJobs(const ITransfersContainer *container)
@@ -6756,7 +6920,6 @@ namespace CryptoNote
       if (wallets.empty()) {
         return make_error_code(std::errc::not_connected);
       }
-      const WalletRecord& primary = wallets[0];
 
       // Pick a random non-zero major index (minor=0).
       // Each registration gets a unique sub-address; never (0,0).
@@ -6773,14 +6936,11 @@ namespace CryptoNote
         if (major == 0) major = 1;
       }
 
-      const Crypto::SecretKey* spendSec = (primary.spendSecretKey != NULL_SECRET_KEY)
-                                          ? &primary.spendSecretKey : nullptr;
-
-      Crypto::SubAddressKeys subKeys = Crypto::deriveSubAddressKeys(
-        m_viewSecretKey, primary.spendPublicKey, spendSec, major, minor);
-
-      CryptoNote::AccountPublicAddress subAddr{subKeys.spendPublicKey, subKeys.viewPublicKey};
-      aliasReg.ownerAddress = m_currency.subAddressAsString(subAddr);
+      try {
+        aliasReg.ownerAddress = createSubAddress(major, minor, 0);
+      } catch (const std::system_error& e) {
+        return e.code();
+      }
     }
 
     aliasReg.aliasType = 1;      // Regular user alias [a-z0-9&]

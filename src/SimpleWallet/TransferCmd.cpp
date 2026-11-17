@@ -95,7 +95,8 @@ namespace CryptoNote
           CryptoNote::TransactionDestinationEntry de;
           std::string aliasUrl;
 
-          if (!m_currency.parseAccountAddressString(arg, de.addr))
+          bool isSubaddress = false;
+          if (!m_currency.parseAccountAddressString(arg, de.addr, isSubaddress))
             aliasUrl = arg;
 
           auto value = ar.next();

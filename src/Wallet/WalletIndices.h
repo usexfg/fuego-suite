@@ -54,6 +54,7 @@ namespace CryptoNote
         uint32_t subaddrMajor = 0;
         uint32_t subaddrMinor = 0;
         bool isSubAddress = false;
+        uint8_t subaddrVersion = 0;
     };
 
 #pragma pack(push, 1)
@@ -101,8 +102,9 @@ struct EncryptedWalletRecord {
             boost::multi_index::random_access<boost::multi_index::tag<RandomAccessIndex>>,
             boost::multi_index::hashed_unique<boost::multi_index::tag<KeysIndex>,
                                               BOOST_MULTI_INDEX_MEMBER(WalletRecord, Crypto::PublicKey, spendPublicKey)>,
-            boost::multi_index::hashed_unique<boost::multi_index::tag<TransfersContainerIndex>,
-                                              BOOST_MULTI_INDEX_MEMBER(WalletRecord, CryptoNote::ITransfersContainer *, container)>>>
+            // Non-unique: records loaded from storage have no container until they are subscribed.
+            boost::multi_index::hashed_non_unique<boost::multi_index::tag<TransfersContainerIndex>,
+                                                  BOOST_MULTI_INDEX_MEMBER(WalletRecord, CryptoNote::ITransfersContainer *, container)>>>
         WalletsContainer;
 
     struct UnlockTransactionJob

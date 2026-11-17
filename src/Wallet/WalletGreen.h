@@ -128,6 +128,14 @@ public:
   // otherwise returns false).
   bool getAliasByAddress(const std::string& address, std::string& aliasOut);
 
+  // Sub-address support.
+  // Creates a deterministic receive address at index (major, minor).
+  // Derived from master spend+view keys; outputs sent to this address appear in wallet balance.
+  // Spending from sub-address outputs uses the derived spend secret b_ij = b + m automatically.
+  // Do not use index (0,0) — that is the primary address.
+  std::string createSubAddress(uint32_t major, uint32_t minor, uint64_t creationTimestamp = 0);
+  std::vector<std::tuple<uint32_t, uint32_t, std::string>> listSubAddresses() const;
+
 private:
 
 
@@ -155,14 +163,6 @@ private:
   virtual std::string createAddress(const Crypto::PublicKey &spendPublicKey) override;
   virtual std::vector<std::string> createAddressList(const std::vector<Crypto::SecretKey> &spendSecretKeys, bool reset = true) override;
 
-  // Sub-address support.
-  // Creates a deterministic receive address at index (major, minor).
-  // Derived from master spend+view keys; outputs sent to this address appear in wallet balance.
-  // Spending from sub-address outputs uses the derived spend secret b_ij = b + m automatically.
-  // Do not use index (0,0) — that is the primary address.
-  std::string createSubAddress(uint32_t major, uint32_t minor, uint64_t creationTimestamp = 0);
-  std::vector<std::tuple<uint32_t, uint32_t, std::string>> listSubAddresses() const;
-
   virtual void deleteAddress(const std::string &address) override;
 
   virtual uint64_t getActualBalance() const override;
@@ -179,6 +179,7 @@ private:
 
   virtual size_t getTransactionCount() const override;
   virtual WalletTransaction getTransaction(size_t transactionIndex) const override;
+  virtual bool hasUnverifiedSubaddressOutputs(const Crypto::Hash &transactionHash) const override;
   virtual Deposit getDeposit(size_t bankingIndex) const override;
   virtual size_t getTransactionTransferCount(size_t transactionIndex) const override;
   virtual WalletTransfer getTransactionTransfer(size_t transactionIndex, size_t transferIndex) const override;
@@ -224,6 +225,10 @@ protected:
     Crypto::PublicKey spendPublicKey;
     Crypto::SecretKey spendSecretKey;
     uint64_t creationTimestamp;
+    bool isSubAddress = false;
+    uint32_t subaddrMajor = 0;
+    uint32_t subaddrMinor = 0;
+    uint8_t subaddrVersion = 0;
   };
 
   void throwIfNotInitialized() const;
@@ -269,6 +274,7 @@ protected:
   void incNextIv();
   void initWithKeys(const std::string& path, const std::string& password, const Crypto::PublicKey& viewPublicKey, const Crypto::SecretKey& viewSecretKey);
   std::string doCreateAddress(const Crypto::PublicKey &spendPublicKey, const Crypto::SecretKey &spendSecretKey, uint64_t creationTimestamp);
+  std::string doCreateAddress(const NewAddressData &addressData);
   std::vector<std::string> doCreateAddressList(const std::vector<NewAddressData> &addressDataList);
   Crypto::SecretKey getTransactionDeterministicSecretKey(Crypto::Hash &transactionHash) const;
 
@@ -292,6 +298,7 @@ protected:
   {
     CryptoNote::AccountPublicAddress receiver;
     std::vector<uint64_t> amounts;
+    bool isSubaddress = false;
   };
 
   struct WalletOuts
@@ -364,7 +371,8 @@ protected:
   const WalletRecord &getWalletRecord(CryptoNote::ITransfersContainer *container) const;
 
   CryptoNote::AccountPublicAddress parseAddress(const std::string &address) const;
-  std::string addWallet(const Crypto::PublicKey &spendPublicKey, const Crypto::SecretKey &spendSecretKey, uint64_t creationTimestamp);
+  std::string addWallet(const NewAddressData &addressData);
+  void applySubaddressJanusPolicy();
   AccountKeys makeAccountKeys(const WalletRecord &wallet) const;
   size_t getTransactionId(const Crypto::Hash &transactionHash) const;
   size_t getDepositId(const Crypto::Hash &transactionHash) const;
@@ -446,7 +454,7 @@ protected:
 
   std::vector<ReceiverAmounts> splitDestinations(const std::vector<WalletTransfer> &destinations,
                                                  uint64_t dustThreshold, const Currency &currency);
-  ReceiverAmounts splitAmount(uint64_t amount, const AccountPublicAddress &destination, uint64_t dustThreshold);
+  ReceiverAmounts splitAmount(uint64_t amount, const AccountPublicAddress &destination, uint64_t dustThreshold, bool isSubaddress = false);
 
   std::unique_ptr<CryptoNote::ITransaction> makeTransaction(const std::vector<ReceiverAmounts> &decomposedOutputs,
                                                             std::vector<InputInfo> &keysInfo, const std::vector<WalletMessage> &messages, const std::string &extra, uint64_t unlockTimestamp, Crypto::SecretKey &transactionSK);
@@ -526,6 +534,13 @@ protected:
   void getViewKeyKnownBlocks(const Crypto::PublicKey &viewPublicKey);
   CryptoNote::AccountPublicAddress getChangeDestination(const std::string &changeDestinationAddress, const std::vector<std::string> &sourceAddresses) const;
   bool isMyAddress(const std::string &address) const;
+  Crypto::PublicKey expectedViewPublicKey(const Crypto::PublicKey &spendPublicKey, bool isSubaddress) const;
+  static bool isV2SubAddress(const WalletRecord &record);
+  Crypto::PublicKey viewPublicKeyFor(const WalletRecord &record) const;
+  std::string addressStringFor(const WalletRecord &record) const;
+  AccountPublicAddress standardDerivationAddressFor(const WalletRecord &record) const;
+  AccountPublicAddress ownReceivingAddress(const std::string &addressString) const;
+  bool isOwnV2SubAddress(const AccountPublicAddress &address) const;
 
   void deleteContainerFromUnlockTransactionJobs(const ITransfersContainer *container);
   std::vector<size_t> deleteTransfersForAddress(const std::string &address, std::vector<size_t> &deletedTransactions);

@@ -114,26 +114,52 @@ TEST_F(CommitmentPersistence, CommitKeySurvivesSaveAndLoad) {
   EXPECT_EQ(TransactionTypes::OutputType::Commitment, out.type);
 }
 
-// A cache written before storage version 2 has no commit key. Build a genuine v1
-// stream by taking the v2 bytes, excising the 32-byte key, and patching the version.
+// A cache written before storage version 2 has no commit key, and one written before
+// version 3 has no Janus flag (the byte that follows the commit key). Build genuine older
+// streams from the current bytes by excising those fields and patching the version.
+std::string olderContainerStream(const std::string& current, const Crypto::PublicKey& commitKey, uint8_t version) {
+  std::string bytes = current;
+  const std::string needle(reinterpret_cast<const char*>(commitKey.data), sizeof(commitKey.data));
+  const size_t pos = bytes.find(needle);
+  EXPECT_NE(std::string::npos, pos) << "the stream must contain the commit key";
+  EXPECT_EQ(std::string::npos, bytes.find(needle, pos + 1)) << "the key must appear exactly once";
+  EXPECT_EQ(3, static_cast<unsigned char>(bytes[0])) << "first byte is the storage version";
+  EXPECT_EQ(0, bytes[pos + needle.size()]) << "the Janus flag follows the commit key";
+  bytes.erase(pos + needle.size(), 1);
+  if (version < 2) {
+    bytes.erase(pos, needle.size());
+  }
+  bytes[0] = static_cast<char>(version);
+  return bytes;
+}
+
+TEST_F(CommitmentPersistence, Version2CacheStillLoadsWithItsCommitKey) {
+  const Crypto::PublicKey commitKey = patternKey(5);
+  auto tx = addCommitmentTransaction(commitKey, patternImage(5));
+  const Crypto::Hash txHash = tx->getTransactionHash();
+
+  std::stringstream current;
+  container.save(current);
+  std::stringstream v2(olderContainerStream(current.str(), commitKey, 2));
+  TransfersContainer restored(currency, kSpendableAge);
+  restored.load(v2);
+
+  TransactionOutputInformation out;
+  ITransfersContainer::TransferState state;
+  ASSERT_TRUE(restored.getTransfer(txHash, 0, out, state));
+  EXPECT_EQ(commitKey, out.commitmentKey);
+  EXPECT_FALSE(out.janusUnverified);
+  EXPECT_EQ(kAmount, out.amount);
+}
+
 TEST_F(CommitmentPersistence, Version1CacheStillLoadsAndReportsKeyNotRecorded) {
   const Crypto::PublicKey commitKey = patternKey(2);
   auto tx = addCommitmentTransaction(commitKey, patternImage(2));
   const Crypto::Hash txHash = tx->getTransactionHash();
 
-  std::stringstream v2;
-  container.save(v2);
-  std::string bytes = v2.str();
-
-  const std::string needle(reinterpret_cast<const char*>(commitKey.data), sizeof(commitKey.data));
-  const size_t pos = bytes.find(needle);
-  ASSERT_NE(std::string::npos, pos) << "v2 stream must contain the commit key";
-  ASSERT_EQ(std::string::npos, bytes.find(needle, pos + 1)) << "the key must appear exactly once";
-  bytes.erase(pos, needle.size());
-  ASSERT_EQ(2, static_cast<unsigned char>(bytes[0])) << "first byte is the storage version";
-  bytes[0] = 1;
-
-  std::stringstream v1(bytes);
+  std::stringstream current;
+  container.save(current);
+  std::stringstream v1(olderContainerStream(current.str(), commitKey, 1));
   TransfersContainer restored(currency, kSpendableAge);
   restored.load(v1);
 
@@ -175,8 +201,8 @@ TEST(CommitmentPersistenceRecords, SpentOutputKeepsCommitKey) {
   EXPECT_EQ(spent.inputInTransaction, back.inputInTransaction);
 }
 
-// Only Commitment records changed layout. A Key output must serialize to exactly the
-// same bytes under v1 and v2, or every existing wallet cache would misparse.
+// Version 2 changed only Commitment records: a Key output serializes to the same bytes under
+// v1 and v2. Version 3 appends the Janus flag byte to every record, read back by version.
 TEST(CommitmentPersistenceRecords, KeyOutputLayoutIsUnchanged) {
   TransactionOutputInformationEx key{};
   key.type = TransactionTypes::OutputType::Key;
@@ -185,18 +211,21 @@ TEST(CommitmentPersistenceRecords, KeyOutputLayoutIsUnchanged) {
   key.outputKey = patternKey(4);
   key.keyImage = patternImage(4);
 
-  auto bytesOf = [](bool v1, TransactionOutputInformationEx value) {
+  auto bytesOf = [](int version, TransactionOutputInformationEx value) {
     std::stringstream stream;
     Common::StdOutputStream out(stream);
     BinaryOutputStreamSerializer writer(out);
-    if (v1) {
+    if (version == 1) {
       value.serializeV1(writer);
+    } else if (version == 2) {
+      value.serializeV2(writer);
     } else {
       value.serialize(writer);
     }
     return stream.str();
   };
-  EXPECT_EQ(bytesOf(true, key), bytesOf(false, key));
+  EXPECT_EQ(bytesOf(1, key), bytesOf(2, key));
+  EXPECT_EQ(bytesOf(1, key) + std::string(1, '\0'), bytesOf(3, key));
 }
 
 // The v1 reader zero-initialises: readSequence default-constructs, so without this the

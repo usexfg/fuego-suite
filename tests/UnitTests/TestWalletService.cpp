@@ -64,6 +64,7 @@ struct IWalletBaseStub : public CryptoNote::IWallet {
 
   virtual size_t getTransactionCount() const override { return 0; }
   virtual WalletTransaction getTransaction(size_t transactionIndex) const override { return WalletTransaction(); }
+  virtual bool hasUnverifiedSubaddressOutputs(const Crypto::Hash &transactionHash) const override { return false; }
   virtual size_t getTransactionTransferCount(size_t transactionIndex) const override { return 0; }
   virtual WalletTransfer getTransactionTransfer(size_t transactionIndex, size_t transferIndex) const override { return WalletTransfer(); }
 

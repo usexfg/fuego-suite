@@ -20,14 +20,17 @@
 
 #include <numeric>
 #include <future>
+#include <cstring>
 
 #include "CommonTypes.h"
 #include "Common/StringTools.h"
 #include "Common/BlockingQueue.h"
 #include "CryptoNoteCore/CryptoNoteFormatUtils.h"
 #include "CryptoNoteCore/TransactionApi.h"
+#include "CryptoNoteCore/SubaddressTx.h"
 #include "CryptoNoteCore/TransactionExtra.h"
 #include "CryptoNoteConfig.h"
+#include "crypto/subaddress.h"
 
 #include "IWallet.h"
 #include "INode.h"
@@ -45,84 +48,115 @@ namespace {
 
 using namespace CryptoNote;
 
-void checkOutputKey(
+struct MatchedOutput {
+  uint32_t outputIndex;
+  PublicKey txPublicKey;
+  bool viaAdditionalKey;
+};
+
+using MatchedOutputs = std::unordered_map<PublicKey, std::vector<MatchedOutput>>;
+
+bool matchOutputKey(
   const KeyDerivation& derivation,
   const PublicKey& key,
-  size_t keyIndex,
-  size_t outputIndex,
+  const MatchedOutput& match,
   const std::unordered_set<PublicKey>& spendKeys,
-  std::unordered_map<PublicKey, std::vector<uint32_t>>& outputs) {
+  MatchedOutputs& outputs) {
 
   PublicKey spendKey;
-  underive_public_key(derivation, keyIndex, key, spendKey);
+  underive_public_key(derivation, match.outputIndex, key, spendKey);
 
-  if (spendKeys.find(spendKey) != spendKeys.end()) {
-    outputs[spendKey].push_back(static_cast<uint32_t>(outputIndex));
+  if (spendKeys.find(spendKey) == spendKeys.end()) {
+    return false;
   }
-
+  outputs[spendKey].push_back(match);
+  return true;
 }
 
+bool matchOutput(
+  const ITransactionReader& tx,
+  const KeyDerivation& derivation,
+  const MatchedOutput& match,
+  const std::unordered_set<PublicKey>& spendKeys,
+  MatchedOutputs& outputs) {
+
+  const size_t idx = match.outputIndex;
+  const auto outType = tx.getOutputType(idx);
+  uint64_t amount;
+
+  if (outType == TransactionTypes::OutputType::Key) {
+    KeyOutput out;
+    tx.getOutput(idx, out, amount);
+    return matchOutputKey(derivation, out.key, match, spendKeys, outputs);
+  }
+
+  if (outType == TransactionTypes::OutputType::Multisignature) {
+    MultisignatureOutput out;
+    tx.getOutput(idx, out, amount);
+    bool matched = false;
+    for (const auto& key : out.keys) {
+      matched = matchOutputKey(derivation, key, match, spendKeys, outputs) || matched;
+    }
+    return matched;
+  }
+
+  if (outType == TransactionTypes::OutputType::Commitment) {
+    TransactionOutputCommitment out;
+    tx.getOutput(idx, out, amount);
+    // matchOwnerBoundCommitKey finds WHICH spend key re-derives the output key, and
+    // reports a recovered key that does not re-derive it as ambiguous.
+    Crypto::PublicKey matchedSpendKey;
+    bool ambiguous = false;
+    if (CryptoNote::matchOwnerBoundCommitKey(derivation, idx, out.commitKey, spendKeys, matchedSpendKey, ambiguous) &&
+        !ambiguous) {
+      outputs[matchedSpendKey].push_back(match);
+      return true;
+    }
+  }
+
+  return false;
+}
+
+// Every match records the tx public key that produced it: the key image and the
+// Janus check must use that same key, never one re-picked from the extra.
 void findMyOutputs(
   const ITransactionReader& tx,
   const SecretKey& viewSecretKey,
   const std::unordered_set<PublicKey>& spendKeys,
-  std::unordered_map<PublicKey, std::vector<uint32_t>>& outputs) {
+  MatchedOutputs& outputs) {
 
-  auto txPublicKey = tx.getTransactionPublicKey();
-  KeyDerivation derivation;
+  const PublicKey mainTxPublicKey = tx.getTransactionPublicKey();
+  KeyDerivation mainDerivation;
+  const bool haveMainDerivation = generate_key_derivation(mainTxPublicKey, viewSecretKey, mainDerivation);
 
-  if (!generate_key_derivation( txPublicKey, viewSecretKey, derivation)) {
-    return;
-  }
+  const std::vector<PublicKey> additional = readSubaddressTxKeys(tx.getExtra()).additionalPubKeys;
+  const bool haveAdditionalKeys = additional.size() == tx.getOutputCount();
 
-  size_t outputCount = tx.getOutputCount();
-
-  for (size_t idx = 0; idx < outputCount; ++idx) {
-
-    auto outType = tx.getOutputType(size_t(idx));
-
-    if (outType == TransactionTypes::OutputType::Key) {
-
-      uint64_t amount;
-      KeyOutput out;
-      tx.getOutput(idx, out, amount);
-      // Use absolute output index (idx) for derivation — must match the sender's
-      // derivePublicKey(to, txKey, transaction.outputs.size(), ...) which uses absolute index.
-      checkOutputKey(derivation, out.key, idx, idx, spendKeys, outputs);
-
-    } else if (outType == TransactionTypes::OutputType::Multisignature) {
-
-      uint64_t amount;
-      MultisignatureOutput out;
-      tx.getOutput(idx, out, amount);
-      for (const auto& key : out.keys) {
-        checkOutputKey(derivation, key, idx, idx, spendKeys, outputs);
-     }
-
-    } else if (outType == TransactionTypes::OutputType::Commitment) {
-      uint64_t amount;
-      TransactionOutputCommitment out;
-      tx.getOutput(idx, out, amount);
-
-      // Two derivations may produce this output key. Try the owner-bound form
-      // first: it uses underive_public_key to find WHICH spend key matched,
-      // rather than attributing the output to the first element of spendKeys.
-      Crypto::PublicKey matchedSpendKey;
-      bool ambiguous = false;
-      const bool ownerBound = CryptoNote::matchOwnerBoundCommitKey(
-        derivation, idx, out.commitKey, spendKeys, matchedSpendKey, ambiguous);
-      if (ambiguous) {
-        // The recovered key does not re-derive the output key. matchOwnerBoundCommitKey
-        // reports this with a false return; reject it.
-        continue;
-      }
-      if (ownerBound) {
-        outputs[matchedSpendKey].push_back(static_cast<uint32_t>(idx));
-        continue;
-      }
-      // Legacy form removed. Unmatched commitment outputs are not attributed.
+  for (size_t idx = 0; idx < tx.getOutputCount(); ++idx) {
+    const uint32_t outputIndex = static_cast<uint32_t>(idx);
+    if (haveMainDerivation &&
+        matchOutput(tx, mainDerivation, MatchedOutput{outputIndex, mainTxPublicKey, false}, spendKeys, outputs)) {
+      continue;
+    }
+    KeyDerivation additionalDerivation;
+    if (haveAdditionalKeys && generate_key_derivation(additional[idx], viewSecretKey, additionalDerivation)) {
+      matchOutput(tx, additionalDerivation, MatchedOutput{outputIndex, additional[idx], true}, spendKeys, outputs);
     }
   }
+}
+
+enum class JanusVerdict { Verified, Unverifiable, Rejected };
+
+JanusVerdict checkJanus(const SubaddressTxKeys& txKeys, const MatchedOutput& match, const AccountKeys& account) {
+  if (account.spendSecretKey == NULL_SECRET_KEY) {
+    return JanusVerdict::Unverifiable;
+  }
+  PublicKey janusBase;
+  if (!janusBaseForOutput(txKeys, match.outputIndex, match.viaAdditionalKey, janusBase)) {
+    return JanusVerdict::Rejected;
+  }
+  return Crypto::janusCheck(match.txPublicKey, janusBase, account.spendSecretKey)
+      ? JanusVerdict::Verified : JanusVerdict::Rejected;
 }
 
 std::vector<Crypto::Hash> getBlockHashes(const CryptoNote::CompleteBlock* blocks, size_t count) {
@@ -403,15 +437,17 @@ void TransfersConsumer::addPublicKeysSeen(const Crypto::Hash& transactionHash, c
 	
 std::error_code createTransfers(
   const AccountKeys& account,
+  bool janusCheckRequired,
   const TransactionBlockInfo& blockInfo,
   const ITransactionReader& tx,
-  const std::vector<uint32_t>& outputs,
+  const std::vector<MatchedOutput>& outputs,
   const std::vector<uint32_t>& globalIdxs,
   std::vector<TransactionOutputInformationIn>& transfers) {
 
   auto txPubKey = tx.getTransactionPublicKey();
   auto txHash = tx.getTransactionHash();
-  std::vector<PublicKey> temp_keys;	
+  std::vector<PublicKey> temp_keys;
+  const SubaddressTxKeys txKeys = janusCheckRequired ? readSubaddressTxKeys(tx.getExtra()) : SubaddressTxKeys{};
   std::lock_guard<std::mutex> lk(seen_mutex);
 
   if (account.spendSecretKey == NULL_SECRET_KEY)
@@ -425,7 +461,8 @@ std::error_code createTransfers(
     }
   }
 
-  for (auto idx : outputs) {
+  for (const auto& match : outputs) {
+    const uint32_t idx = match.outputIndex;
 
     if (idx >= tx.getOutputCount()) {
       return std::make_error_code(std::errc::argument_out_of_domain);
@@ -445,8 +482,18 @@ std::error_code createTransfers(
     // leave a defined value rather than stack contents.
     TransactionOutputInformationIn info{};
 
+    const PublicKey& usedTxPub = match.txPublicKey;
+
+    if (janusCheckRequired) {
+      const JanusVerdict verdict = checkJanus(txKeys, match, account);
+      if (verdict == JanusVerdict::Rejected) {
+        continue;
+      }
+      info.janusUnverified = verdict == JanusVerdict::Unverifiable;
+    }
+
     info.type = outType;
-    info.transactionPublicKey = txPubKey;
+    info.transactionPublicKey = usedTxPub;
     info.outputInTransaction = idx;
     info.globalOutputIndex = (blockInfo.height == WALLET_UNCONFIRMED_TRANSACTION_HEIGHT) ?
       UNCONFIRMED_TRANSACTION_GLOBAL_OUTPUT_INDEX : globalIdxs[idx];
@@ -457,14 +504,10 @@ std::error_code createTransfers(
       tx.getOutput(idx, out, amount);
 
       CryptoNote::KeyPair in_ephemeral;
-      CryptoNote::generate_key_image_helper(
-        account,
-        txPubKey,
-        idx,
-        in_ephemeral,
-        info.keyImage);
-
-      assert(out.key == reinterpret_cast<const PublicKey&>(in_ephemeral.publicKey));
+      if (!CryptoNote::generate_key_image_helper(account, usedTxPub, idx, in_ephemeral, info.keyImage) ||
+          out.key != in_ephemeral.publicKey) {
+        continue;
+      }
 
       std::unordered_set<Crypto::Hash>::iterator it = transactions_hash_seen.find(tx.getTransactionHash());
 	  if (it == transactions_hash_seen.end()) {
@@ -515,7 +558,7 @@ std::error_code createTransfers(
       // from the view secret alone and are still recorded for view-only wallets,
       // exactly as before the owner-bound form existed.
       KeyDerivation derivation;
-      if (generate_key_derivation(txPubKey, account.viewSecretKey, derivation)) {
+      if (generate_key_derivation(usedTxPub, account.viewSecretKey, derivation)) {
         const bool haveSpendSecret = account.spendSecretKey != NULL_SECRET_KEY;
         Crypto::KeyImage recordedKeyImage;
         if (CryptoNote::deriveRecordedCommitmentKeyImage(
@@ -541,7 +584,7 @@ std::error_code createTransfers(
 }
 
 std::error_code TransfersConsumer::preprocessOutputs(const TransactionBlockInfo& blockInfo, const ITransactionReader& tx, PreprocessInfo& info) {
-  std::unordered_map<PublicKey, std::vector<uint32_t>> outputs;
+  MatchedOutputs outputs;
    try {
     findMyOutputs(tx, m_viewSecret, m_spendKeys, outputs);
   }
@@ -568,7 +611,7 @@ std::error_code TransfersConsumer::preprocessOutputs(const TransactionBlockInfo&
     if (it != m_subscriptions.end()) {
       auto& transfers = info.outputs[kv.first];
        try {
-		  errorCode = createTransfers(it->second->getKeys(), blockInfo, tx, kv.second, info.globalIdxs, transfers);
+		  errorCode = createTransfers(it->second->getKeys(), it->second->isJanusCheckRequired(), blockInfo, tx, kv.second, info.globalIdxs, transfers);
 		  if (errorCode) {
 			  return errorCode;
 		  }
@@ -632,7 +675,7 @@ void TransfersConsumer::processOutputs(const TransactionBlockInfo& blockInfo, Tr
       assert(subscribtionTxInfo.blockHeight == blockInfo.height);
     }
   } else {
-    auto messages = get_messages_from_extra(tx.getExtra(), tx.getTransactionPublicKey(), &sub.getKeys().spendSecretKey);
+    auto messages = get_messages_from_extra(tx.getExtra(), messageTransactionKey(tx.getExtra(), tx.getTransactionPublicKey()), &sub.getKeys().spendSecretKey);
     updated = sub.addTransaction(blockInfo, tx, transfers, std::move(messages));
     contains = updated;
   }

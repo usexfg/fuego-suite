@@ -17,6 +17,7 @@
 
 #include "WalletService.h"
 
+#include <algorithm>
 #include <future>
 #include <assert.h>
 #include <sstream>
@@ -33,6 +34,7 @@
 #include "CryptoNote.h"
 #include "CryptoNoteCore/CryptoNoteFormatUtils.h"
 #include "CryptoNoteCore/CryptoNoteBasicImpl.h"
+#include "CryptoNoteCore/SubaddressTx.h"
 #include "CryptoNoteCore/TransactionExtra.h"
 #include "CryptoNoteCore/CryptoNoteBasicImpl.h"
 #include "CryptoNoteCore/Account.h"
@@ -240,6 +242,27 @@ namespace PaymentService
       }
     }
 
+    bool isSubaddressString(const CryptoNote::Currency &currency, const std::string &address)
+    {
+      CryptoNote::AccountPublicAddress ignored;
+      bool isSubaddress = false;
+      return currency.parseAccountAddressString(address, ignored, isSubaddress) && isSubaddress;
+    }
+
+    bool paysSubaddressWithPaymentId(const CryptoNote::Currency &currency,
+                                     const std::vector<PaymentService::WalletRpcOrder> &orders,
+                                     const std::string &extra)
+    {
+      Crypto::Hash paymentId;
+      if (!CryptoNote::getPaymentIdFromTxExtra(Common::asBinaryArray(extra), paymentId))
+      {
+        return false;
+      }
+      return std::any_of(orders.begin(), orders.end(), [&currency](const PaymentService::WalletRpcOrder &order) {
+        return isSubaddressString(currency, order.address);
+      });
+    }
+
     bool createOutputBinaryFile(const std::string &filename, std::fstream &file)
     {
       file.open(filename.c_str(), std::fstream::in | std::fstream::out | std::ofstream::binary);
@@ -363,9 +386,11 @@ namespace PaymentService
 
     //KD2
 
-    PaymentService::TransactionRpcInfo convertTransactionWithTransfersToTransactionRpcInfo(const CryptoNote::WalletTransactionWithTransfers &transactionWithTransfers)
+    PaymentService::TransactionRpcInfo convertTransactionWithTransfersToTransactionRpcInfo(const CryptoNote::WalletTransactionWithTransfers &transactionWithTransfers,
+                                                                                         const CryptoNote::IWallet &wallet)
     {
       PaymentService::TransactionRpcInfo transactionInfo;
+      transactionInfo.unverifiedSubaddressOutputs = wallet.hasUnverifiedSubaddressOutputs(transactionWithTransfers.transaction.hash);
       transactionInfo.state = static_cast<uint8_t>(transactionWithTransfers.transaction.state);
       transactionInfo.transactionHash = Common::podToHex(transactionWithTransfers.transaction.hash);
       transactionInfo.blockIndex = transactionWithTransfers.transaction.blockHeight;
@@ -391,7 +416,7 @@ namespace PaymentService
     }
 
     std::vector<PaymentService::TransactionsInBlockRpcInfo> convertTransactionsInBlockInfoToTransactionsInBlockRpcInfo(
-        const std::vector<CryptoNote::TransactionsInBlockInfo> &blocks, uint32_t &knownBlockCount)
+        const std::vector<CryptoNote::TransactionsInBlockInfo> &blocks, uint32_t &knownBlockCount, const CryptoNote::IWallet &wallet)
     {
       std::vector<PaymentService::TransactionsInBlockRpcInfo> rpcBlocks;
       rpcBlocks.reserve(blocks.size());
@@ -402,7 +427,7 @@ namespace PaymentService
 
         for (const CryptoNote::WalletTransactionWithTransfers &transactionWithTransfers : block.transactions)
         {
-          PaymentService::TransactionRpcInfo transactionInfo = convertTransactionWithTransfersToTransactionRpcInfo(transactionWithTransfers);
+          PaymentService::TransactionRpcInfo transactionInfo = convertTransactionWithTransfersToTransactionRpcInfo(transactionWithTransfers, wallet);
           transactionInfo.confirmations = knownBlockCount - transactionInfo.blockIndex;
           rpcBlock.transactions.push_back(std::move(transactionInfo));
         }
@@ -1378,6 +1403,7 @@ namespace PaymentService
       transaction.depositCount = transactionWithTransfers.transaction.depositCount;
       transaction.extra = Common::toHex(transactionWithTransfers.transaction.extra.data(), transactionWithTransfers.transaction.extra.size());
       transaction.paymentId = getPaymentIdStringFromExtra(transactionWithTransfers.transaction.extra);
+      transaction.unverifiedSubaddressOutputs = wallet.hasUnverifiedSubaddressOutputs(hash);
 
       /* Calculate the number of confirmations for the transaction */
       uint32_t knownBlockCount = node.getKnownBlockCount();
@@ -1402,7 +1428,7 @@ namespace PaymentService
           if (wallet.getAddress(i) == rpcTransfer.address)
           {
             Crypto::SecretKey secretKey = wallet.getAddressSpendKey(wallet.getAddress(i)).secretKey;
-            std::vector<std::string> m = CryptoNote::get_messages_from_extra(extraBin, publicKey, &secretKey);
+            std::vector<std::string> m = CryptoNote::get_messages_from_extra(extraBin, CryptoNote::messageTransactionKey(extraBin, publicKey), &secretKey);
             if (!m.empty())
             {
               rpcTransfer.message = m[0];
@@ -1482,6 +1508,12 @@ namespace PaymentService
         sendParams.extra = Common::asString(Common::fromHex(request.extra));
       }
 
+      if (paysSubaddressWithPaymentId(currency, request.transfers, sendParams.extra))
+      {
+        logger(Logging::WARNING) << "Payment ID cannot be combined with a funsa subaddress destination";
+        return make_error_code(CryptoNote::error::WalletServiceErrorCode::WRONG_PAYMENT_ID_FORMAT);
+      }
+
       sendParams.sourceAddresses = request.sourceAddresses;
       sendParams.destinations = convertWalletRpcOrdersToWalletOrders(request.transfers);
       sendParams.messages = convertWalletRpcMessagesToWalletMessages(messages);
@@ -1553,6 +1585,12 @@ namespace PaymentService
         sendParams.extra = Common::asString(Common::fromHex(request.extra));
       }
 
+      if (paysSubaddressWithPaymentId(currency, request.transfers, sendParams.extra))
+      {
+        logger(Logging::WARNING) << "Payment ID cannot be combined with a funsa subaddress destination";
+        return make_error_code(CryptoNote::error::WalletServiceErrorCode::WRONG_PAYMENT_ID_FORMAT);
+      }
+
       sendParams.sourceAddresses = request.addresses;
       sendParams.destinations = convertWalletRpcOrdersToWalletOrders(request.transfers);
       sendParams.messages = convertWalletRpcMessagesToWalletMessages(messages);
@@ -1596,6 +1634,13 @@ namespace PaymentService
     const bool valid = CryptoNote::parseAccountAddressString(prefix,
                                                              addr,
                                                              address_str);
+    if (!valid) {
+      return make_error_code(CryptoNote::error::BAD_ADDRESS);
+    }
+    if (prefix == CryptoNote::parameters::CRYPTONOTE_SUBADDRESS_BASE58_PREFIX ||
+        prefix == CryptoNote::CRYPTONOTE_SUBADDRESS_BASE58_PREFIX_TESTNET) {
+      return make_error_code(CryptoNote::error::BAD_ADDRESS);
+    }
 
     CryptoNote::BinaryArray ba;
     CryptoNote::toBinaryArray(addr, ba);
@@ -2021,7 +2066,7 @@ namespace PaymentService
         for (size_t i = 0; i < wallet.getAddressCount(); ++i)
         {
           Crypto::SecretKey secretKey = wallet.getAddressSpendKey(wallet.getAddress(i)).secretKey;
-          std::vector<std::string> m = CryptoNote::get_messages_from_extra(extraBin, publicKey, &secretKey);
+          std::vector<std::string> m = CryptoNote::get_messages_from_extra(extraBin, CryptoNote::messageTransactionKey(extraBin, publicKey), &secretKey);
           messages.insert(std::end(messages), std::begin(m), std::end(m));
         }
       }
@@ -2281,7 +2326,7 @@ namespace PaymentService
       uint32_t knownBlockCount = node.getKnownBlockCount();
       std::vector<CryptoNote::TransactionsInBlockInfo> allTransactions = getTransactions(blockHash, blockCount);
       std::vector<CryptoNote::TransactionsInBlockInfo> filteredTransactions = filterTransactions(allTransactions, filter);
-      return convertTransactionsInBlockInfoToTransactionsInBlockRpcInfo(filteredTransactions, knownBlockCount);
+      return convertTransactionsInBlockInfoToTransactionsInBlockRpcInfo(filteredTransactions, knownBlockCount, wallet);
     }
 
     std::vector<TransactionsInBlockRpcInfo> WalletService::getRpcTransactions(uint32_t firstBlockIndex, size_t blockCount, const TransactionsInBlockInfoFilter &filter) const
@@ -2289,7 +2334,7 @@ namespace PaymentService
       uint32_t knownBlockCount = node.getKnownBlockCount();
       std::vector<CryptoNote::TransactionsInBlockInfo> allTransactions = getTransactions(firstBlockIndex, blockCount);
       std::vector<CryptoNote::TransactionsInBlockInfo> filteredTransactions = filterTransactions(allTransactions, filter);
-      return convertTransactionsInBlockInfoToTransactionsInBlockRpcInfo(filteredTransactions, knownBlockCount);
+      return convertTransactionsInBlockInfoToTransactionsInBlockRpcInfo(filteredTransactions, knownBlockCount, wallet);
     }
 
     // Money supply stats - simplified

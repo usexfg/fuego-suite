@@ -27,6 +27,7 @@
 #include <boost/optional.hpp>
 #include "CryptoNote.h"
 #include "../src/CryptoNoteCore/CryptoNoteBasic.h"
+#include "../src/crypto/subaddress.h"
 #include "../src/Rpc/CoreRpcServerCommandsDefinitions.h"
 #include "ITransfersContainer.h"
 #include "IWallet.h"
@@ -156,7 +157,7 @@ public:
   virtual bool getTransfer(TransferId transferId, WalletLegacyTransfer& transfer) = 0;
   virtual bool getDeposit(DepositId depositId, Deposit& deposit) = 0;
   virtual std::vector<Payments> getTransactionsByPaymentIds(const std::vector<PaymentId>& paymentIds) const = 0;
-  virtual bool getTxProof(Crypto::Hash& txid, CryptoNote::AccountPublicAddress& address, Crypto::SecretKey& tx_key, std::string& sig_str) = 0;
+  virtual bool getTxProof(Crypto::Hash& txid, CryptoNote::AccountPublicAddress& address, bool isSubaddress, Crypto::SecretKey& tx_key, std::string& sig_str) = 0;
   virtual std::string getReserveProof(const uint64_t &reserve, const std::string &message) = 0;
   virtual Crypto::SecretKey getTxKey(Crypto::Hash& txid) = 0;
   virtual bool get_tx_key(Crypto::Hash& txid, Crypto::SecretKey& txSecretKey) = 0;
@@ -169,7 +170,7 @@ public:
    virtual TransactionId deposit(uint32_t term, uint64_t amount, uint64_t fee, const std::string& extra, uint64_t mixIn = 0) = 0;
 
   virtual TransactionId mintHeatV10(uint64_t xfgBurned, uint64_t heatMinted, uint64_t fee, uint64_t mixIn = 0) = 0;
-  virtual TransactionId sendHeatV10(const AccountPublicAddress& recipient, uint64_t amount, uint64_t fee, uint64_t mixIn = 0) = 0;
+  virtual TransactionId sendHeatV10(const AccountPublicAddress& recipient, uint64_t amount, uint64_t fee, uint64_t mixIn = 0, bool isSubaddress = false) = 0;
   virtual TransactionId ammSwapV10(uint8_t direction, uint64_t inputAmount, uint64_t outputAmount,
                                     uint64_t minOutput, uint64_t fee, uint64_t mixIn = 0) = 0;
   virtual TransactionId lpAddV10(uint64_t amountXfg, uint64_t amountHeat, uint64_t fee, uint64_t mixIn = 0) = 0;
@@ -196,9 +197,14 @@ public:
   virtual std::error_code create_afk_lock(uint64_t amount, uint32_t timeout_hours, uint8_t pair, std::string& lockId, std::string& adaptorPoint, std::string& preSig, std::string& hashLock) = 0;
   virtual std::error_code claim_afk_swap(const std::string& swapId, const std::string& secret_s, const std::string& target_chain, const std::string& fee_address, const std::string& payout_address, std::string& txHash) = 0;
 
+  // True when a funsa subaddress output of the transaction was credited without its
+  // Janus check, which a tracking (view-only) wallet cannot run.
+  virtual bool hasUnverifiedSubaddressOutputs(const Crypto::Hash& transactionHash) = 0;
+
   // Sub-address support: subscribe the wallet scanner to this (major, minor) index.
   // Returns the encoded sub-address string. Idempotent.
-  virtual std::string registerSubAddress(uint32_t major, uint32_t minor) = 0;
+  virtual std::string registerSubAddress(uint32_t major, uint32_t minor,
+                                         uint8_t version = Crypto::SUBADDRESS_VERSION_V2) = 0;
 
 };
 

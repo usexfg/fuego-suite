@@ -24,37 +24,99 @@
 //   Master keys: a = viewSecretKey,  b = spendSecretKey
 //                A = a*G (viewPublicKey), B = b*G (spendPublicKey)
 //
-//   Sub-address at index (major i, minor j):
-//     m    = H_s("Sublime" || a || i_LE32 || j_LE32)   [scalar, reduced mod l]
-//     D_ij = B + m*G                                    [sub spend public key]
-//     C_ij = A = a*G                                    [sub view public key = master view key]
-//     b_ij = b + m  (mod l)                             [sub spend secret key]
+//   V1 (legacy `fire` prefix, linkable):
+//     m    = H_s("Sublime" || a || i_LE32 || j_LE32)
+//     D_ij = B + m*G
+//     C_ij = A
+//     b_ij = b + m
+//     Sender: R = r*G. Receiver: a*R = r*A.
 //
-//   Sender encodes: tx_pub_key R = r*G, output_key = H(r*A, idx)*G + D_ij
-//   Receiver scans: derivation = a*R = a*r*G = r*A      (same ECDH as main address)
-//   Spend:          key image using b_ij instead of b
-//
-//   NOTE: C_ij = A (not a*D_ij) since we use same prefix for main & sub addresses
-//   The sender cannot detect a subaddress, so the tx public key is always R = r*G and standard scan a*R must recover correct derivation
+//   V2 (`funsa` prefix, unlinkable):
+//     m    = H_s("FuegoSubAddrV2" || a || i_LE32 || j_LE32)
+//     D_ij = B + m*G
+//     C_ij = a*D_ij     (no cofactor-8)
+//     b_ij = b + m
+//     Sender: R = r*D_ij. Receiver: a*R = r*C_ij.
 //
 // The index (0, 0) is reserved for the master address — do not create sub-addresses at (0,0).
+//
+// Janus Attack Mitigation (V2 only):
+//
+// The Janus attack allows an attacker holding two subaddresses D_ij and D_kj from the
+// same wallet to link them by checking if b_kj * R == R_kj where R = r * D_ij.
+//
+// The mitigation uses TX_EXTRA_JANUS_BASE (tag 0x09): one janusBase = r * G for a
+// single-key tx, or one r_n * G per output when TX_EXTRA_ADDITIONAL_PUBKEYS (0x06) is present.
+// A full wallet credits a V2 subaddress output only when
+// subSpendSecret * janusBase == the tx key that matched it; a view-only wallet cannot run the
+// check and records the output as unverified. Linking a subaddress to the primary address is
+// not prevented by this check.
+//
+// Mathematical proof of correctness:
+//
+// For a single-subaddress V2 tx, the sender computes:
+//   R = r * D_ij        (transaction public key)
+//   janusBase = r * G    (Janus base, stored in extra)
+//
+// The receiver checks:
+//   subSpendSecret * janusBase == txPubKey
+//   (b + m) * (r * G) == r * D_ij
+//   (b + m) * r * G == r * (B + m * G)
+//   r * (b + m) * G == r * B + r * m * G
+//   r * b * G + r * m * G == r * B + r * m * G
+//   Since B = b * G:  r * B + r * m * G == r * B + r * m * G  (QED)
+//
+// For an attacker with a different subaddress (different m'):
+//   (b + m') * r * G = r * B + r * m' * G != r * B + r * m * G
+//   unless m' == m, which means the attacker holds the same subaddress.
+//
+// Therefore, the Janus check correctly distinguishes between the legitimate receiver
+// and any attacker probing with a different subaddress from the same wallet.
 
 namespace Crypto {
 
+const uint8_t SUBADDRESS_VERSION_V1 = 1;
+const uint8_t SUBADDRESS_VERSION_V2 = 2;
+
 struct SubAddressKeys {
-  PublicKey spendPublicKey;    // D_ij = B + m*G
-  PublicKey viewPublicKey;     // C_ij = A = a*G (master view public key)
-  SecretKey spendSecretKey;    // b_ij = b + m  (zeroed if master spend key not provided)
+  PublicKey spendPublicKey;
+  PublicKey viewPublicKey;
+  SecretKey spendSecretKey;
   bool hasSpendSecretKey;
+  uint8_t version;
 };
 
-// Derive sub-address keys at index (major, minor).
-// masterSpendSecretKey: pass nullptr for view-only wallets (spendSecretKey will not be set).
 SubAddressKeys deriveSubAddressKeys(
     const SecretKey&  masterViewSecretKey,
     const PublicKey&  masterSpendPublicKey,
     const SecretKey*  masterSpendSecretKey,
     uint32_t major,
     uint32_t minor);
+
+SubAddressKeys deriveSubAddressKeysV2(
+    const SecretKey&  masterViewSecretKey,
+    const PublicKey&  masterSpendPublicKey,
+    const SecretKey*  masterSpendSecretKey,
+    uint32_t major,
+    uint32_t minor);
+
+bool scalarmultKeyNoCofactor(
+    const PublicKey& point,
+    const SecretKey& scalar,
+    PublicKey& result);
+
+bool subaddressTxPubKey(
+    const SecretKey& txSecret,
+    const PublicKey& subSpendPublicKey,
+    PublicKey& txPubKey);
+
+bool janusCheck(
+    const PublicKey& txPubKey,
+    const PublicKey& janusBase,
+    const SecretKey& subSpendSecret);
+
+// r_n = H_s("FuegoAddlTxKey" || r || n_LE64). Derived from the main tx secret so the
+// sender can rebuild every per-output key for a payment proof without storing them.
+SecretKey additionalTxSecret(const SecretKey& txSecret, uint64_t outputIndex);
 
 } // namespace Crypto

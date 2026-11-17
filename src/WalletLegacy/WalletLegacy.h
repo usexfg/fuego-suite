@@ -87,7 +87,8 @@ public:
   virtual std::vector<TransactionOutputInformation> getUnspentOutputs() override;
   virtual bool isTrackingWallet();
   virtual TransactionId findTransactionByTransferId(TransferId transferId) override;
-  virtual bool getTxProof(Crypto::Hash& txid, CryptoNote::AccountPublicAddress& address, Crypto::SecretKey& tx_key, std::string& sig_str) override;
+  virtual bool getTxProof(Crypto::Hash& txid, CryptoNote::AccountPublicAddress& address, bool isSubaddress, Crypto::SecretKey& tx_key, std::string& sig_str) override;
+  bool fetchTransaction(const Crypto::Hash& txid, Transaction& tx);
   virtual std::string getReserveProof(const uint64_t &reserve, const std::string &message) override;
   virtual Crypto::SecretKey getTxKey(Crypto::Hash& txid) override;
   virtual bool get_tx_key(Crypto::Hash& txid, Crypto::SecretKey& txSecretKey) override;
@@ -118,7 +119,7 @@ public:
   virtual TransactionId deposit(uint32_t term, uint64_t amount, uint64_t fee, uint64_t mixIn = 4) override;
   virtual TransactionId deposit(uint32_t term, uint64_t amount, uint64_t fee, const std::string& extra, uint64_t mixIn = 4) override;
   virtual TransactionId mintHeatV10(uint64_t xfgBurned, uint64_t heatMinted, uint64_t fee, uint64_t mixIn = 4) override;
-  virtual TransactionId sendHeatV10(const AccountPublicAddress& recipient, uint64_t amount, uint64_t fee, uint64_t mixIn = 4) override;
+  virtual TransactionId sendHeatV10(const AccountPublicAddress& recipient, uint64_t amount, uint64_t fee, uint64_t mixIn = 4, bool isSubaddress = false) override;
   virtual TransactionId ammSwapV10(uint8_t direction, uint64_t inputAmount, uint64_t outputAmount,
                                     uint64_t minOutput, uint64_t fee, uint64_t mixIn = 4) override;
   virtual TransactionId lpAddV10(uint64_t amountXfg, uint64_t amountHeat, uint64_t fee, uint64_t mixIn = 4) override;
@@ -142,7 +143,9 @@ public:
   void storeBurnDepositSecret(const std::string& txHash, const Crypto::SecretKey& secret, uint64_t amount, const std::vector<uint8_t>& metadata);
   bool getBurnDepositSecret(const std::string& txHash, Crypto::SecretKey& secret, uint64_t& amount, std::vector<uint8_t>& metadata);
   bool hasBurnDepositSecret(const std::string& txHash);
-  virtual std::string registerSubAddress(uint32_t major, uint32_t minor) override;
+  virtual bool hasUnverifiedSubaddressOutputs(const Crypto::Hash& transactionHash) override;
+  virtual std::string registerSubAddress(uint32_t major, uint32_t minor,
+                                         uint8_t version = Crypto::SUBADDRESS_VERSION_V2) override;
 
   // ── AFK lock secrets (maker-side pre-lock material) ──
   // Persisted (encrypted with the wallet password) so a wallet restart does
@@ -257,7 +260,12 @@ public:
     uint32_t minor;
     AccountKeys keys;
     ITransfersContainer* container;
+    uint8_t version = 1;
+    Crypto::PublicKey publishedViewPublicKey;
   };
+  std::string publishedSubAddressString(const Crypto::PublicKey& spendPublicKey,
+                                        const Crypto::PublicKey& viewPublicKey,
+                                        uint8_t version) const;
   std::vector<SubAddressEntry> m_subAddresses;
 
   WalletUserTransactionsCache m_transactionsCache;

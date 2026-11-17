@@ -32,8 +32,10 @@
 #include "CryptoNoteCore/Core.h"
 #include "CryptoNoteCore/IBlock.h"
 #include "CryptoNoteCore/Miner.h"
+#include "CryptoNoteCore/SubaddressTxProof.h"
 #include "CryptoNoteCore/TransactionExtra.h"
 #include "CryptoNoteProtocol/ICryptoNoteProtocolQuery.h"
+#include "crypto/subaddress.h"
 #include "CryptoNoteConfig.h"
 
 #include "P2p/NetNode.h"
@@ -343,6 +345,7 @@ bool RpcServer::processJsonRpcRequest(const HttpRequest& request, HttpResponse& 
         {"f_on_transactions_pool_json", {makeMemberMethod(&RpcServer::f_on_transactions_pool_json), false}},
         {"check_tx_proof", {makeMemberMethod(&RpcServer::k_on_check_tx_proof), false}},
         {"check_reserve_proof", {makeMemberMethod(&RpcServer::k_on_check_reserve_proof), false}},
+        {"validateaddress", {makeMemberMethod(&RpcServer::k_on_validate_address), false}},
         {"getblockcount", {makeMemberMethod(&RpcServer::on_getblockcount), true}},
         {"on_getblockhash", {makeMemberMethod(&RpcServer::on_getblockhash), false}},
         {"getblocktemplate", {makeMemberMethod(&RpcServer::on_getblocktemplate), false}},
@@ -469,8 +472,17 @@ bool RpcServer::k_on_check_tx_proof(const K_COMMAND_RPC_CHECK_TX_PROOF::request&
 	}
 	// parse address
 	CryptoNote::AccountPublicAddress address;
-	if (!m_core.currency().parseAccountAddressString(req.dest_address, address)) {
+	bool isSubaddress = false;
+	if (!m_core.currency().parseAccountAddressString(req.dest_address, address, isSubaddress)) {
 		throw JsonRpc::JsonRpcError{ CORE_RPC_ERROR_CODE_WRONG_PARAM, "Failed to parse address " + req.dest_address + '.' };
+	}
+	res.is_subaddress = isSubaddress;
+	res.subaddress_version = isSubaddress ? Crypto::SUBADDRESS_VERSION_V2 : 0;
+	if (isPaymentProofV2(req.signature)) {
+		return checkPaymentProofV2(txid, address, isSubaddress, req.signature, res);
+	}
+	if (isSubaddress) {
+		throw JsonRpc::JsonRpcError{ CORE_RPC_ERROR_CODE_WRONG_PARAM, "A funsa subaddress payment is proven with a ProofV2 signature" };
 	}
 	// parse pubkey r*A & signature
 	const size_t header_len = strlen("ProofV1");
@@ -521,8 +533,21 @@ bool RpcServer::k_on_check_tx_proof(const K_COMMAND_RPC_CHECK_TX_PROOF::request&
 		throw JsonRpc::JsonRpcError{ CORE_RPC_ERROR_CODE_INTERNAL_ERROR, "Tx pubkey was not found" };
 	}
 
-	// check signature
 	bool r = Crypto::check_tx_proof(txid, R, address.viewPublicKey, rA, sig);
+	if (!r) {
+		std::vector<Crypto::PublicKey> additional;
+		if (getAdditionalPubKeysFromExtra(transaction.extra, additional)) {
+			for (const auto& Rn : additional) {
+				if (Crypto::check_tx_proof(txid, Rn, address.viewPublicKey, rA, sig)) {
+					R = Rn;
+					r = true;
+					break;
+				}
+			}
+		}
+	}
+
+
 	res.signature_valid = r;
 
 	if (r) {
@@ -572,6 +597,30 @@ bool RpcServer::k_on_check_tx_proof(const K_COMMAND_RPC_CHECK_TX_PROOF::request&
 		res.received_amount = 0;
 	}
 
+	res.status = CORE_RPC_STATUS_OK;
+	return true;
+}
+
+bool RpcServer::checkPaymentProofV2(const Crypto::Hash& txid, const AccountPublicAddress& address, bool isSubaddress,
+                                    const std::string& signature, K_COMMAND_RPC_CHECK_TX_PROOF::response& res) {
+	std::list<Crypto::Hash> missedTransactions;
+	std::list<Transaction> transactions;
+	m_core.getTransactions({txid}, transactions, missedTransactions, true);
+	if (transactions.size() != 1) {
+		throw JsonRpc::JsonRpcError{ CORE_RPC_ERROR_CODE_WRONG_PARAM, "transaction wasn't found. Hash = " + Common::podToHex(txid) + '.' };
+	}
+
+	PaymentProofResult proven;
+	res.signature_valid = checkPaymentProof(transactions.front(), txid, address, isSubaddress, signature, proven);
+	res.received_amount = res.signature_valid ? proven.receivedAmount : 0;
+	if (res.signature_valid) {
+		res.outputs = std::move(proven.outputs);
+		Crypto::Hash blockHash;
+		uint32_t blockHeight;
+		if (m_core.getBlockContainingTx(txid, blockHash, blockHeight)) {
+			res.confirmations = m_protocolQuery.getObservedHeight() - blockHeight;
+		}
+	}
 	res.status = CORE_RPC_STATUS_OK;
 	return true;
 }
@@ -695,6 +744,31 @@ bool RpcServer::k_on_check_reserve_proof(const K_COMMAND_RPC_CHECK_RESERVE_PROOF
 
 	return true;
 }
+
+bool RpcServer::k_on_validate_address(const K_COMMAND_RPC_VALIDATE_ADDRESS::request& req, K_COMMAND_RPC_VALIDATE_ADDRESS::response& res) {
+	res.valid = false;
+	res.is_subaddress = false;
+	res.subaddress_version = 0;
+	res.error = "";
+	res.status = CORE_RPC_STATUS_OK;
+
+	// Parse the address
+	CryptoNote::AccountPublicAddress address;
+	bool isSubaddress = false;
+	if (!m_core.currency().parseAccountAddressString(req.address, address, isSubaddress)) {
+		res.error = "Failed to parse address";
+		return true;
+	}
+
+	res.valid = true;
+	res.is_subaddress = isSubaddress;
+	// A V1 subaddress shares the fire prefix and view key with standard addresses, so it
+	// cannot be told apart from one; only the funsa / Tsub prefix identifies a subaddress.
+	res.subaddress_version = isSubaddress ? Crypto::SUBADDRESS_VERSION_V2 : 0;
+
+	return true;
+}
+
 bool RpcServer::on_get_deposits(const COMMAND_RPC_GET_DEPOSITS::request& req, COMMAND_RPC_GET_DEPOSITS::response& res) {
   res.status = CORE_RPC_STATUS_OK;
   return true;
@@ -1713,6 +1787,10 @@ bool RpcServer::on_start_mining(const COMMAND_RPC_START_MINING::request& req, CO
         return false;
   }
   AccountPublicAddress adr;
+  if (m_core.currency().isSubAddressStr(req.miner_address)) {
+    res.status = "Failed, subaddresses cannot receive block rewards";
+    return true;
+  }
   if (!m_core.currency().parseAccountAddressString(req.miner_address, adr)) {
     res.status = "Failed, wrong address";
     return true;
@@ -2151,6 +2229,9 @@ bool RpcServer::on_getblocktemplate(const COMMAND_RPC_GETBLOCKTEMPLATE::request&
 
   AccountPublicAddress acc = boost::value_initialized<AccountPublicAddress>();
 
+  if (m_core.currency().isSubAddressStr(req.wallet_address)) {
+    throw JsonRpc::JsonRpcError{ CORE_RPC_ERROR_CODE_WRONG_WALLET_ADDRESS, "Subaddresses cannot receive block rewards" };
+  }
   if (!req.wallet_address.size() || !m_core.currency().parseAccountAddressString(req.wallet_address, acc)) {
     throw JsonRpc::JsonRpcError{ CORE_RPC_ERROR_CODE_WRONG_WALLET_ADDRESS, "Failed to parse wallet address" };
   }

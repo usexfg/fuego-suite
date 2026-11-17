@@ -2,20 +2,45 @@
 
 **Started**: 2026-11-12
 **Agent**: Claude Code
-**Status**: IN PROGRESS
+**Status**: fuego-suite core DONE (Linux GCC build and tests; not pushed). fuego-valise, xfg-api and explorer work is planned in `docs/developer/funsa-subaddress-rollout-plan.md`, not started.
 **Plan**: the funsa subaddress plan (owner upload, 2026-11-12) plus the gaps found in review: per-output Janus keys, strict crediting, fail-closed address parsing, coinbase refusal, deterministic per-output tx secrets, reload re-subscription, Valise send support.
 **Owner decisions (2026-11-12)**: v11 is still upcoming, so the v11 gate stays. Full wallets credit a V2 subaddress output only when its Janus check passes; view-only wallets credit it flagged `unverified`. Change from a funsa source returns to that subaddress. Scope: fuego-suite core plus fuego-valise.
-**Scope**: listed per task below.
+**Scope**: `src/crypto/subaddress.*`, `src/CryptoNoteCore/{SubaddressTx,SubaddressTxProof,TransactionExtra,Transaction,Currency,CryptoNoteFormatUtils,Blockchain}`, `src/Transfers/{TransfersConsumer,TransfersContainer,TransfersSubscription}`, `src/Wallet/{WalletGreen,WalletIndices,WalletUtils,WalletRpcServer}`, `src/WalletLegacy/{WalletLegacy,WalletTransactionSender}`, `src/PaymentGate/{WalletService,PaymentServiceJsonRpcMessages}`, `src/Rpc/RpcServer.*`, `src/SimpleWallet/{SimpleWallet,TransferCmd}`, `include/{IWallet,IWalletLegacy,ITransfersContainer,ITransfersSynchronizer}.h`, `tests/UnitTests/{SubaddressV2Test,SubaddressScannerTest,SubaddressWalletTest,CommitmentPersistenceTest,TestWalletService}.cpp`, `tests/CMakeLists.txt`, `.github/workflows/check.yml`
 
 | # | Task | Owner | Date | Status |
 |---|------|-------|------|--------|
-| 1 | Merge `funsa-subaddy` into current `master`; fix the `WalletServiceErrorCode::WRONG_PAYMENT_ID_FORMAT` path; payment-ID guard reads the parsed prefix and the final extra instead of a `"funsa"` substring (`src/PaymentGate/WalletService.cpp`) | Claude Code | 2026-11-12 | DONE; full build green; ctest 70/71, the failure is `commitment_owner_bound_tests` (5 cases) from `master` 33e787a5, which removed the legacy commitment form without updating the tests; not changed here |
+| 1 | Merge `funsa-subaddy` into current `master`; fix the `WalletServiceErrorCode::WRONG_PAYMENT_ID_FORMAT` path; payment-ID guard reads the parsed prefix and the final extra instead of a `"funsa"` substring | Claude Code | 2026-11-12 | DONE |
+| 2 | The two-argument `Currency::parseAccountAddressString` refuses funsa/Tsub, so every path that builds outputs without subaddress derivation fails closed (mining, coinbase, fee address, alias owners, payout). Destinations, messages and own-address lookups use the three-argument form. `getblocktemplate`/`start_mining` say why a subaddress is refused | Claude Code | 2026-11-12 | DONE |
+| 3 | Alias release/transfer owners parse funsa only from block major version 11 (`parseAliasOwnerAddress`); before this, the branch accepted funsa owners at every height, which old nodes reject | Claude Code | 2026-11-12 | DONE |
+| 4 | Per-output tx secrets `r_n = H_s("FuegoAddlTxKey" ‖ r ‖ n)` (`Crypto::additionalTxSecret`, secret preimage wiped). 0x09 is a counted key list: one key for a single-key tx, one per output with 0x06 (a random filler for standard outputs, so the list does not mark them). Consensus from v11: 0x06 requires 0x09 with one key per output; a single-key tx carries exactly one | Claude Code | 2026-11-12 | DONE |
+| 5 | Senders: `constructTransaction` planner (single-key mode counts distinct subaddresses, so decomposed amounts to one subaddress keep it); `TransactionImpl::addOutput` switches to per-output keys at the first subaddress output, re-keys earlier address outputs and refuses a non-address output after the switch; HEAT sends in WalletGreen and WalletLegacy carry per-output and Janus keys, and WalletGreen writes them after `prepareXfgInputs` so the counts match its XFG change outputs | Claude Code | 2026-11-12 | DONE |
+| 6 | Scanner: every match records the tx key that produced it; the key image and the Janus check use that key; an output whose derived one-time key does not match is skipped. V2 subaddress outputs: a full wallet credits only on a passing Janus check; a view-only wallet credits them with `janusUnverified` | Claude Code | 2026-11-12 | DONE |
+| 7 | One consumer per wallet: subscriptions always use the master view key, and `AccountSubscription::janusCheckRequired` marks V2 accounts (the branch gave each V2 subaddress its own consumer and full chain scan, and keyed its saved sync state by C, which desynchronised the cache on reload). WalletGreen applies the flag after the cache restores subaddress metadata | Claude Code | 2026-11-12 | DONE |
+| 8 | `janusUnverified` persisted in transfers container storage version 3 (version 2 and 1 readers kept); exposed as `unverifiedSubaddressOutputs` on walletd transactions and as a note on simplewallet incoming transfers | Claude Code | 2026-11-12 | DONE |
+| 9 | WalletGreen: `getAddress`, transfers, listings and deletion use one record address form (funsa for V2 records, which the branch printed as a linkable `fire` string carrying the master view key); `isMyAddress` requires the prefix to match the record type; change to a funsa source uses subaddress derivation; fee and order change from a V2 record goes to the primary address; subaddress metadata is set when the record is inserted; alias registration registers its owner subaddress so payments to the alias are scanned; `createSubAddress`/`listSubAddresses` are public | Claude Code | 2026-11-12 | DONE |
+| 10 | `master` regression (694ae295, 2026-05-29): records loaded from storage all had `container = nullptr` under a unique index, so every walletd wallet kept only its first address after a restart and dropped the others' transactions. The container index is non-unique | Claude Code | 2026-11-17 | DONE; `SecondStandardAddressSurvivesReload` fails on `master` and passes here |
+| 11 | Payment proofs `ProofV2` (`SubaddressTxProof`): one item per tx key that pays the address, covering funsa subaddresses and per-output keys; WalletLegacy/simplewallet/wallet RPC prove, daemon `check_tx_proof` verifies; at most 256 items; `ProofV1` unchanged for standard main-key payments. `validateaddress` reports version from the parsed prefix | Claude Code | 2026-11-17 | DONE |
+| 12 | Message decryption uses the Janus base for single-key subaddress txs (`messageTransactionKey`), where the main key is `r·D` | Claude Code | 2026-11-12 | DONE |
+| 13 | Tests: `subaddress_scanner_tests` (17: Janus probes, view-only flag, recorded tx key, per-output keys, refusals, consensus shapes, container flag, proofs), `subaddress_wallet_tests` (3: funsa address and reload, change form, restart control), `SubaddressV2Test` and `CommitmentPersistenceTest` updated for the list format and storage v3 (adds a version-2 reader case). `BUILD_TESTS=ON` in the Linux CI jobs | Claude Code | 2026-11-17 | DONE |
+
+**Review (fuego-guardian, depth 2: crypto, consensus, wallet, RPC), open items:**
+- MEDIUM: subaddress metadata lives only in the WalletGreen cache. A cache that fails to load leaves V2 records as standard records: their outputs are still scanned, but the Janus check is off and `getAddress` prints the linkable form until the subaddress is recreated.
+- MEDIUM: the check cannot stop linking a subaddress to the primary address (sender pays the primary with a subaddress-shaped key). Do not publish the primary address next to subaddresses.
+- LOW: before v11, upgraded nodes reject 0x06/0x09 extras that older nodes accept, the same deployment-time rule `master` applies to its v11 tags.
+- LOW: a single-key subaddress tx is recognisable on chain by its one-key 0x09 field; 0x06 marks the others.
+- LOW: `validateSubaddressTxExtra` passes an extra that does not parse; scanners ignore such an extra too.
+- LOW: WalletLegacy `getTxProof` waits on the node callback; with an in-process node called from its own dispatcher thread it would block.
+- WalletGreen alias owners are funsa from now on; release and transfer of those aliases are refused until v11.
+- Change from V2 inputs in HEAT, CD and Hearth order flows goes to the primary address.
+- Not verified here: Clang, macOS and Windows builds.
+
+**Mutation checks**: ignoring the Janus verdict, re-picking the tx key from the extra, letting the two-argument parse accept funsa, and dropping the flag from storage each fail the matching test; restoring the code passes again.
 
 | Gate | Status | Signed |
 |------|--------|--------|
-| Build compiles | PENDING | |
-| Tests pass | PENDING | |
-| All tasks done | PENDING | |
+| Build compiles | Linux GCC Release with `BUILD_TESTS=ON`: all targets | Claude Code 2026-11-17 |
+| Tests pass | ctest 72/73; the failure is `commitment_owner_bound_tests` (5 cases), present on `master` since 33e787a5 | Claude Code 2026-11-17 |
+| All tasks done | fuego-suite core: DONE. Valise, xfg-api, explorer: planned, not started | Claude Code 2026-11-17 |
 
 ---
 

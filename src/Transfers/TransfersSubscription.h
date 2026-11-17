@@ -17,6 +17,8 @@
 
 #pragma once
 
+#include <atomic>
+
 #include "ITransfersSynchronizer.h"
 #include "TransfersContainer.h"
 #include "IObservableImpl.h"
@@ -38,13 +40,17 @@ public:
   void deleteUnconfirmedTransaction(const Crypto::Hash& transactionHash);
   void markTransactionConfirmed(const TransactionBlockInfo& block, const Crypto::Hash& transactionHash, const std::vector<uint32_t>& globalIndices);
 
+  bool isJanusCheckRequired() const;
+
   // ITransfersSubscription
   virtual AccountPublicAddress getAddress() override;
   virtual ITransfersContainer& getContainer() override;
+  virtual void setJanusCheckRequired(bool required) override;
 
 private:
   TransfersContainer transfers;
   AccountSubscription subscription;
+  std::atomic<bool> janusCheckRequired;
 };
 
 }

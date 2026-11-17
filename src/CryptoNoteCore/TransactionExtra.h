@@ -111,7 +111,7 @@ struct TransactionExtraAdditionalPubKeys {
 };
 
 struct TransactionExtraJanusBase {
-  Crypto::PublicKey publicKey;
+  std::vector<Crypto::PublicKey> keys;
 };
 
 struct TransactionExtraNonce {
@@ -563,8 +563,8 @@ Crypto::PublicKey getTransactionPublicKeyFromExtra(const std::vector<uint8_t>& t
 bool addTransactionPublicKeyToExtra(std::vector<uint8_t>& tx_extra, const Crypto::PublicKey& tx_pub_key);
 bool addAdditionalPubKeysToExtra(std::vector<uint8_t>& tx_extra, const std::vector<Crypto::PublicKey>& keys);
 bool getAdditionalPubKeysFromExtra(const std::vector<uint8_t>& tx_extra, std::vector<Crypto::PublicKey>& keys);
-bool addJanusBaseToExtra(std::vector<uint8_t>& tx_extra, const Crypto::PublicKey& janusBase);
-bool getJanusBaseFromExtra(const std::vector<uint8_t>& tx_extra, Crypto::PublicKey& janusBase);
+bool addJanusBasesToExtra(std::vector<uint8_t>& tx_extra, const std::vector<Crypto::PublicKey>& janusBases);
+bool getJanusBasesFromExtra(const std::vector<uint8_t>& tx_extra, std::vector<Crypto::PublicKey>& janusBases);
 bool addExtraNonceToTransactionExtra(std::vector<uint8_t>& tx_extra, const BinaryArray& extra_nonce);
 void setPaymentIdToTransactionExtraNonce(BinaryArray& extra_nonce, const Crypto::Hash& payment_id);
 bool getPaymentIdFromTransactionExtraNonce(const BinaryArray& extra_nonce, Crypto::Hash& payment_id);

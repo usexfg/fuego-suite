@@ -23,6 +23,14 @@ extern "C" {
 namespace Crypto {
 namespace {
 
+// Volatile writes so the compiler cannot drop the wipe of secret-derived bytes.
+void wipeSecret(void* data, size_t size) {
+  volatile uint8_t* bytes = static_cast<volatile uint8_t*>(data);
+  while (size--) {
+    *bytes++ = 0;
+  }
+}
+
 bool addScalarBaseToPoint(const PublicKey& B, const EllipticCurveScalar& m, PublicKey& D) {
   ge_p3 B_p3;
   if (ge_frombytes_vartime(&B_p3, reinterpret_cast<const unsigned char*>(&B)) != 0) {
@@ -72,6 +80,24 @@ bool scalarmultKeyNoCofactor(const PublicKey& point, const SecretKey& scalar, Pu
 
 bool subaddressTxPubKey(const SecretKey& txSecret, const PublicKey& subSpendPublicKey, PublicKey& txPubKey) {
   return scalarmultKeyNoCofactor(subSpendPublicKey, txSecret, txPubKey);
+}
+
+SecretKey additionalTxSecret(const SecretKey& txSecret, uint64_t outputIndex) {
+  static const char domain[] = "FuegoAddlTxKey";
+  const size_t domainLen = sizeof(domain) - 1;
+  uint8_t preimage[sizeof(domain) - 1 + sizeof(SecretKey) + sizeof(uint64_t)];
+  memcpy(preimage, domain, domainLen);
+  memcpy(preimage + domainLen, &txSecret, sizeof(SecretKey));
+  for (size_t i = 0; i < sizeof(uint64_t); ++i) {
+    preimage[domainLen + sizeof(SecretKey) + i] = static_cast<uint8_t>(outputIndex >> (8 * i));
+  }
+  EllipticCurveScalar scalar;
+  hash_to_scalar(preimage, sizeof(preimage), scalar);
+  SecretKey secret;
+  memcpy(&secret, &scalar, sizeof(SecretKey));
+  wipeSecret(preimage, sizeof(preimage));
+  wipeSecret(&scalar, sizeof(scalar));
+  return secret;
 }
 
 bool janusCheck(const PublicKey& txPubKey, const PublicKey& janusBase, const SecretKey& subSpendSecret) {

@@ -554,7 +554,8 @@ bool wallet_rpc_server::on_get_tx_proof(const wallet_rpc::COMMAND_RPC_GET_TX_PRO
 		throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, std::string("Failed to parse tx_hash"));
 	}
 	CryptoNote::AccountPublicAddress dest_address;
-	if (!m_currency.parseAccountAddressString(req.dest_address, dest_address)) {
+	bool isSubaddress = false;
+	if (!m_currency.parseAccountAddressString(req.dest_address, dest_address, isSubaddress)) {
 		throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_WRONG_ADDRESS, std::string("Failed to parse address"));
 	}
 
@@ -585,7 +586,7 @@ bool wallet_rpc_server::on_get_tx_proof(const wallet_rpc::COMMAND_RPC_GET_TX_PRO
 	}
 	
 	std::string sig_str;
-	if (m_wallet.getTxProof(txid, dest_address, tx_key, sig_str)) {
+	if (m_wallet.getTxProof(txid, dest_address, isSubaddress, tx_key, sig_str)) {
 		res.signature = sig_str;
 	}
 	else {

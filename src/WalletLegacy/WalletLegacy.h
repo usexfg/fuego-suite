@@ -87,7 +87,8 @@ public:
   virtual std::vector<TransactionOutputInformation> getUnspentOutputs() override;
   virtual bool isTrackingWallet();
   virtual TransactionId findTransactionByTransferId(TransferId transferId) override;
-  virtual bool getTxProof(Crypto::Hash& txid, CryptoNote::AccountPublicAddress& address, Crypto::SecretKey& tx_key, std::string& sig_str) override;
+  virtual bool getTxProof(Crypto::Hash& txid, CryptoNote::AccountPublicAddress& address, bool isSubaddress, Crypto::SecretKey& tx_key, std::string& sig_str) override;
+  bool fetchTransaction(const Crypto::Hash& txid, Transaction& tx);
   virtual std::string getReserveProof(const uint64_t &reserve, const std::string &message) override;
   virtual Crypto::SecretKey getTxKey(Crypto::Hash& txid) override;
   virtual bool get_tx_key(Crypto::Hash& txid, Crypto::SecretKey& txSecretKey) override;
@@ -142,6 +143,7 @@ public:
   void storeBurnDepositSecret(const std::string& txHash, const Crypto::SecretKey& secret, uint64_t amount, const std::vector<uint8_t>& metadata);
   bool getBurnDepositSecret(const std::string& txHash, Crypto::SecretKey& secret, uint64_t& amount, std::vector<uint8_t>& metadata);
   bool hasBurnDepositSecret(const std::string& txHash);
+  virtual bool hasUnverifiedSubaddressOutputs(const Crypto::Hash& transactionHash) override;
   virtual std::string registerSubAddress(uint32_t major, uint32_t minor,
                                          uint8_t version = Crypto::SUBADDRESS_VERSION_V2) override;
 
@@ -259,7 +261,11 @@ public:
     AccountKeys keys;
     ITransfersContainer* container;
     uint8_t version = 1;
+    Crypto::PublicKey publishedViewPublicKey;
   };
+  std::string publishedSubAddressString(const Crypto::PublicKey& spendPublicKey,
+                                        const Crypto::PublicKey& viewPublicKey,
+                                        uint8_t version) const;
   std::vector<SubAddressEntry> m_subAddresses;
 
   WalletUserTransactionsCache m_transactionsCache;

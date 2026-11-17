@@ -208,7 +208,8 @@ struct TransferCommand {
         CryptoNote::TransactionDestinationEntry de;
         std::string aliasUrl;
 
-        if (!m_currency.parseAccountAddressString(arg, de.addr)) {
+        bool isSubaddress = false;
+        if (!m_currency.parseAccountAddressString(arg, de.addr, isSubaddress)) {
           aliasUrl = arg;
         }
 
@@ -2768,7 +2769,8 @@ bool simple_wallet::get_tx_proof(const std::vector<std::string> &args) {
 
   const std::string address_string = args[1];
   CryptoNote::AccountPublicAddress address;
-  if (!m_currency.parseAccountAddressString(address_string, address)) {
+  bool isSubaddress = false;
+  if (!m_currency.parseAccountAddressString(address_string, address, isSubaddress)) {
      fail_msg_writer() << "Failed to parse address " << address_string;
      return true;
   }
@@ -2800,8 +2802,10 @@ bool simple_wallet::get_tx_proof(const std::vector<std::string> &args) {
     }
   }
 
-  if (m_wallet->getTxProof(txid, address, tx_key, sig_str)) {
+  if (m_wallet->getTxProof(txid, address, isSubaddress, tx_key, sig_str)) {
     success_msg_writer() << "Signature: " << sig_str << std::endl;
+  } else {
+    fail_msg_writer() << "Failed to build a payment proof for this address";
   }
 
   return true;
@@ -2838,7 +2842,7 @@ void simple_wallet::externalTransactionCreated(CryptoNote::TransactionId transac
   if (txInfo.totalAmount >= 0) {
     logger(INFO, GREEN) <<
       logPrefix.str() << " transaction " << Common::podToHex(txInfo.hash) <<
-      ", received " << m_currency.formatAmount(txInfo.totalAmount);
+      ", received " << m_currency.formatAmount(txInfo.totalAmount) << janusUnverifiedNote(txInfo.hash);
   } else {
     logger(INFO, MAGENTA) <<
       logPrefix.str() << " transaction " << Common::podToHex(txInfo.hash) <<
@@ -3013,6 +3017,12 @@ bool simple_wallet::export_keys(const std::vector<std::string>& args) {
 }
 
 //----------------------------------------------------------------------------------------------------
+std::string simple_wallet::janusUnverifiedNote(const Crypto::Hash& transactionHash) {
+  return m_wallet->hasUnverifiedSubaddressOutputs(transactionHash)
+      ? " [funsa subaddress output not Janus-verified: view-only wallet; do not confirm receipt to the sender]"
+      : "";
+}
+
 bool simple_wallet::show_incoming_transfers(const std::vector<std::string>& args) {
   bool hasTransfers = false;
   size_t transactionsCount = m_wallet->getTransactionCount();
@@ -3023,7 +3033,8 @@ bool simple_wallet::show_incoming_transfers(const std::vector<std::string>& args
     hasTransfers = true;
     logger(INFO) << "        amount       \t                              tx id";
     logger(INFO, GREEN) <<
-      std::setw(21) << m_currency.formatAmount(txInfo.totalAmount) << '\t' << Common::podToHex(txInfo.hash);
+      std::setw(21) << m_currency.formatAmount(txInfo.totalAmount) << '\t' << Common::podToHex(txInfo.hash)
+      << janusUnverifiedNote(txInfo.hash);
   }
 
   if (!hasTransfers) success_msg_writer() << "No incoming transfers";

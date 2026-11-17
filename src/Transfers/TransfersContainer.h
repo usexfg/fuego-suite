@@ -145,11 +145,17 @@ struct TransactionOutputInformationEx : public TransactionOutputInformationIn {
   // Storage version 2 adds the published commit key for Commitment outputs. The
   // signer needs it to choose between the owner-bound and legacy derivations, and
   // without it every cached HEAT/CD output would be unspendable after a restart.
-  void serialize(CryptoNote::ISerializer& s) {
+  void serializeV2(CryptoNote::ISerializer& s) {
     serializeV1(s);
     if (type == TransactionTypes::OutputType::Commitment) {
       s(commitmentKey, "");
     }
+  }
+
+  // Storage version 3 adds the funsa subaddress Janus flag.
+  void serialize(CryptoNote::ISerializer& s) {
+    serializeV2(s);
+    s(janusUnverified, "");
   }
 
 };
@@ -200,6 +206,19 @@ struct SpentTransactionOutputV1 : public SpentTransactionOutput {
   SpentTransactionOutputV1() : SpentTransactionOutput() {}
   void serialize(ISerializer& s) {
     serializeV1(s);
+    serializeSpendInfo(s);
+  }
+};
+
+struct TransactionOutputInformationExV2 : public TransactionOutputInformationEx {
+  TransactionOutputInformationExV2() : TransactionOutputInformationEx() {}
+  void serialize(ISerializer& s) { serializeV2(s); }
+};
+
+struct SpentTransactionOutputV2 : public SpentTransactionOutput {
+  SpentTransactionOutputV2() : SpentTransactionOutput() {}
+  void serialize(ISerializer& s) {
+    serializeV2(s);
     serializeSpendInfo(s);
   }
 };

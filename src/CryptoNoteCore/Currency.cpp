@@ -939,7 +939,16 @@ double Currency::getBurnPercentage() const {
   bool Currency::parseAccountAddressString(const std::string &str, AccountPublicAddress &addr) const
   {
     bool isSubaddress = false;
-    return parseAccountAddressString(str, addr, isSubaddress);
+    if (!parseAccountAddressString(str, addr, isSubaddress))
+    {
+      return false;
+    }
+    if (isSubaddress)
+    {
+      logger(DEBUGGING) << "Subaddress refused where only a standard address is accepted: " << str;
+      return false;
+    }
+    return true;
   }
 
   bool Currency::parseAccountAddressString(const std::string &str, AccountPublicAddress &addr, bool &isSubaddress) const

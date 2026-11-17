@@ -33,7 +33,11 @@
 #include <openssl/sha.h>
 #include "crypto/crypto.h"
 #include "crypto/keccak.h"
+#include <future>
+
 #include "Common/Base58.h"
+#include "CryptoNoteCore/SubaddressTx.h"
+#include "CryptoNoteCore/SubaddressTxProof.h"
 #include "Common/ShuffleGenerator.h"
 #include "Logging/ConsoleLogger.h"
 #include "WalletLegacy/WalletHelper.h"
@@ -1614,10 +1618,7 @@ std::string WalletLegacy::registerSubAddress(uint32_t major, uint32_t minor, uin
   // Idempotent: if already registered, return cached address string.
   for (const auto& sa : m_subAddresses) {
     if (sa.major == major && sa.minor == minor) {
-      if (sa.version == Crypto::SUBADDRESS_VERSION_V2) {
-        return m_currency.subAddressAsString({sa.keys.address.spendPublicKey, sa.keys.address.viewPublicKey});
-      }
-      return m_currency.accountAddressAsString({sa.keys.address.spendPublicKey, sa.keys.address.viewPublicKey});
+      return publishedSubAddressString(sa.keys.address.spendPublicKey, sa.publishedViewPublicKey, sa.version);
     }
   }
 
@@ -1635,14 +1636,17 @@ std::string WalletLegacy::registerSubAddress(uint32_t major, uint32_t minor, uin
             major, minor);
 
   // Build AccountKeys for this sub-address.
+  // Subscribed under the master view key so one consumer scans every address once;
+  // the subaddress view key C only appears in the published address.
   AccountKeys subAccountKeys;
   subAccountKeys.address.spendPublicKey = subKeys.spendPublicKey;
-  subAccountKeys.address.viewPublicKey  = subKeys.viewPublicKey;
+  subAccountKeys.address.viewPublicKey  = master.address.viewPublicKey;
   subAccountKeys.spendSecretKey         = subKeys.hasSpendSecretKey ? subKeys.spendSecretKey : NULL_SECRET_KEY;
   subAccountKeys.viewSecretKey          = master.viewSecretKey;
 
   AccountSubscription sub;
   sub.keys = subAccountKeys;
+  sub.janusCheckRequired = version == Crypto::SUBADDRESS_VERSION_V2;
   sub.transactionSpendableAge = CryptoNote::parameters::CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE;
   sub.syncStart.height = 0;
   sub.syncStart.timestamp = m_account.get_createtime() - ACCOUN_CREATE_TIME_ACCURACY;
@@ -1661,6 +1665,7 @@ std::string WalletLegacy::registerSubAddress(uint32_t major, uint32_t minor, uin
     entry.keys      = subAccountKeys;
     entry.container = container;
     entry.version   = version;
+    entry.publishedViewPublicKey = subKeys.viewPublicKey;
     m_subAddresses.push_back(entry);
 
     // Update the sender with the new sub-address data.
@@ -1669,14 +1674,34 @@ std::string WalletLegacy::registerSubAddress(uint32_t major, uint32_t minor, uin
     }
 
     m_blockchainSync.start(); //XXX: start can throw. what to do in this case?
-    return version == Crypto::SUBADDRESS_VERSION_V2
-        ? m_currency.subAddressAsString({subKeys.spendPublicKey, subKeys.viewPublicKey})
-        : m_currency.accountAddressAsString({subKeys.spendPublicKey, subKeys.viewPublicKey});
+    return publishedSubAddressString(subKeys.spendPublicKey, subKeys.viewPublicKey, version);
   } catch (...) {
     // Ensure we restart the synchronizer even on error
     m_blockchainSync.start();
     throw;
   }
+}
+
+bool WalletLegacy::hasUnverifiedSubaddressOutputs(const Crypto::Hash& transactionHash) {
+  for (const auto& sa : m_subAddresses) {
+    if (sa.version != Crypto::SUBADDRESS_VERSION_V2 || sa.container == nullptr) {
+      continue;
+    }
+    for (const auto& output : sa.container->getTransactionOutputs(transactionHash, ITransfersContainer::IncludeAll)) {
+      if (output.janusUnverified) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+std::string WalletLegacy::publishedSubAddressString(const Crypto::PublicKey& spendPublicKey,
+                                                    const Crypto::PublicKey& viewPublicKey,
+                                                    uint8_t version) const {
+  const AccountPublicAddress address{spendPublicKey, viewPublicKey};
+  return version == Crypto::SUBADDRESS_VERSION_V2 ? m_currency.subAddressAsString(address)
+                                                  : m_currency.accountAddressAsString(address);
 }
 
 bool WalletLegacy::isTrackingWallet() {
@@ -1855,7 +1880,22 @@ bool WalletLegacy::get_tx_key(Crypto::Hash& txid, Crypto::SecretKey& txSecretKey
   return true;
 }
 
-bool WalletLegacy::getTxProof(Crypto::Hash& txid, CryptoNote::AccountPublicAddress& address, Crypto::SecretKey& tx_key, std::string& sig_str) {
+bool WalletLegacy::fetchTransaction(const Crypto::Hash& txid, Transaction& tx) {
+  std::promise<std::error_code> fetched;
+  auto result = fetched.get_future();
+  m_node.getTransaction(txid, tx, [&fetched](std::error_code ec) { fetched.set_value(ec); });
+  return !result.get();
+}
+
+// A funsa subaddress, or any output paid through a per-output tx key, needs ProofV2;
+// a standard address paid through the main key keeps the ProofV1 form older verifiers read.
+bool WalletLegacy::getTxProof(Crypto::Hash& txid, CryptoNote::AccountPublicAddress& address, bool isSubaddress, Crypto::SecretKey& tx_key, std::string& sig_str) {
+  Transaction tx;
+  const bool haveTransaction = fetchTransaction(txid, tx);
+  if (isSubaddress || (haveTransaction && !readSubaddressTxKeys(tx.extra).additionalPubKeys.empty())) {
+    return haveTransaction && generatePaymentProof(tx, txid, address, isSubaddress, tx_key, sig_str);
+  }
+
   Crypto::KeyImage p = *reinterpret_cast<Crypto::KeyImage*>(&address.viewPublicKey);
   Crypto::KeyImage k = *reinterpret_cast<Crypto::KeyImage*>(&tx_key);
   Crypto::KeyImage pk = Crypto::scalarmultKey(p, k);

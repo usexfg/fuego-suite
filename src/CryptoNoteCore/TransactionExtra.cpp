@@ -39,6 +39,38 @@ using namespace Common;
 
 namespace CryptoNote
 {
+  namespace
+  {
+    bool readCountedPublicKeys(Common::IInputStream &iss, std::vector<PublicKey> &keys)
+    {
+      const uint8_t count = read<uint8_t>(iss);
+      if (count == 0)
+      {
+        return false;
+      }
+      keys.resize(count);
+      for (auto &key : keys)
+      {
+        read(iss, key.data, sizeof(key.data));
+      }
+      return true;
+    }
+
+    bool addCountedPublicKeys(std::vector<uint8_t> &tx_extra, uint8_t tag, const std::vector<PublicKey> &keys)
+    {
+      if (keys.empty() || keys.size() > 255)
+      {
+        return false;
+      }
+      tx_extra.push_back(tag);
+      tx_extra.push_back(static_cast<uint8_t>(keys.size()));
+      for (const auto &key : keys)
+      {
+        tx_extra.insert(tx_extra.end(), key.data, key.data + sizeof(key.data));
+      }
+      return true;
+    }
+  }
 
   bool parseTransactionExtra(const std::vector<uint8_t> &transactionExtra, std::vector<TransactionExtraField> &transactionExtraFields)
   {
@@ -129,14 +161,9 @@ namespace CryptoNote
 
         case TX_EXTRA_ADDITIONAL_PUBKEYS:
         {
-          uint8_t count = read<uint8_t>(iss);
-          if (count == 0) {
-            return false;
-          }
           TransactionExtraAdditionalPubKeys addl;
-          addl.keys.resize(count);
-          for (uint8_t i = 0; i < count; ++i) {
-            read(iss, addl.keys[i].data, sizeof(addl.keys[i].data));
+          if (!readCountedPublicKeys(iss, addl.keys)) {
+            return false;
           }
           transactionExtraFields.push_back(addl);
           break;
@@ -145,7 +172,9 @@ namespace CryptoNote
         case TX_EXTRA_JANUS_BASE:
         {
           TransactionExtraJanusBase janus;
-          read(iss, janus.publicKey.data, sizeof(janus.publicKey.data));
+          if (!readCountedPublicKeys(iss, janus.keys)) {
+            return false;
+          }
           transactionExtraFields.push_back(janus);
           break;
         }
@@ -530,7 +559,7 @@ namespace CryptoNote
 
     bool operator()(const TransactionExtraJanusBase &t)
     {
-      return addJanusBaseToExtra(extra, t.publicKey);
+      return addJanusBasesToExtra(extra, t.keys);
     }
 
     bool operator()(const TransactionExtraNonce &t)
@@ -748,15 +777,7 @@ namespace CryptoNote
 
   bool addAdditionalPubKeysToExtra(std::vector<uint8_t> &tx_extra, const std::vector<PublicKey> &keys)
   {
-    if (keys.empty() || keys.size() > 255) {
-      return false;
-    }
-    tx_extra.push_back(TX_EXTRA_ADDITIONAL_PUBKEYS);
-    tx_extra.push_back(static_cast<uint8_t>(keys.size()));
-    for (const auto &key : keys) {
-      tx_extra.insert(tx_extra.end(), key.data, key.data + sizeof(key.data));
-    }
-    return true;
+    return addCountedPublicKeys(tx_extra, TX_EXTRA_ADDITIONAL_PUBKEYS, keys);
   }
 
   bool getAdditionalPubKeysFromExtra(const std::vector<uint8_t> &tx_extra, std::vector<PublicKey> &keys)
@@ -773,14 +794,12 @@ namespace CryptoNote
     return true;
   }
 
-  bool addJanusBaseToExtra(std::vector<uint8_t> &tx_extra, const PublicKey &janusBase)
+  bool addJanusBasesToExtra(std::vector<uint8_t> &tx_extra, const std::vector<PublicKey> &janusBases)
   {
-    tx_extra.push_back(TX_EXTRA_JANUS_BASE);
-    tx_extra.insert(tx_extra.end(), janusBase.data, janusBase.data + sizeof(janusBase.data));
-    return true;
+    return addCountedPublicKeys(tx_extra, TX_EXTRA_JANUS_BASE, janusBases);
   }
 
-  bool getJanusBaseFromExtra(const std::vector<uint8_t> &tx_extra, PublicKey &janusBase)
+  bool getJanusBasesFromExtra(const std::vector<uint8_t> &tx_extra, std::vector<PublicKey> &janusBases)
   {
     std::vector<TransactionExtraField> fields;
     if (!parseTransactionExtra(tx_extra, fields)) {
@@ -790,7 +809,7 @@ namespace CryptoNote
     if (!findTransactionExtraFieldByType(fields, janus)) {
       return false;
     }
-    janusBase = janus.publicKey;
+    janusBases = janus.keys;
     return true;
   }
 

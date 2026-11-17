@@ -45,8 +45,12 @@
 // The Janus attack allows an attacker holding two subaddresses D_ij and D_kj from the
 // same wallet to link them by checking if b_kj * R == R_kj where R = r * D_ij.
 //
-// The mitigation uses TX_EXTRA_JANUS_BASE (tag 0x09) which carries janusBase = r * G.
-// The receiver performs janusCheck: verify subSpendSecret * janusBase == txPubKey.
+// The mitigation uses TX_EXTRA_JANUS_BASE (tag 0x09): one janusBase = r * G for a
+// single-key tx, or one r_n * G per output when TX_EXTRA_ADDITIONAL_PUBKEYS (0x06) is present.
+// A full wallet credits a V2 subaddress output only when
+// subSpendSecret * janusBase == the tx key that matched it; a view-only wallet cannot run the
+// check and records the output as unverified. Linking a subaddress to the primary address is
+// not prevented by this check.
 //
 // Mathematical proof of correctness:
 //
@@ -110,5 +114,9 @@ bool janusCheck(
     const PublicKey& txPubKey,
     const PublicKey& janusBase,
     const SecretKey& subSpendSecret);
+
+// r_n = H_s("FuegoAddlTxKey" || r || n_LE64). Derived from the main tx secret so the
+// sender can rebuild every per-output key for a payment proof without storing them.
+SecretKey additionalTxSecret(const SecretKey& txSecret, uint64_t outputIndex);
 
 } // namespace Crypto

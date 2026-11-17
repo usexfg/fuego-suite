@@ -239,6 +239,9 @@ public:
 
   virtual size_t getTransactionCount() const = 0;
   virtual WalletTransaction getTransaction(size_t transactionIndex) const = 0;
+  // True when this wallet holds a funsa subaddress output of the transaction that was
+  // credited without its Janus check (a view-only wallet cannot run it).
+  virtual bool hasUnverifiedSubaddressOutputs(const Crypto::Hash &transactionHash) const = 0;
   virtual size_t getTransactionTransferCount(size_t transactionIndex) const = 0;
   virtual WalletTransfer getTransactionTransfer(size_t transactionIndex, size_t transferIndex) const = 0;
 

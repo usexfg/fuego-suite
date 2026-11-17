@@ -32,6 +32,8 @@ struct AccountSubscription {
   AccountKeys keys;
   SynchronizationStart syncStart;
   size_t transactionSpendableAge;
+  // A funsa V2 subaddress: its outputs are credited only when their Janus check passes.
+  bool janusCheckRequired = false;
 };
 
 class ITransfersSubscription;
@@ -64,6 +66,7 @@ public:
 
   virtual AccountPublicAddress getAddress() = 0;
   virtual ITransfersContainer& getContainer() = 0;
+  virtual void setJanusCheckRequired(bool required) = 0;
 };
 
 class ITransfersSynchronizerObserver {

@@ -70,6 +70,10 @@ namespace CryptoNote
     // decide between the owner-bound and legacy derivations: an owner-bound
     // output reproduces P only with the recipient's spend secret.
     Crypto::PublicKey commitmentKey;
+
+    // A funsa subaddress output credited without its Janus check, which needs the
+    // subaddress spend secret: a view-only wallet cannot run it.
+    bool janusUnverified = false;
   };
 
   struct TransactionSpentOutputInformation : public TransactionOutputInformation

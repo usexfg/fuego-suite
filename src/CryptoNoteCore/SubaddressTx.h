@@ -13,14 +13,48 @@
 
 namespace CryptoNote {
 
+struct OutputTxKey {
+  Crypto::PublicKey txPublicKey;
+  Crypto::PublicKey janusBase;
+  Crypto::KeyDerivation derivation;
+};
+
+struct SubaddressTxKeys {
+  std::vector<Crypto::PublicKey> additionalPubKeys;
+  std::vector<Crypto::PublicKey> janusBases;
+};
+
 struct SubaddressOutputPlan {
   Crypto::PublicKey mainTxPubKey;
-  Crypto::PublicKey janusBase;
-  bool hasJanusBase = false;
   bool singleSubaddressTx = false;
-  std::vector<Crypto::PublicKey> additionalPubKeys;
-  std::vector<Crypto::SecretKey> outputSecrets;
+  SubaddressTxKeys txKeys;
+  std::vector<Crypto::KeyDerivation> outputDerivations;
 };
+
+bool deriveOutputTxKey(
+    const Crypto::SecretKey& txSecret,
+    size_t outputIndex,
+    const AccountPublicAddress& to,
+    bool toSubaddress,
+    OutputTxKey& key);
+
+Crypto::PublicKey unlinkableJanusFiller();
+
+SubaddressTxKeys readSubaddressTxKeys(const std::vector<uint8_t>& extra);
+
+bool janusBaseForOutput(
+    const SubaddressTxKeys& keys,
+    size_t outputIndex,
+    bool matchedViaAdditionalKey,
+    Crypto::PublicKey& janusBase);
+
+Crypto::PublicKey messageTransactionKey(
+    const std::vector<uint8_t>& extra,
+    const Crypto::PublicKey& mainTxPubKey);
+
+bool writeSubaddressTxKeys(std::vector<uint8_t>& extra, const SubaddressTxKeys& keys);
+
+bool encodeSubaddressTxKeys(const SubaddressTxKeys& keys, std::vector<uint8_t>& encoded);
 
 bool planSubaddressOutputs(
     const Crypto::SecretKey& txSecret,
@@ -33,7 +67,6 @@ bool planSubaddressOutputs(
 bool derivePlannedOutputKey(
     const TransactionDestinationEntry& dest,
     const SubaddressOutputPlan& plan,
-    const Crypto::SecretKey& senderViewSecret,
     size_t outputIndex,
     Crypto::PublicKey& ephemeral);
 

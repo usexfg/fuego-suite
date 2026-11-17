@@ -22,6 +22,7 @@
 #include "Account.h"
 #include "CryptoNoteCore/CryptoNoteTools.h"
 #include "CryptoNoteConfig.h"
+#include "SubaddressTx.h"
 #include "crypto/subaddress.h"
 
 #include <boost/optional.hpp>
@@ -146,11 +147,23 @@ namespace CryptoNote {
       }
     }
 
+    struct AddressedOutput {
+      AccountPublicAddress to;
+      bool toSubaddress;
+    };
+
+    void recordUnaddressedOutput();
+    void switchToPerOutputTxKeys();
+    PublicKey keyOutputWithOwnTxKey(size_t outputIndex, const AccountPublicAddress& to, bool toSubaddress);
+    void writeOutputTxKeys();
+
     CryptoNote::Transaction transaction;
     boost::optional<SecretKey> secretKey;
     mutable boost::optional<Hash> transactionHash;
     TransactionExtra extra;
-    std::vector<PublicKey> additionalPubKeys;
+    std::vector<boost::optional<AddressedOutput>> outputDestinations;
+    bool perOutputTxKeys = false;
+    SubaddressTxKeys outputTxKeys;
   };
 
 
@@ -189,11 +202,13 @@ namespace CryptoNote {
     }
     
     extra.parse(transaction.extra);
+    outputDestinations.resize(transaction.outputs.size());
     transactionHash = getBinaryArrayHash(ba); // avoid serialization if we already have blob
   }
 
   TransactionImpl::TransactionImpl(const CryptoNote::Transaction& tx) : transaction(tx) {
     extra.parse(transaction.extra);
+    outputDestinations.resize(transaction.outputs.size());
   }
 
   void TransactionImpl::invalidateHash() {
@@ -313,47 +328,78 @@ namespace CryptoNote {
   size_t TransactionImpl::addOutput(uint64_t amount, const AccountPublicAddress& to, bool isSubaddress) {
     checkIfSigning();
 
-    KeyOutput outKey;
+    if (isSubaddress && !perOutputTxKeys) {
+      switchToPerOutputTxKeys();
+    }
+
     const size_t outputIndex = transaction.outputs.size();
-    if (isSubaddress || !additionalPubKeys.empty()) {
-      PublicKey dummy;
-      SecretKey r_n;
-      generate_keys(dummy, r_n);
-      PublicKey R_n;
-      if (isSubaddress) {
-        if (!Crypto::subaddressTxPubKey(r_n, to.spendPublicKey, R_n)) {
-          throw std::runtime_error("subaddress tx pubkey failed");
-        }
-      } else if (!secret_key_to_public_key(r_n, R_n)) {
-        throw std::runtime_error("additional tx pubkey failed");
-      }
-      KeyDerivation derivation;
-      if (!generate_key_derivation(to.viewPublicKey, r_n, derivation) ||
-          !derive_public_key(derivation, outputIndex, to.spendPublicKey, outKey.key)) {
-        throw std::runtime_error("subaddress output derivation failed");
-      }
-      if (additionalPubKeys.empty() && outputIndex > 0) {
-        PublicKey mainR;
-        if (!extra.getPublicKey(mainR)) {
-          throw std::runtime_error("missing main tx pubkey for mixed subaddress outputs");
-        }
-        additionalPubKeys.assign(outputIndex, mainR);
-      }
-      additionalPubKeys.push_back(R_n);
-      extra.set(TransactionExtraAdditionalPubKeys{additionalPubKeys});
-      transaction.extra = extra.serialize();
+    KeyOutput outKey;
+    if (perOutputTxKeys) {
+      outKey.key = keyOutputWithOwnTxKey(outputIndex, to, isSubaddress);
     } else {
       derivePublicKey(to, txSecretKey(), outputIndex, outKey.key);
     }
+
+    outputDestinations.push_back(AddressedOutput{to, isSubaddress});
     TransactionOutput out = { amount, outKey };
     transaction.outputs.emplace_back(out);
+    if (perOutputTxKeys) {
+      writeOutputTxKeys();
+    }
     invalidateHash();
 
-    return transaction.outputs.size() - 1;
+    return outputIndex;
+  }
+
+  void TransactionImpl::recordUnaddressedOutput() {
+    if (perOutputTxKeys) {
+      throw std::logic_error("Only address outputs can follow a subaddress output: each one needs its own tx key");
+    }
+    outputDestinations.push_back(boost::none);
+  }
+
+  void TransactionImpl::switchToPerOutputTxKeys() {
+    PublicKey mainTxPublicKey;
+    if (!extra.getPublicKey(mainTxPublicKey)) {
+      throw std::runtime_error("Transaction has no main public key");
+    }
+    perOutputTxKeys = true;
+    for (size_t i = 0; i < transaction.outputs.size(); ++i) {
+      const auto& destination = outputDestinations[i];
+      if (destination) {
+        boost::get<KeyOutput>(transaction.outputs[i].target).key =
+            keyOutputWithOwnTxKey(i, destination->to, destination->toSubaddress);
+      } else {
+        outputTxKeys.additionalPubKeys.push_back(mainTxPublicKey);
+        outputTxKeys.janusBases.push_back(unlinkableJanusFiller());
+      }
+    }
+  }
+
+  PublicKey TransactionImpl::keyOutputWithOwnTxKey(size_t outputIndex, const AccountPublicAddress& to, bool toSubaddress) {
+    OutputTxKey key;
+    PublicKey outputKey;
+    if (!deriveOutputTxKey(txSecretKey(), outputIndex, to, toSubaddress, key) ||
+        !derive_public_key(key.derivation, outputIndex, to.spendPublicKey, outputKey)) {
+      throw std::runtime_error("Per-output tx key derivation failed");
+    }
+    outputTxKeys.additionalPubKeys.push_back(key.txPublicKey);
+    outputTxKeys.janusBases.push_back(key.janusBase);
+    return outputKey;
+  }
+
+  void TransactionImpl::writeOutputTxKeys() {
+    std::vector<uint8_t> rewritten = transaction.extra;
+    if (!writeSubaddressTxKeys(rewritten, outputTxKeys)) {
+      throw std::runtime_error("Transaction extra does not parse, so per-output tx keys cannot be written");
+    }
+    transaction.extra = rewritten;
+    extra.parse(transaction.extra);
   }
 
   size_t TransactionImpl::addOutput(uint64_t amount, const std::vector<AccountPublicAddress>& to, uint32_t requiredSignatures, uint32_t term) {
     checkIfSigning();
+    recordUnaddressedOutput();
 
     const auto& txKey = txSecretKey();
     size_t outputIndex = transaction.outputs.size();
@@ -376,6 +422,7 @@ namespace CryptoNote {
 
   size_t TransactionImpl::addOutput(uint64_t amount, const KeyOutput& out) {
     checkIfSigning();
+    recordUnaddressedOutput();
     size_t outputIndex = transaction.outputs.size();
     TransactionOutput realOut = { amount, out };
     transaction.outputs.emplace_back(realOut);
@@ -385,6 +432,7 @@ namespace CryptoNote {
 
   size_t TransactionImpl::addOutput(uint64_t amount, const MultisignatureOutput& out) {
     checkIfSigning();
+    recordUnaddressedOutput();
     size_t outputIndex = transaction.outputs.size();
     TransactionOutput realOut = { amount, out };
     transaction.outputs.emplace_back(realOut);
@@ -394,6 +442,7 @@ namespace CryptoNote {
 
   size_t TransactionImpl::addOutput(uint64_t amount, const TransactionOutputCommitment& out) {
     checkIfSigning();
+    recordUnaddressedOutput();
     size_t outputIndex = transaction.outputs.size();
     TransactionOutput realOut = { amount, out };
     transaction.outputs.emplace_back(realOut);
@@ -404,6 +453,7 @@ namespace CryptoNote {
 
   size_t TransactionImpl::addOutput(uint64_t amount, const TransactionOutputOrder& out) {
     checkIfSigning();
+    recordUnaddressedOutput();
     size_t outputIndex = transaction.outputs.size();
     TransactionOutput realOut = { amount, out };
     transaction.outputs.emplace_back(realOut);

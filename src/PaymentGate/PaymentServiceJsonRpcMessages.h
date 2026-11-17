@@ -790,6 +790,7 @@ struct TransactionRpcInfo
   std::string paymentId;
   size_t firstDepositId = CryptoNote::WALLET_INVALID_DEPOSIT_ID;
   size_t depositCount = 0;
+  bool unverifiedSubaddressOutputs = false;
 
   void serialize(CryptoNote::ISerializer &serializer);
 };

@@ -152,6 +152,7 @@ TEST(SubaddressV2, ExtraRejectedBeforeV11) {
   pk.data[0] = 1;
   ASSERT_TRUE(secret_key_to_public_key(makeScalar(10), pk));
   ASSERT_TRUE(addAdditionalPubKeysToExtra(tx.extra, {pk}));
+  ASSERT_TRUE(addJanusBasesToExtra(tx.extra, {pk}));
 
   std::string err;
   EXPECT_FALSE(validateSubaddressTxExtra(tx, BLOCK_MAJOR_VERSION_10, &err));
@@ -188,17 +189,17 @@ TEST(SubaddressV2, SendScanSingleSubaddress) {
   SubaddressOutputPlan plan;
   ASSERT_TRUE(planSubaddressOutputs(r, rG, sender.viewSecret, sender.spendPublic, {dest}, plan));
   EXPECT_TRUE(plan.singleSubaddressTx);
-  EXPECT_TRUE(plan.hasJanusBase);
+  ASSERT_EQ(plan.txKeys.janusBases.size(), 1u);
 
   PublicKey ephemeral;
-  ASSERT_TRUE(derivePlannedOutputKey(dest, plan, sender.viewSecret, 0, ephemeral));
+  ASSERT_TRUE(derivePlannedOutputKey(dest, plan, 0, ephemeral));
 
   KeyDerivation recvDer;
   ASSERT_TRUE(generate_key_derivation(plan.mainTxPubKey, recv.viewSecret, recvDer));
   PublicKey recovered;
   ASSERT_TRUE(underive_public_key(recvDer, 0, ephemeral, recovered));
   EXPECT_EQ(0, memcmp(&recovered, &sub.spendPublicKey, sizeof(PublicKey)));
-  EXPECT_TRUE(janusCheck(plan.mainTxPubKey, plan.janusBase, sub.spendSecretKey));
+  EXPECT_TRUE(janusCheck(plan.mainTxPubKey, plan.txKeys.janusBases[0], sub.spendSecretKey));
 }
 
 TEST(SubaddressV2, SingleSubaddressWithChange) {
@@ -216,13 +217,13 @@ TEST(SubaddressV2, SingleSubaddressWithChange) {
   SubaddressOutputPlan plan;
   ASSERT_TRUE(planSubaddressOutputs(r, rG, sender.viewSecret, sender.spendPublic, {subDest, changeDest}, plan));
   EXPECT_TRUE(plan.singleSubaddressTx);
-  EXPECT_TRUE(plan.hasJanusBase);
+  ASSERT_EQ(plan.txKeys.janusBases.size(), 1u);
   EXPECT_NE(0, memcmp(&plan.mainTxPubKey, &rG, sizeof(PublicKey)));
 
   PublicKey subEph;
-  ASSERT_TRUE(derivePlannedOutputKey(subDest, plan, sender.viewSecret, 0, subEph));
+  ASSERT_TRUE(derivePlannedOutputKey(subDest, plan, 0, subEph));
   PublicKey changeEph;
-  ASSERT_TRUE(derivePlannedOutputKey(changeDest, plan, sender.viewSecret, 1, changeEph));
+  ASSERT_TRUE(derivePlannedOutputKey(changeDest, plan, 1, changeEph));
 
   KeyDerivation recvDer;
   ASSERT_TRUE(generate_key_derivation(plan.mainTxPubKey, recv.viewSecret, recvDer));
@@ -238,9 +239,10 @@ TEST(SubaddressV2, SingleSubaddressWithChange) {
 
   std::vector<uint8_t> extra;
   ASSERT_TRUE(applySubaddressTxExtra(extra, plan));
-  PublicKey janus;
-  EXPECT_TRUE(getJanusBaseFromExtra(extra, janus));
-  EXPECT_EQ(0, memcmp(&janus, &rG, sizeof(PublicKey)));
+  std::vector<PublicKey> janus;
+  ASSERT_TRUE(getJanusBasesFromExtra(extra, janus));
+  ASSERT_EQ(janus.size(), 1u);
+  EXPECT_EQ(0, memcmp(&janus[0], &rG, sizeof(PublicKey)));
   std::vector<PublicKey> additional;
   EXPECT_FALSE(getAdditionalPubKeysFromExtra(extra, additional));
 }
@@ -260,22 +262,22 @@ TEST(SubaddressV2, MixedStandardAndSubaddress) {
   SubaddressOutputPlan plan;
   ASSERT_TRUE(planSubaddressOutputs(r, rG, sender.viewSecret, sender.spendPublic, {stdDest, subDest}, plan));
   EXPECT_FALSE(plan.singleSubaddressTx);
-  EXPECT_FALSE(plan.hasJanusBase);
-  ASSERT_EQ(plan.additionalPubKeys.size(), 2u);
+  ASSERT_EQ(plan.txKeys.additionalPubKeys.size(), 2u);
+  ASSERT_EQ(plan.txKeys.janusBases.size(), 2u);
 
   PublicKey stdEph;
-  ASSERT_TRUE(derivePlannedOutputKey(stdDest, plan, sender.viewSecret, 0, stdEph));
+  ASSERT_TRUE(derivePlannedOutputKey(stdDest, plan, 0, stdEph));
   PublicKey subEph;
-  ASSERT_TRUE(derivePlannedOutputKey(subDest, plan, sender.viewSecret, 1, subEph));
+  ASSERT_TRUE(derivePlannedOutputKey(subDest, plan, 1, subEph));
 
   KeyDerivation stdDer;
-  ASSERT_TRUE(generate_key_derivation(plan.additionalPubKeys[0], recv.viewSecret, stdDer));
+  ASSERT_TRUE(generate_key_derivation(plan.txKeys.additionalPubKeys[0], recv.viewSecret, stdDer));
   PublicKey recoveredStd;
   ASSERT_TRUE(underive_public_key(stdDer, 0, stdEph, recoveredStd));
   EXPECT_EQ(0, memcmp(&recoveredStd, &recv.spendPublic, sizeof(PublicKey)));
 
   KeyDerivation subDer;
-  ASSERT_TRUE(generate_key_derivation(plan.additionalPubKeys[1], recv.viewSecret, subDer));
+  ASSERT_TRUE(generate_key_derivation(plan.txKeys.additionalPubKeys[1], recv.viewSecret, subDer));
   PublicKey recoveredSub;
   ASSERT_TRUE(underive_public_key(subDer, 1, subEph, recoveredSub));
   EXPECT_EQ(0, memcmp(&recoveredSub, &sub.spendPublicKey, sizeof(PublicKey)));
@@ -285,6 +287,10 @@ TEST(SubaddressV2, MixedStandardAndSubaddress) {
   std::vector<PublicKey> additional;
   ASSERT_TRUE(getAdditionalPubKeysFromExtra(extra, additional));
   ASSERT_EQ(additional.size(), 2u);
-  PublicKey janus;
-  EXPECT_FALSE(getJanusBaseFromExtra(extra, janus));
+  std::vector<PublicKey> janus;
+  ASSERT_TRUE(getJanusBasesFromExtra(extra, janus));
+  ASSERT_EQ(janus.size(), 2u);
+  EXPECT_TRUE(janusCheck(additional[1], janus[1], sub.spendSecretKey));
+  EXPECT_FALSE(janusCheck(additional[0], janus[0], recv.spendSecret));
+  EXPECT_NE(0, memcmp(&additional[0], &janus[0], sizeof(PublicKey)));
 }

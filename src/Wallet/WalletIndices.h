@@ -102,8 +102,9 @@ struct EncryptedWalletRecord {
             boost::multi_index::random_access<boost::multi_index::tag<RandomAccessIndex>>,
             boost::multi_index::hashed_unique<boost::multi_index::tag<KeysIndex>,
                                               BOOST_MULTI_INDEX_MEMBER(WalletRecord, Crypto::PublicKey, spendPublicKey)>,
-            boost::multi_index::hashed_unique<boost::multi_index::tag<TransfersContainerIndex>,
-                                              BOOST_MULTI_INDEX_MEMBER(WalletRecord, CryptoNote::ITransfersContainer *, container)>>>
+            // Non-unique: records loaded from storage have no container until they are subscribed.
+            boost::multi_index::hashed_non_unique<boost::multi_index::tag<TransfersContainerIndex>,
+                                                  BOOST_MULTI_INDEX_MEMBER(WalletRecord, CryptoNote::ITransfersContainer *, container)>>>
         WalletsContainer;
 
     struct UnlockTransactionJob

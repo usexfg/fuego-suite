@@ -15,6 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
+#include "CryptoNoteCore/SubaddressTx.h"
 #include "CryptoNoteCore/TransactionExtra.h"
 #include "INode.h"
 #include "crypto/crypto.h"
@@ -245,7 +246,8 @@ namespace CryptoNote
   bool WalletTransactionSender::validateDestinationAddress(const std::string &address)
   {
     AccountPublicAddress ignore;
-    return m_currency.parseAccountAddressString(address, ignore);
+    bool isSubaddress = false;
+    return m_currency.parseAccountAddressString(address, ignore, isSubaddress);
   }
 
   void WalletTransactionSender::validateTransfersAddresses(const std::vector<WalletLegacyTransfer> &transfers)
@@ -305,7 +307,8 @@ namespace CryptoNote
     for (const TransactionMessage &message : messages)
     {
       AccountPublicAddress address;
-      bool extracted = m_currency.parseAccountAddressString(message.address, address);
+      bool isSubaddress = false;
+      bool extracted = m_currency.parseAccountAddressString(message.address, address, isSubaddress);
       if (!extracted)
       {
         throw std::system_error(make_error_code(error::BAD_ADDRESS));
@@ -2987,16 +2990,21 @@ namespace CryptoNote
 
       const uint32_t rcptIdx = static_cast<uint32_t>(transaction->getOutputCount());
       const bool recipientIsSubaddress = context->v10HeatRecipientIsSubaddress;
-      Crypto::SecretKey recipientTxSecret;
-      if (!transaction->getTransactionSecretKey(recipientTxSecret)) {
+      Crypto::SecretKey txSecret;
+      if (!transaction->getTransactionSecretKey(txSecret)) {
         throw std::runtime_error("HEAT send: missing tx secret key");
       }
-      if (recipientIsSubaddress) {
-        Crypto::PublicKey dummy;
-        Crypto::generate_keys(dummy, recipientTxSecret);
-      }
+      SubaddressTxKeys outputTxKeys;
       Crypto::KeyDerivation rcptEcdh;
-      if (!Crypto::generate_key_derivation(recipient.viewPublicKey, recipientTxSecret, rcptEcdh)) {
+      if (recipientIsSubaddress) {
+        OutputTxKey rcptKey;
+        if (!deriveOutputTxKey(txSecret, rcptIdx, recipient, true, rcptKey)) {
+          throw std::runtime_error("HEAT send: subaddress tx key derivation failed");
+        }
+        rcptEcdh = rcptKey.derivation;
+        outputTxKeys.additionalPubKeys.push_back(rcptKey.txPublicKey);
+        outputTxKeys.janusBases.push_back(rcptKey.janusBase);
+      } else if (!Crypto::generate_key_derivation(recipient.viewPublicKey, txSecret, rcptEcdh)) {
         throw std::runtime_error("HEAT send: ECDH derivation failed");
       }
       CryptoNote::TransactionOutputCommitment rcptOut;
@@ -3006,14 +3014,6 @@ namespace CryptoNote
       }
       rcptOut.term = parameters::HEAT_TERM;
       transaction->addOutput(amount, rcptOut);
-      std::vector<Crypto::PublicKey> additionalPubKeys;
-      if (recipientIsSubaddress) {
-        Crypto::PublicKey R_n;
-        if (!Crypto::subaddressTxPubKey(recipientTxSecret, recipient.spendPublicKey, R_n)) {
-          throw std::runtime_error("HEAT send: subaddress tx pubkey failed");
-        }
-        additionalPubKeys.push_back(R_n);
-      }
 
       // HEAT change (FOREVER term, sender's view key)
       if (changeAmount > 0) {
@@ -3036,16 +3036,17 @@ namespace CryptoNote
         chOut.term = parameters::HEAT_TERM;
         transaction->addOutput(changeAmount, chOut);
         if (recipientIsSubaddress) {
-          additionalPubKeys.push_back(transaction->getTransactionPublicKey());
+          outputTxKeys.additionalPubKeys.push_back(transaction->getTransactionPublicKey());
+          outputTxKeys.janusBases.push_back(unlinkableJanusFiller());
         }
       }
 
-      if (!additionalPubKeys.empty()) {
-        std::vector<uint8_t> addlExtra;
-        if (!addAdditionalPubKeysToExtra(addlExtra, additionalPubKeys)) {
-          throw std::runtime_error("HEAT send: additional pubkeys extra failed");
+      if (recipientIsSubaddress) {
+        std::vector<uint8_t> keysExtra;
+        if (!encodeSubaddressTxKeys(outputTxKeys, keysExtra)) {
+          throw std::runtime_error("HEAT send: subaddress tx keys extra failed");
         }
-        transaction->appendExtra(CryptoNote::BinaryArray(addlExtra.begin(), addlExtra.end()));
+        transaction->appendExtra(CryptoNote::BinaryArray(keysExtra.begin(), keysExtra.end()));
       }
 
       transaction->setUnlockTime(0);

@@ -198,7 +198,6 @@ bool constructTransaction(
     bool r = derivePlannedOutputKey(
         dst_entr,
         subPlan,
-        sender_account_keys.viewSecretKey,
         output_index,
         out_eph_public_key);
     if (!(r)) {

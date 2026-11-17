@@ -311,6 +311,7 @@ void TransactionRpcInfo::serialize(CryptoNote::ISerializer &serializer)
   serializer(firstDepositId, "firstDepositId");
   serializer(depositCount, "depositCount");
   serializer(paymentId, "paymentId");
+  serializer(unverifiedSubaddressOutputs, "unverifiedSubaddressOutputs");
 }
 
 void GetTransaction::Request::serialize(CryptoNote::ISerializer &serializer)

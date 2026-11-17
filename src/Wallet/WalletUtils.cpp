@@ -25,7 +25,8 @@ namespace CryptoNote {
 
 bool validateAddress(const std::string& address, const CryptoNote::Currency& currency) {
   CryptoNote::AccountPublicAddress ignore;
-  return currency.parseAccountAddressString(address, ignore);
+  bool isSubaddress = false;
+  return currency.parseAccountAddressString(address, ignore, isSubaddress);
 }
 
 void throwIfKeysMissmatch(const Crypto::SecretKey& secretKey, const Crypto::PublicKey& expectedPublicKey, const std::string& message) {

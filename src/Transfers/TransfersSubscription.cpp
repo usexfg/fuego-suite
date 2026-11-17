@@ -23,7 +23,15 @@ using namespace Crypto;
 namespace CryptoNote {
 
 TransfersSubscription::TransfersSubscription(const CryptoNote::Currency& currency, const AccountSubscription& sub)
-  : subscription(sub), transfers(currency, sub.transactionSpendableAge) {}
+  : transfers(currency, sub.transactionSpendableAge), subscription(sub), janusCheckRequired(sub.janusCheckRequired) {}
+
+bool TransfersSubscription::isJanusCheckRequired() const {
+  return janusCheckRequired.load();
+}
+
+void TransfersSubscription::setJanusCheckRequired(bool required) {
+  janusCheckRequired.store(required);
+}
 
 
 SynchronizationStart TransfersSubscription::getSyncStart() {

@@ -157,7 +157,7 @@ public:
   virtual bool getTransfer(TransferId transferId, WalletLegacyTransfer& transfer) = 0;
   virtual bool getDeposit(DepositId depositId, Deposit& deposit) = 0;
   virtual std::vector<Payments> getTransactionsByPaymentIds(const std::vector<PaymentId>& paymentIds) const = 0;
-  virtual bool getTxProof(Crypto::Hash& txid, CryptoNote::AccountPublicAddress& address, Crypto::SecretKey& tx_key, std::string& sig_str) = 0;
+  virtual bool getTxProof(Crypto::Hash& txid, CryptoNote::AccountPublicAddress& address, bool isSubaddress, Crypto::SecretKey& tx_key, std::string& sig_str) = 0;
   virtual std::string getReserveProof(const uint64_t &reserve, const std::string &message) = 0;
   virtual Crypto::SecretKey getTxKey(Crypto::Hash& txid) = 0;
   virtual bool get_tx_key(Crypto::Hash& txid, Crypto::SecretKey& txSecretKey) = 0;
@@ -194,6 +194,10 @@ public:
   // AFK Adaptor Swaps
   virtual std::error_code create_afk_lock(uint64_t amount, uint32_t timeout_hours, uint8_t pair, std::string& lockId, std::string& adaptorPoint, std::string& preSig, std::string& hashLock) = 0;
   virtual std::error_code claim_afk_swap(const std::string& swapId, const std::string& secret_s, const std::string& target_chain, const std::string& fee_address, const std::string& payout_address, std::string& txHash) = 0;
+
+  // True when a funsa subaddress output of the transaction was credited without its
+  // Janus check, which a tracking (view-only) wallet cannot run.
+  virtual bool hasUnverifiedSubaddressOutputs(const Crypto::Hash& transactionHash) = 0;
 
   // Sub-address support: subscribe the wallet scanner to this (major, minor) index.
   // Returns the encoded sub-address string. Idempotent.

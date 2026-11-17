@@ -536,7 +536,7 @@ Steps of `closeCdEpoch`, in this order, with `e` the epoch being closed:
 - This codebase's unbacked-HEAT paths (readiness plan C2 and C3, and those recorded in the changelog) were found by reading public accounting. Under hidden amounts the same class of defect leaves no trace on chain.
 - Precedent: the Zcash Sprout counterfeiting flaw was found in 2018, fixed in Sapling and disclosed in 2019. Zcash later added a consensus rule that a shielded pool's total balance may never go negative.
 - If hidden amounts are adopted, the conservative shape is: XFG stays publicly countable; only HEAT is hidden; and a turnstile counter bounds every public sink (pool reserves, CD deposits, burns) so that HEAT arriving from hidden outputs can never exceed HEAT that entered them. A flaw is then limited to the hidden float and is detected when the counter would go negative.
-- XFG stays out of every shielded pool and every hidden-amount output (owner, 2026-11-14). The 2026-09-29 STARK design (`docs/plans/2026-09-29-v11-pq-shielded-note-pool.md`) puts XFG and HEAT in one pool; that part is rejected, and R6 or CD F, if ever built, hold HEAT only.
+- XFG stays out of every shielded pool and every hidden-amount output (owner, 2026-11-14). The 2026-09-29 STARK design (`docs/plans/2026-09-29-v11-pq-shielded-note-pool.md`) puts XFG and HEAT in one pool; that part is rejected. That file was rewritten on 2026-11-15 as a post-quantum note pool with public bill amounts for XFG, HEAT and LP shares (XFG bills 1 and 5 × 10^k, 0.001 to 1,000,000 XFG); it is the path after v12. R6 and CD F as hidden-amount designs, if ever built, hold HEAT only.
 
 ---
 

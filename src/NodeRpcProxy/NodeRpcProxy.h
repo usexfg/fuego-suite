@@ -111,6 +111,9 @@ public:
   std::error_code jsonRpcCommand(const std::string& method, const Request& req, Response& res);
 
 private:
+  template <typename Request, typename Response>
+  std::error_code jsonCommandOnWorkerThread(const std::string& url, const Request& req, Response& res);
+  std::error_code runOnWorkerThread(std::function<std::error_code()>&& procedure);
   void resetInternalState();
   void workerThread(const Callback& initialized_callback);
 

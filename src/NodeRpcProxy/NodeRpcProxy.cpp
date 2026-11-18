@@ -19,6 +19,8 @@
 #include "NodeErrors.h"
 
 #include <atomic>
+#include <future>
+#include <memory>
 #include <system_error>
 #include <thread>
 
@@ -734,6 +736,27 @@ std::error_code NodeRpcProxy::binaryCommand(const std::string& url, const Reques
 
 template <typename Request, typename Response>
 std::error_code NodeRpcProxy::jsonCommand(const std::string& url, const Request& req, Response& res) {
+  return runOnWorkerThread([this, &url, &req, &res]() { return jsonCommandOnWorkerThread(url, req, res); });
+}
+
+std::error_code NodeRpcProxy::runOnWorkerThread(std::function<std::error_code()>&& procedure) {
+  if (std::this_thread::get_id() == m_workerThread.get_id()) {
+    return procedure();
+  }
+  {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_state != STATE_INITIALIZED) {
+      return make_error_code(error::NOT_INITIALIZED);
+    }
+  }
+  auto finished = std::make_shared<std::promise<std::error_code>>();
+  std::future<std::error_code> result = finished->get_future();
+  scheduleRequest(std::move(procedure), [finished](std::error_code ec) { finished->set_value(ec); });
+  return result.get();
+}
+
+template <typename Request, typename Response>
+std::error_code NodeRpcProxy::jsonCommandOnWorkerThread(const std::string& url, const Request& req, Response& res) {
   std::error_code ec;
 
   try {

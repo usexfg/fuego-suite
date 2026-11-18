@@ -4701,7 +4701,7 @@ bool simple_wallet::heat_deposit(const std::vector<std::string>& args) {
     return false;
   }
   const uint64_t bankingFee = requiredCdFee +
-      requiredCdFee * CryptoNote::parameters::WALLET_MINT_TWAP_MARGIN_BPS / 10000;
+      (requiredCdFee * CryptoNote::parameters::WALLET_MINT_TWAP_MARGIN_BPS + 9999) / 10000;
 
   uint64_t fee = m_currency.minimumFee();
   uint64_t xfgNeeded = bankingFee + fee;

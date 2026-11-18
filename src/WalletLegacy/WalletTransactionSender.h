@@ -222,10 +222,27 @@ private:
                                                                uint64_t minXfg,
                                                                uint64_t minHeat);
   std::unique_ptr<WalletRequest> doSendHeatDepositV10Transaction(std::shared_ptr<SendTransactionContext>&& context,
-                                                                  std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
-                                                                  uint64_t cdAmount,
-                                                                  uint64_t bankingFee,
-                                                                                                                                     uint32_t termEpochs);
+                                                                  std::deque<std::unique_ptr<WalletLegacyEvent>>& events);
+  struct PreparedCommitmentSpend {
+    TransactionInputCommitmentSpend input;
+    std::vector<Crypto::PublicKey> ring;
+    KeyPair keys;
+    size_t realIndex = 0;
+  };
+  struct HeatDepositSigningKeys {
+    std::vector<KeyPair> keyInputs;
+    std::vector<PreparedCommitmentSpend> heatSpends;
+    ~HeatDepositSigningKeys();
+  };
+  std::vector<DepositId> selectSpendableHeatDeposits(uint64_t neededHeat);
+  std::unique_ptr<WalletRequest> requestNextHeatDecoys(std::shared_ptr<SendTransactionContext> context,
+                                                       std::deque<std::unique_ptr<WalletLegacyEvent>>& events);
+  void onHeatDecoysFetched(std::shared_ptr<SendTransactionContext> context,
+                           std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                           std::unique_ptr<WalletRequest>& nextRequest, std::error_code ec);
+  void addOwnCommitmentOutput(ITransaction& transaction, uint64_t amount, uint32_t term);
+  PreparedCommitmentSpend prepareHeatSpend(const TransactionOutputInformation& transfer,
+                                           const std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>& decoys);
   std::unique_ptr<WalletRequest> doSendHeatTransferV10Transaction(std::shared_ptr<SendTransactionContext>&& context,
                                                                    std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
                                                                    const AccountPublicAddress& recipient,

@@ -18,6 +18,7 @@
 #pragma once
 
 #include <list>
+#include <map>
 #include <vector>
 
 #include "CryptoNoteCore/CryptoNoteBasic.h"
@@ -59,6 +60,13 @@ struct SendTransactionContext
   bool isV10LpAdd = false;  // LP add (reuses heat mint fields, separate flag for routing)
   bool isV10AmmSwap = false;
   bool isV10HeatDeposit = false; // HEAT CD deposit: routes to the CD commitment-spend sender
+  uint64_t cdAmount = 0;
+  uint64_t cdCreationFee = 0;
+  uint64_t xfgSpentOnFees = 0;
+  std::vector<TransactionOutputInformation> heatTransfers;
+  std::vector<uint64_t> heatAmountsAwaitingDecoys;
+  std::map<uint64_t, std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>> heatDecoysByAmount;
+  Crypto::SecretKey transactionSecretKey{};
   uint8_t v10SwapDirection = 0;
   uint64_t v10SwapInput = 0;
   uint64_t v10SwapOutput = 0;

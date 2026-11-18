@@ -1045,16 +1045,24 @@ void testValidateSettlementLimitDeposit() {
   TEST(t.chain.validateSettlement(deposit(1251200), 1, nearLaunch, flows, fee, err));
 }
 
-// CDs open on their own height after HEAT and Hearth have run alone. Mainnet
-// waits for CD_ACTIVATION_HEIGHT (v12's height until a release sets a date);
-// testnet keeps CDs from its v11 height so they stay exercised.
+// The interest-claim floor and the CD output gate must name the same height:
+// a ring member below the floor may be a legacy deposit, and no CD exists
+// before the first v12 block on either network.
 void testCdActivationHeight() {
   Logging::LoggerGroup nullLog;
   Currency mainnet = CurrencyBuilder(nullLog).currency();
   TEST(mainnet.cdActivationHeight() == parameters::CD_ACTIVATION_HEIGHT);
-  TEST(mainnet.cdActivationHeight() > mainnet.upgradeHeight(BLOCK_MAJOR_VERSION_11));
+  TEST(mainnet.cdActivationHeight() == mainnet.upgradeHeight(BLOCK_MAJOR_VERSION_12));
   Currency testnet = CurrencyBuilder(nullLog).testnet(true).currency();
-  TEST(testnet.cdActivationHeight() == testnet.upgradeHeight(BLOCK_MAJOR_VERSION_11));
+  TEST(testnet.cdActivationHeight() == testnet.upgradeHeight(BLOCK_MAJOR_VERSION_12));
+  TEST(testnet.cdActivationHeight() > testnet.upgradeHeight(BLOCK_MAJOR_VERSION_11));
+  for (const Currency* network : {&mainnet, &testnet}) {
+    const uint32_t lastLegacyCapableHeight = network->upgradeHeight(BLOCK_MAJOR_VERSION_11);
+    TEST(network->blockMajorVersionAtHeight(lastLegacyCapableHeight) < BLOCK_MAJOR_VERSION_11);
+    TEST(lastLegacyCapableHeight < network->cdActivationHeight());
+    TEST(network->blockMajorVersionAtHeight(network->cdActivationHeight()) < BLOCK_MAJOR_VERSION_12);
+    TEST(network->blockMajorVersionAtHeight(network->cdActivationHeight() + 1) == BLOCK_MAJOR_VERSION_12);
+  }
 }
 
 // Limit fills are priced on the curve: an order's limit holds for its average
@@ -2069,8 +2077,10 @@ void testRestingOrderListFollowsEveryChange() {
                                              BLOCK_MAJOR_VERSION_11);
   TEST(VaultCoreTestAccess::pushTx(t.chain, stop));
   TEST(!VaultCoreTestAccess::isResting(t.chain, orderId) && indexed());
+  TEST(VaultCoreTestAccess::escrowLeft(t.chain, orderId) == 5 * C);
   VaultCoreTestAccess::popTx(t.chain, stop);
   TEST(VaultCoreTestAccess::isResting(t.chain, orderId) && indexed());
+  TEST(VaultCoreTestAccess::escrowLeft(t.chain, orderId) == 5 * C);
 
   const std::vector<TransactionOutput> payout = {keyOut(5 * C)};
   const Crypto::Hash outputsHash = getLimitWithdrawOutputHash(payout);

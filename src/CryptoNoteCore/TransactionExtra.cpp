@@ -1922,6 +1922,10 @@ namespace CryptoNote
     wipeBytes(key.data, sizeof(key.data));
   }
 
+  void wipeKeyDerivation(Crypto::KeyDerivation& derivation) {
+    wipeBytes(derivation.data, sizeof(derivation.data));
+  }
+
   void wipeLimitOrderSecret(LimitOrderKeys& keys) {
     wipeSecretKey(keys.spendSecretKey);
   }

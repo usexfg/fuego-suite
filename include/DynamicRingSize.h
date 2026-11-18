@@ -53,6 +53,11 @@ public:
     size_t maxRingSize = 18
   );
   
+  // Ring size for a commitment (HEAT) spend with `availableSameAmount` outputs
+  // of its amount, the real one included. The HEAT pool is thin at launch, so a
+  // short ring is allowed when no approved size fits.
+  static size_t commitmentRingSize(size_t availableSameAmount, size_t maxRingSize, size_t minRingSizeMainnet);
+
   // Get target ring sizes in order of preference
   static std::vector<size_t> getTargetRingSizes();
   

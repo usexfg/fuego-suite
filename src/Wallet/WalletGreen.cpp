@@ -69,30 +69,6 @@ using namespace Logging;
 
 namespace
 {
-  // Dynamax for commitment/HEAT rings: probe at maxMixin, settle on largest of
-  // {32,16,8} achievable from available same-amount outs (including the real).
-  // When the HEAT decoy pool is empty at launch, allow ring size 1 (real only)
-  // so txs can still clear — pool grows as mints/deposits land.
-  size_t pickDynamaxCommitmentRingSize(size_t availableSameAmount, size_t maxRing, size_t minRingMainnet) {
-    if (availableSameAmount == 0) {
-      return 1; // should not happen (at least the real exists when building)
-    }
-    std::vector<CryptoNote::OutputInfo> infos;
-    infos.emplace_back(0, availableSameAmount);
-    // minRing=0 allows bootstrap below 8 when pool is thin (HEAT launch)
-    size_t opt = CryptoNote::DynamicRingSizeCalculator::calculateOptimalRingSize(
-      0, infos, CryptoNote::BLOCK_MAJOR_VERSION_10, /*minRing*/0, maxRing);
-    if (opt == 0) {
-      // No approved 8/16/32 fit — use whatever we have (bootstrap), at least 1
-      return std::min(availableSameAmount, maxRing);
-    }
-    // Prefer not to go below mainnet min when pool can support it
-    if (opt < minRingMainnet && availableSameAmount >= minRingMainnet) {
-      return minRingMainnet;
-    }
-    return opt;
-  }
-
   uint64_t normalizeMixinProbe(uint64_t mixin, size_t maxMixin) {
     // Clients may pass 0 meaning "default"; treat as max probe for dynamax.
     if (mixin == 0) {
@@ -1467,7 +1443,7 @@ namespace CryptoNote
           candidates.push_back(d);
         }
       }
-      const size_t targetRing = pickDynamaxCommitmentRingSize(
+      const size_t targetRing = CryptoNote::DynamicRingSizeCalculator::commitmentRingSize(
         candidates.size() + 1, m_currency.maxMixin(), m_currency.minMixin(CryptoNote::BLOCK_MAJOR_VERSION_10));
       const size_t numDecoys = std::min(candidates.size(), targetRing > 0 ? targetRing - 1 : 0);
       const size_t ringSize = numDecoys + 1;

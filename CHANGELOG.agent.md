@@ -7526,3 +7526,30 @@ Score: 84/100 after fixes. Verdict: merge after CI. Open: the wallet hooks have 
 | Tests pass | DONE — core_tests 681/681; `ctest -LE manual` 59/59; ASan+UBSan core_tests 681/681, no ASan/LSan reports (UBSan misaligned-load report in `crypto/crypto.h`, unchanged code) |
 | Mutation check | DONE — G1 |
 | Signed | Claude, 2026-11-17 |
+
+## V12 TODO follow-ups: CD activation height, stop-tag tests, CLI CD sender, node RPC threading
+
+**Agent**: Claude
+**Start date**: 2026-11-18
+**Plan**: `docs/V12_LAUNCH_TODO.md` (must-do 1; should-do stop-tag tests and testnet `cdActivationHeight`). Owner: "proceed with remaining tasks". The CD-terms / ring-size reset stays on hold by owner decision; the Bonus Vault review is an owner decision and has no code here.
+**Consensus impact**: testnet only. `cdActivationHeight()` moves from the testnet v11 height (30) to its v12 height (180). No past valid claim changes: a CD exists only after height 181, so its ring's youngest member is above 180. Mainnet unchanged (`CD_ACTIVATION_HEIGHT` = v12 height).
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `cdActivationHeight()` returns the v12 height on every network. Testnet's v11 value let a ring whose youngest member sat in the v10 block at height 30 (legacy commitments allowed there) pass the legacy-deposit floor. `testCdActivationHeight` asserts on both networks that the last legacy-capable height is below the floor and the floor block is not v12 | Claude | 2026-11-18 | DONE |
+| 2 | Stop tag: `testRestingOrderListFollowsEveryChange` also checks the escrow is unchanged by stop push and pop | Claude | 2026-11-18 | DONE |
+| 3 | WalletLegacy CD sender: XFG inputs for network fee + declared CD fee with XFG change; HEAT decoys fetched per distinct HEAT amount (`WalletGetCommitmentDecoysForAmountRequest`, no height cap, so the real input is not always the youngest member); every input added before any is signed; key-input and commitment secrets wiped (`HeatDepositSigningKeys`); unconfirmed accounting records only the XFG spent. SimpleWallet rounds the CD fee padding up, as WalletGreen does | Claude | 2026-11-18 | DONE; end-to-end blocked (row 6) |
+| 4 | `DynamicRingSizeCalculator::commitmentRingSize` (moved from WalletGreen's anonymous namespace) shared by both wallets | Claude | 2026-11-18 | DONE |
+| 5 | `NodeRpcProxy::jsonCommand` runs on the proxy's worker thread (`runOnWorkerThread`). Synchronous calls from the console, auto-withdraw or walletd threads used the worker's `System::Event` and HTTP client from another thread; on testnet `heat_cd` hung in `getHearthTwap` while the worker sat in `updateBlockchainStatus` on the same lock. Calls already on the worker run directly | Claude | 2026-11-18 | DONE; `heat_cd` no longer hangs on testnet |
+| 6 | Found, not fixed (V12 TODO must-do 0, 0b): wallets never record `HEAT_TERM` outputs (`TransfersContainer::isIncluded`), so SimpleWallet showed 0 HEAT after a confirmed mint; the node's HEAT decoy RPC can return pool-reserve and XFG-class members that consensus rejects | Claude | 2026-11-18 | OPEN, needs owner plan approval |
+| 7 | Found, not fixed (V12 TODO should-do): WalletLegacy LP add mixes HEAT into XFG selection and signs before all inputs are added; other WalletLegacy commitment spends fetch decoys for one amount only; `heat_cd` usage text; `--start-mining` flag | Claude | 2026-11-18 | OPEN |
+
+Testnet run (2026-11-18, isolated node, scratch data): mined to height 220; `mint_heat 400` confirmed (`heat_supply` 497525000); `heat_cd 30 6` hung before row 5, and after row 5 returned "Insufficient HEAT ... Available: 0" (row 6). The CD sender has not built a transaction against a node yet.
+
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j8` full build rc=0 |
+| Tests pass | DONE — core_tests 692/692; `ctest -LE manual` 59/59 |
+| Mutation check | DONE — testnet floor back at the v11 height fails `testCdActivationHeight` (2 checks) |
+| End-to-end CD on testnet | NOT DONE — blocked by row 6 |
+| Signed | Claude, 2026-11-18 |

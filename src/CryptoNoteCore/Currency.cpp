@@ -152,11 +152,7 @@ namespace CryptoNote
 	}
 
 	uint32_t Currency::cdActivationHeight() const {
-		// DELIBERATE, and pinned by testCdActivationHeight(): CDs are a v12 feature
-		// on mainnet (CD_ACTIVATION_HEIGHT), but testnet opens them at its v11 height
-		// so they stay exercised there. Do not "align" this with the version -- doing
-		// so silently disables CD coverage on testnet.
-		return m_testnet ? m_upgradeHeightV11 : parameters::CD_ACTIVATION_HEIGHT;
+		return m_upgradeHeightV12;
 	}
 
 	uint32_t Currency::heatwaveTagCutoffHeight() const {

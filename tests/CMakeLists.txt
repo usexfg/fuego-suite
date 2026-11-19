@@ -152,6 +152,31 @@ target_link_libraries(subaddress_wallet_tests PRIVATE
 )
 add_test(NAME subaddress_wallet_tests COMMAND subaddress_wallet_tests)
 
+# WalletLegacy holds a send's inputs from selection until it is built, sent or fails,
+# so sends started back to back never pick the same input.
+add_executable(wallet_input_reservation_tests
+    UnitTests/WalletInputReservationTest.cpp
+)
+target_include_directories(wallet_input_reservation_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/external/gtest/include
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_link_libraries(wallet_input_reservation_tests PRIVATE
+    Wallet
+    Transfers
+    CryptoNoteCore
+    Serialization
+    Logging
+    Common
+    Crypto
+    System
+    ${Boost_LIBRARIES}
+    gtest
+    gtest_main
+)
+add_test(NAME wallet_input_reservation_tests COMMAND wallet_input_reservation_tests)
+
 # Persistence of the published commitment key. The signer cannot choose between the
 # owner-bound and legacy derivations without it, and it used to be lost on every
 # wallet save/reload. Also covers loading pre-version-2 caches.

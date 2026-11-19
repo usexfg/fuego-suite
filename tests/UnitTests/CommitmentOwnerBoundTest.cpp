@@ -472,44 +472,37 @@ TEST(CommitmentResolver, OwnerBoundOutputResolvesToOwnerBoundKeys) {
   }
 }
 
-TEST(CommitmentResolver, LegacyOutputStaysSpendable) {
-  ResolverFixture f;
-  for (size_t index : guideIndices()) {
-    const DepositCommitmentKeys legacy = f.legacy(index);
-
-    CommitmentSpendKeys keys;
-    ASSERT_TRUE(resolveCommitmentSpendKeys(f.derivation, index, legacy.commitKey, f.owner.spendSecret, keys))
-      << "index " << index;
-    EXPECT_EQ(CommitmentDerivation::LegacyExposed, keys.form);
-    EXPECT_EQ(legacy.commitKey, keys.commitKey);
-    EXPECT_EQ(legacy.keyImage, keys.keyImage);
-    EXPECT_EQ(0, memcmp(legacy.keyScalar.data, keys.spendScalar.data, 32));
-  }
-}
-
-// A wallet cache written before the container recorded commit keys reads back with
-// an all-zero key. Those outputs were found by the legacy-only scanner, so they must
-// resolve as legacy instead of being refused (which would strand every old HEAT/CD).
-TEST(CommitmentResolver, UnrecordedKeyResolvesAsLegacy) {
+// The legacy form is spendable by the sender and by any view-key holder, so the
+// wallet no longer resolves it (owner decision 2026-11-08, CHANGELOG.agent.md
+// "Remove legacy commitment derivation"). A legacy-keyed output is refused.
+TEST(CommitmentResolver, LegacyOutputIsRefused) {
   ResolverFixture f;
   for (size_t index : guideIndices()) {
     CommitmentSpendKeys keys;
-    ASSERT_TRUE(resolveCommitmentSpendKeys(f.derivation, index, Crypto::PublicKey{}, f.owner.spendSecret, keys))
+    EXPECT_FALSE(resolveCommitmentSpendKeys(f.derivation, index, f.legacy(index).commitKey, f.owner.spendSecret, keys))
       << "index " << index;
-    EXPECT_EQ(CommitmentDerivation::LegacyExposed, keys.form);
-    EXPECT_EQ(f.legacy(index).commitKey, keys.commitKey);
   }
 }
 
-// The same (D, i) yields two distinct key images, one per form. If they could
-// collide, a legacy output and an owner-bound output would block each other.
+// A record without a commit key cannot be matched to the owner-bound form, and there
+// is no legacy fallback to resolve it to.
+TEST(CommitmentResolver, UnrecordedKeyIsRefused) {
+  ResolverFixture f;
+  for (size_t index : guideIndices()) {
+    CommitmentSpendKeys keys;
+    EXPECT_FALSE(resolveCommitmentSpendKeys(f.derivation, index, Crypto::PublicKey{}, f.owner.spendSecret, keys))
+      << "index " << index;
+  }
+}
+
+// The owner-bound key image never equals the legacy one for the same (D, i), so an
+// output created in either form cannot block the other's spend.
 TEST(CommitmentResolver, FormsProduceDistinctKeyImages) {
   ResolverFixture f;
   for (size_t index : guideIndices()) {
-    CommitmentSpendKeys ownerKeys, legacyKeys;
+    CommitmentSpendKeys ownerKeys;
     ASSERT_TRUE(resolveCommitmentSpendKeys(f.derivation, index, f.ownerBound(index), f.owner.spendSecret, ownerKeys));
-    ASSERT_TRUE(resolveCommitmentSpendKeys(f.derivation, index, f.legacy(index).commitKey, f.owner.spendSecret, legacyKeys));
-    EXPECT_NE(ownerKeys.keyImage, legacyKeys.keyImage) << "index " << index;
+    EXPECT_NE(ownerKeys.keyImage, f.legacy(index).keyImage) << "index " << index;
   }
 }
 
@@ -558,31 +551,31 @@ TEST(CommitmentResolver, SenderMaterialCannotOpenOwnerBoundOutput) {
 TEST(CommitmentResolver, ScannerAndSignerAgreeOnTheKeyImage) {
   ResolverFixture f;
   for (size_t index : guideIndices()) {
-    for (const Crypto::PublicKey& published : { f.ownerBound(index), f.legacy(index).commitKey }) {
-      Crypto::KeyImage recorded;
-      ASSERT_TRUE(deriveRecordedCommitmentKeyImage(f.derivation, index, published, &f.owner.spendSecret, recorded))
-        << "index " << index;
+    const Crypto::PublicKey published = f.ownerBound(index);
+    Crypto::KeyImage recorded;
+    ASSERT_TRUE(deriveRecordedCommitmentKeyImage(f.derivation, index, published, &f.owner.spendSecret, recorded))
+      << "index " << index;
 
-      CommitmentSpendKeys keys;
-      ASSERT_TRUE(resolveCommitmentSpendKeys(f.derivation, index, published, f.owner.spendSecret, keys));
-      EXPECT_EQ(recorded, keys.keyImage) << "index " << index;
-    }
+    CommitmentSpendKeys keys;
+    ASSERT_TRUE(resolveCommitmentSpendKeys(f.derivation, index, published, f.owner.spendSecret, keys));
+    EXPECT_EQ(recorded, keys.keyImage) << "index " << index;
   }
 }
 
-// Regression: a view-only wallet used to receive the legacy key image from the view
-// key alone. The scanner must keep recording it, or spends of legacy HEAT/CDs stop
-// being detected by tracking wallets.
-TEST(CommitmentResolver, ViewOnlyWalletStillTracksLegacyOutputs) {
+// The scanner records no key image for a legacy-keyed output, with or without the
+// spend secret, and leaves the image zeroed.
+TEST(CommitmentResolver, ScannerRecordsNoLegacyKeyImage) {
   ResolverFixture f;
   for (size_t index : guideIndices()) {
-    const DepositCommitmentKeys legacy = f.legacy(index);
-
-    Crypto::KeyImage recorded;
-    memset(recorded.data, 0xEE, sizeof(recorded.data));
-    ASSERT_TRUE(deriveRecordedCommitmentKeyImage(f.derivation, index, legacy.commitKey, nullptr, recorded))
-      << "index " << index;
-    EXPECT_EQ(legacy.keyImage, recorded);
+    const Crypto::PublicKey legacyKey = f.legacy(index).commitKey;
+    const Crypto::SecretKey* const spendSecrets[] = { &f.owner.spendSecret, nullptr };
+    for (const Crypto::SecretKey* spendSecret : spendSecrets) {
+      Crypto::KeyImage recorded;
+      memset(recorded.data, 0xEE, sizeof(recorded.data));
+      EXPECT_FALSE(deriveRecordedCommitmentKeyImage(f.derivation, index, legacyKey, spendSecret, recorded))
+        << "index " << index;
+      EXPECT_EQ(Crypto::KeyImage{}, recorded) << "index " << index;
+    }
   }
 }
 

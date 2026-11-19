@@ -7598,8 +7598,11 @@ Open: walletd end to end; concurrent WalletLegacy sends can pick the same fee in
 | 1 | `docs/V11_LAUNCH_TODO.md`: testnet v11 window (owner decision), live passes on both wallets, two-node reorg and resync, mainnet replay, concurrent WalletLegacy sends, release documents, CI, earlier blockers | Claude | 2026-11-19 | DONE |
 | 2 | CI: the Mintlify check failed on an unescaped `<` in `docs/PQ-MIGRATION-PLAN.md` (already on `master` since #69); escaped | Claude | 2026-11-19 | DONE |
 | 3 | `RELEASE_NOTES_V11.md`: testnet v11 activates at block 30, not 25 | Claude | 2026-11-19 | DONE |
+| 4 | Plan item 5: WalletLegacy sends reserve their selected inputs when the transaction record is created (`WalletTransactionSender::claimSelectedInputs`, `WalletUnconfirmedTransactions::reserveOutputs` / `releaseReservedOutputs`); building moves them to the unconfirmed set, failure releases them; `makeSendRequest` validates message addresses before creating the record. `NullNode` test stub moved to `tests/UnitTests/NullNode.h` | Claude | 2026-11-19 | DONE |
+| 5 | CI (PR #83, both Ubuntu jobs): `commitment_owner_bound_tests` failed 5 cases that still expected the legacy commitment form, which commit 33e787a5 removed from `resolveCommitmentSpendKeys` and `deriveRecordedCommitmentKeyImage` (entry "Remove legacy commitment derivation", tests left PENDING; `master` CI does not compile, so it never ran). Tests now assert the documented behaviour: legacy and unrecorded keys are refused, the scanner records no legacy image, owner-bound images differ from legacy ones. The earlier local "ctest 59/59" did not include this target | Claude | 2026-11-19 | DONE |
 
 | Gate | Status |
 |------|--------|
-| Source changes | None (documents only) |
+| Tests | `wallet_input_reservation_tests` 3/3; `subaddress_wallet_tests` 3/3; `commitment_owner_bound_tests` 26/26; `ctest -LE manual` 74/74; core_tests 740/740 |
+| Mutation checks | DONE — removing the reservation fails all 3 tests; removing the release on failure fails `FailedSendReleasesItsInputs` |
 | Signed | Claude, 2026-11-19 |

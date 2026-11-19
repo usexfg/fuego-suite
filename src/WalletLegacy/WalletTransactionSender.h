@@ -211,6 +211,7 @@ private:
   void attachCommitmentInputs(SendTransactionContext& context, const std::vector<DepositId>& depositIds,
                               bool capDecoysAtDepositHeight);
   void selectXfg(SendTransactionContext& context, uint64_t needed);
+  void claimSelectedInputs(SendTransactionContext& context, TransactionId transactionId);
   std::unique_ptr<WalletRequest> registerCommitmentSpend(std::shared_ptr<SendTransactionContext>&& context,
                                                          TransactionId& transactionId, uint64_t xfgLeavingWallet,
                                                          uint64_t fee, std::deque<std::unique_ptr<WalletLegacyEvent>>& events);

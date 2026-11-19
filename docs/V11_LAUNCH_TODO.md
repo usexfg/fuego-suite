@@ -30,14 +30,15 @@ Two testnet nodes mining against each other: blocks and v11 transactions propaga
 ### 4. Mainnet replay
 A v11 binary syncs mainnet (v1–v10) from genesis to the tip and keeps up with new blocks. Not possible from the cloud session (the mainnet seed refused a P2P connection; only an HTTPS proxy is available): needs a machine with P2P access or a CI job.
 
-### 5. WalletLegacy concurrent sends
-Two sends started close together can select the same XFG input: inputs are chosen when the request is made and marked used only when the transaction is built. Seen on testnet (auto-withdraw against a manual `cancel_order`). Mark selected inputs used at selection and release them if the send fails. Verify: two sends started back to back use disjoint inputs.
+### 5. WalletLegacy concurrent sends — DONE (2026-11-19)
+Two sends started close together could select the same XFG input: inputs were chosen when the request was made and marked used only when the transaction was built, after the decoy round trip. Seen on testnet (auto-withdraw against a manual `cancel_order`). Every send now reserves its selected inputs when its transaction record is created (`claimSelectedInputs`); the reservation moves to the unconfirmed set when the transaction is built and is dropped when the send fails. Reservations are in memory only: a wallet restarted mid-send releases them, the same as an unbuilt send today. Verified by `wallet_input_reservation_tests` (3 tests; each fails with the reservation or the release removed).
 
 ### 6. Release documents
 Correct `docs/releasenotes/RELEASE_NOTES_V11.md` (testnet v11 height is 30, not 25; the fixes in PR #83) and replace `docs/RELEASE_READINESS_CHECK.md`'s verdict with evidence from items 2–4.
 
 ### 7. CI
-All jobs on PR #83 green, including sanitizers, macOS and Windows.
+All jobs on PR #83 green, including sanitizers, macOS and Windows. `master` CI does not compile (boost::get static assertion in `Blockchain.cpp`, fixed on this branch), so tests on `master` have not run since that break. First run on PR #83: Mintlify parse error in `docs/PQ-MIGRATION-PLAN.md` and 5 stale `commitment_owner_bound_tests` cases, both fixed (2026-11-19). Sanitizers, macOS (15, 26), Windows and the transport gates passed on db891918.
+Consequence of the legacy-form removal (33e787a5): a commitment output created with the legacy key (any node before that commit, including early testnet blocks) is neither tracked nor spendable by the wallets. The commit states none exist on mainnet; this session cannot check mainnet.
 
 ### 8. Earlier release blockers (owner decisions)
 From `docs/RELEASE_READINESS_CHECK.md`: MCP npm vulnerabilities; the dev-fund view-secret "LAUNCH BLOCKER" comment against the audit's non-vulnerability classification.

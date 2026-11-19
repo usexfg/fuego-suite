@@ -95,6 +95,8 @@ public:
   uint64_t countUnconfirmedOutsAmount() const;
   uint64_t countUnconfirmedTransactionsAmount() const;
   bool isUsed(const TransactionOutputInformation& out) const;
+  void reserveOutputs(TransactionId transactionId, const std::vector<TransactionOutputInformation>& outputs);
+  void releaseReservedOutputs(TransactionId transactionId);
   void reset();
 
   std::vector<TransactionId> deleteOutdatedTransactions();
@@ -115,6 +117,7 @@ private:
 
   UnconfirmedTxsContainer m_unconfirmedTxs;
   UsedOutputsContainer m_usedOutputs;
+  std::unordered_map<TransactionOutputId, TransactionId> m_reservedOutputs;
   uint64_t m_uncofirmedTransactionsLiveTime;
 
   std::unordered_map<DepositId, uint64_t> m_createdDeposits;

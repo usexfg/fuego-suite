@@ -281,6 +281,7 @@ void WalletUserTransactionsCache::updateTransactionSendingState(TransactionId tr
   if (ec) {
     txInfo.state = ec.value() == error::TX_CANCELLED ? WalletLegacyTransactionState::Cancelled : WalletLegacyTransactionState::Failed;
     m_unconfirmedTransactions.erase(txInfo.hash);
+    m_unconfirmedTransactions.releaseReservedOutputs(transactionId);
     releaseDepositsSpentBy(transactionId);
   } else {
     txInfo.sentTime = time(nullptr); // update sending time
@@ -559,6 +560,11 @@ TransactionId WalletUserTransactionsCache::findTransactionByHash(const Hash& has
 
 bool WalletUserTransactionsCache::isUsed(const TransactionOutputInformation& out) const {
   return m_unconfirmedTransactions.isUsed(out);
+}
+
+void WalletUserTransactionsCache::reserveOutputs(TransactionId transactionId,
+                                                 const std::vector<TransactionOutputInformation>& outputs) {
+  m_unconfirmedTransactions.reserveOutputs(transactionId, outputs);
 }
 
 WalletLegacyTransaction& WalletUserTransactionsCache::getTransaction(TransactionId transactionId) {

@@ -300,11 +300,6 @@ namespace CryptoNote
     }
     throwIf(context->foundMoney < neededMoney, error::WRONG_AMOUNT);
 
-    transactionId = m_transactionsCache.addNewTransaction(neededMoney, fee, extra, transfers, unlockTimestamp, messages);
-    context->transactionId = transactionId;
-    context->mixIn = mixIn;
-    context->ttl = ttl;
-
     for (const TransactionMessage &message : messages)
     {
       AccountPublicAddress address;
@@ -317,6 +312,11 @@ namespace CryptoNote
 
       context->messages.push_back({message.message, true, address});
     }
+
+    transactionId = m_transactionsCache.addNewTransaction(neededMoney, fee, extra, transfers, unlockTimestamp, messages);
+    claimSelectedInputs(*context, transactionId);
+    context->mixIn = mixIn;
+    context->ttl = ttl;
 
     if (context->mixIn != 0)
     {
@@ -369,7 +369,7 @@ namespace CryptoNote
     throwIf(context->foundMoney < neededMoney, error::WRONG_AMOUNT);
 
     transactionId = m_transactionsCache.addNewTransaction(neededMoney, fee, std::string(), {}, 0, {});
-    context->transactionId = transactionId;
+    claimSelectedInputs(*context, transactionId);
     context->mixIn = mixIn;
     context->depositTerm = static_cast<uint32_t>(term);
 
@@ -412,7 +412,7 @@ namespace CryptoNote
     throwIf(context->foundMoney < fee, error::WRONG_AMOUNT);
 
     transactionId = m_transactionsCache.addNewTransaction(context->foundMoney, fee, std::string(), {}, 0, {});
-    context->transactionId = transactionId;
+    claimSelectedInputs(*context, transactionId);
     context->mixIn = 0;
     setSpendingTransactionToDeposits(transactionId, depositIds);
     return doSendDepositWithdrawTransaction(std::move(context), events, depositIds);
@@ -441,7 +441,7 @@ namespace CryptoNote
     std::string extra(extraVec.begin(), extraVec.end());
 
     transactionId = m_transactionsCache.addNewTransaction(neededMoney, fee, extra, {}, 0, {});
-    context->transactionId = transactionId;
+    claimSelectedInputs(*context, transactionId);
 
     return makeGetRandomOutsRequest(std::move(context), false, transactionSK);
   }
@@ -473,7 +473,7 @@ namespace CryptoNote
     const std::vector<TransactionMessage> messages;
 
     transactionId = m_transactionsCache.addNewTransaction(neededMoney, fee, extra, transfers, unlockTimestamp, messages);
-    context->transactionId = transactionId;
+    claimSelectedInputs(*context, transactionId);
     context->mixIn = mixIn;
     Crypto::SecretKey transactionSK;
 
@@ -1425,7 +1425,7 @@ namespace CryptoNote
     context->dynamicRingSize = m_currency.isTestnet();  // allow bootstrap ring sizes on testnet
 
     transactionId = m_transactionsCache.addNewTransaction(neededMoney, fee, std::string(), {}, 0, {});
-    context->transactionId = transactionId;
+    claimSelectedInputs(*context, transactionId);
 
     // Build auth tag extra inline — will be appended in doSendHeatMintV10Transaction
     std::vector<uint8_t> extra;
@@ -1666,7 +1666,7 @@ namespace CryptoNote
     throwIf(context->foundMoney < neededMoney, error::WRONG_AMOUNT);
 
     transactionId = m_transactionsCache.addNewTransaction(neededMoney, fee, std::string(), {}, 0, {});
-    context->transactionId = transactionId;
+    claimSelectedInputs(*context, transactionId);
     context->isV10AmmSwap = true;
     context->v10SwapDirection = direction;
     context->v10SwapInput = inputAmount;
@@ -1747,12 +1747,18 @@ namespace CryptoNote
     throwIf(context.foundMoney < needed, error::WRONG_AMOUNT);
   }
 
+  void WalletTransactionSender::claimSelectedInputs(SendTransactionContext &context, TransactionId transactionId)
+  {
+    context.transactionId = transactionId;
+    m_transactionsCache.reserveOutputs(transactionId, context.selectedTransfers);
+  }
+
   std::unique_ptr<WalletRequest> WalletTransactionSender::registerCommitmentSpend(
       std::shared_ptr<SendTransactionContext> &&context, TransactionId &transactionId,
       uint64_t xfgLeavingWallet, uint64_t fee, std::deque<std::unique_ptr<WalletLegacyEvent>> &events)
   {
     transactionId = m_transactionsCache.addNewTransaction(xfgLeavingWallet, fee, std::string(), {}, 0, {});
-    context->transactionId = transactionId;
+    claimSelectedInputs(*context, transactionId);
     context->usesCommitmentPipeline = true;
     setSpendingTransactionToDeposits(transactionId, context->spentDepositIds);
     if (context->selectedTransfers.empty()) {
@@ -2334,7 +2340,7 @@ namespace CryptoNote
     throwIf(context->foundMoney < neededFee, error::WRONG_AMOUNT);
 
     transactionId = m_transactionsCache.addNewTransaction(0, fee, std::string(), {}, 0, {});
-    context->transactionId = transactionId;
+    claimSelectedInputs(*context, transactionId);
 
     Crypto::SecretKey transactionSK;
     return makeGetRandomOutsRequest(std::move(context), false, transactionSK);

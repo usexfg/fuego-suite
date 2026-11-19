@@ -12,6 +12,7 @@ Options:
 - Raise the testnet v12 height (for example to 1,000). This is a consensus change for testnet: any public testnet node already past 180 forks off, and its chain must be reset. The cloud session cannot reach the testnet seeds, so it cannot check whether they are live.
 - Add a testnet-only daemon option for private test nets. The public testnet keeps 180, but this adds a flag that a misconfigured node can fork itself with.
 - Keep 180, test in the 78-block window, and cover the FCI re-base by unit tests only.
+`testnetd` (`src/TestnetDaemon`) builds its currency with the same `testnet(true)` branch, so it runs the same heights and does not avoid this choice.
 Verify: `testCdActivationHeight` and the testnet-chain core tests pass at the chosen height.
 
 ### 2. Live testnet pass at v11 rules, both wallets
@@ -42,3 +43,23 @@ Consequence of the legacy-form removal (33e787a5): a commitment output created w
 
 ### 8. Earlier release blockers (owner decisions)
 From `docs/RELEASE_READINESS_CHECK.md`: MCP npm vulnerabilities; the dev-fund view-secret "LAUNCH BLOCKER" comment against the audit's non-vulnerability classification.
+
+### 9. Tests that catch what the 2026-10-22 check missed, and features added later
+Why it was missed: every HEAT test exercised one layer with handcrafted input. Consensus tests built transactions by hand; wallet code was never run against a node; the transfers container never received a HEAT output. No test took HEAT from a wallet, through a node and a block, back into a wallet. Each layer passed while the path between them was broken.
+
+9.1 Regression audit. For every defect in `docs/V12_LAUNCH_TODO.md` item 0 and the testnet run of 2026-11-19, name the automated test that fails without the fix. A defect with no such test gets one at the layer where it occurred.
+
+9.2 In-process end-to-end scenarios. `tests/IntegrationTestLib` (in-process nodes, `TestNetwork`, WalletLegacy driver) and `tests/IntegrationTests` exist but are built by no CMake target. Build them, bring them up to the current interfaces, and add one scenario per wallet operation: XFG send, mint, send HEAT, sell, buy, LP add/remove, limit order (both sides) with fill, stop, withdraw and auto-withdraw, CD open and claim, alias, `dev_donate`, funsa send and receive, reopen without rescan. Each scenario mines, then checks wallet balances against node state (`/heat_metrics`, `/amm_pool_info`, `/get_public_audit`). Two-node scenarios cover propagation, a reorg across HEAT/Hearth/LP blocks, and resync from genesis to the same Hearth state hash. Run in CI with fast test heights.
+
+9.3 Inventory gate for features added later. A test reads the feature lists the code already keeps and fails when an entry has no end-to-end scenario, or a scenario names an entry that no longer exists:
+- transaction extra tags (`TX_EXTRA_*`),
+- commitment terms (`AssetType`),
+- SimpleWallet console commands (handler registrations),
+- wallet RPC, walletd and daemon RPC method tables,
+- `INode` methods.
+A new tag, command or RPC method then fails CI until it has a scenario; a removed one fails until its scenario is removed. The list is read from the code, not kept by hand, so it cannot fall behind.
+
+9.4 Release gate. `docs/releasenotes/RELEASE_NOTES_V<n>.md` lists each feature with the scenario that proves it; the gate fails a release whose notes name a feature without one. The readiness verdict is the gate's output, not a written opinion.
+
+Limits: 9.3 sees only features that pass through one of those lists. A behaviour change inside an existing command (for example a new fee split) needs its own scenario assertion. In-process nodes do not exercise P2P over real sockets, real timing, or mainnet history; items 3 and 4 still apply.
+

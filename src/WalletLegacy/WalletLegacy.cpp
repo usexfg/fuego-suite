@@ -944,15 +944,31 @@ TransactionId WalletLegacy::placeOrderV13(uint8_t side, uint64_t amount, uint64_
   return txId;
 }
 
+INode::LimitDepositRpcEntry WalletLegacy::findLimitOrder(const Crypto::Hash& orderId) {
+  std::vector<INode::LimitDepositRpcEntry> deposits;
+  const std::error_code lookupError = m_node.getLimitDeposits(deposits);
+  if (lookupError) {
+    throw std::system_error(lookupError, "Unable to resolve limit order owner");
+  }
+  const std::string orderIdHex = Common::podToHex(orderId);
+  for (const auto& deposit : deposits) {
+    if (deposit.order_id == orderIdHex) {
+      return deposit;
+    }
+  }
+  throw std::system_error(make_error_code(error::WRONG_PARAMETERS), "Limit order does not exist");
+}
+
 TransactionId WalletLegacy::cancelOrderV13(const Crypto::Hash& orderId, uint64_t fee, uint64_t mixIn, bool stopOnly) {
   throwIfNotInitialised();
   TransactionId txId = 0;
   std::unique_ptr<WalletRequest> request;
   std::deque<std::unique_ptr<WalletLegacyEvent>> events;
   fee = m_currency.minimumFee();
+  const INode::LimitDepositRpcEntry order = findLimitOrder(orderId);
   {
     std::unique_lock<std::mutex> lock(m_cacheMutex);
-    request = m_sender->makeCancelOrderV13Request(txId, events, orderId, fee, mixIn, stopOnly);
+    request = m_sender->makeCancelOrderV13Request(txId, events, orderId, order, fee, mixIn, stopOnly);
     if (request != nullptr) pushBalanceUpdatedEvents(events);
   }
   notifyClients(events);
@@ -1027,7 +1043,7 @@ TransactionId WalletLegacy::ammSwapV10(uint8_t direction, uint64_t inputAmount, 
   return txId;
 }
 
-TransactionId WalletLegacy::lpAddV10(uint64_t amountXfg, uint64_t amountHeat, uint64_t fee, uint64_t mixIn) {
+TransactionId WalletLegacy::lpAddV10(uint64_t amountXfg, uint64_t amountHeat, uint64_t lpShares, uint64_t fee, uint64_t mixIn) {
   throwIfNotInitialised();
 
   TransactionId txId = 0;
@@ -1038,7 +1054,7 @@ TransactionId WalletLegacy::lpAddV10(uint64_t amountXfg, uint64_t amountHeat, ui
 
   {
     std::unique_lock<std::mutex> lock(m_cacheMutex);
-    request = m_sender->makeLpAddV10Request(txId, events, amountXfg, amountHeat, fee, mixIn);
+    request = m_sender->makeLpAddV10Request(txId, events, amountXfg, amountHeat, lpShares, fee, mixIn);
     if (request != nullptr) pushBalanceUpdatedEvents(events);
   }
 
@@ -1052,7 +1068,7 @@ TransactionId WalletLegacy::lpAddV10(uint64_t amountXfg, uint64_t amountHeat, ui
   return txId;
 }
 
-TransactionId WalletLegacy::lpRemoveV10(uint64_t lpShares, uint64_t minXfg, uint64_t minHeat, uint64_t fee, uint64_t mixIn) {
+TransactionId WalletLegacy::lpRemoveV10(uint64_t lpShares, uint64_t payoutXfg, uint64_t payoutHeat, uint64_t fee, uint64_t mixIn) {
   throwIfNotInitialised();
 
   TransactionId txId = 0;
@@ -1063,32 +1079,7 @@ TransactionId WalletLegacy::lpRemoveV10(uint64_t lpShares, uint64_t minXfg, uint
 
   {
     std::unique_lock<std::mutex> lock(m_cacheMutex);
-    request = m_sender->makeLpRemoveV10Request(txId, events, lpShares, minXfg, minHeat, fee, mixIn);
-    if (request != nullptr) pushBalanceUpdatedEvents(events);
-  }
-
-  notifyClients(events);
-
-  if (request) {
-    m_asyncContextCounter.addAsyncContext();
-    request->perform(m_node, std::bind(&WalletLegacy::sendTransactionCallback, this, std::placeholders::_1, std::placeholders::_2));
-  }
-
-  return txId;
-}
-
-TransactionId WalletLegacy::lpClaimFeesV10(uint64_t lpShares, uint64_t minXfg, uint64_t minHeat, uint64_t fee, uint64_t mixIn) {
-  throwIfNotInitialised();
-
-  TransactionId txId = 0;
-  std::unique_ptr<WalletRequest> request;
-  std::deque<std::unique_ptr<WalletLegacyEvent>> events;
-
-  fee = m_currency.minimumFee();
-
-  {
-    std::unique_lock<std::mutex> lock(m_cacheMutex);
-    request = m_sender->makeLpClaimFeesRequest(txId, events, lpShares, minXfg, minHeat, fee, mixIn);
+    request = m_sender->makeLpRemoveV10Request(txId, events, lpShares, payoutXfg, payoutHeat, fee, mixIn);
     if (request != nullptr) pushBalanceUpdatedEvents(events);
   }
 
@@ -1322,9 +1313,10 @@ void WalletLegacy::onTransactionUpdated(ITransfersSubscription* object, const Ha
       if (!haveTxInfo) { txInfo = ti; haveTxInfo = true; }
       totalIn  += cIn;
       totalOut += cOut;
-      auto deps = c.getTransactionOutputs(transactionHash, ITransfersContainer::IncludeTypeDeposit | ITransfersContainer::IncludeStateAll);
+      auto deps = c.getTransactionOutputs(transactionHash, ITransfersContainer::IncludeTypeDeposit | ITransfersContainer::IncludeTypeHeat |
+                                                           ITransfersContainer::IncludeStateAll);
       allDepositOuts.insert(allDepositOuts.end(), deps.begin(), deps.end());
-      auto spent = c.getTransactionInputs(transactionHash, ITransfersContainer::IncludeTypeDeposit);
+      auto spent = c.getTransactionInputs(transactionHash, ITransfersContainer::IncludeTypeDeposit | ITransfersContainer::IncludeTypeHeat);
       allSpentDeposits.insert(allSpentDeposits.end(), spent.begin(), spent.end());
     }
   };
@@ -1766,13 +1758,19 @@ uint64_t WalletLegacy::calculatePendingInvestmentBalance() {
 
 uint64_t WalletLegacy::calculateActualHeatBalance() {
   std::vector<TransactionOutputInformation> transfers;
-  m_transferDetails->getOutputs(transfers, ITransfersContainer::IncludeTypeDeposit | ITransfersContainer::IncludeStateUnlocked);
-  return calculateHeatAmount(transfers) - m_transactionsCache.countUnconfirmedSpentDepositsTotalAmount();
+  m_transferDetails->getOutputs(transfers, ITransfersContainer::IncludeTypeHeat | ITransfersContainer::IncludeStateUnlocked);
+  uint64_t spendable = 0;
+  for (const auto& transfer : transfers) {
+    if (m_transactionsCache.isUnspentDepositRecord(transfer.transactionHash, transfer.outputInTransaction)) {
+      spendable += transfer.amount;
+    }
+  }
+  return spendable;
 }
 
 uint64_t WalletLegacy::calculatePendingHeatBalance() {
   std::vector<TransactionOutputInformation> transfers;
-  m_transferDetails->getOutputs(transfers, ITransfersContainer::IncludeTypeDeposit
+  m_transferDetails->getOutputs(transfers, ITransfersContainer::IncludeTypeHeat
                                 | ITransfersContainer::IncludeStateLocked
                                 | ITransfersContainer::IncludeStateSoftLocked);
   return calculateHeatAmount(transfers);
@@ -1942,7 +1940,7 @@ std::string WalletLegacy::getReserveProof(const uint64_t &reserve, const std::st
 
 	// determine which outputs to include in the proof
 	std::vector<TransactionOutputInformation> selected_transfers;
-	m_transferDetails->getOutputs(selected_transfers, ITransfersContainer::IncludeAllUnlocked);
+	m_transferDetails->getOutputs(selected_transfers, ITransfersContainer::IncludeKeyUnlocked);
 
 	// minimize the number of outputs included in the proof, by only picking the N largest outputs that can cover the requested min reserve amount
 	std::sort(selected_transfers.begin(), selected_transfers.end(), compareTransactionOutputInformationByAmount);

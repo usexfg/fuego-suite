@@ -895,13 +895,13 @@ bool RpcServer::on_get_random_outs(const COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOU
 bool RpcServer::on_get_random_commitment_outs(const COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::request& req,
                                                 COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::response& res) {
   res.status = "Failed";
-  if (!m_core.get_random_commitment_outs_for_amount(req.amount, req.outs_count, req.max_height, res.outs)) {
+  if (!m_core.get_random_commitment_outs_for_amount(req.amount, req.outs_count, req.max_height, req.ring_term, res.outs)) {
     return true;
   }
   res.status = CORE_RPC_STATUS_OK;
   logger(TRACE) << "COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS: amount=" << req.amount
                 << " requested=" << req.outs_count << " returned=" << res.outs.size()
-                << " max_height=" << req.max_height;
+                << " max_height=" << req.max_height << " ring_term=" << req.ring_term;
   return true;
 }
 

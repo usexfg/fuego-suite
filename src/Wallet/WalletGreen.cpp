@@ -409,7 +409,7 @@ namespace CryptoNote
       }
       if (claimInfo.bonusVaultBalance < claimInfo.claimableBonus) {
         m_logger(WARNING, BRIGHT_YELLOW)
-            << "Bonus vault cannot back the full tier bonus for deposit "
+            << "Bonus vault cannot back the full yield-floor bonus for deposit "
             << depositId << " (" << claimInfo.claimableBonus << " bonus, "
             << claimInfo.bonusVaultBalance << " HEAT BV backing) — rare event.";
       }
@@ -537,7 +537,7 @@ namespace CryptoNote
       std::error_code nodeError;
 
       throwIfStopped();
-      m_node.getRandomCommitmentOutsForAmount(deposit.amount, m_currency.maxMixin(), deposit.height, decoys,
+      m_node.getRandomCommitmentOutsForAmount(deposit.amount, m_currency.maxMixin(), deposit.height, deposit.term, decoys,
         [&requestFinished, &nodeError, this](std::error_code ec) {
           nodeError = ec;
           this->m_dispatcher.remoteSpawn(std::bind(asyncRequestCompletion, std::ref(requestFinished)));
@@ -831,7 +831,7 @@ namespace CryptoNote
       std::error_code nodeError;
 
       throwIfStopped();
-      m_node.getRandomCommitmentOutsForAmount(deposit.amount, m_currency.maxMixin(), deposit.height, decoys,
+      m_node.getRandomCommitmentOutsForAmount(deposit.amount, m_currency.maxMixin(), deposit.height, deposit.term, decoys,
         [&requestFinished, &nodeError, this](std::error_code ec) {
           nodeError = ec;
           this->m_dispatcher.remoteSpawn(std::bind(asyncRequestCompletion, std::ref(requestFinished)));
@@ -1048,7 +1048,7 @@ namespace CryptoNote
       std::error_code nodeError;
 
       throwIfStopped();
-      m_node.getRandomCommitmentOutsForAmount(deposit.amount, m_currency.maxMixin(), deposit.height, decoys,
+      m_node.getRandomCommitmentOutsForAmount(deposit.amount, m_currency.maxMixin(), deposit.height, deposit.term, decoys,
         [&requestFinished, &nodeError, this](std::error_code ec) {
           nodeError = ec;
           this->m_dispatcher.remoteSpawn(std::bind(asyncRequestCompletion, std::ref(requestFinished)));
@@ -1407,16 +1407,17 @@ namespace CryptoNote
       auto decoys = decoysByAmount.find(dep.amount);
       if (decoys == decoysByAmount.end()) {
         std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry> fetched;
+        const uint32_t anyCreationHeight = 0;
         System::Event requestFinished(m_dispatcher);
         std::error_code nodeError;
-        m_node.getRandomCommitmentOutsForAmount(dep.amount, mixin, dep.height, fetched,
+        m_node.getRandomCommitmentOutsForAmount(dep.amount, mixin, anyCreationHeight, dep.term, fetched,
           [&requestFinished, &nodeError, this](std::error_code ec) {
             nodeError = ec;
             this->m_dispatcher.remoteSpawn(std::bind(asyncRequestCompletion, std::ref(requestFinished)));
           });
         requestFinished.wait();
         if (nodeError) {
-          fetched.clear();  // no HEAT decoys yet at launch: bootstrap ring
+          throw std::system_error(nodeError, "Unable to fetch HEAT ring members");
         }
         decoys = decoysByAmount.emplace(dep.amount, std::move(fetched)).first;
       }
@@ -2099,14 +2100,13 @@ namespace CryptoNote
     poolOut.term = parameters::DEPOSIT_TERM_POOL_HEAT;
     transaction->addOutput(inputAmount, poolOut);
 
-    // User receives XFG commitment (SWRX)
-    uint64_t netXfg = (outputAmount > fee) ? (outputAmount - fee) : 0;
-    if (netXfg > 0) {
-      const size_t commitIdx = static_cast<size_t>(transaction->getOutputCount());
-      CryptoNote::TransactionOutputCommitment receiveOut;
-      receiveOut.commitKey = deriveSelfCommitmentKey(*transaction, commitIdx);
-      receiveOut.term = parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG;
-      transaction->addOutput(netXfg, receiveOut);
+    // The proceeds, net of the network fee, are ordinary XFG.
+    if (outputAmount <= fee) {
+      throw std::system_error(make_error_code(error::WRONG_AMOUNT), "Swap proceeds do not cover the network fee");
+    }
+    const auto &primaryWallet = m_walletsContainer.get<RandomAccessIndex>()[0];
+    for (uint64_t chunk : split(outputAmount - fee, m_currency.defaultDustThreshold())) {
+      transaction->addOutput(chunk, standardDerivationAddressFor(primaryWallet));
     }
 
     // HEAT change (FOREVER)
@@ -3846,9 +3846,10 @@ namespace CryptoNote
     throwIfNotInitialized();
     throwIfStopped();
 
+    const uint32_t currentHeight = getBlockCount();
     uint64_t total = 0;
     for (const auto& dep : m_deposits.get<RandomAccessIndex>()) {
-      if (dep.depositType == Deposit::Type::HEAT && dep.locked)
+      if (isWalletHeatTerm(dep.term) && dep.spendingTransactionId == WALLET_INVALID_TRANSACTION_ID && dep.unlockHeight > currentHeight)
         total += dep.amount + dep.interest;
     }
     return total;
@@ -3859,9 +3860,10 @@ namespace CryptoNote
     throwIfNotInitialized();
     throwIfStopped();
 
+    const uint32_t currentHeight = getBlockCount();
     uint64_t total = 0;
     for (const auto& dep : m_deposits.get<RandomAccessIndex>()) {
-      if (dep.depositType == Deposit::Type::HEAT && !dep.locked)
+      if (isWalletHeatTerm(dep.term) && dep.spendingTransactionId == WALLET_INVALID_TRANSACTION_ID && dep.unlockHeight <= currentHeight)
         total += dep.amount + dep.interest;
     }
     return total;
@@ -5439,47 +5441,18 @@ namespace CryptoNote
            depositOutput.type == TransactionTypes::OutputType::Multisignature);
     assert(depositOutput.term != 0);
 
+    const bool timeLocked = isCdCommitmentTerm(depositOutput.term);
     Deposit deposit;
     deposit.amount = depositOutput.amount;
     deposit.creatingTransactionId = creatingTransactionId;
     deposit.term = depositOutput.term;
     deposit.spendingTransactionId = WALLET_INVALID_TRANSACTION_ID;
-    // Interest calculation removed - no on-chain interest
+    deposit.interest = 0;
     deposit.height = height;
-    deposit.unlockHeight = height + depositOutput.term;
-    deposit.locked = true;
-
-    // Populate depositType and extra from transaction extra field
+    deposit.unlockHeight = timeLocked ? height + depositOutput.term : height;
+    deposit.locked = timeLocked;
     deposit.extra = std::string(transactionExtra.begin(), transactionExtra.end());
-
-    // Parse transaction extra to determine deposit type and lock state
-    bool isMintAuth = false;
-    std::vector<TransactionExtraField> extraFields;
-    if (parseTransactionExtra(transactionExtra, extraFields)) {
-      for (const auto& field : extraFields) {
-        if (field.type() == typeid(TransactionExtraHeatMintAuth)) {
-          deposit.depositType = Deposit::Type::HEAT;
-          isMintAuth = true;
-          break;
-        } else if (field.type() == typeid(TransactionExtraHeatSendAuth)) {
-          deposit.depositType = Deposit::Type::HEAT;
-          break;
-        }
-        // REMOVED: 0xCB legacy bond detection (deposits default to HEAT below)
-        // REMOVED: COLD deposit type detection
-        // } else if (field.type() == typeid(TransactionExtraSimpleCD)) {
-        //   deposit.depositType = Deposit::Type::COLD;
-        //   break;
-        // }
-      }
-    } else {
-      deposit.depositType = Deposit::Type::HEAT;  // Default to HEAT (COLD removed)
-    }
-
-    // Mint outputs are spendable HEAT, not time-locked CDs.
-    if (isMintAuth) {
-      deposit.locked = false;
-    }
+    deposit.depositType = Deposit::Type::HEAT;
 
     return insertDeposit(deposit, depositOutput.outputInTransaction, depositOutput.transactionHash);
   }
@@ -5556,8 +5529,10 @@ namespace CryptoNote
 
     for (auto containerAmounts : containerAmountsList)
     {
-      auto newDepositOuts = containerAmounts.container->getTransactionOutputs(transactionInfo.transactionHash, ITransfersContainer::IncludeTypeDeposit | ITransfersContainer::IncludeStateAll);
-      auto spentDepositOutputs = containerAmounts.container->getTransactionInputs(transactionInfo.transactionHash, ITransfersContainer::IncludeTypeDeposit);
+      auto newDepositOuts = containerAmounts.container->getTransactionOutputs(transactionInfo.transactionHash,
+          ITransfersContainer::IncludeTypeDeposit | ITransfersContainer::IncludeTypeHeat | ITransfersContainer::IncludeStateAll);
+      auto spentDepositOutputs = containerAmounts.container->getTransactionInputs(transactionInfo.transactionHash,
+          ITransfersContainer::IncludeTypeDeposit | ITransfersContainer::IncludeTypeHeat);
 
       std::vector<DepositId> updatedDepositIds;
 
@@ -5570,6 +5545,10 @@ namespace CryptoNote
         {
           continue;
         }
+        if (getDepositId(newDepositOuts[i].transactionHash, newDepositOuts[i].outputInTransaction) != WALLET_INVALID_DEPOSIT_ID)
+        {
+          continue;
+        }
         auto id = insertNewDeposit(newDepositOuts[i], transactionId, m_currency, transactionInfo.blockHeight, transactionInfo.extra);
         updatedDepositIds.push_back(id);
       }
@@ -5577,11 +5556,10 @@ namespace CryptoNote
       /* Now check for any deposit withdrawals in the transactions */
       for (size_t i = 0; i < spentDepositOutputs.size(); i++)
       {
-        auto depositId = getDepositId(spentDepositOutputs[i].transactionHash);
-        assert(depositId != WALLET_INVALID_DEPOSIT_ID);
+        auto depositId = getDepositId(spentDepositOutputs[i].transactionHash, spentDepositOutputs[i].outputInTransaction);
         if (depositId == WALLET_INVALID_DEPOSIT_ID)
         {
-          throw std::invalid_argument("processSpentDeposits error: requested deposit doesn't exist");
+          continue;
         }
 
         auto info = m_deposits[depositId];
@@ -5653,11 +5631,12 @@ namespace CryptoNote
     return txId;
   }
 
-  size_t WalletGreen::getDepositId(const Hash &transactionHash) const
+  size_t WalletGreen::getDepositId(const Hash &transactionHash, uint32_t outputInTransaction) const
   {
-    auto it = m_deposits.get<TransactionIndex>().find(transactionHash);
+    const auto &outputIndex = m_deposits.get<DepositOutputIndex>();
+    auto it = outputIndex.find(boost::make_tuple(transactionHash, outputInTransaction));
 
-    if (it == m_deposits.get<TransactionIndex>().end())
+    if (it == outputIndex.end())
     {
       return WALLET_INVALID_DEPOSIT_ID;
     }
@@ -5778,7 +5757,8 @@ namespace CryptoNote
     bool updated = false;
 
     /* First get the available and pending balances from the container */
-    uint64_t actual = container->balance(ITransfersContainer::IncludeAllUnlocked);
+    uint64_t actual = container->balance(ITransfersContainer::IncludeTypeKey | ITransfersContainer::IncludeTypeMultisignature |
+                                         ITransfersContainer::IncludeStateUnlocked);
     uint64_t pending = container->balance(ITransfersContainer::IncludeKeyNotUnlocked);
 
     /* Now update the overall balance (getBalance without parameters) */

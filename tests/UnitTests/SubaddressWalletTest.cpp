@@ -39,7 +39,7 @@ public:
   uint64_t getLastLocalBlockTimestamp() const override { return 0; }
   void relayTransaction(const Transaction&, const Callback& cb) override { cb(std::error_code()); }
   void getRandomOutsByAmounts(std::vector<uint64_t>&&, uint64_t, std::vector<COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount>&, const Callback& cb) override { cb(std::error_code()); }
-  void getRandomCommitmentOutsForAmount(uint64_t, uint64_t, uint32_t, std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>&, const Callback& cb) override { cb(std::error_code()); }
+  void getRandomCommitmentOutsForAmount(uint64_t, uint64_t, uint32_t, uint32_t, std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>&, const Callback& cb) override { cb(std::error_code()); }
   void getNewBlocks(std::vector<Hash>&&, std::vector<block_complete_entry>& blocks, uint32_t& startHeight, const Callback& cb) override { blocks.clear(); startHeight = 0; cb(std::error_code()); }
   void getTransactionOutsGlobalIndices(const Hash&, std::vector<uint32_t>&, const Callback& cb) override { cb(std::error_code()); }
   void queryBlocks(std::vector<Hash>&&, uint64_t, std::vector<BlockShortEntry>& blocks, uint32_t& startHeight, const Callback& cb) override { blocks.clear(); startHeight = 0; cb(std::error_code()); }

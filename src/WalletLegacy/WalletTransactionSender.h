@@ -83,22 +83,15 @@ public:
                                                        std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
                                                        uint64_t amountXfg,
                                                        uint64_t amountHeat,
+                                                       uint64_t lpShares,
                                                        uint64_t fee,
                                                        uint64_t mixIn);
 
   std::unique_ptr<WalletRequest> makeLpRemoveV10Request(TransactionId& transactionId,
                                                          std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
                                                          uint64_t lpShares,
-                                                         uint64_t minXfg,
-                                                         uint64_t minHeat,
-                                                         uint64_t fee,
-                                                          uint64_t mixIn);
-
-  std::unique_ptr<WalletRequest> makeLpClaimFeesRequest(TransactionId& transactionId,
-                                                         std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
-                                                         uint64_t lpShares,
-                                                         uint64_t minXfg,
-                                                         uint64_t minHeat,
+                                                         uint64_t payoutXfg,
+                                                         uint64_t payoutHeat,
                                                          uint64_t fee,
                                                          uint64_t mixIn);
 
@@ -134,8 +127,9 @@ public:
                                                            uint32_t expiration, uint64_t fee, uint64_t mixIn);
   std::unique_ptr<WalletRequest> makeCancelOrderV13Request(TransactionId& transactionId,
                                                             std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
-                                                            const Crypto::Hash& orderId, uint64_t fee, uint64_t mixIn,
-                                                            bool stopOnly);
+                                                            const Crypto::Hash& orderId,
+                                                            const INode::LimitDepositRpcEntry& order,
+                                                            uint64_t fee, uint64_t mixIn, bool stopOnly);
   std::unique_ptr<WalletRequest> makeMarketBuyV13Request(TransactionId& transactionId,
                                                           std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
                                                           uint64_t xfgWanted, uint64_t maxHeatCost,
@@ -179,18 +173,12 @@ private:
                                  const Crypto::SecretKey& recipientSpendSecret,
                                  KeyPair& outKeyPair, Crypto::KeyImage& outKeyImage);
   std::unique_ptr<WalletRequest> makeGetRandomOutsRequest(std::shared_ptr<SendTransactionContext>&& context, bool isMultisigTransaction, Crypto::SecretKey& transactionSK);
-  std::unique_ptr<WalletRequest> makeGetRandomCommitmentOutsRequest(std::shared_ptr<SendTransactionContext>&& context,
-                                                                     uint64_t amount,
-                                                                     const std::vector<DepositId>& depositIds);
   std::unique_ptr<WalletRequest> doSendTransaction(std::shared_ptr<SendTransactionContext>&& context, std::deque<std::unique_ptr<WalletLegacyEvent>>& events, Crypto::SecretKey& transactionSK);
   std::unique_ptr<WalletRequest> doSendMultisigTransaction(std::shared_ptr<SendTransactionContext>&& context, std::deque<std::unique_ptr<WalletLegacyEvent>>& events);
   std::unique_ptr<WalletRequest> doSendDepositWithdrawTransaction(std::shared_ptr<SendTransactionContext>&& context,
                                                                   std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
                                                                   const std::vector<DepositId>& depositIds);
   // REMOVED: doSendLegacyBondWithdrawTransaction — no bond claims exist.
-  std::unique_ptr<WalletRequest> doSendCommitmentWithdrawTransaction(std::shared_ptr<SendTransactionContext>&& context,
-                                                                     std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
-                                                                     const std::vector<DepositId>& depositIds);
   std::unique_ptr<WalletRequest> doSendHeatMintV10Transaction(std::shared_ptr<SendTransactionContext>&& context,
                                                                std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
                                                                uint64_t xfgBurned,
@@ -201,69 +189,60 @@ private:
                                                               uint64_t inputAmount,
                                                               uint64_t outputAmount,
                                                                uint64_t minOutput);
-  std::unique_ptr<WalletRequest> doSendAmmSwapV10CommitmentTransaction(std::shared_ptr<SendTransactionContext>&& context,
-                                                                        std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
-                                                                        uint8_t direction,
-                                                                        uint64_t inputAmount,
-                                                                        uint64_t outputAmount,
-                                                                        uint64_t minOutput);
-  std::unique_ptr<WalletRequest> doSendLpAddV10Transaction(std::shared_ptr<SendTransactionContext>&& context,
-                                                            std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
-                                                            uint64_t amountXfg,
-                                                            uint64_t amountHeat);
-  std::unique_ptr<WalletRequest> doSendLpRemoveV10Transaction(std::shared_ptr<SendTransactionContext>&& context,
-                                                               std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
-                                                               uint64_t lpShares,
-                                                               uint64_t minXfg,
-                                                               uint64_t minHeat);
-  std::unique_ptr<WalletRequest> doSendLpClaimFeesTransaction(std::shared_ptr<SendTransactionContext>&& context,
-                                                               std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
-                                                               uint64_t lpShares,
-                                                               uint64_t minXfg,
-                                                               uint64_t minHeat);
-  std::unique_ptr<WalletRequest> doSendHeatDepositV10Transaction(std::shared_ptr<SendTransactionContext>&& context,
-                                                                  std::deque<std::unique_ptr<WalletLegacyEvent>>& events);
   struct PreparedCommitmentSpend {
     TransactionInputCommitmentSpend input;
     std::vector<Crypto::PublicKey> ring;
     KeyPair keys;
     size_t realIndex = 0;
   };
-  struct HeatDepositSigningKeys {
+  struct CommitmentSigningKeys {
     std::vector<KeyPair> keyInputs;
-    std::vector<PreparedCommitmentSpend> heatSpends;
-    ~HeatDepositSigningKeys();
+    std::vector<PreparedCommitmentSpend> commitmentSpends;
+    ~CommitmentSigningKeys();
   };
-  std::vector<DepositId> selectSpendableHeatDeposits(uint64_t neededHeat);
-  std::unique_ptr<WalletRequest> requestNextHeatDecoys(std::shared_ptr<SendTransactionContext> context,
-                                                       std::deque<std::unique_ptr<WalletLegacyEvent>>& events);
-  void onHeatDecoysFetched(std::shared_ptr<SendTransactionContext> context,
-                           std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
-                           std::unique_ptr<WalletRequest>& nextRequest, std::error_code ec);
+  struct CdClaims {
+    std::vector<uint64_t> perInput;
+    std::vector<uint64_t> bonus;
+    uint64_t total = 0;
+  };
+  std::shared_ptr<SendTransactionContext> newCommitmentSpendContext(uint64_t mixIn);
+  std::vector<DepositId> selectSpendableDeposits(uint32_t term, uint64_t needed);
+  bool depositTransferAvailable(DepositId depositId);
+  void attachCommitmentInputs(SendTransactionContext& context, const std::vector<DepositId>& depositIds,
+                              bool capDecoysAtDepositHeight);
+  void selectXfg(SendTransactionContext& context, uint64_t needed);
+  std::unique_ptr<WalletRequest> registerCommitmentSpend(std::shared_ptr<SendTransactionContext>&& context,
+                                                         TransactionId& transactionId, uint64_t xfgLeavingWallet,
+                                                         uint64_t fee, std::deque<std::unique_ptr<WalletLegacyEvent>>& events);
+  std::unique_ptr<WalletRequest> requestNextCommitmentDecoys(std::shared_ptr<SendTransactionContext> context,
+                                                             std::deque<std::unique_ptr<WalletLegacyEvent>>& events);
+  void onCommitmentDecoysFetched(std::shared_ptr<SendTransactionContext> context,
+                                 std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                 std::unique_ptr<WalletRequest>& nextRequest, std::error_code ec);
+  std::unique_ptr<WalletRequest> buildCommitmentSpend(std::shared_ptr<SendTransactionContext>&& context,
+                                                      std::deque<std::unique_ptr<WalletLegacyEvent>>& events);
+  void buildHeatDeposit(ITransaction& transaction, SendTransactionContext& context);
+  void buildHeatTransfer(ITransaction& transaction, SendTransactionContext& context);
+  void buildHeatSell(ITransaction& transaction, SendTransactionContext& context);
+  void buildLpAdd(ITransaction& transaction, SendTransactionContext& context);
+  void buildLpRemove(ITransaction& transaction, SendTransactionContext& context);
+  void buildLimitDeposit(ITransaction& transaction, SendTransactionContext& context);
+  void buildCommitmentWithdraw(ITransaction& transaction, SendTransactionContext& context);
+  CdClaims claimableInterest(const SendTransactionContext& context);
+  uint64_t commitmentInputTotal(const SendTransactionContext& context);
+  void addOwnHeatOutputs(ITransaction& transaction, uint64_t amount);
+  void addOwnXfgOutputs(ITransaction& transaction, uint64_t amount, const SendTransactionContext& context);
   void addOwnCommitmentOutput(ITransaction& transaction, uint64_t amount, uint32_t term);
-  PreparedCommitmentSpend prepareHeatSpend(const TransactionOutputInformation& transfer,
-                                           const std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>& decoys);
-  std::unique_ptr<WalletRequest> doSendHeatTransferV10Transaction(std::shared_ptr<SendTransactionContext>&& context,
-                                                                   std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
-                                                                   const AccountPublicAddress& recipient,
-                                                                   uint64_t amount);
-  std::unique_ptr<WalletRequest> doSendPlaceOrderV13Transaction(std::shared_ptr<SendTransactionContext>&& context,
-                                                                  std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
-                                                                  uint8_t side, uint64_t amount, uint64_t targetPrice,
-                                                                  uint32_t expiration, const Crypto::Hash& orderId,
-                                                                  const Crypto::Hash& addressHash);
+  void addAndSignAllInputs(ITransaction& transaction, SendTransactionContext& context, CommitmentSigningKeys& signingKeys);
+  std::unique_ptr<WalletRequest> relayBuiltTransaction(std::shared_ptr<SendTransactionContext>&& context,
+                                                       ITransaction& transaction,
+                                                       std::deque<std::unique_ptr<WalletLegacyEvent>>& events);
+  PreparedCommitmentSpend prepareCommitmentSpend(const TransactionOutputInformation& transfer,
+                                                 const std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>& decoys,
+                                                 uint64_t claimedInterest);
   std::unique_ptr<WalletRequest> doSendCancelOrderV13Transaction(std::shared_ptr<SendTransactionContext>&& context,
                                                                   std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
                                                                   const Crypto::Hash& orderId);
-  void sendLpAddCommitmentOutsByAmount(std::shared_ptr<SendTransactionContext> context,
-                                        const std::vector<DepositId> heatIds,
-                                        std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
-                                        std::unique_ptr<WalletRequest>& nextRequest,
-                                        std::error_code ec);
-  void sendLpRemoveCommitmentOutsByAmount(std::shared_ptr<SendTransactionContext> context,
-                                           std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
-                                           std::unique_ptr<WalletRequest>& nextRequest,
-                                           std::error_code ec);
   void sendTransactionRandomOutsByAmount(bool isMultisigTransaction,
                                          std::shared_ptr<SendTransactionContext> context,
                                          Crypto::SecretKey& transactionSK,
@@ -271,11 +250,6 @@ private:
                                          std::unique_ptr<WalletRequest>& nextRequest,
                                          std::error_code ec);
 
-  void sendCommitmentWithdrawRandomOutsByAmount(std::shared_ptr<SendTransactionContext> context,
-                                                const std::vector<DepositId> depositIds,
-                                                std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
-                                                std::unique_ptr<WalletRequest>& nextRequest,
-                                                std::error_code ec);
 
   // OSPEAD async pipeline. shouldChainOspeadHeights populates
   // context->ospeadHeightQueries and returns true when the caller should

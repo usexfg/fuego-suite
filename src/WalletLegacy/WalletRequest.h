@@ -60,46 +60,22 @@ private:
   Callback m_cb;
 };
 
-class WalletGetRandomCommitmentOutsRequest: public WalletRequest
+class WalletGetCommitmentDecoysRequest: public WalletRequest
 {
 public:
-  WalletGetRandomCommitmentOutsRequest(uint64_t amount, uint64_t outsCount, uint32_t maxHeight,
-      std::shared_ptr<SendTransactionContext> context, Callback cb)
-    : m_amount(amount), m_outsCount(outsCount), m_maxHeight(maxHeight), m_context(std::move(context)), m_cb(std::move(cb)) {}
-
-  virtual ~WalletGetRandomCommitmentOutsRequest() {}
-
-  virtual void perform(INode& node, std::function<void(WalletRequest::Callback, std::error_code)> cb) override
-  {
-    node.getRandomCommitmentOutsForAmount(m_amount, m_outsCount, m_maxHeight,
-      std::ref(m_context->commitmentOuts), std::bind(cb, m_cb, std::placeholders::_1));
-  }
-
-private:
-  uint64_t m_amount;
-  uint64_t m_outsCount;
-  uint32_t m_maxHeight;
-  std::shared_ptr<SendTransactionContext> m_context;
-  Callback m_cb;
-};
-
-class WalletGetCommitmentDecoysForAmountRequest: public WalletRequest
-{
-public:
-  WalletGetCommitmentDecoysForAmountRequest(uint64_t amount, uint64_t outsCount,
+  WalletGetCommitmentDecoysRequest(const CommitmentRing& ring, uint64_t outsCount,
       std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>& decoys,
       std::shared_ptr<SendTransactionContext> context, Callback cb)
-    : m_amount(amount), m_outsCount(outsCount), m_decoys(decoys), m_context(std::move(context)), m_cb(std::move(cb)) {}
+    : m_ring(ring), m_outsCount(outsCount), m_decoys(decoys), m_context(std::move(context)), m_cb(std::move(cb)) {}
 
   virtual void perform(INode& node, std::function<void(WalletRequest::Callback, std::error_code)> cb) override
   {
-    const uint32_t anyCreationHeight = 0;
-    node.getRandomCommitmentOutsForAmount(m_amount, m_outsCount, anyCreationHeight,
+    node.getRandomCommitmentOutsForAmount(m_ring.amount, m_outsCount, m_ring.maxCreationHeight, m_ring.term,
       std::ref(m_decoys), std::bind(cb, m_cb, std::placeholders::_1));
   }
 
 private:
-  uint64_t m_amount;
+  CommitmentRing m_ring;
   uint64_t m_outsCount;
   std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>& m_decoys;
   std::shared_ptr<SendTransactionContext> m_context;

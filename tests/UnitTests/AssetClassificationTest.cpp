@@ -109,3 +109,18 @@ TEST(AssetClassification, UnifiedTermZeroIsHeatNotXfg) {
   unified.term = 0;
   EXPECT_EQ(AssetType::HEAT, Currency::classifyOutputAsset(TransactionOutputTarget(unified), 0));
 }
+
+// Only CDs are time-locked. Marker terms are labels, not block counts.
+TEST(AssetClassification, OnlyCertificatesOfDepositAreTimeLocked) {
+  EXPECT_TRUE(isCdCommitmentTerm(10));
+  EXPECT_FALSE(isCdCommitmentTerm(0));
+  EXPECT_FALSE(isCdCommitmentTerm(parameters::HEAT_TERM));
+  EXPECT_FALSE(isCdCommitmentTerm(parameters::DEPOSIT_TERM_LP));
+  EXPECT_FALSE(isCdCommitmentTerm(parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG));
+  EXPECT_FALSE(isCdCommitmentTerm(parameters::DEPOSIT_TERM_POOL_XFG));
+  EXPECT_FALSE(isCdCommitmentTerm(parameters::DEPOSIT_TERM_POOL_HEAT));
+  EXPECT_FALSE(isCdCommitmentTerm(parameters::DIGM_TERM));
+  EXPECT_TRUE(isWalletHeatTerm(parameters::HEAT_TERM));
+  EXPECT_TRUE(isWalletHeatTerm(10));
+  EXPECT_FALSE(isWalletHeatTerm(parameters::DEPOSIT_TERM_LP));
+}

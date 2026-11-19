@@ -375,7 +375,7 @@ protected:
   void applySubaddressJanusPolicy();
   AccountKeys makeAccountKeys(const WalletRecord &wallet) const;
   size_t getTransactionId(const Crypto::Hash &transactionHash) const;
-  size_t getDepositId(const Crypto::Hash &transactionHash) const;
+  size_t getDepositId(const Crypto::Hash &transactionHash, uint32_t outputInTransaction) const;
   void pushEvent(const WalletEvent &event);
   bool isFusionTransaction(const WalletTransaction &walletTx) const;
 

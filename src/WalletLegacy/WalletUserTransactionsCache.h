@@ -103,6 +103,7 @@ public:
   Deposit& getDeposit(DepositId depositId);
 
   bool isUsed(const TransactionOutputInformation& out) const;
+  bool isUnspentDepositRecord(const Crypto::Hash& creatingTransactionHash, uint32_t outputInTransaction) const;
   void reset();
 
   std::vector<TransactionId> deleteOutdatedTransactions();
@@ -120,10 +121,10 @@ private:
   void updateUnconfirmedTransactions();
 
   void restoreTransactionOutputToBankingIndex();
-  std::vector<DepositId> createNewDeposits(TransactionId creatingTransactionId,
-                                           const std::vector<TransactionOutputInformation>& depositOutputs,
-                                           const Currency& currency,
-										   uint32_t height);
+  std::vector<DepositId> recordConfirmedDeposits(TransactionId creatingTransactionId,
+                                                 const std::vector<TransactionOutputInformation>& depositOutputs,
+                                                 const Currency& currency,
+                                                 uint32_t height);
   DepositId insertNewDeposit(const TransactionOutputInformation& depositOutput,
                              TransactionId creatingTransactionId,
                              const Currency& currency, uint32_t height);
@@ -131,6 +132,8 @@ private:
   DepositId getDepositId(const Crypto::Hash& creatingTransactionHash, uint32_t outputInTransaction);
 
   std::vector<DepositId> getDepositIdsBySpendingTransaction(TransactionId transactionId);
+  void releaseDepositsSpentBy(TransactionId transactionId);
+  void releaseDepositsOfUnsentTransactions();
 
   void eraseCreatedDeposit(DepositId id);
 

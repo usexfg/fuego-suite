@@ -64,6 +64,7 @@
 #include "Wallet/WalletRpcServer.h"
 #include "WalletLegacy/WalletLegacy.h"
 #include "Wallet/LegacyKeysImporter.h"
+#include "WalletLegacy/HearthQuote.h"
 #include "WalletLegacy/WalletHelper.h"
 #include "SwapDaemon/AdaptorSwap.h"
 #include "Mnemonics/electrum-words.cpp"
@@ -515,7 +516,6 @@ std::string simple_wallet::get_commands_str() {
     {"buy_xfg", "Buy XFG with HEAT on Hearth AMM"},
     {"add_liq", "Add liquidity to Hearth"},
     {"remove_liq", "Remove liquidity from Hearth"},
-    {"claim_lp_fees", "Claim LP swap fee earnings"},
     {"place_order", "Place limit order on Hearth"},
     {"cancel_order", "Cancel limit order by transaction hash"},
     {"dev_donate", "Dev donation: burn XFG into the dev donation counter (re-minted to the dev fund each quarter; no output to any dev wallet)"},
@@ -630,8 +630,7 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
   m_consoleHandler.setHandler("sell_xfg", [this](const std::vector<std::string>& args) { m_lastSwapDirection = 0; return swap(args); }, "sell_xfg <amount> <min_heat> - Sell XFG for HEAT on Hearth AMM");
   m_consoleHandler.setHandler("buy_xfg", [this](const std::vector<std::string>& args) { m_lastSwapDirection = 1; return swap(args); }, "buy_xfg <amount> <min_xfg> - Buy XFG with HEAT on Hearth AMM");
   m_consoleHandler.setHandler("add_liq", boost::bind(&simple_wallet::add_liq, this, boost::arg<1>()), "add_liq [xfg_amount] [heat_amount] - Add liquidity to Hearth (no args = show pool ratio)");
-  m_consoleHandler.setHandler("remove_liq", boost::bind(&simple_wallet::remove_liq, this, boost::arg<1>()), "remove_liq <lp_shares> <min_xfg> <min_heat> - Remove liquidity from Hearth");
-  m_consoleHandler.setHandler("claim_lp_fees", boost::bind(&simple_wallet::claim_lp_fees, this, boost::arg<1>()), "claim_lp_fees <lp_shares> - Claim LP swap fee earnings");
+  m_consoleHandler.setHandler("remove_liq", boost::bind(&simple_wallet::remove_liq, this, boost::arg<1>()), "remove_liq <lp_shares> - Remove liquidity from Hearth (pays the pool's current share of XFG and HEAT)");
 
   // HEAT CD commands (v11+)
   m_consoleHandler.setHandler("heat_cd", boost::bind(&simple_wallet::heat_deposit, this, boost::arg<1>()), "heat_cd <amount> <term_epochs> - Create HEAT Certificate of Deposit");
@@ -4519,9 +4518,23 @@ bool simple_wallet::add_liq(const std::vector<std::string>& args) {
                          << m_currency.formatAmount(heatAmount) << " HEAT";
   }
 
+  uint64_t lpShares = 0;
+  try {
+    lpShares = CryptoNote::quoteLpAddShares(*m_node, xfgAmount, heatAmount);
+  } catch (const std::exception& e) {
+    fail_msg_writer() << "Cannot quote LP shares: " << e.what();
+    return false;
+  }
+  if (lpShares == 0) {
+    fail_msg_writer() << "This deposit earns no LP shares";
+    return false;
+  }
+
   success_msg_writer() << "Add liquidity:";
   success_msg_writer() << "  XFG:  " << m_currency.formatAmount(xfgAmount);
   success_msg_writer() << "  HEAT: " << m_currency.formatAmount(heatAmount);
+  success_msg_writer() << "  LP shares: " << lpShares << " (" << CryptoNote::parameters::WALLET_SWAP_SLIPPAGE_BPS / 100.0
+                       << "% under the current pool quote)";
   success_msg_writer() << "  Fee:  " << m_currency.formatAmount(fee);
   success_msg_writer() << "";
   success_msg_writer() << "";
@@ -4560,7 +4573,7 @@ bool simple_wallet::add_liq(const std::vector<std::string>& args) {
   CryptoNote::WalletHelper::SendCompleteResultObserver sent;
   WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
 
-  CryptoNote::TransactionId txId = m_wallet->lpAddV10(xfgAmount, heatAmount, fee, mixIn);
+  CryptoNote::TransactionId txId = m_wallet->lpAddV10(xfgAmount, heatAmount, lpShares, fee, mixIn);
 
   if (txId == WALLET_INVALID_TRANSACTION_ID) {
     fail_msg_writer() << "Add liquidity transaction failed";
@@ -4580,26 +4593,36 @@ bool simple_wallet::add_liq(const std::vector<std::string>& args) {
 }
 
 bool simple_wallet::remove_liq(const std::vector<std::string>& args) {
-  if (args.size() < 3) {
-    fail_msg_writer() << "Usage: remove_liq <lp_shares> <min_xfg> <min_heat>";
+  if (args.size() != 1) {
+    fail_msg_writer() << "Usage: remove_liq <lp_shares>";
     return false;
   }
 
-  uint64_t lpShares;
-  uint64_t minXfg;
-  uint64_t minHeat;
-  if (!m_currency.parseAmount(args[0], lpShares) ||
-      !m_currency.parseAmount(args[1], minXfg) ||
-      !m_currency.parseAmount(args[2], minHeat)) {
-    fail_msg_writer() << "Invalid amount(s)";
+  uint64_t lpShares = 0;
+  if (!Common::fromString(args[0], lpShares) || lpShares == 0) {
+    fail_msg_writer() << "Invalid LP shares: " << args[0];
+    return false;
+  }
+
+  CryptoNote::LpRemovePayout payout;
+  try {
+    payout = CryptoNote::quoteLpRemovePayout(*m_node, lpShares);
+  } catch (const std::exception& e) {
+    fail_msg_writer() << "Cannot quote the LP payout: " << e.what();
     return false;
   }
 
   uint64_t fee = m_currency.minimumFee();
 
-  success_msg_writer() << "Remove liquidity: " << m_currency.formatAmount(lpShares)
-                       << " LP shares | min " << m_currency.formatAmount(minXfg) << " XFG + "
-                       << m_currency.formatAmount(minHeat) << " HEAT";
+  if (payout.xfg <= fee) {
+    fail_msg_writer() << "The XFG payout does not cover the network fee";
+    return false;
+  }
+  success_msg_writer() << "Remove liquidity: " << lpShares << " LP shares -> "
+                       << m_currency.formatAmount(payout.xfg - fee) << " XFG (after the network fee) + "
+                       << m_currency.formatAmount(payout.heat) << " HEAT ("
+                       << CryptoNote::parameters::WALLET_SWAP_SLIPPAGE_BPS / 100.0
+                       << "% under the current pool quote; the pool keeps the difference)";
 
   // Use lpRemoveV10() — dedicated LP remove API that burns LP commitment inputs
   uint64_t mixIn = m_currency.isTestnet() ? 0 : CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
@@ -4607,7 +4630,7 @@ bool simple_wallet::remove_liq(const std::vector<std::string>& args) {
   CryptoNote::WalletHelper::SendCompleteResultObserver sent;
   WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
 
-  CryptoNote::TransactionId txId = m_wallet->lpRemoveV10(lpShares, minXfg, minHeat, fee, mixIn);
+  CryptoNote::TransactionId txId = m_wallet->lpRemoveV10(lpShares, payout.xfg, payout.heat, fee, mixIn);
 
   if (txId == WALLET_INVALID_TRANSACTION_ID) {
     fail_msg_writer() << "Remove liquidity transaction failed";
@@ -4626,60 +4649,9 @@ bool simple_wallet::remove_liq(const std::vector<std::string>& args) {
   return true;
 }
 
-bool simple_wallet::claim_lp_fees(const std::vector<std::string>& args) {
-  if (args.size() < 1) {
-    fail_msg_writer() << "Usage: claim_lp_fees <lp_shares>";
-    fail_msg_writer() << "  Claims accumulated swap fee earnings without removing your LP position.";
-    return false;
-  }
-
-  uint64_t lpShares;
-  if (!m_currency.parseAmount(args[0], lpShares) || lpShares == 0) {
-    fail_msg_writer() << "Invalid LP shares amount";
-    return false;
-  }
-
-  uint64_t fee = m_currency.minimumFee();
-
-  success_msg_writer() << "Claim LP fees for " << m_currency.formatAmount(lpShares) << " LP shares";
-  success_msg_writer() << "  Fee: " << m_currency.formatAmount(fee);
-  success_msg_writer() << "  NOTE: Your LP position stays in the pool. Only accumulated fees are claimed.";
-
-  std::cout << "Proceed? (yes/no): ";
-  std::string answer;
-  std::getline(std::cin, answer);
-  if (answer != "yes" && answer != "y") {
-    fail_msg_writer() << "Cancelled.";
-    return false;
-  }
-
-  uint64_t mixIn = m_currency.isTestnet() ? 0 : CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
-
-  CryptoNote::WalletHelper::SendCompleteResultObserver sent;
-  WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
-
-  CryptoNote::TransactionId txId = m_wallet->lpClaimFeesV10(lpShares, 0, 0, fee, mixIn);
-
-  if (txId == WALLET_INVALID_TRANSACTION_ID) {
-    fail_msg_writer() << "LP fee claim transaction failed";
-    return false;
-  }
-
-  std::error_code sendError = sent.wait(txId);
-  removeGuard.removeObserver();
-
-  if (sendError) {
-    fail_msg_writer() << "Failed to send LP fee claim: " << sendError.message();
-    return false;
-  }
-
-  success_msg_writer() << "LP fee claim submitted: tx " << txId;
-  return true;
-}
-
 bool simple_wallet::heat_deposit(const std::vector<std::string>& args) {
   if (args.size() < 2) {
-    fail_msg_writer() << "Usage: heat_deposit <amount> <term_epochs>";
+    fail_msg_writer() << "Usage: heat_cd <amount> <term_epochs>";
     return false;
   }
   uint64_t amount = 0;
@@ -4833,7 +4805,7 @@ bool simple_wallet::claim_cd(const std::vector<std::string>& args) {
       success_msg_writer() << "    Base (CD yield pool): " << m_currency.formatAmount(claimInfo.baseInterest) << " HEAT";
     }
     if (claimInfo.poolInfoPresent && claimInfo.bonusInterest > 0) {
-      success_msg_writer() << "    Bonus (Bonus Vault, tier): " << m_currency.formatAmount(claimInfo.bonusInterest)
+      success_msg_writer() << "    Bonus (Bonus Vault yield floor): " << m_currency.formatAmount(claimInfo.bonusInterest)
                            << " HEAT (vault: " << m_currency.formatAmount(claimInfo.bonusVaultBalance) << ")";
     }
   }

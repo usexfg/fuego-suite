@@ -63,11 +63,12 @@ protected:
   // A real transaction with one commitment output carrying `commitKey`, and the
   // scanner-style transfer record for it.
   std::unique_ptr<ITransaction> addCommitmentTransaction(const Crypto::PublicKey& commitKey,
-                                                         const Crypto::KeyImage& keyImage) {
+                                                         const Crypto::KeyImage& keyImage,
+                                                         uint32_t term = parameters::HEAT_TERM) {
     auto tx = createTransaction();
     TransactionOutputCommitment out;
     out.commitKey = commitKey;
-    out.term = parameters::HEAT_TERM;
+    out.term = term;
     tx->addOutput(kAmount, out);
 
     TransactionOutputInformationIn info{};
@@ -76,7 +77,7 @@ protected:
     info.globalOutputIndex = 5;
     info.outputInTransaction = 0;
     info.transactionPublicKey = tx->getTransactionPublicKey();
-    info.term = parameters::HEAT_TERM;
+    info.term = term;
     info.keyImage = keyImage;
     info.commitmentKey = commitKey;
 
@@ -112,6 +113,34 @@ TEST_F(CommitmentPersistence, CommitKeySurvivesSaveAndLoad) {
   EXPECT_EQ(kAmount, out.amount);
   EXPECT_EQ(parameters::HEAT_TERM, out.term);
   EXPECT_EQ(TransactionTypes::OutputType::Commitment, out.type);
+}
+
+// Wallets read HEAT through its own type flag; it never counts as XFG or as a deposit.
+TEST_F(CommitmentPersistence, HeatIsListedOnlyUnderTheHeatType) {
+  addCommitmentTransaction(patternKey(7), patternImage(7));
+  std::vector<TransactionOutputInformation> listed;
+  container.getOutputs(listed, ITransfersContainer::IncludeTypeHeat | ITransfersContainer::IncludeStateAll);
+  ASSERT_EQ(1, listed.size());
+  EXPECT_EQ(parameters::HEAT_TERM, listed.front().term);
+  listed.clear();
+  container.getOutputs(listed, ITransfersContainer::IncludeTypeDeposit | ITransfersContainer::IncludeStateAll);
+  EXPECT_TRUE(listed.empty());
+  EXPECT_EQ(0, container.balance(ITransfersContainer::IncludeTypeKey | ITransfersContainer::IncludeTypeMultisignature |
+                                 ITransfersContainer::IncludeStateAll));
+}
+
+// Marker terms are not block counts: LP shares and swap-receive XFG unlock like
+// any output instead of waiting height + 0xFFFFFFFD blocks.
+TEST_F(CommitmentPersistence, MarkerTermOutputsBecomeSpendable) {
+  auto lp = addCommitmentTransaction(patternKey(8), patternImage(8), parameters::DEPOSIT_TERM_LP);
+  auto swapReceive = addCommitmentTransaction(patternKey(9), patternImage(9), parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG);
+  container.advanceHeight(kHeight + 10);
+  for (const auto& tx : {lp->getTransactionHash(), swapReceive->getTransactionHash()}) {
+    TransactionOutputInformation out;
+    ITransfersContainer::TransferState state;
+    ASSERT_TRUE(container.getTransfer(tx, 0, out, state));
+    EXPECT_EQ(ITransfersContainer::TransferState::TransferAvailable, state);
+  }
 }
 
 // A cache written before storage version 2 has no commit key, and one written before

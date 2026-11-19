@@ -7553,3 +7553,36 @@ Testnet run (2026-11-18, isolated node, scratch data): mined to height 220; `min
 | Mutation check | DONE — testnet floor back at the v11 height fails `testCdActivationHeight` (2 checks) |
 | End-to-end CD on testnet | NOT DONE — blocked by row 6 |
 | Signed | Claude, 2026-11-18 |
+
+## HEAT spends end to end: consensus, node, transfers, both wallets
+
+**Agent**: Claude
+**Start date**: 2026-11-18
+**Plan**: `docs/V12_LAUNCH_TODO.md` item 0 (owner approved 2026-11-18: "fix heat wallets before v eleven and decoy issue and any other issues").
+**Consensus impact (v11+ blocks only; mainnet has no v11 blocks):** rings of post-v11 `HEAT_TERM` members are valid; any `HEAT_TERM` member created before v11, and any DIGM member, is refused; only CD terms are time-locked or count as CDs; LP remove pays the declared amounts, capped by the formula. Node-local (all versions): popping a block no longer clears the output indexes; a commitment spend connects; the stateless output check uses the network's CD term range.
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `checkCommitmentSpendInput` / `checkCommitmentTransferInput`: post-v11 all-`HEAT_TERM` rings valid; pre-v11 burns and DIGM refused (`isUnspendableAfterHeatwave`); maturity and CD status from `isCdCommitmentTerm` (`testHeatRingsAfterHeatwave`, `testMarkerTermRingsAfterHeatwave`) | Claude | 2026-11-18 | DONE |
+| 2 | Decoys: `ring_term` on the RPC and `INode`; the node returns only ring-valid members (`ringMayHoldDecoy`); wallets pass the input's term; HEAT spends no longer cap decoy height (`testNodeDecoysAreRingValid`) | Claude | 2026-11-18 | DONE |
+| 3 | LP remove pays the declared payout, capped by the formula; reversal uses the recorded amounts (`testLpRemovePaysTheDeclaredAmounts`) | Claude | 2026-11-18 | DONE |
+| 4 | `isCdCommitmentTerm` / `isWalletHeatTerm` in `AssetType` shared by consensus, the transfers container and both wallets | Claude | 2026-11-18 | DONE |
+| 5 | Transfers: `IncludeTypeHeat`; marker terms not time-locked in the container (`HeatIsListedOnlyUnderTheHeatType`, `MarkerTermOutputsBecomeSpendable`) | Claude | 2026-11-18 | DONE |
+| 6 | WalletGreen: deposit index unique per (transaction, output); HEAT records spendable on arrival; HEAT balances by unlock height; available balance = key + multisig outputs; sell proceeds as XFG outputs; decoy terms; decoy RPC errors fail the spend | Claude | 2026-11-18 | DONE; not run end to end |
+| 7 | WalletLegacy: HEAT records (recorded on confirmation for own and external transactions); HEAT balance from spendable records; one commitment pipeline for CD, send HEAT, sell, LP add/remove, HEAT-escrow orders and CD withdraw (XFG fee inputs, decoys per ring, all inputs before any signature, keys wiped, CD payouts in HEAT); inputs verified against their records; order lookup outside the cache lock | Claude | 2026-11-18 | DONE |
+| 8 | WalletLegacy storage: `reset` clears deposits and indexes; own transactions store their hash; deposit height, unlock height and hash rebuilt on load; failed sends release their deposits, also on load | Claude | 2026-11-19 | DONE |
+| 9 | LP quotes from the node's reserves and share supply (`HearthQuote`) for SimpleWallet and the wallet RPC; `lp_claim` / `amm_claim_lp_fees` removed (no v11 settlement) | Claude | 2026-11-18 | DONE |
+| 10 | Node: `popTransactions` no longer clears output indexes (`testBlockPopKeepsEarlierOutputs`); commitment spends connect (`testCommitmentSpendConnectsOnce`); `check_outs_valid` takes the network's term range (`testOutputCheckUsesTheNetworkTermRange`); v11 transactions skip the pre-v11 aggregate amount check; `get_limit_orders` request fields initialised; cache keeps the commitment index (`testCommitmentOutputsSurviveRestart`) | Claude | 2026-11-19 | DONE |
+| 11 | Console prints command exceptions; `heat_cd` usage text; Bonus Vault wording (AGENTS.md, RPC comments, wallet output) | Claude | 2026-11-19 | DONE |
+
+Testnet (SimpleWallet, 2026-11-19): mint, sell, CD (AuntPoL XFG leg +0.5970393 XFG = declared fee), send HEAT, LP add, LP remove, CD claim, HEAT-escrow order and its withdraw, reopen without rescan — each mined and checked against node state.
+
+Open: walletd end to end; concurrent WalletLegacy sends can pick the same fee input (seen once, retried and settled); CD interest with a funded vault; testnet day estimates in `list_cds`.
+
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j8` full build rc=0 |
+| Tests pass | DONE — core_tests 740/740; `ctest -LE manual` 59/59; unit tests 36/36 (BUILD_TESTS=ON) |
+| Mutation checks | DONE — every consensus, node and container rule above fails its test when reverted |
+| End to end | SimpleWallet DONE; walletd NOT DONE |
+| Signed | Claude, 2026-11-19 |

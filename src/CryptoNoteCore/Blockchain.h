@@ -320,7 +320,8 @@ namespace CryptoNote {
       uint32_t& totalBlockCount, uint32_t& startBlockIndex);
     bool handleGetObjects(NOTIFY_REQUEST_GET_OBJECTS_request& arg, NOTIFY_RESPONSE_GET_OBJECTS_request& rsp); //Deprecated. Should be removed with CryptoNoteProtocolHandler.
     bool getRandomOutsByAmount(const COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS_request& req, COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS_response& res);
-    bool getRandomCommitmentOutputsForAmount(uint64_t amount, uint64_t count, std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS_out_entry>& result, uint32_t max_height = 0);
+    bool getRandomCommitmentOutputsForAmount(uint64_t amount, uint64_t count, std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS_out_entry>& result, uint32_t max_height = 0, uint32_t ringTerm = 0);
+    bool ringMayHoldDecoy(const CommitmentOutputRef& ref, uint32_t ringTerm, uint32_t currentHeight) const;
     // Bulk lookup of creation block heights for (amount, global_index) pairs.
     // heights is sized to queries.size(); 0 for unknown/invalid.
     bool getOutputHeights(const std::vector<std::pair<uint64_t, uint32_t>>& queries,
@@ -701,6 +702,15 @@ namespace CryptoNote {
       bool expired = false; // auto-returned on expiry (remaining claimable)
     };
     std::map<Crypto::Hash, LimitDepositInfo, HashLess> m_limitDeposits;
+    // Derived from m_limitDeposits by indexLimitOrder, never saved: the orders
+    // each block's expiry, auction and backstop passes walk (neither withdrawn
+    // nor expired), and the withdrawn ones the prune pass walks. Expired orders
+    // nobody withdraws stay claimable in m_limitDeposits and cost no block work.
+    std::set<Crypto::Hash, HashLess> m_restingLimitOrders;
+    std::set<Crypto::Hash, HashLess> m_withdrawnLimitOrders;
+    void indexLimitOrder(const Crypto::Hash& orderId);
+    void rebuildLimitOrderIndex();
+    void reverseOrderFillsFor(uint32_t poppedHeight);
 
     // Rollback-history depth for per-block fill/epoch/orderbook records.
     // Testnet has no checkpoints, so reorg depth is unbounded there; keep the
@@ -932,7 +942,9 @@ namespace CryptoNote {
     // block being validated, so a +1 there applied the next height's rules to this
     // block.
     bool checkCommitmentSpendInput(const TransactionInputCommitmentSpend& txin, const Crypto::Hash& tx_prefix_hash, const std::vector<Crypto::Signature>& sig, uint32_t* pmax_related_block_height = nullptr, uint8_t blockMajorVersion = 0);
-    bool checkCommitmentTransferInput(const TransactionInputCommitmentTransfer& txin, const Crypto::Hash& tx_prefix_hash, const std::vector<Crypto::Signature>& sig, uint32_t* pmax_related_block_height = nullptr);
+    bool checkCommitmentTransferInput(const TransactionInputCommitmentTransfer& txin, const Crypto::Hash& tx_prefix_hash, const std::vector<Crypto::Signature>& sig, uint32_t* pmax_related_block_height = nullptr, uint8_t blockMajorVersion = 0);
+    bool isUnspendableAfterHeatwave(const CommitmentOutputRef& ref) const;
+    static bool isTimeLockedRingMember(const CommitmentOutputRef& ref, uint8_t blockMajorVersion);
     bool removeLastBlock();
     bool checkCheckpoints(uint32_t &lastValidCheckpointHeight);
     bool checkUpgradeHeight(const UpgradeDetector& upgradeDetector);

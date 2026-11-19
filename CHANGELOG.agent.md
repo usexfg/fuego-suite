@@ -7450,3 +7450,160 @@ Sign-off table:
 | Build compiles | DONE — `make -j4` full build rc=0 |
 | Tests pass | DONE — core_tests 657/657; test_hearth_amm 45/45; `ctest -LE manual` 59/59 |
 | All tasks done | DONE |
+
+## Restore the CD fee and re-mint burn extra types after the subaddress merge
+
+**Feature name**: fix the build break in merge `aba01a69` (master's funsa V2 subaddresses into PR #79)
+**Agent**: Claude
+**Start date**: 2026-11-17
+**Consensus impact**: none; restores the two PR #79 types in the `TransactionExtraField` variant.
+
+The merge took master's `TransactionExtraField` typedef, which adds `TransactionExtraAdditionalPubKeys` and `TransactionExtraJanusBase` but drops `TransactionExtraCdCreationFee` and `TransactionExtraRemintBurn`, so `boost::get` on them failed to compile. Redoing the same merge independently gives one conflict, that typedef; every other file matches `aba01a69` exactly.
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Variant holds both sides' types (35; `BOOST_MPL_LIMIT_LIST_SIZE` is 40). New tags 0x06 / 0x09 do not collide with 0x0D / 0x0E | Claude | 2026-11-17 | DONE |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j4` full build rc=0 |
+| Tests pass | DONE — core_tests 657/657; `ctest -LE manual` 59/59 |
+| All tasks done | DONE |
+
+## Resting-order list, wallet auto-withdraw, `dev_donate`
+
+**Feature name**: abandoned limit orders leave the per-block scan; wallets withdraw their own ended orders; `dev_fund_burn` renamed `dev_donate`
+**Agent**: Claude
+**Start date**: 2026-11-17
+**Decision**: owner, 2026-11-17 (options 2 + 3; name `dev_donate`).
+**Consensus impact**: none to outcomes. The expiry, auction and backstop passes walk `m_restingLimitOrders` instead of every deposit and skip exactly the entries they skipped before (withdrawn or expired), in the same `HashLess` order; pruning walks `m_withdrawnLimitOrders` with the same rule. Both lists are derived from `m_limitDeposits`, never saved, and rebuilt on cache load.
+
+Task list:
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `indexLimitOrder(id)` recomputes one order's membership from its deposit; called at every write: deposit, stop and withdraw (push and pop), expiry and its reversal, prune, restore; `rebuildLimitOrderIndex` after cache load | Claude | 2026-11-17 | DONE |
+| 2 | Expiry, auction and backstop passes walk the resting list; prune walks the withdrawn list | Claude | 2026-11-17 | DONE |
+| 3 | popBlock's fill reversal extracted, unchanged, as `reverseOrderFillsFor(height)` | Claude | 2026-11-17 | DONE |
+| 4 | `limitOrdersDueForWithdraw`: from a wallet's own history, its confirmed deposits that expired or were stopped and that no own withdraw (pending or confirmed; failed ones excluded) claimed | Claude | 2026-11-17 | DONE |
+| 5 | walletd: on each `SYNC_COMPLETED`, withdraw due orders (skips view-only wallets); SimpleWallet: a background thread woken after each sync does the same, joined in `close_wallet`. Any attempt waits `LIMIT_ORDER_WITHDRAW_RETRY_BLOCKS` (10) before the next for that order | Claude | 2026-11-17 | DONE |
+| 6 | `dev_fund_burn` → `dev_donate`: SimpleWallet command, walletd JSON-RPC method, `WalletGreen::devDonate`, `WalletService::devDonate`, `DevDonate` messages, docs; consensus tag and counter names unchanged | Claude | 2026-11-17 | DONE |
+| 7 | Tests: `testRestingOrderListFollowsEveryChange` (real deposit, stop and withdraw transactions pushed and popped; expiry and its reversal), `testLimitOrdersDueForWithdraw`; index check added to `testWithdrawnDepositsPrunedAndRestored` | Claude | 2026-11-17 | DONE |
+
+Not covered by tests: the walletd and SimpleWallet hooks themselves (no wallet harness; they call the tested function and the existing cancel path).
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j4` full build rc=0 |
+| Tests pass | DONE — core_tests 676/676; `ctest -LE manual` 59/59 |
+| Mutation checks | DONE — dropping `indexLimitOrder` at any of its 10 sites fails a test; ignoring claims, counting unconfirmed deposits, counting failed withdraws, or ignoring stops in `limitOrdersDueForWithdraw` each fail a test |
+| All tasks done | DONE |
+
+### fuego-guardian review (2026-11-17, depth 2: consensus, wallet, security, adversarial, quality)
+
+Scope: `origin/master..HEAD` (variant-type build fix, resting-order list, auto-withdraw, `dev_donate`).
+
+| # | Severity | Finding | Fix | Status |
+|---|----------|---------|-----|--------|
+| G1 | HIGH (present on `master` before this branch) | `rebuildCache` reset every consensus field except `m_limitDeposits`. The cache loader reads `limit_deposits` before later sections; when a later section fails, `rebuildCache` replays from genesis holding deposits from heights it has not reached, and those orders rest in and fill at earlier auctions, so the node computes state its peers do not | `rebuildCache` clears `m_limitDeposits` and rebuilds both lists; `testRebuildCacheForgetsUnreplayedDeposits` | DONE; removing the clear fails 2 checks |
+| G2 | HIGH (walletd availability) | `refresh()` ran the auto-withdraw under `EventLock(readyEvent)`. `resetWallet`/`replaceWithNewWallet` hold that lock and wait for `refresh()` to finish, so a sync landing during a reset deadlocked walletd | the pass returns at once when `readyEvent` is held, and retries after the next sync; any exception is logged instead of ending the refresh loop | DONE; not covered by a test |
+| G3 | MEDIUM | SimpleWallet's auto-withdraw thread was joined only in `close_wallet`; TestnetWallet returns from `run()` without `deinit()`, so a joinable `std::thread` was destroyed and the process aborted at exit. An exception from the pass also escaped the thread | `~simple_wallet()` stops and joins the thread; the loop catches and reports exceptions | DONE; not covered by a test |
+| G4 | LOW | An order the node does not list (in-process node, which has no `getLimitDeposits`) was retried every 10 blocks with a warning each time | one `getLimitDeposits` call per pass with due orders; an unlisted order is reported once and skipped until restart | DONE; not covered by a test |
+| G5 | LOW | `pruneSettledLimitDeposits` dereferenced `find` without an end check | `at()` | DONE |
+
+Informational, not changed:
+- `/get_limit_orders` reports `withdrawn = withdrawn || expired`, and `NodeRpcProxy` sets `expired = false`, so a wallet cannot tell an expired order from a withdrawn one over RPC. Auto-withdraw does not depend on that field (it reads its own history); `get_limit_orders` in walletd shows expired orders as withdrawn.
+- SimpleWallet's thread calls WalletLegacy and `NodeRpcProxy` while the console thread may also call them; `cancel_order` already runs the same calls from the console thread.
+- A withdraw sent at the first sync after expiry ties the wallet's online time to the order's expiry height.
+
+Score: 84/100 after fixes. Verdict: merge after CI. Open: the wallet hooks have no automated test (no walletd or SimpleWallet harness); Clang, macOS and Windows were not built locally.
+
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j8` full build rc=0 |
+| Tests pass | DONE — core_tests 681/681; `ctest -LE manual` 59/59; ASan+UBSan core_tests 681/681, no ASan/LSan reports (UBSan misaligned-load report in `crypto/crypto.h`, unchanged code) |
+| Mutation check | DONE — G1 |
+| Signed | Claude, 2026-11-17 |
+
+## V12 TODO follow-ups: CD activation height, stop-tag tests, CLI CD sender, node RPC threading
+
+**Agent**: Claude
+**Start date**: 2026-11-18
+**Plan**: `docs/V12_LAUNCH_TODO.md` (must-do 1; should-do stop-tag tests and testnet `cdActivationHeight`). Owner: "proceed with remaining tasks". The CD-terms / ring-size reset stays on hold by owner decision; the Bonus Vault review is an owner decision and has no code here.
+**Consensus impact**: testnet only. `cdActivationHeight()` moves from the testnet v11 height (30) to its v12 height (180). No past valid claim changes: a CD exists only after height 181, so its ring's youngest member is above 180. Mainnet unchanged (`CD_ACTIVATION_HEIGHT` = v12 height).
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `cdActivationHeight()` returns the v12 height on every network. Testnet's v11 value let a ring whose youngest member sat in the v10 block at height 30 (legacy commitments allowed there) pass the legacy-deposit floor. `testCdActivationHeight` asserts on both networks that the last legacy-capable height is below the floor and the floor block is not v12 | Claude | 2026-11-18 | DONE |
+| 2 | Stop tag: `testRestingOrderListFollowsEveryChange` also checks the escrow is unchanged by stop push and pop | Claude | 2026-11-18 | DONE |
+| 3 | WalletLegacy CD sender: XFG inputs for network fee + declared CD fee with XFG change; HEAT decoys fetched per distinct HEAT amount (`WalletGetCommitmentDecoysForAmountRequest`, no height cap, so the real input is not always the youngest member); every input added before any is signed; key-input and commitment secrets wiped (`HeatDepositSigningKeys`); unconfirmed accounting records only the XFG spent. SimpleWallet rounds the CD fee padding up, as WalletGreen does | Claude | 2026-11-18 | DONE; end-to-end blocked (row 6) |
+| 4 | `DynamicRingSizeCalculator::commitmentRingSize` (moved from WalletGreen's anonymous namespace) shared by both wallets | Claude | 2026-11-18 | DONE |
+| 5 | `NodeRpcProxy::jsonCommand` runs on the proxy's worker thread (`runOnWorkerThread`). Synchronous calls from the console, auto-withdraw or walletd threads used the worker's `System::Event` and HTTP client from another thread; on testnet `heat_cd` hung in `getHearthTwap` while the worker sat in `updateBlockchainStatus` on the same lock. Calls already on the worker run directly | Claude | 2026-11-18 | DONE; `heat_cd` no longer hangs on testnet |
+| 6 | Found, not fixed (V12 TODO must-do 0, 0b): wallets never record `HEAT_TERM` outputs (`TransfersContainer::isIncluded`), so SimpleWallet showed 0 HEAT after a confirmed mint; the node's HEAT decoy RPC can return pool-reserve and XFG-class members that consensus rejects | Claude | 2026-11-18 | OPEN, needs owner plan approval |
+| 7 | Found, not fixed (V12 TODO should-do): WalletLegacy LP add mixes HEAT into XFG selection and signs before all inputs are added; other WalletLegacy commitment spends fetch decoys for one amount only; `heat_cd` usage text; `--start-mining` flag | Claude | 2026-11-18 | OPEN |
+
+Testnet run (2026-11-18, isolated node, scratch data): mined to height 220; `mint_heat 400` confirmed (`heat_supply` 497525000); `heat_cd 30 6` hung before row 5, and after row 5 returned "Insufficient HEAT ... Available: 0" (row 6). The CD sender has not built a transaction against a node yet.
+
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j8` full build rc=0 |
+| Tests pass | DONE — core_tests 692/692; `ctest -LE manual` 59/59 |
+| Mutation check | DONE — testnet floor back at the v11 height fails `testCdActivationHeight` (2 checks) |
+| End-to-end CD on testnet | NOT DONE — blocked by row 6 |
+| Signed | Claude, 2026-11-18 |
+
+## HEAT spends end to end: consensus, node, transfers, both wallets
+
+**Agent**: Claude
+**Start date**: 2026-11-18
+**Plan**: `docs/V12_LAUNCH_TODO.md` item 0 (owner approved 2026-11-18: "fix heat wallets before v eleven and decoy issue and any other issues").
+**Consensus impact (v11+ blocks only; mainnet has no v11 blocks):** rings of post-v11 `HEAT_TERM` members are valid; any `HEAT_TERM` member created before v11, and any DIGM member, is refused; only CD terms are time-locked or count as CDs; LP remove pays the declared amounts, capped by the formula. Node-local (all versions): popping a block no longer clears the output indexes; a commitment spend connects; the stateless output check uses the network's CD term range.
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `checkCommitmentSpendInput` / `checkCommitmentTransferInput`: post-v11 all-`HEAT_TERM` rings valid; pre-v11 burns and DIGM refused (`isUnspendableAfterHeatwave`); maturity and CD status from `isCdCommitmentTerm` (`testHeatRingsAfterHeatwave`, `testMarkerTermRingsAfterHeatwave`) | Claude | 2026-11-18 | DONE |
+| 2 | Decoys: `ring_term` on the RPC and `INode`; the node returns only ring-valid members (`ringMayHoldDecoy`); wallets pass the input's term; HEAT spends no longer cap decoy height (`testNodeDecoysAreRingValid`) | Claude | 2026-11-18 | DONE |
+| 3 | LP remove pays the declared payout, capped by the formula; reversal uses the recorded amounts (`testLpRemovePaysTheDeclaredAmounts`) | Claude | 2026-11-18 | DONE |
+| 4 | `isCdCommitmentTerm` / `isWalletHeatTerm` in `AssetType` shared by consensus, the transfers container and both wallets | Claude | 2026-11-18 | DONE |
+| 5 | Transfers: `IncludeTypeHeat`; marker terms not time-locked in the container (`HeatIsListedOnlyUnderTheHeatType`, `MarkerTermOutputsBecomeSpendable`) | Claude | 2026-11-18 | DONE |
+| 6 | WalletGreen: deposit index unique per (transaction, output); HEAT records spendable on arrival; HEAT balances by unlock height; available balance = key + multisig outputs; sell proceeds as XFG outputs; decoy terms; decoy RPC errors fail the spend | Claude | 2026-11-18 | DONE; not run end to end |
+| 7 | WalletLegacy: HEAT records (recorded on confirmation for own and external transactions); HEAT balance from spendable records; one commitment pipeline for CD, send HEAT, sell, LP add/remove, HEAT-escrow orders and CD withdraw (XFG fee inputs, decoys per ring, all inputs before any signature, keys wiped, CD payouts in HEAT); inputs verified against their records; order lookup outside the cache lock | Claude | 2026-11-18 | DONE |
+| 8 | WalletLegacy storage: `reset` clears deposits and indexes; own transactions store their hash; deposit height, unlock height and hash rebuilt on load; failed sends release their deposits, also on load | Claude | 2026-11-19 | DONE |
+| 9 | LP quotes from the node's reserves and share supply (`HearthQuote`) for SimpleWallet and the wallet RPC; `lp_claim` / `amm_claim_lp_fees` removed (no v11 settlement) | Claude | 2026-11-18 | DONE |
+| 10 | Node: `popTransactions` no longer clears output indexes (`testBlockPopKeepsEarlierOutputs`); commitment spends connect (`testCommitmentSpendConnectsOnce`); `check_outs_valid` takes the network's term range (`testOutputCheckUsesTheNetworkTermRange`); v11 transactions skip the pre-v11 aggregate amount check; `get_limit_orders` request fields initialised; cache keeps the commitment index (`testCommitmentOutputsSurviveRestart`) | Claude | 2026-11-19 | DONE |
+| 11 | Console prints command exceptions; `heat_cd` usage text; Bonus Vault wording (AGENTS.md, RPC comments, wallet output) | Claude | 2026-11-19 | DONE |
+
+Testnet (SimpleWallet, 2026-11-19): mint, sell, CD (AuntPoL XFG leg +0.5970393 XFG = declared fee), send HEAT, LP add, LP remove, CD claim, HEAT-escrow order and its withdraw, reopen without rescan — each mined and checked against node state.
+
+Open: walletd end to end; concurrent WalletLegacy sends can pick the same fee input (seen once, retried and settled); CD interest with a funded vault; testnet day estimates in `list_cds`.
+
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — `make -j8` full build rc=0 |
+| Tests pass | DONE — core_tests 740/740; `ctest -LE manual` 59/59; unit tests 36/36 (BUILD_TESTS=ON) |
+| Mutation checks | DONE — every consensus, node and container rule above fails its test when reverted |
+| End to end | SimpleWallet DONE; walletd NOT DONE |
+| Signed | Claude, 2026-11-19 |
+
+## V11 production readiness plan
+
+**Agent**: Claude
+**Start date**: 2026-11-19
+**Plan**: owner instruction 2026-11-19 ("version eleven production ready first then twelve"); written as `docs/V11_LAUNCH_TODO.md`.
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `docs/V11_LAUNCH_TODO.md`: testnet v11 window (owner decision), live passes on both wallets, two-node reorg and resync, mainnet replay, concurrent WalletLegacy sends, release documents, CI, earlier blockers | Claude | 2026-11-19 | DONE |
+| 2 | CI: the Mintlify check failed on an unescaped `<` in `docs/PQ-MIGRATION-PLAN.md` (already on `master` since #69); escaped | Claude | 2026-11-19 | DONE |
+| 3 | `RELEASE_NOTES_V11.md`: testnet v11 activates at block 30, not 25 | Claude | 2026-11-19 | DONE |
+| 4 | Plan item 5: WalletLegacy sends reserve their selected inputs when the transaction record is created (`WalletTransactionSender::claimSelectedInputs`, `WalletUnconfirmedTransactions::reserveOutputs` / `releaseReservedOutputs`); building moves them to the unconfirmed set, failure releases them; `makeSendRequest` validates message addresses before creating the record. `NullNode` test stub moved to `tests/UnitTests/NullNode.h` | Claude | 2026-11-19 | DONE |
+| 5 | CI (PR #83, both Ubuntu jobs): `commitment_owner_bound_tests` failed 5 cases that still expected the legacy commitment form, which commit 33e787a5 removed from `resolveCommitmentSpendKeys` and `deriveRecordedCommitmentKeyImage` (entry "Remove legacy commitment derivation", tests left PENDING; `master` CI does not compile, so it never ran). Tests now assert the documented behaviour: legacy and unrecorded keys are refused, the scanner records no legacy image, owner-bound images differ from legacy ones. The earlier local "ctest 59/59" did not include this target | Claude | 2026-11-19 | DONE |
+| 6 | Plan item 9 (owner request 2026-11-19): regression audit, in-process end-to-end scenarios on the unbuilt `tests/IntegrationTestLib`, inventory gate read from the code's own feature lists, release-notes gate. Item 1 notes `testnetd` uses the same testnet heights | Claude | 2026-11-19 | PLANNED |
+
+| Gate | Status |
+|------|--------|
+| Tests | `wallet_input_reservation_tests` 3/3; `subaddress_wallet_tests` 3/3; `commitment_owner_bound_tests` 26/26; `ctest -LE manual` 74/74; core_tests 740/740 |
+| Mutation checks | DONE — removing the reservation fails all 3 tests; removing the release on failure fails `FailedSendReleasesItsInputs` |
+| Signed | Claude, 2026-11-19 |

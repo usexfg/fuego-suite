@@ -82,7 +82,7 @@ public:
 
   virtual void relayTransaction(const Transaction& transaction, const Callback& callback) = 0;
   virtual void getRandomOutsByAmounts(std::vector<uint64_t>&& amounts, uint64_t outsCount, std::vector<COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount>& result, const Callback& callback) = 0;
-  virtual void getRandomCommitmentOutsForAmount(uint64_t amount, uint64_t outsCount, uint32_t maxHeight, std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>& result, const Callback& callback) = 0;
+  virtual void getRandomCommitmentOutsForAmount(uint64_t amount, uint64_t outsCount, uint32_t maxHeight, uint32_t ringTerm, std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>& result, const Callback& callback) = 0;
   // Bulk lookup of creation heights for (amount, global_index) pairs. Used by wallets for OSPEAD decoy filtering.
   // Default impl: leaves heights vector empty so wallet falls back to no-filter behavior when daemon lacks the endpoint.
   virtual void getOutputsHeights(const std::vector<std::pair<uint64_t, uint32_t>>& queries, std::vector<uint32_t>& heights, const Callback& callback) {
@@ -147,6 +147,7 @@ public:
     uint64_t reserveXfg = 0;
     uint64_t reserveHeat = 0;
     uint64_t spotPrice = 0; // FixedPoint64: reserveXfg / reserveHeat
+    uint64_t totalLpShares = 0;
   };
   virtual std::error_code getAmmPoolInfo(AmmPoolInfo& info) {
     return std::make_error_code(std::errc::not_supported);

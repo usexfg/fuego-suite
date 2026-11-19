@@ -25,4 +25,17 @@ AssetType classifyCommitmentTermAsset(uint32_t term) {
   return AssetType::HEAT;  // HEAT_TERM, DEPOSIT_TERM_POOL_HEAT, term 0 and every CD term
 }
 
+bool isCdCommitmentTerm(uint32_t term) {
+  return term > 0 && term != parameters::HEAT_TERM &&
+         term != parameters::DEPOSIT_TERM_POOL_XFG &&
+         term != parameters::DEPOSIT_TERM_POOL_HEAT &&
+         term != parameters::DEPOSIT_TERM_LP &&
+         term != parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG &&
+         term != parameters::DIGM_TERM;
+}
+
+bool isWalletHeatTerm(uint32_t term) {
+  return term == parameters::HEAT_TERM || isCdCommitmentTerm(term);
+}
+
 } // namespace CryptoNote

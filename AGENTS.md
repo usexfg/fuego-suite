@@ -31,7 +31,7 @@ fuego-suite/
 
 ### Hearth Exchange (call auction + AMM, v11+)
 - **Both mechanisms share one inventory.** `m_ammPool` is the constant-product balance sheet (`reserveXfg × reserveHeat`). Direct AMM swaps and the post-auction backstop price on that curve. The depth band is not a second book: it is the pool quoting that same inventory as makers in the call auction.
-- **User limits** are tx-extra-backed `TransactionExtraLimitDeposit` commitments (no gossip, no unbacked orders). Partial fills credit `proceedsXfg/proceedsHeat`, claimable via `TransactionExtraLimitWithdraw`. Expiry is height-based; expired orders keep deposit + proceeds claimable.
+- **User limits** are tx-extra-backed `TransactionExtraLimitDeposit` commitments (no gossip, no unbacked orders). Partial fills credit `proceedsXfg/proceedsHeat`, claimable via `TransactionExtraLimitWithdraw`. Expiry is height-based; expired orders keep deposit + proceeds claimable. Each block walks only resting orders (`m_restingLimitOrders`) and, for pruning, withdrawn ones (`m_withdrawnLimitOrders`); both are derived from `m_limitDeposits` by `indexLimitOrder` and rebuilt on cache load. Wallets (walletd and SimpleWallet) withdraw their own expired or stopped orders after each sync (`limitOrdersDueForWithdraw`).
 - **Per block (after 144-block AMM-only bootstrap):** (1) regenerate pool depth-band orders from reserves, (2) call auction of user deposits **plus** those pool orders, (3) AMM backstop fills leftover user deposits on the constant-product curve, volume-capped.
 - **Pool depth band is real.** `generatePoolOrders()` builds 0xF0-prefixed makers (adaptive spread 30–300 bps, `HEARTH_DEPTH_BAND_PCT` of reserves). Auction fills with `orderId.data[0] == 0xF0` move `reserveXfg`/`reserveHeat`. They are not user escrow (`m_limitDeposits`); user orders win same-price ties.
 - **Balanced LP deposits only** — single-sided deposits mint no shares (no dilution); shares are fair pro-rata at the pool ratio
@@ -47,7 +47,7 @@ fuego-suite/
 - Fuego Cost Index (FCI): miners vote a 6-item consumer basket in integer cents (power, gas, rice, milk, bread, eggs) via `TX_EXTRA_MINER_BASKET_VOTE`; trimmed median per category, 3-of-6 fresh-quorum gate per quarter, 5.04% max quarterly move
 - Certificates of Deposit (CD): V12 activation, epoch-term-locked HEAT earning protocol revenue yield
 - **SWAP FEE ROUTING (v11+)**: 80% CD Yield Pool / 20% Bonus Vault / 0% Treasury. Pre-v11 blocks settled 69/11/20 and reorg replay keeps that split (`SWAP_FEE_*_PRE_V11`).
-- **BONUS VAULT**: 20% of swap fees (v11+) fund tier-based loyalty bonuses (2.5× for 72 epochs, 2× for 36, 1.5× for 18, 1.25× for 6). **Review before v12 CDs go live**: these multipliers pull HEAT into long locks, against the goal of liquid HEAT (see `docs/V12_LAUNCH_TODO.md`).
+- **BONUS VAULT**: 20% of swap fees (v11+) fund the protocol's minimum CD yield in lean epochs: `calculateCdBonus` tops a CD up to `CD_YIELD_FLOOR_RATE` in any epoch whose fee rate fell below it, capped by the vault balance. Flat in term.
 - **DEPOSIT MODEL**: See `DEPOSIT_ARCHITECTURE.md` for full details. Key points:
   - "HEAT" has TWO meanings in code: current flatcoin (dynamic TWAP pricing) vs legacy Embers_Heat (fixed 10M:1 ratio)
   - **Two-step process**: burn XFG → mint HEAT → deposit HEAT as CD (you CANNOT deposit a deposit)
@@ -79,7 +79,7 @@ NOT protocol earnings:
 - **Mint premium**: 1% of the declared burn (`HEAT_MINT_PREMIUM_BPS = 100`, v11+). It is a haircut **inside** the burn, not a surcharge: at v11 the withheld `premiumXfg` is the **AuntPoL XFG leg** (`m_treasuryLpPendingXfg`, not burned); from v12 it is burned (`mintPremiumFundsXfgLeg`). The `heat(premiumXfg)` it buys is the **AuntPoL HEAT leg** (`m_treasuryHeatReserve`). Not revenue — it is the protocol's own LP inventory.
 - **CD creation fee**: consensus-enforced, 0.25% (6-epoch CD) rising linearly to 1% (72-epoch CD) of the HEAT deposited, valued at the mint oracle price and paid in **XFG** (`cdCreationFeeXfg`). Declared in `TransactionExtraCdCreationFee` (must cover the computed fee); the whole declared amount is credited to the **AuntPoL XFG leg** (`m_treasuryLpPendingXfg`). The network fee is separate: only the XFG surplus beyond the declared CD fee goes to the miner. No dev tax: nothing goes to `FUEGO_DEV_FUND_ADDRESS`. NOT protocol revenue, NOT CD yield — protocol LP inventory.
 
-- **Re-mint burn** (`TX_EXTRA_REMINT_BURN`, v11+): its own burn type and counter (`m_remintBurnedXfg`), apart from HEAT, the SWF and the Eternal Flame. Any transaction may carry one; consensus withholds it from the miner. At each FCI quarter boundary (every 18 epochs) the coinbase must end with one output paying the not-yet-re-minted total to the dev fund (`remintDue`, checked with the dev view key; outside the block reward and emission; reversed on pop). `/heat_metrics`: `remint_burned_xfg`, `reminted_xfg`.
+- **Re-mint burn / dev donation** (`TX_EXTRA_REMINT_BURN`, v11+; wallet command and walletd method `dev_donate`; alias registrations use the same burn): its own burn type and counter (`m_remintBurnedXfg`), apart from HEAT, the SWF and the Eternal Flame. Any transaction may carry one; consensus withholds it from the miner. At each FCI quarter boundary (every 18 epochs) the coinbase must end with one output paying the not-yet-re-minted total to the dev fund (`remintDue`, checked with the dev view key; outside the block reward and emission; reversed on pop). `/heat_metrics`: `remint_burned_xfg`, `reminted_xfg`.
 - **Alias registration fee**: 1 XFG (`ALIAS_REGISTRATION_FEE`). Before v11 it is an output to `FUEGO_DEV_FUND_ADDRESS`. From v11 a registration must carry a re-mint burn covering it, so no alias transaction pays the dev wallet and the counter does not count aliases.
 
 ### Hearth Exchange — Data Flow Per Block (v11+)
@@ -138,7 +138,7 @@ NOT protocol earnings:
 
 ## Known Issues
 
-- **v12 open items** are tracked in `docs/V12_LAUNCH_TODO.md` (CLI wallet CD deposits lack XFG inputs, Bonus Vault review, alias-burn re-mint).
+- **v11/v12 open items** are tracked in `docs/V12_LAUNCH_TODO.md` (HEAT spends: consensus ring rule, node decoys, wallet HEAT indexing).
 
 - **Block-serving RPC hang (pre-existing, not DIGM-related).** Every binary tested — including the month-old Jul-10 daemon on 18180 while idle and fully synced — hangs on `queryblockslite.bin` / `queryblocks.bin` / `getblocks.bin`. This blocks live sync/send e2e testing only; verification is done against the C++ production code directly (unit/integration harnesses), not live RPC.
 

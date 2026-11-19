@@ -58,7 +58,7 @@ What we can protect now without consensus changes: everything off-chain.
 - Backend spike: evaluate Rust backends (Winterfell / Circle STARKs, Stwo) vs C++ integration cost; pick one. Circuit-friendly hash: Poseidon2 or Rescue (tree + circuit), BLAKE3 acceptable for outer hashing.
 - Note model: note = (asset, amount, diversifier, note_nonce, enc data); commitments in a 4-ary Merkle tree; nullifier = H(spend_auth_secret || note_nonce), uniqueness enforced by the pool's nullifier set.
 - Circuits v1: spend circuit (Merkle membership + nullifier uniqueness + value conservation), receive/decrypt not in circuit (done client-side via KEM keys).
-- Proof model for Phase 2: per-transaction proofs, verified individually by nodes. Keep the verify-time budget per block agreed up front (target: <10ms per tx on commodity hardware, revisit with data). Aggregation is deliberately deferred to Phase 4 so the base path is stable before recursion is added.
+- Proof model for Phase 2: per-transaction proofs, verified individually by nodes. Keep the verify-time budget per block agreed up front (target: \<10ms per tx on commodity hardware, revisit with data). Aggregation is deliberately deferred to Phase 4 so the base path is stable before recursion is added.
 - Deliverable: offline testnet chain accepting pool transactions with a dummy wallet.
 
 ### Phase 3 — PQ addressing and wallet (months 2-4, overlaps Phase 2)

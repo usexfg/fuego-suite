@@ -21,6 +21,7 @@
 #include "Common/Int128.h"
 #include "Logging/LoggerGroup.h"
 #include "CryptoNoteCore/Blockchain.h"
+#include "Rpc/CoreRpcServerCommandsDefinitions.h"
 #include "CryptoNoteCore/Core.h"
 #include "CryptoNoteCore/ITimeProvider.h"
 #include "CryptoNoteCore/TransactionPool.h"
@@ -31,6 +32,7 @@
 #include "Common/MemoryInputStream.h"
 #include "Common/VectorOutputStream.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cstdio>
 #include <cstring>
@@ -760,6 +762,7 @@ struct TestChain {
   Blockchain chain;
   std::filesystem::path dir;
   bool ok = false;
+  bool keepDirectory = false;
 
   explicit TestChain(const std::string& tag, bool testnet = false)
       : currency(testnet ? CurrencyBuilder(log).testnet(true).currency() : CurrencyBuilder(log).currency()),
@@ -772,6 +775,9 @@ struct TestChain {
     ok = chain.init(dir.string(), false);
   }
   ~TestChain() {
+    if (keepDirectory) {
+      return;
+    }
     std::error_code ec;
     std::filesystem::remove_all(dir, ec);
   }
@@ -1045,16 +1051,24 @@ void testValidateSettlementLimitDeposit() {
   TEST(t.chain.validateSettlement(deposit(1251200), 1, nearLaunch, flows, fee, err));
 }
 
-// CDs open on their own height after HEAT and Hearth have run alone. Mainnet
-// waits for CD_ACTIVATION_HEIGHT (v12's height until a release sets a date);
-// testnet keeps CDs from its v11 height so they stay exercised.
+// The interest-claim floor and the CD output gate must name the same height:
+// a ring member below the floor may be a legacy deposit, and no CD exists
+// before the first v12 block on either network.
 void testCdActivationHeight() {
   Logging::LoggerGroup nullLog;
   Currency mainnet = CurrencyBuilder(nullLog).currency();
   TEST(mainnet.cdActivationHeight() == parameters::CD_ACTIVATION_HEIGHT);
-  TEST(mainnet.cdActivationHeight() > mainnet.upgradeHeight(BLOCK_MAJOR_VERSION_11));
+  TEST(mainnet.cdActivationHeight() == mainnet.upgradeHeight(BLOCK_MAJOR_VERSION_12));
   Currency testnet = CurrencyBuilder(nullLog).testnet(true).currency();
-  TEST(testnet.cdActivationHeight() == testnet.upgradeHeight(BLOCK_MAJOR_VERSION_11));
+  TEST(testnet.cdActivationHeight() == testnet.upgradeHeight(BLOCK_MAJOR_VERSION_12));
+  TEST(testnet.cdActivationHeight() > testnet.upgradeHeight(BLOCK_MAJOR_VERSION_11));
+  for (const Currency* network : {&mainnet, &testnet}) {
+    const uint32_t lastLegacyCapableHeight = network->upgradeHeight(BLOCK_MAJOR_VERSION_11);
+    TEST(network->blockMajorVersionAtHeight(lastLegacyCapableHeight) < BLOCK_MAJOR_VERSION_11);
+    TEST(lastLegacyCapableHeight < network->cdActivationHeight());
+    TEST(network->blockMajorVersionAtHeight(network->cdActivationHeight()) < BLOCK_MAJOR_VERSION_12);
+    TEST(network->blockMajorVersionAtHeight(network->cdActivationHeight() + 1) == BLOCK_MAJOR_VERSION_12);
+  }
 }
 
 // Limit fills are priced on the curve: an order's limit holds for its average
@@ -1189,6 +1203,7 @@ public:
     dep.depositedAmount = amount;
     dep.createdHeight = height;
     chain.m_limitDeposits[orderId] = dep;
+    chain.indexLimitOrder(orderId);
     (side == 1 ? chain.m_ammPool.pendingXfg : chain.m_ammPool.pendingHeat) += amount;
   }
   static uint64_t proceedsHeat(const Blockchain& chain, const Crypto::Hash& orderId) {
@@ -1217,6 +1232,7 @@ public:
     dep.withdrawnAmount = dep.amount;
     dep.withdrawn = true;
     dep.withdrawnHeight = height;
+    chain.indexLimitOrder(orderId);
   }
   // One transaction at index 1 of a block at `height`, version `v` (index 0 is
   // the coinbase slot), driven through the production push/pop.
@@ -1248,6 +1264,40 @@ public:
   static void bankBlock(Blockchain& chain, const Blockchain::BlockEntry& block) {
     chain.pushToBankingIndex(block, 0);
   }
+  static void addCommitmentRingMember(Blockchain& chain, uint64_t amount, uint32_t term, uint32_t height,
+                                      const Crypto::PublicKey& commitKey) {
+    CommitmentOutputRef ref{};
+    ref.term = term;
+    ref.transactionIndex.block = height;
+    ref.commitKey = commitKey;
+    chain.m_indexManager.commitmentOutputs()[amount].push_back(ref);
+  }
+  static bool commitmentSpendValid(Blockchain& chain, const TransactionInputCommitmentSpend& input,
+                                   const Crypto::Hash& prefixHash, const std::vector<Crypto::Signature>& signatures,
+                                   uint8_t blockMajorVersion) {
+    return chain.checkCommitmentSpendInput(input, prefixHash, signatures, nullptr, blockMajorVersion);
+  }
+  static void markLastRingMemberSlashed(Blockchain& chain, uint64_t amount) {
+    chain.m_indexManager.commitmentOutputs()[amount].back().isSlashed = true;
+  }
+  static std::vector<uint32_t> nodeDecoyIndexes(Blockchain& chain, uint64_t amount, uint32_t ringTerm) {
+    std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS_out_entry> decoys;
+    chain.getRandomCommitmentOutputsForAmount(amount, 64, decoys, 0, ringTerm);
+    std::vector<uint32_t> indexes;
+    for (const auto& decoy : decoys) indexes.push_back(decoy.global_amount_index);
+    std::sort(indexes.begin(), indexes.end());
+    return indexes;
+  }
+  static std::vector<CommitmentOutputRef> commitmentRingMembers(const Blockchain& chain, uint64_t amount) {
+    const auto it = chain.m_indexManager.commitmentOutputs().find(amount);
+    return it == chain.m_indexManager.commitmentOutputs().end() ? std::vector<CommitmentOutputRef>()
+                                                                : std::vector<CommitmentOutputRef>(it->second.begin(), it->second.end());
+  }
+  static size_t keyOutputCount(const Blockchain& chain) {
+    size_t count = 0;
+    for (const auto& amountOutputs : chain.m_indexManager.outputs().data()) count += amountOutputs.second.size();
+    return count;
+  }
   static void addHeatRingMember(Blockchain& chain, uint64_t amount) {
     CommitmentOutputRef ref{};
     ref.term = parameters::HEAT_TERM;
@@ -1255,7 +1305,20 @@ public:
   }
   static void markExpired(Blockchain& chain, const Crypto::Hash& orderId) {
     chain.m_limitDeposits.at(orderId).expired = true;
+    chain.indexLimitOrder(orderId);
   }
+  static bool isResting(const Blockchain& chain, const Crypto::Hash& orderId) {
+    return chain.m_restingLimitOrders.count(orderId) > 0;
+  }
+  static bool limitOrderIndexMatchesDeposits(const Blockchain& chain) {
+    std::set<Crypto::Hash, Blockchain::HashLess> resting, withdrawn;
+    for (const auto& kv : chain.m_limitDeposits) {
+      if (kv.second.withdrawn) withdrawn.insert(kv.first);
+      else if (!kv.second.expired) resting.insert(kv.first);
+    }
+    return resting == chain.m_restingLimitOrders && withdrawn == chain.m_withdrawnLimitOrders;
+  }
+  static void reverseOrderFills(Blockchain& chain, uint32_t height) { chain.reverseOrderFillsFor(height); }
   static bool hasLimitDeposit(const Blockchain& chain, const Crypto::Hash& orderId) {
     return chain.m_limitDeposits.count(orderId) > 0;
   }
@@ -2010,8 +2073,306 @@ void testWithdrawnDepositsPrunedAndRestored() {
   VaultCoreTestAccess::runOrderbookBlock(t.chain, height);
   TEST(!VaultCoreTestAccess::hasLimitDeposit(t.chain, oldId));
   TEST(VaultCoreTestAccess::hasLimitDeposit(t.chain, recentId));
+  TEST(VaultCoreTestAccess::limitOrderIndexMatchesDeposits(t.chain));
   VaultCoreTestAccess::popOrderbookBlock(t.chain, height);
   TEST(VaultCoreTestAccess::hasLimitDeposit(t.chain, oldId));
+  TEST(VaultCoreTestAccess::limitOrderIndexMatchesDeposits(t.chain));
+}
+
+// Expired orders nobody withdraws stayed in the set every block walked, so
+// the per-block cost grew with abandoned orders. Each block now walks only
+// resting orders (neither withdrawn nor expired) and, for pruning, withdrawn
+// ones; every deposit, stop, withdraw, expiry and their reversals keep both
+// lists equal to what the deposits themselves say.
+void testRestingOrderListFollowsEveryChange() {
+  TestChain t("limit_resting");
+  TEST(t.ok);
+  const uint64_t C = parameters::COIN;
+  const uint32_t height = enterHearthAuctionPhase(t);
+  Crypto::PublicKey walletSpendPublic;
+  Crypto::SecretKey walletSpendSecret;
+  Crypto::generate_keys(walletSpendPublic, walletSpendSecret);
+  const Crypto::Hash orderId = hearthOrderId(130);
+  LimitOrderKeys keys = deriveLimitOrderKeys(walletSpendSecret, orderId);
+  auto indexed = [&] { return VaultCoreTestAccess::limitOrderIndexMatchesDeposits(t.chain); };
+  auto spendingOwnKeyImage = [](Transaction tx, uint8_t tag) {
+    boost::get<KeyInput>(tx.inputs[0]).keyImage.data[0] = tag;
+    return tx;
+  };
+
+  std::vector<uint8_t> depositExtra;
+  addLimitDepositToExtra(depositExtra, 1, 5 * C, parameters::ORDER_PRICE_TICK, height + 5, orderId, keys.addressHash);
+  auto deposit = VaultCoreTestAccess::blockWith(
+      spendingOwnKeyImage(settlementTx({6 * C}, {commitmentOut(5 * C, parameters::DEPOSIT_TERM_POOL_XFG)}, depositExtra), 1),
+      height, BLOCK_MAJOR_VERSION_11);
+  TEST(VaultCoreTestAccess::pushTx(t.chain, deposit));
+  TEST(VaultCoreTestAccess::isResting(t.chain, orderId) && indexed());
+
+  Crypto::Signature stopProof;
+  Crypto::generate_signature(getLimitCancelAuthHash(orderId, keys.addressHash), keys.spendPublicKey,
+                             keys.spendSecretKey, stopProof);
+  std::vector<uint8_t> stopExtra;
+  addOrderCancelToExtra(stopExtra, orderId, keys.spendPublicKey, keys.viewPublicKey, stopProof);
+  auto stop = VaultCoreTestAccess::blockWith(spendingOwnKeyImage(settlementTx({2 * C}, {keyOut(1 * C)}, stopExtra), 2), height + 1,
+                                             BLOCK_MAJOR_VERSION_11);
+  TEST(VaultCoreTestAccess::pushTx(t.chain, stop));
+  TEST(!VaultCoreTestAccess::isResting(t.chain, orderId) && indexed());
+  TEST(VaultCoreTestAccess::escrowLeft(t.chain, orderId) == 5 * C);
+  VaultCoreTestAccess::popTx(t.chain, stop);
+  TEST(VaultCoreTestAccess::isResting(t.chain, orderId) && indexed());
+  TEST(VaultCoreTestAccess::escrowLeft(t.chain, orderId) == 5 * C);
+
+  const std::vector<TransactionOutput> payout = {keyOut(5 * C)};
+  const Crypto::Hash outputsHash = getLimitWithdrawOutputHash(payout);
+  Crypto::Signature withdrawProof;
+  Crypto::generate_signature(getLimitWithdrawAuthHash(orderId, keys.addressHash, outputsHash), keys.spendPublicKey,
+                             keys.spendSecretKey, withdrawProof);
+  std::vector<uint8_t> withdrawExtra;
+  addLimitWithdrawToExtra(withdrawExtra, orderId, keys.spendPublicKey, keys.viewPublicKey, outputsHash, withdrawProof);
+  auto withdraw = VaultCoreTestAccess::blockWith(spendingOwnKeyImage(settlementTx({1 * C}, payout, withdrawExtra), 3), height + 1,
+                                                 BLOCK_MAJOR_VERSION_11);
+  TEST(VaultCoreTestAccess::pushTx(t.chain, withdraw));
+  TEST(!VaultCoreTestAccess::isResting(t.chain, orderId) && indexed());
+  VaultCoreTestAccess::popTx(t.chain, withdraw);
+  TEST(VaultCoreTestAccess::isResting(t.chain, orderId) && indexed());
+
+  VaultCoreTestAccess::runOrderbookBlock(t.chain, height + 5);
+  TEST(!VaultCoreTestAccess::isResting(t.chain, orderId) && VaultCoreTestAccess::hasLimitDeposit(t.chain, orderId));
+  TEST(indexed());
+  VaultCoreTestAccess::reverseOrderFills(t.chain, height + 5);
+  VaultCoreTestAccess::popOrderbookBlock(t.chain, height + 5);
+  TEST(VaultCoreTestAccess::isResting(t.chain, orderId) && indexed());
+
+  VaultCoreTestAccess::popTx(t.chain, deposit);
+  TEST(!VaultCoreTestAccess::hasLimitDeposit(t.chain, orderId) && indexed());
+  wipeLimitOrderSecret(keys);
+}
+
+// Every v11 HEAT output is HEAT_TERM, so a HEAT ring is all HEAT_TERM. Before
+// v11 HEAT_TERM outputs are burns: they may never be spent or stand in a ring.
+void testHeatRingsAfterHeatwave() {
+  TestChain t("heat_rings", true);
+  TEST(t.ok);
+  const uint64_t amount = 7 * parameters::COIN;
+  const uint32_t lastPreHeatwaveHeight = t.currency.upgradeHeight(BLOCK_MAJOR_VERSION_11);
+  KeyPair owned = generateKeyPair();
+  KeyPair decoy = generateKeyPair();
+  KeyPair burn = generateKeyPair();
+  VaultCoreTestAccess::addCommitmentRingMember(t.chain, amount, parameters::HEAT_TERM, lastPreHeatwaveHeight + 1, owned.publicKey);
+  VaultCoreTestAccess::addCommitmentRingMember(t.chain, amount, parameters::HEAT_TERM, lastPreHeatwaveHeight + 4, decoy.publicKey);
+  VaultCoreTestAccess::addCommitmentRingMember(t.chain, amount, parameters::HEAT_TERM, lastPreHeatwaveHeight, burn.publicKey);
+  const std::vector<Crypto::PublicKey> memberKeys = {owned.publicKey, decoy.publicKey, burn.publicKey};
+
+  auto spendRing = [&](const std::vector<uint32_t>& members, size_t realPosition, const KeyPair& signer,
+                       uint8_t blockMajorVersion) {
+    TransactionInputCommitmentSpend input{};
+    input.amount = amount;
+    Crypto::generate_key_image(signer.publicKey, signer.secretKey, input.keyImage);
+    std::vector<const Crypto::PublicKey*> ring;
+    uint32_t previous = 0;
+    for (uint32_t member : members) {
+      input.outputIndexes.push_back(member - previous);
+      previous = member;
+      ring.push_back(&memberKeys[member]);
+    }
+    Crypto::Hash prefixHash{};
+    prefixHash.data[0] = 0x48;
+    std::vector<Crypto::Signature> signatures(ring.size());
+    Crypto::generate_ring_signature(prefixHash, input.keyImage, ring, signer.secretKey, realPosition, signatures.data());
+    return VaultCoreTestAccess::commitmentSpendValid(t.chain, input, prefixHash, signatures, blockMajorVersion);
+  };
+
+  TEST(spendRing({0, 1}, 0, owned, BLOCK_MAJOR_VERSION_11));
+  TEST(spendRing({0}, 0, owned, BLOCK_MAJOR_VERSION_11));
+  TEST(!spendRing({0, 1}, 0, owned, BLOCK_MAJOR_VERSION_10));
+  TEST(!spendRing({0, 2}, 0, owned, BLOCK_MAJOR_VERSION_11));
+  TEST(!spendRing({2}, 0, burn, BLOCK_MAJOR_VERSION_11));
+  TEST(!spendRing({2}, 0, burn, BLOCK_MAJOR_VERSION_10));
+}
+
+// Marker terms are not block counts. Read as one, LP shares and swap-receive XFG
+// never matured, so neither could ever be spent. DIGM is disabled from v11.
+void testMarkerTermRingsAfterHeatwave() {
+  TestChain t("marker_rings", true);
+  TEST(t.ok);
+  const uint32_t firstHeatwaveHeight = t.currency.upgradeHeight(BLOCK_MAJOR_VERSION_11) + 1;
+  auto spendsAlone = [&](uint32_t term, uint64_t amount, uint8_t blockMajorVersion) {
+    const KeyPair owner = generateKeyPair();
+    VaultCoreTestAccess::addCommitmentRingMember(t.chain, amount, term, firstHeatwaveHeight, owner.publicKey);
+    TransactionInputCommitmentSpend input{};
+    input.amount = amount;
+    input.outputIndexes = {0};
+    Crypto::generate_key_image(owner.publicKey, owner.secretKey, input.keyImage);
+    const std::vector<const Crypto::PublicKey*> ring = {&owner.publicKey};
+    Crypto::Hash prefixHash{};
+    prefixHash.data[0] = 0x4D;
+    std::vector<Crypto::Signature> signatures(1);
+    Crypto::generate_ring_signature(prefixHash, input.keyImage, ring, owner.secretKey, 0, signatures.data());
+    return VaultCoreTestAccess::commitmentSpendValid(t.chain, input, prefixHash, signatures, blockMajorVersion);
+  };
+  TEST(spendsAlone(parameters::DEPOSIT_TERM_LP, 21 * parameters::COIN, BLOCK_MAJOR_VERSION_11));
+  TEST(spendsAlone(parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG, 22 * parameters::COIN, BLOCK_MAJOR_VERSION_11));
+  TEST(!spendsAlone(parameters::DIGM_TERM, 23 * parameters::COIN, BLOCK_MAJOR_VERSION_11));
+  TEST(!spendsAlone(parameters::DEPOSIT_TERM_LP, 24 * parameters::COIN, BLOCK_MAJOR_VERSION_10));
+  TEST(!spendsAlone(10, 25 * parameters::COIN, BLOCK_MAJOR_VERSION_11));
+}
+
+// The node hands out only members a ring may hold: never a pool reserve, a
+// slashed or immature output, or a pre-v11 burn; with a term, only that term.
+void testNodeDecoysAreRingValid() {
+  TestChain t("node_decoys", true);
+  TEST(t.ok);
+  const uint64_t amount = 11 * parameters::COIN;
+  const uint32_t firstHeatwaveHeight = t.currency.upgradeHeight(BLOCK_MAJOR_VERSION_11) + 1;
+  const Crypto::PublicKey anyKey = generateKeyPair().publicKey;
+  auto add = [&](uint32_t term, uint32_t height) {
+    VaultCoreTestAccess::addCommitmentRingMember(t.chain, amount, term, height, anyKey);
+  };
+  add(parameters::HEAT_TERM, firstHeatwaveHeight);                  // 0 HEAT
+  add(parameters::HEAT_TERM, firstHeatwaveHeight + 2);              // 1 HEAT
+  add(parameters::HEAT_TERM, firstHeatwaveHeight - 1);              // 2 pre-v11 burn
+  add(parameters::DEPOSIT_TERM_POOL_XFG, firstHeatwaveHeight);      // 3 pool reserve
+  add(parameters::DEPOSIT_TERM_POOL_HEAT, firstHeatwaveHeight);     // 4 pool reserve
+  add(parameters::HEAT_TERM, firstHeatwaveHeight + 3);              // 5 slashed
+  VaultCoreTestAccess::markLastRingMemberSlashed(t.chain, amount);
+  add(10, firstHeatwaveHeight);                                      // 6 immature CD
+  add(1, 0);                                                         // 7 matured term-1 commitment
+  add(parameters::DEPOSIT_TERM_LP, firstHeatwaveHeight);            // 8 LP shares
+  add(parameters::DIGM_TERM, firstHeatwaveHeight);                  // 9 disabled DIGM
+
+  TEST((VaultCoreTestAccess::nodeDecoyIndexes(t.chain, amount, parameters::HEAT_TERM) == std::vector<uint32_t>{0, 1}));
+  TEST((VaultCoreTestAccess::nodeDecoyIndexes(t.chain, amount, parameters::DEPOSIT_TERM_LP) == std::vector<uint32_t>{8}));
+  TEST((VaultCoreTestAccess::nodeDecoyIndexes(t.chain, amount, 0) == std::vector<uint32_t>{0, 1, 7, 8}));
+}
+
+// LP remove pays what the remover declares, capped by what the shares
+// withdraw now. HEAT balances exactly, so a payout fixed at inclusion matched a
+// prebuilt transaction only if no block had moved the reserves.
+void testLpRemovePaysTheDeclaredAmounts() {
+  TestChain t("lp_remove", true);
+  TEST(t.ok);
+  const uint64_t C = parameters::COIN;
+  const auto& pool = t.chain.getAmmPool();
+  const uint64_t shares = pool.totalLpShares / 1000;
+  uint64_t formulaXfg = 0, formulaHeat = 0;
+  ammGetWithdrawalAmounts(shares, pool.totalLpShares, pool.reserveXfg, pool.reserveHeat, formulaXfg, formulaHeat);
+  TEST(formulaXfg > 2 && formulaHeat > 2);
+  VaultCoreTestAccess::addCommitmentRingMember(t.chain, shares, parameters::DEPOSIT_TERM_LP,
+                                               t.currency.upgradeHeight(BLOCK_MAJOR_VERSION_11) + 1,
+                                               generateKeyPair().publicKey);
+  auto remove = [&](uint64_t declaredXfg, uint64_t declaredHeat, std::string& err) {
+    std::vector<uint8_t> extra;
+    addLpRemoveAuthToExtra(extra, shares, declaredXfg, declaredHeat);
+    std::vector<TransactionOutput> outputs = {keyOut(declaredXfg)};
+    if (declaredHeat > 0) outputs.push_back(commitmentOut(declaredHeat, parameters::HEAT_TERM));
+    Transaction tx = settlementTx({C}, outputs, extra);
+    TransactionInputCommitmentSpend lpIn{};
+    lpIn.amount = shares;
+    lpIn.outputIndexes = {0};
+    tx.inputs.push_back(lpIn);
+    Blockchain::SettlementScratch scratch;
+    AssetFlows flows;
+    uint64_t fee = 0;
+    return t.chain.validateSettlement(tx, 100, scratch, flows, fee, err) && fee == C;
+  };
+  std::string err;
+  TEST(remove(formulaXfg, formulaHeat, err));
+  TEST(remove(formulaXfg - 1, formulaHeat - 1, err));
+  TEST(!remove(formulaXfg, formulaHeat + 1, err) && err.find("exceeds") != std::string::npos);
+  TEST(!remove(formulaXfg + 1, formulaHeat, err) && err.find("exceeds") != std::string::npos);
+}
+
+// The stateless output check judges CD terms by the network's range: testnet
+// CDs are a few blocks long, which the mainnet range refused before consensus
+// ever saw them.
+void testOutputCheckUsesTheNetworkTermRange() {
+  Logging::LoggerGroup nullLog;
+  Currency testnet = CurrencyBuilder(nullLog).testnet(true).currency();
+  Transaction tx{};
+  tx.version = TRANSACTION_VERSION_2;
+  TransactionOutputCommitment cd{};
+  cd.commitKey = generateKeyPair().publicKey;
+  cd.term = testnet.depositMinTerm();
+  TransactionOutput out;
+  out.amount = parameters::COIN;
+  out.target = cd;
+  tx.outputs.push_back(out);
+  std::string err;
+  TEST(check_outs_valid(tx, &err, testnet.depositMinTerm(), testnet.depositMaxTerm()));
+  TEST(!check_outs_valid(tx, &err) && err.find("invalid term") != std::string::npos);
+}
+
+// A restart must keep the commitment-output index: every HEAT ring resolves
+// its members through it.
+void testCommitmentOutputsSurviveRestart() {
+  const uint64_t amount = 13 * parameters::COIN;
+  const Crypto::PublicKey memberKey = generateKeyPair().publicKey;
+  std::filesystem::path dir;
+  {
+    TestChain before("commitment_restart", true);
+    TEST(before.ok);
+    before.keepDirectory = true;
+    dir = before.dir;
+    VaultCoreTestAccess::addCommitmentRingMember(before.chain, amount, parameters::HEAT_TERM, 40, memberKey);
+    TEST(before.chain.deinit());
+  }
+  {
+    struct ReopenedNode {
+      Logging::LoggerGroup log;
+      Currency currency;
+      RealTimeProvider timeProvider;
+      tx_memory_pool pool;
+      Blockchain chain;
+      ReopenedNode()
+          : currency(CurrencyBuilder(log).testnet(true).currency()),
+            pool(currency, chain, timeProvider, log),
+            chain(currency, pool, log, false, false) {}
+    } restarted;
+    TEST(restarted.chain.init(dir.string(), true));
+    const auto members = VaultCoreTestAccess::commitmentRingMembers(restarted.chain, amount);
+    TEST(members.size() == 1 && members.front().commitKey == memberKey && members.front().term == parameters::HEAT_TERM);
+    restarted.chain.deinit();
+  }
+  std::error_code ec;
+  std::filesystem::remove_all(dir, ec);
+}
+
+// A commitment spend records its key image once. The connect path used to
+// look the key image up after recording it, so every HEAT, CD and LP spend
+// failed to connect and any block holding one was rejected.
+void testCommitmentSpendConnectsOnce() {
+  TestChain t("commitment_connect", true);
+  TEST(t.ok);
+  const uint32_t height = t.currency.upgradeHeight(BLOCK_MAJOR_VERSION_11) + 1;
+  auto spending = [&](uint8_t keyImageTag, uint64_t amount) {
+    Transaction tx = settlementTx({}, {}, {});
+    TransactionInputCommitmentSpend heatIn{};
+    heatIn.amount = amount;
+    heatIn.outputIndexes = {0};
+    heatIn.keyImage.data[0] = keyImageTag;
+    tx.inputs.push_back(heatIn);
+    return tx;
+  };
+  auto first = VaultCoreTestAccess::blockWith(spending(1, parameters::COIN), height, BLOCK_MAJOR_VERSION_11);
+  TEST(VaultCoreTestAccess::pushTx(t.chain, first));
+  auto replay = VaultCoreTestAccess::blockWith(spending(1, 2 * parameters::COIN), height, BLOCK_MAJOR_VERSION_11);
+  TEST(!VaultCoreTestAccess::pushTx(t.chain, replay));
+}
+
+// Replay from genesis must not see deposits from heights it has not reached
+// yet: a deposit left in memory would rest in, and fill at, earlier auctions.
+void testRebuildCacheForgetsUnreplayedDeposits() {
+  TestChain t("limit_rebuild");
+  TEST(t.ok);
+  const Crypto::Hash orderId = hearthOrderId(140);
+  const uint32_t height = enterHearthAuctionPhase(t);
+  VaultCoreTestAccess::addLimitDeposit(t.chain, orderId, 1, 20 * parameters::COIN,
+                                       parameters::ORDER_PRICE_TICK, height);
+  TEST(VaultCoreTestAccess::isResting(t.chain, orderId));
+  VaultCoreTestAccess::resetToStartup(t.chain);
+  TEST(!VaultCoreTestAccess::hasLimitDeposit(t.chain, orderId));
+  TEST(!VaultCoreTestAccess::isResting(t.chain, orderId));
+  TEST(VaultCoreTestAccess::limitOrderIndexMatchesDeposits(t.chain));
 }
 
 // Audit 2026-11-11 H5: every order from one wallet carried the same
@@ -2563,6 +2924,25 @@ bool mineUpTo(TestChain& t, const AccountPublicAddress& miner, uint32_t nextHeig
   return true;
 }
 
+// Popping a block removes that block's outputs from the indexes and nothing
+// else. It used to clear every output index, so after any reorg the node had
+// no ring members left and refused every ring spend.
+void testBlockPopKeepsEarlierOutputs() {
+  TestChain t("pop_keeps_outputs", true);
+  TEST(t.ok);
+  const AccountPublicAddress miner = newMinerAddress();
+  TEST(mineUpTo(t, miner, 12));
+  const uint64_t amount = 17 * parameters::COIN;
+  const Crypto::PublicKey memberKey = generateKeyPair().publicKey;
+  VaultCoreTestAccess::addCommitmentRingMember(t.chain, amount, parameters::HEAT_TERM, 5, memberKey);
+  const size_t keyOutputsBefore = VaultCoreTestAccess::keyOutputCount(t.chain);
+  TEST(t.chain.rollbackBlockchainTo(10));
+  const size_t keyOutputsAfter = VaultCoreTestAccess::keyOutputCount(t.chain);
+  TEST(keyOutputsAfter > 0 && keyOutputsAfter < keyOutputsBefore);
+  const auto members = VaultCoreTestAccess::commitmentRingMembers(t.chain, amount);
+  TEST(members.size() == 1 && members.front().commitKey == memberKey);
+}
+
 // pushBlock itself must refuse a v11 block whose committed Hearth state is not
 // the chain's, and must enforce, record and on pop reverse the quarterly
 // re-mint. The helpers were tested alone; these blocks go through the node.
@@ -2615,6 +2995,49 @@ void testLimitOrderAddressHashMatchesKeys() {
   wipeLimitOrderSecret(wiped);
   TEST(wiped.spendSecretKey == Crypto::SecretKey{});
   TEST(wiped.addressHash == keys.addressHash);
+}
+
+// Wallets withdraw their own expired or stopped orders on their own. What is
+// due comes only from the wallet's history: its confirmed deposits and stops,
+// less any order a withdraw of its own (pending too) has already claimed. A
+// failed withdraw claims nothing, so the order comes due again.
+void testLimitOrdersDueForWithdraw() {
+  auto orderTx = [](std::vector<uint8_t> extra, bool confirmed, bool failed) {
+    return WalletOrderTransaction{std::string(extra.begin(), extra.end()), confirmed, failed};
+  };
+  auto deposit = [](const Crypto::Hash& id, uint32_t expiration) {
+    std::vector<uint8_t> extra;
+    addLimitDepositToExtra(extra, 1, parameters::COIN, parameters::ORDER_PRICE_TICK, expiration, id, Crypto::Hash{});
+    return extra;
+  };
+  auto withdraw = [](const Crypto::Hash& id) {
+    std::vector<uint8_t> extra;
+    addLimitWithdrawToExtra(extra, id, Crypto::PublicKey{}, Crypto::PublicKey{}, Crypto::Hash{}, Crypto::Signature{});
+    return extra;
+  };
+  auto stop = [](const Crypto::Hash& id) {
+    std::vector<uint8_t> extra;
+    addOrderCancelToExtra(extra, id, Crypto::PublicKey{}, Crypto::PublicKey{}, Crypto::Signature{});
+    return extra;
+  };
+  const Crypto::Hash expired = hearthOrderId(140), live = hearthOrderId(141), stopped = hearthOrderId(142),
+                     withdrawn = hearthOrderId(143), pendingWithdraw = hearthOrderId(144),
+                     failedWithdraw = hearthOrderId(145), unconfirmed = hearthOrderId(146);
+  const std::vector<WalletOrderTransaction> history = {
+      orderTx(deposit(expired, 100), true, false),
+      orderTx(deposit(live, 200), true, false),
+      orderTx(deposit(stopped, 200), true, false), orderTx(stop(stopped), true, false),
+      orderTx(deposit(withdrawn, 100), true, false), orderTx(withdraw(withdrawn), true, false),
+      orderTx(deposit(pendingWithdraw, 100), true, false), orderTx(withdraw(pendingWithdraw), false, false),
+      orderTx(deposit(failedWithdraw, 100), true, false), orderTx(withdraw(failedWithdraw), false, true),
+      orderTx(deposit(unconfirmed, 100), false, false),
+  };
+  const std::vector<Crypto::Hash> due = limitOrdersDueForWithdraw(history, 150);
+  auto isDue = [&](const Crypto::Hash& id) { return std::find(due.begin(), due.end(), id) != due.end(); };
+  TEST(due.size() == 3);
+  TEST(isDue(expired) && isDue(stopped) && isDue(failedWithdraw));
+  TEST(!isDue(live) && !isDue(withdrawn) && !isDue(pendingWithdraw) && !isDue(unconfirmed));
+  TEST(limitOrdersDueForWithdraw(history, 99).size() == 1);
 }
 
 int main() {
@@ -2677,6 +3100,17 @@ int main() {
   testSpotHistoryCoversDeepestRollback();
   testBlockConnectEnforcesHearthStateAndRemint();
   testLimitOrderAddressHashMatchesKeys();
+  testRestingOrderListFollowsEveryChange();
+  testRebuildCacheForgetsUnreplayedDeposits();
+  testHeatRingsAfterHeatwave();
+  testMarkerTermRingsAfterHeatwave();
+  testLpRemovePaysTheDeclaredAmounts();
+  testOutputCheckUsesTheNetworkTermRange();
+  testCommitmentOutputsSurviveRestart();
+  testBlockPopKeepsEarlierOutputs();
+  testCommitmentSpendConnectsOnce();
+  testNodeDecoysAreRingValid();
+  testLimitOrdersDueForWithdraw();
   testAliasRegistrationFeeBurned();
   testAuntPolCdCreationFeePushPop();
   testAuntPolMintPremiumPushPop();

@@ -18,6 +18,8 @@
 #pragma once
 
 #include <list>
+#include <map>
+#include <tuple>
 #include <vector>
 
 #include "CryptoNoteCore/CryptoNoteBasic.h"
@@ -37,6 +39,16 @@ struct TxDustPolicy
     : dustThreshold(a_dust_threshold), addToFee(an_add_to_fee), addrForDust(an_addr_for_dust) {}
 };
 
+struct CommitmentRing
+{
+  uint64_t amount;
+  uint32_t term;
+  uint32_t maxCreationHeight;
+  bool operator<(const CommitmentRing& other) const {
+    return std::tie(amount, term, maxCreationHeight) < std::tie(other.amount, other.term, other.maxCreationHeight);
+  }
+};
+
 struct SendTransactionContext
 {
   TransactionId transactionId;
@@ -50,7 +62,6 @@ struct SendTransactionContext
   uint32_t depositTerm;
   std::string extra;
   bool dynamicRingSize = false; // true: select optimal ring size from actual daemon-returned outs
-  std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry> commitmentOuts; // ring decoys for CommitmentSpend
 
   // v10 auth context
   bool isV10HeatMint = false;
@@ -59,6 +70,19 @@ struct SendTransactionContext
   bool isV10LpAdd = false;  // LP add (reuses heat mint fields, separate flag for routing)
   bool isV10AmmSwap = false;
   bool isV10HeatDeposit = false; // HEAT CD deposit: routes to the CD commitment-spend sender
+  uint64_t cdAmount = 0;
+  uint64_t cdCreationFee = 0;
+  uint64_t xfgSpentOnFees = 0;
+  uint64_t lpShares = 0;
+  bool isCommitmentWithdraw = false;
+  bool usesCommitmentPipeline = false;
+  std::vector<DepositId> spentDepositIds;
+  std::vector<TransactionOutputInformation> commitmentTransfers;
+  std::vector<CommitmentRing> commitmentRings;
+  std::vector<uint64_t> claimedInterest;
+  std::vector<CommitmentRing> ringsAwaitingDecoys;
+  std::map<CommitmentRing, std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>> decoysByRing;
+  Crypto::SecretKey transactionSecretKey{};
   uint8_t v10SwapDirection = 0;
   uint64_t v10SwapInput = 0;
   uint64_t v10SwapOutput = 0;

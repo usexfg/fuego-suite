@@ -121,7 +121,7 @@ public:
   // Burns `amount` XFG as a re-mint burn (TX_EXTRA_REMINT_BURN, v11+): its own
   // counter, re-minted to the dev fund each quarter in one coinbase output.
   // The only output is the network minimum back to this wallet.
-  std::error_code devFundBurn(uint64_t amount, Crypto::Hash& txHashOut);
+  std::error_code devDonate(uint64_t amount, Crypto::Hash& txHashOut);
 
   // Look up the alias registered for a given wallet address.
   // Delegates to m_node via /get_alias_by_address (INode::getAliasByAddress if available,
@@ -375,7 +375,7 @@ protected:
   void applySubaddressJanusPolicy();
   AccountKeys makeAccountKeys(const WalletRecord &wallet) const;
   size_t getTransactionId(const Crypto::Hash &transactionHash) const;
-  size_t getDepositId(const Crypto::Hash &transactionHash) const;
+  size_t getDepositId(const Crypto::Hash &transactionHash, uint32_t outputInTransaction) const;
   void pushEvent(const WalletEvent &event);
   bool isFusionTransaction(const WalletTransaction &walletTx) const;
 

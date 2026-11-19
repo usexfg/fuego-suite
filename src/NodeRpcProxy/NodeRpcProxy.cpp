@@ -19,6 +19,8 @@
 #include "NodeErrors.h"
 
 #include <atomic>
+#include <future>
+#include <memory>
 #include <system_error>
 #include <thread>
 
@@ -501,7 +503,7 @@ std::error_code NodeRpcProxy::doGetRandomOutsByAmounts(std::vector<uint64_t>& am
   return ec;
 }
 
-void NodeRpcProxy::getRandomCommitmentOutsForAmount(uint64_t amount, uint64_t outsCount, uint32_t maxHeight,
+void NodeRpcProxy::getRandomCommitmentOutsForAmount(uint64_t amount, uint64_t outsCount, uint32_t maxHeight, uint32_t ringTerm,
                                                      std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>& result,
                                                      const Callback& callback) {
   std::lock_guard<std::mutex> lock(m_mutex);
@@ -510,18 +512,19 @@ void NodeRpcProxy::getRandomCommitmentOutsForAmount(uint64_t amount, uint64_t ou
     return;
   }
 
-  scheduleRequest([this, amount, outsCount, maxHeight, &result]() {
-    return doGetRandomCommitmentOutsForAmount(amount, outsCount, maxHeight, result);
+  scheduleRequest([this, amount, outsCount, maxHeight, ringTerm, &result]() {
+    return doGetRandomCommitmentOutsForAmount(amount, outsCount, maxHeight, ringTerm, result);
   }, callback);
 }
 
-std::error_code NodeRpcProxy::doGetRandomCommitmentOutsForAmount(uint64_t amount, uint64_t outsCount, uint32_t maxHeight,
+std::error_code NodeRpcProxy::doGetRandomCommitmentOutsForAmount(uint64_t amount, uint64_t outsCount, uint32_t maxHeight, uint32_t ringTerm,
                                                                    std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>& result) {
   COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::request req = AUTO_VAL_INIT(req);
   COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::response rsp = AUTO_VAL_INIT(rsp);
   req.amount = amount;
   req.outs_count = outsCount;
   req.max_height = maxHeight;
+  req.ring_term = ringTerm;
 
   std::error_code ec = binaryCommand("/getrandom_commitment_outs.bin", req, rsp);
   if (!ec) {
@@ -734,6 +737,27 @@ std::error_code NodeRpcProxy::binaryCommand(const std::string& url, const Reques
 
 template <typename Request, typename Response>
 std::error_code NodeRpcProxy::jsonCommand(const std::string& url, const Request& req, Response& res) {
+  return runOnWorkerThread([this, &url, &req, &res]() { return jsonCommandOnWorkerThread(url, req, res); });
+}
+
+std::error_code NodeRpcProxy::runOnWorkerThread(std::function<std::error_code()>&& procedure) {
+  if (std::this_thread::get_id() == m_workerThread.get_id()) {
+    return procedure();
+  }
+  {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_state != STATE_INITIALIZED) {
+      return make_error_code(error::NOT_INITIALIZED);
+    }
+  }
+  auto finished = std::make_shared<std::promise<std::error_code>>();
+  std::future<std::error_code> result = finished->get_future();
+  scheduleRequest(std::move(procedure), [finished](std::error_code ec) { finished->set_value(ec); });
+  return result.get();
+}
+
+template <typename Request, typename Response>
+std::error_code NodeRpcProxy::jsonCommandOnWorkerThread(const std::string& url, const Request& req, Response& res) {
   std::error_code ec;
 
   try {
@@ -841,6 +865,7 @@ std::error_code NodeRpcProxy::getAmmPoolInfo(INode::AmmPoolInfo& info) {
   info.reserveXfg = res.reserve_xfg;
   info.reserveHeat = res.reserve_heat;
   info.spotPrice = res.spot_price;
+  info.totalLpShares = res.total_lp_shares;
   return {};
 }
 

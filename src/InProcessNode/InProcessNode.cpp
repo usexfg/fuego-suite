@@ -288,7 +288,7 @@ std::error_code InProcessNode::doGetRandomOutsByAmounts(std::vector<uint64_t>&& 
   return std::error_code();
 }
 
-void InProcessNode::getRandomCommitmentOutsForAmount(uint64_t amount, uint64_t outsCount, uint32_t maxHeight,
+void InProcessNode::getRandomCommitmentOutsForAmount(uint64_t amount, uint64_t outsCount, uint32_t maxHeight, uint32_t ringTerm,
     std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>& result, const Callback& callback)
 {
   std::unique_lock<std::mutex> lock(mutex);
@@ -299,18 +299,18 @@ void InProcessNode::getRandomCommitmentOutsForAmount(uint64_t amount, uint64_t o
   }
 
   boost::asio::post(ioService,
-    std::bind(&InProcessNode::getRandomCommitmentOutsForAmountAsync, this, amount, outsCount, maxHeight, std::ref(result), callback)
+    std::bind(&InProcessNode::getRandomCommitmentOutsForAmountAsync, this, amount, outsCount, maxHeight, ringTerm, std::ref(result), callback)
   );
 }
 
-void InProcessNode::getRandomCommitmentOutsForAmountAsync(uint64_t amount, uint64_t outsCount, uint32_t maxHeight,
+void InProcessNode::getRandomCommitmentOutsForAmountAsync(uint64_t amount, uint64_t outsCount, uint32_t maxHeight, uint32_t ringTerm,
     std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>& result, const Callback& callback)
 {
-  std::error_code ec = doGetRandomCommitmentOutsForAmount(amount, outsCount, maxHeight, result);
+  std::error_code ec = doGetRandomCommitmentOutsForAmount(amount, outsCount, maxHeight, ringTerm, result);
   callback(ec);
 }
 
-std::error_code InProcessNode::doGetRandomCommitmentOutsForAmount(uint64_t amount, uint64_t outsCount, uint32_t maxHeight,
+std::error_code InProcessNode::doGetRandomCommitmentOutsForAmount(uint64_t amount, uint64_t outsCount, uint32_t maxHeight, uint32_t ringTerm,
     std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>& result)
 {
   {
@@ -321,7 +321,7 @@ std::error_code InProcessNode::doGetRandomCommitmentOutsForAmount(uint64_t amoun
   }
 
   try {
-    if (!core.get_random_commitment_outs_for_amount(amount, outsCount, maxHeight, result)) {
+    if (!core.get_random_commitment_outs_for_amount(amount, outsCount, maxHeight, ringTerm, result)) {
       return make_error_code(CryptoNote::error::REQUEST_ERROR);
     }
   } catch (std::system_error& e) {
@@ -1162,6 +1162,7 @@ std::error_code InProcessNode::getAmmPoolInfo(AmmPoolInfo& info) {
   info.reserveXfg = coreInfo.reserveXfg;
   info.reserveHeat = coreInfo.reserveHeat;
   info.spotPrice = coreInfo.spotPrice;
+  info.totalLpShares = coreInfo.totalLpShares;
   return {};
 }
 } //namespace CryptoNote

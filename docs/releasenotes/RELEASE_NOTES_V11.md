@@ -6,7 +6,7 @@
 | **Block Version** | `BLOCK_MAJOR_VERSION_11` |
 | **Activation Height** | 1,111,111 |
 | **Release Version** | v1.11.00 |
-| **Testnet Activation** | Block 25 |
+| **Testnet Activation** | Block 30 (v12 at block 180) |
 | **Previous** | v1.10.02 Wildfire (height 1,003,000) |
 | **Next** | v1.12.00 SILENTFIRE (height 2,666,666) — HEAT CDs + unified outputs |
 

@@ -196,9 +196,8 @@ public:
   uint64_t numberOfPeriodsToForgetTxDeletedFromPool() const { return m_numberOfPeriodsToForgetTxDeletedFromPool; }
 
   uint32_t upgradeHeight(uint8_t majorVersion) const;
-  // First height at which HEAT CDs may be created and earn interest. Mainnet:
-  // parameters::CD_ACTIVATION_HEIGHT. Testnet: its v11 height, so CDs keep
-  // being exercised there and its existing history stays valid.
+  // The v12 height on every network: CD outputs are admitted only in v12 blocks,
+  // and a ring whose youngest member is below this height may hold a legacy deposit.
   uint32_t cdActivationHeight() const;
   // First height at which a pre-v11 block may not carry HEAT, Hearth or
   // legacy-burn tags (parameters::HEATWAVE_TAG_CUTOFF_HEIGHT; testnet: v11).

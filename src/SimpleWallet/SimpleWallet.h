@@ -22,6 +22,11 @@
 #include <memory>
 #include <mutex>
 #include <chrono>
+#include <map>
+#include <set>
+#include <thread>
+#include <unordered_set>
+#include <vector>
 #include <boost/program_options/variables_map.hpp>
 
 #include "../../include/IWalletLegacy.h"
@@ -51,6 +56,7 @@ namespace CryptoNote
   class simple_wallet : public CryptoNote::INodeObserver, public CryptoNote::IWalletLegacyObserver, public CryptoNote::INodeRpcProxyObserver {
   public:
     simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::Currency& currency, Logging::LoggerManager& log);
+    ~simple_wallet();
 
     bool init(const boost::program_options::variables_map& vm);
     bool deinit();
@@ -83,7 +89,7 @@ namespace CryptoNote
 
     // @ Alias system commands
     bool register_alias(const std::vector<std::string> &args);
-    bool dev_fund_burn(const std::vector<std::string> &args);
+    bool dev_donate(const std::vector<std::string> &args);
     uint8_t nextBlockMajorVersion() const;
     bool lookup_alias(const std::vector<std::string> &args);
     bool list_aliases(const std::vector<std::string> &args);
@@ -177,7 +183,6 @@ namespace CryptoNote
     bool swap(const std::vector<std::string> &args);
     bool add_liq(const std::vector<std::string> &args);
     bool remove_liq(const std::vector<std::string> &args);
-    bool claim_lp_fees(const std::vector<std::string> &args);
 
     // HEAT CD commands (v11+)
     bool heat_deposit(const std::vector<std::string> &args);
@@ -300,5 +305,21 @@ namespace CryptoNote
     bool m_walletSynchronized;
     std::mutex m_walletSynchronizedMutex;
     std::condition_variable m_walletSynchronizedCV;
+
+    void startLimitOrderWithdrawals();
+    void stopLimitOrderWithdrawals();
+    void limitOrderWithdrawLoop();
+    void withdrawEndedLimitOrders();
+    bool walletIsViewOnly();
+    std::vector<Crypto::Hash> limitOrdersToTryWithdrawing(uint32_t nextHeight);
+    bool fetchNodeLimitOrderIds(std::unordered_set<std::string>& orderIds);
+    void withdrawEndedLimitOrder(const Crypto::Hash& orderId);
+    std::thread m_limitOrderWithdrawThread;
+    std::mutex m_limitOrderWithdrawMutex;
+    std::condition_variable m_limitOrderWithdrawCV;
+    bool m_limitOrderWithdrawDue = false;
+    bool m_limitOrderWithdrawStop = false;
+    std::map<std::string, uint32_t> m_limitOrderWithdrawRetryHeight;
+    std::set<std::string> m_limitOrdersUnknownToNode;
   };
 }

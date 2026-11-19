@@ -30,6 +30,8 @@
 #include "Serialization/BinaryInputStreamSerializer.h"
 #include "crypto/keccak.h"
 #include <memory>
+#include <unordered_map>
+#include <unordered_set>
 #include <sstream>
 #include <chrono>
 #include <iostream>
@@ -1920,6 +1922,10 @@ namespace CryptoNote
     wipeBytes(key.data, sizeof(key.data));
   }
 
+  void wipeKeyDerivation(Crypto::KeyDerivation& derivation) {
+    wipeBytes(derivation.data, sizeof(derivation.data));
+  }
+
   void wipeLimitOrderSecret(LimitOrderKeys& keys) {
     wipeSecretKey(keys.spendSecretKey);
   }
@@ -1948,6 +1954,38 @@ namespace CryptoNote
                        const Crypto::Hash& addressHash) {
     const Crypto::Hash derived = limitOrderAddressHash(walletSpendSecret, orderId);
     return memcmp(derived.data, addressHash.data, sizeof(derived.data)) == 0;
+  }
+
+  std::vector<Crypto::Hash> limitOrdersDueForWithdraw(const std::vector<WalletOrderTransaction>& transactions,
+                                                      uint32_t nextHeight) {
+    std::unordered_map<Crypto::Hash, uint32_t> expirations;
+    std::unordered_set<Crypto::Hash> stopped, claimed;
+    for (const auto& transaction : transactions) {
+      std::vector<TransactionExtraField> fields;
+      if (transaction.failed ||
+          !parseTransactionExtra(std::vector<uint8_t>(transaction.extra.begin(), transaction.extra.end()), fields)) {
+        continue;
+      }
+      for (const auto& field : fields) {
+        if (field.type() == typeid(TransactionExtraLimitWithdraw)) {
+          claimed.insert(boost::get<TransactionExtraLimitWithdraw>(field).orderId);
+        } else if (transaction.confirmed && field.type() == typeid(TransactionExtraLimitDeposit)) {
+          const auto& deposit = boost::get<TransactionExtraLimitDeposit>(field);
+          expirations[deposit.orderId] = deposit.expiration;
+        } else if (transaction.confirmed && field.type() == typeid(TransactionExtraOrderCancel)) {
+          stopped.insert(boost::get<TransactionExtraOrderCancel>(field).orderId);
+        }
+      }
+    }
+    std::vector<Crypto::Hash> due;
+    for (const auto& order : expirations) {
+      const bool ended = stopped.count(order.first) > 0 || (order.second != 0 && order.second <= nextHeight);
+      if (ended && claimed.count(order.first) == 0) due.push_back(order.first);
+    }
+    std::sort(due.begin(), due.end(), [](const Crypto::Hash& a, const Crypto::Hash& b) {
+      return memcmp(a.data, b.data, sizeof(a.data)) < 0;
+    });
+    return due;
   }
 
   Crypto::Hash getLimitWithdrawAuthHash(const Crypto::Hash& orderId,

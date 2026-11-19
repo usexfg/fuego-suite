@@ -25,6 +25,7 @@
 #include <iomanip>
 #include <thread>
 #include <set>
+#include <unordered_set>
 #include <sstream>
 #include <regex>
 #include <array>
@@ -63,6 +64,7 @@
 #include "Wallet/WalletRpcServer.h"
 #include "WalletLegacy/WalletLegacy.h"
 #include "Wallet/LegacyKeysImporter.h"
+#include "WalletLegacy/HearthQuote.h"
 #include "WalletLegacy/WalletHelper.h"
 #include "SwapDaemon/AdaptorSwap.h"
 #include "Mnemonics/electrum-words.cpp"
@@ -514,10 +516,9 @@ std::string simple_wallet::get_commands_str() {
     {"buy_xfg", "Buy XFG with HEAT on Hearth AMM"},
     {"add_liq", "Add liquidity to Hearth"},
     {"remove_liq", "Remove liquidity from Hearth"},
-    {"claim_lp_fees", "Claim LP swap fee earnings"},
     {"place_order", "Place limit order on Hearth"},
     {"cancel_order", "Cancel limit order by transaction hash"},
-    {"dev_fund_burn", "Dev fund burn: burn XFG into the re-mint counter (re-minted to the dev fund each quarter; no output to any dev wallet)"},
+    {"dev_donate", "Dev donation: burn XFG into the dev donation counter (re-minted to the dev fund each quarter; no output to any dev wallet)"},
     {"stop_order", "Stop a limit order filling; withdraw it afterwards with cancel_order"},
     {"orderbook", "Show Hearth CLOB orderbook"},
     {"show_orders", "Show your open limit orders on Hearth"}
@@ -615,7 +616,7 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
 
   // @ Alias system commands
   m_consoleHandler.setHandler("register_alias", boost::bind(&simple_wallet::register_alias, this, boost::arg<1>()), "register_alias <alias> - Register an @ alias (8 chars [a-z0-9&], costs 1 XFG). Auto-derives a fresh subaddress; master is never used on-chain.");
-  m_consoleHandler.setHandler("dev_fund_burn", boost::bind(&simple_wallet::dev_fund_burn, this, boost::arg<1>()), "dev_fund_burn <amount> - Burn XFG into the re-mint counter (v11+); re-minted to the dev fund each quarter in one coinbase output");
+  m_consoleHandler.setHandler("dev_donate", boost::bind(&simple_wallet::dev_donate, this, boost::arg<1>()), "dev_donate <amount> - Burn XFG into the dev donation counter (v11+); re-minted to the dev fund each quarter in one coinbase output");
   m_consoleHandler.setHandler("lookup_alias", boost::bind(&simple_wallet::lookup_alias, this, boost::arg<1>()), "lookup_alias <alias_or_address> - Look up an @ alias by name or wallet address");
   m_consoleHandler.setHandler("list_aliases", boost::bind(&simple_wallet::list_aliases, this, boost::arg<1>()), "list_aliases - List all registered @ aliases on the network");
   m_consoleHandler.setHandler("gen_new_sub", boost::bind(&simple_wallet::gen_new_sub, this, boost::arg<1>()), "gen_new_sub [major] [minor] - Generate a sub-address at index (major, minor). Omit args for auto-increment (0, N).");
@@ -629,8 +630,7 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
   m_consoleHandler.setHandler("sell_xfg", [this](const std::vector<std::string>& args) { m_lastSwapDirection = 0; return swap(args); }, "sell_xfg <amount> <min_heat> - Sell XFG for HEAT on Hearth AMM");
   m_consoleHandler.setHandler("buy_xfg", [this](const std::vector<std::string>& args) { m_lastSwapDirection = 1; return swap(args); }, "buy_xfg <amount> <min_xfg> - Buy XFG with HEAT on Hearth AMM");
   m_consoleHandler.setHandler("add_liq", boost::bind(&simple_wallet::add_liq, this, boost::arg<1>()), "add_liq [xfg_amount] [heat_amount] - Add liquidity to Hearth (no args = show pool ratio)");
-  m_consoleHandler.setHandler("remove_liq", boost::bind(&simple_wallet::remove_liq, this, boost::arg<1>()), "remove_liq <lp_shares> <min_xfg> <min_heat> - Remove liquidity from Hearth");
-  m_consoleHandler.setHandler("claim_lp_fees", boost::bind(&simple_wallet::claim_lp_fees, this, boost::arg<1>()), "claim_lp_fees <lp_shares> - Claim LP swap fee earnings");
+  m_consoleHandler.setHandler("remove_liq", boost::bind(&simple_wallet::remove_liq, this, boost::arg<1>()), "remove_liq <lp_shares> - Remove liquidity from Hearth (pays the pool's current share of XFG and HEAT)");
 
   // HEAT CD commands (v11+)
   m_consoleHandler.setHandler("heat_cd", boost::bind(&simple_wallet::heat_deposit, this, boost::arg<1>()), "heat_cd <amount> <term_epochs> - Create HEAT Certificate of Deposit");
@@ -1305,6 +1305,7 @@ bool simple_wallet::create_cold_secret(const std::vector<std::string> &args) {
 //----------------------------------------------------------------------------------------------------
 bool simple_wallet::close_wallet()
 {
+  stopLimitOrderWithdrawals();
   try {
     CryptoNote::WalletHelper::storeWallet(*m_wallet, m_wallet_file);
   } catch (const std::exception& e) {
@@ -2862,9 +2863,135 @@ void simple_wallet::externalTransactionCreated(CryptoNote::TransactionId transac
 
 //----------------------------------------------------------------------------------------------------
 void simple_wallet::synchronizationCompleted(std::error_code result) {
-  std::unique_lock<std::mutex> lock(m_walletSynchronizedMutex);
-  m_walletSynchronized = true;
-  m_walletSynchronizedCV.notify_one();
+  {
+    std::unique_lock<std::mutex> lock(m_walletSynchronizedMutex);
+    m_walletSynchronized = true;
+    m_walletSynchronizedCV.notify_one();
+  }
+  std::lock_guard<std::mutex> lock(m_limitOrderWithdrawMutex);
+  m_limitOrderWithdrawDue = true;
+  m_limitOrderWithdrawCV.notify_one();
+}
+
+simple_wallet::~simple_wallet() {
+  stopLimitOrderWithdrawals();
+}
+
+void simple_wallet::startLimitOrderWithdrawals() {
+  m_limitOrderWithdrawStop = false;
+  m_limitOrderWithdrawThread = std::thread([this] { limitOrderWithdrawLoop(); });
+}
+
+void simple_wallet::stopLimitOrderWithdrawals() {
+  {
+    std::lock_guard<std::mutex> lock(m_limitOrderWithdrawMutex);
+    m_limitOrderWithdrawStop = true;
+    m_limitOrderWithdrawCV.notify_one();
+  }
+  if (m_limitOrderWithdrawThread.joinable()) {
+    m_limitOrderWithdrawThread.join();
+  }
+}
+
+void simple_wallet::limitOrderWithdrawLoop() {
+  std::unique_lock<std::mutex> lock(m_limitOrderWithdrawMutex);
+  for (;;) {
+    m_limitOrderWithdrawCV.wait(lock, [this] { return m_limitOrderWithdrawDue || m_limitOrderWithdrawStop; });
+    if (m_limitOrderWithdrawStop) {
+      return;
+    }
+    m_limitOrderWithdrawDue = false;
+    lock.unlock();
+    try {
+      withdrawEndedLimitOrders();
+    } catch (const std::exception& e) {
+      fail_msg_writer() << "Ended limit order withdrawals skipped: " << e.what();
+    }
+    lock.lock();
+  }
+}
+
+void simple_wallet::withdrawEndedLimitOrders() {
+  if (walletIsViewOnly()) {
+    return;
+  }
+  const uint32_t nextHeight = m_node->getLastKnownBlockHeight() + 1;
+  const std::vector<Crypto::Hash> ordersToTry = limitOrdersToTryWithdrawing(nextHeight);
+  if (ordersToTry.empty()) {
+    return;
+  }
+  std::unordered_set<std::string> nodeOrderIds;
+  if (!fetchNodeLimitOrderIds(nodeOrderIds)) {
+    return;
+  }
+  for (const Crypto::Hash& orderId : ordersToTry) {
+    const std::string orderIdHex = Common::podToHex(orderId);
+    if (nodeOrderIds.count(orderIdHex) == 0) {
+      m_limitOrdersUnknownToNode.insert(orderIdHex);
+      fail_msg_writer() << "Ended limit order " << orderIdHex << " is not known to the node; withdraw it manually";
+      continue;
+    }
+    m_limitOrderWithdrawRetryHeight[orderIdHex] = nextHeight + parameters::LIMIT_ORDER_WITHDRAW_RETRY_BLOCKS;
+    withdrawEndedLimitOrder(orderId);
+  }
+}
+
+bool simple_wallet::walletIsViewOnly() {
+  AccountKeys keys;
+  m_wallet->getAccountKeys(keys);
+  const bool viewOnly = keys.spendSecretKey == NULL_SECRET_KEY;
+  CryptoNote::wipeSecretKey(keys.spendSecretKey);
+  CryptoNote::wipeSecretKey(keys.viewSecretKey);
+  return viewOnly;
+}
+
+std::vector<Crypto::Hash> simple_wallet::limitOrdersToTryWithdrawing(uint32_t nextHeight) {
+  std::vector<CryptoNote::WalletOrderTransaction> history;
+  for (TransactionId id = 0; id < m_wallet->getTransactionCount(); ++id) {
+    WalletLegacyTransaction transaction;
+    if (!m_wallet->getTransaction(id, transaction)) {
+      continue;
+    }
+    history.push_back({transaction.extra, transaction.blockHeight != WALLET_LEGACY_UNCONFIRMED_TRANSACTION_HEIGHT,
+                       transaction.state == WalletLegacyTransactionState::Cancelled ||
+                           transaction.state == WalletLegacyTransactionState::Failed ||
+                           transaction.state == WalletLegacyTransactionState::Deleted});
+  }
+  std::vector<Crypto::Hash> ordersToTry;
+  for (const Crypto::Hash& orderId : CryptoNote::limitOrdersDueForWithdraw(history, nextHeight)) {
+    const std::string orderIdHex = Common::podToHex(orderId);
+    const auto retry = m_limitOrderWithdrawRetryHeight.find(orderIdHex);
+    const bool waitingToRetry = retry != m_limitOrderWithdrawRetryHeight.end() && retry->second > nextHeight;
+    if (!waitingToRetry && m_limitOrdersUnknownToNode.count(orderIdHex) == 0) {
+      ordersToTry.push_back(orderId);
+    }
+  }
+  return ordersToTry;
+}
+
+bool simple_wallet::fetchNodeLimitOrderIds(std::unordered_set<std::string>& orderIds) {
+  std::vector<INode::LimitDepositRpcEntry> deposits;
+  if (m_node->getLimitDeposits(deposits)) {
+    return false;
+  }
+  for (const auto& deposit : deposits) {
+    orderIds.insert(deposit.order_id);
+  }
+  return true;
+}
+
+void simple_wallet::withdrawEndedLimitOrder(const Crypto::Hash& orderId) {
+  const std::string orderIdHex = Common::podToHex(orderId);
+  try {
+    const TransactionId tx = m_wallet->cancelOrderV13(orderId, m_currency.minimumFee(), parameters::MIN_TX_MIXIN_SIZE, false);
+    if (tx == WALLET_LEGACY_INVALID_TRANSACTION_ID) {
+      fail_msg_writer() << "Could not withdraw ended limit order " << orderIdHex;
+    } else {
+      success_msg_writer() << "Withdrawing ended limit order " << orderIdHex << " (transaction " << tx << ")";
+    }
+  } catch (const std::exception& e) {
+    fail_msg_writer() << "Could not withdraw ended limit order " << orderIdHex << ": " << e.what();
+  }
 }
 
 //----------------------------------------------------------------------------------------------------
@@ -3440,6 +3567,7 @@ bool simple_wallet::run() {
 
   std::cout << std::endl;
 
+  startLimitOrderWithdrawals();
   std::string addr_start = m_wallet->getAddress().substr(0, 6);
   m_consoleHandler.start(false, "[wallet " + addr_start + "]: ", Common::Console::Color::BrightYellow);
   return true;
@@ -3468,10 +3596,10 @@ uint8_t simple_wallet::nextBlockMajorVersion() const {
   return m_currency.blockMajorVersionAtHeight(m_node->getLastKnownBlockHeight() + 1);
 }
 
-bool simple_wallet::dev_fund_burn(const std::vector<std::string> &args) {
+bool simple_wallet::dev_donate(const std::vector<std::string> &args) {
   uint64_t amount = 0;
   if (args.size() != 1 || !m_currency.parseAmount(args[0], amount) || amount == 0) {
-    fail_msg_writer() << "Usage: dev_fund_burn <amount>";
+    fail_msg_writer() << "Usage: dev_donate <amount>";
     return false;
   }
   if (nextBlockMajorVersion() < CryptoNote::BLOCK_MAJOR_VERSION_11) {
@@ -3499,18 +3627,18 @@ bool simple_wallet::dev_fund_burn(const std::vector<std::string> &args) {
   CryptoNote::TransactionId tx = m_wallet->sendTransaction(transactionSK, transfers, fee, extraString,
                                                            CryptoNote::parameters::MIN_TX_MIXIN_SIZE, 0, messages, 0);
   if (tx == WALLET_INVALID_TRANSACTION_ID) {
-    fail_msg_writer() << "Dev fund burn transaction failed";
+    fail_msg_writer() << "Dev donation transaction failed";
     return false;
   }
   std::error_code sendError = sent.wait(tx);
   removeGuard.removeObserver();
   if (sendError) {
-    fail_msg_writer() << "Failed to send dev fund burn: " << sendError.message();
+    fail_msg_writer() << "Failed to send dev donation: " << sendError.message();
     return false;
   }
   CryptoNote::WalletLegacyTransaction txInfo;
   m_wallet->getTransaction(tx, txInfo);
-  success_msg_writer() << "Burned " << m_currency.formatAmount(amount) << " XFG into the re-mint counter, tx "
+  success_msg_writer() << "Donated " << m_currency.formatAmount(amount) << " XFG to the dev fund (re-minted at the next quarter boundary), tx "
                        << Common::podToHex(txInfo.hash);
   return true;
 }
@@ -4390,9 +4518,23 @@ bool simple_wallet::add_liq(const std::vector<std::string>& args) {
                          << m_currency.formatAmount(heatAmount) << " HEAT";
   }
 
+  uint64_t lpShares = 0;
+  try {
+    lpShares = CryptoNote::quoteLpAddShares(*m_node, xfgAmount, heatAmount);
+  } catch (const std::exception& e) {
+    fail_msg_writer() << "Cannot quote LP shares: " << e.what();
+    return false;
+  }
+  if (lpShares == 0) {
+    fail_msg_writer() << "This deposit earns no LP shares";
+    return false;
+  }
+
   success_msg_writer() << "Add liquidity:";
   success_msg_writer() << "  XFG:  " << m_currency.formatAmount(xfgAmount);
   success_msg_writer() << "  HEAT: " << m_currency.formatAmount(heatAmount);
+  success_msg_writer() << "  LP shares: " << lpShares << " (" << CryptoNote::parameters::WALLET_SWAP_SLIPPAGE_BPS / 100.0
+                       << "% under the current pool quote)";
   success_msg_writer() << "  Fee:  " << m_currency.formatAmount(fee);
   success_msg_writer() << "";
   success_msg_writer() << "";
@@ -4431,7 +4573,7 @@ bool simple_wallet::add_liq(const std::vector<std::string>& args) {
   CryptoNote::WalletHelper::SendCompleteResultObserver sent;
   WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
 
-  CryptoNote::TransactionId txId = m_wallet->lpAddV10(xfgAmount, heatAmount, fee, mixIn);
+  CryptoNote::TransactionId txId = m_wallet->lpAddV10(xfgAmount, heatAmount, lpShares, fee, mixIn);
 
   if (txId == WALLET_INVALID_TRANSACTION_ID) {
     fail_msg_writer() << "Add liquidity transaction failed";
@@ -4451,26 +4593,36 @@ bool simple_wallet::add_liq(const std::vector<std::string>& args) {
 }
 
 bool simple_wallet::remove_liq(const std::vector<std::string>& args) {
-  if (args.size() < 3) {
-    fail_msg_writer() << "Usage: remove_liq <lp_shares> <min_xfg> <min_heat>";
+  if (args.size() != 1) {
+    fail_msg_writer() << "Usage: remove_liq <lp_shares>";
     return false;
   }
 
-  uint64_t lpShares;
-  uint64_t minXfg;
-  uint64_t minHeat;
-  if (!m_currency.parseAmount(args[0], lpShares) ||
-      !m_currency.parseAmount(args[1], minXfg) ||
-      !m_currency.parseAmount(args[2], minHeat)) {
-    fail_msg_writer() << "Invalid amount(s)";
+  uint64_t lpShares = 0;
+  if (!Common::fromString(args[0], lpShares) || lpShares == 0) {
+    fail_msg_writer() << "Invalid LP shares: " << args[0];
+    return false;
+  }
+
+  CryptoNote::LpRemovePayout payout;
+  try {
+    payout = CryptoNote::quoteLpRemovePayout(*m_node, lpShares);
+  } catch (const std::exception& e) {
+    fail_msg_writer() << "Cannot quote the LP payout: " << e.what();
     return false;
   }
 
   uint64_t fee = m_currency.minimumFee();
 
-  success_msg_writer() << "Remove liquidity: " << m_currency.formatAmount(lpShares)
-                       << " LP shares | min " << m_currency.formatAmount(minXfg) << " XFG + "
-                       << m_currency.formatAmount(minHeat) << " HEAT";
+  if (payout.xfg <= fee) {
+    fail_msg_writer() << "The XFG payout does not cover the network fee";
+    return false;
+  }
+  success_msg_writer() << "Remove liquidity: " << lpShares << " LP shares -> "
+                       << m_currency.formatAmount(payout.xfg - fee) << " XFG (after the network fee) + "
+                       << m_currency.formatAmount(payout.heat) << " HEAT ("
+                       << CryptoNote::parameters::WALLET_SWAP_SLIPPAGE_BPS / 100.0
+                       << "% under the current pool quote; the pool keeps the difference)";
 
   // Use lpRemoveV10() — dedicated LP remove API that burns LP commitment inputs
   uint64_t mixIn = m_currency.isTestnet() ? 0 : CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
@@ -4478,7 +4630,7 @@ bool simple_wallet::remove_liq(const std::vector<std::string>& args) {
   CryptoNote::WalletHelper::SendCompleteResultObserver sent;
   WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
 
-  CryptoNote::TransactionId txId = m_wallet->lpRemoveV10(lpShares, minXfg, minHeat, fee, mixIn);
+  CryptoNote::TransactionId txId = m_wallet->lpRemoveV10(lpShares, payout.xfg, payout.heat, fee, mixIn);
 
   if (txId == WALLET_INVALID_TRANSACTION_ID) {
     fail_msg_writer() << "Remove liquidity transaction failed";
@@ -4497,60 +4649,9 @@ bool simple_wallet::remove_liq(const std::vector<std::string>& args) {
   return true;
 }
 
-bool simple_wallet::claim_lp_fees(const std::vector<std::string>& args) {
-  if (args.size() < 1) {
-    fail_msg_writer() << "Usage: claim_lp_fees <lp_shares>";
-    fail_msg_writer() << "  Claims accumulated swap fee earnings without removing your LP position.";
-    return false;
-  }
-
-  uint64_t lpShares;
-  if (!m_currency.parseAmount(args[0], lpShares) || lpShares == 0) {
-    fail_msg_writer() << "Invalid LP shares amount";
-    return false;
-  }
-
-  uint64_t fee = m_currency.minimumFee();
-
-  success_msg_writer() << "Claim LP fees for " << m_currency.formatAmount(lpShares) << " LP shares";
-  success_msg_writer() << "  Fee: " << m_currency.formatAmount(fee);
-  success_msg_writer() << "  NOTE: Your LP position stays in the pool. Only accumulated fees are claimed.";
-
-  std::cout << "Proceed? (yes/no): ";
-  std::string answer;
-  std::getline(std::cin, answer);
-  if (answer != "yes" && answer != "y") {
-    fail_msg_writer() << "Cancelled.";
-    return false;
-  }
-
-  uint64_t mixIn = m_currency.isTestnet() ? 0 : CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
-
-  CryptoNote::WalletHelper::SendCompleteResultObserver sent;
-  WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
-
-  CryptoNote::TransactionId txId = m_wallet->lpClaimFeesV10(lpShares, 0, 0, fee, mixIn);
-
-  if (txId == WALLET_INVALID_TRANSACTION_ID) {
-    fail_msg_writer() << "LP fee claim transaction failed";
-    return false;
-  }
-
-  std::error_code sendError = sent.wait(txId);
-  removeGuard.removeObserver();
-
-  if (sendError) {
-    fail_msg_writer() << "Failed to send LP fee claim: " << sendError.message();
-    return false;
-  }
-
-  success_msg_writer() << "LP fee claim submitted: tx " << txId;
-  return true;
-}
-
 bool simple_wallet::heat_deposit(const std::vector<std::string>& args) {
   if (args.size() < 2) {
-    fail_msg_writer() << "Usage: heat_deposit <amount> <term_epochs>";
+    fail_msg_writer() << "Usage: heat_cd <amount> <term_epochs>";
     return false;
   }
   uint64_t amount = 0;
@@ -4572,7 +4673,7 @@ bool simple_wallet::heat_deposit(const std::vector<std::string>& args) {
     return false;
   }
   const uint64_t bankingFee = requiredCdFee +
-      requiredCdFee * CryptoNote::parameters::WALLET_MINT_TWAP_MARGIN_BPS / 10000;
+      (requiredCdFee * CryptoNote::parameters::WALLET_MINT_TWAP_MARGIN_BPS + 9999) / 10000;
 
   uint64_t fee = m_currency.minimumFee();
   uint64_t xfgNeeded = bankingFee + fee;
@@ -4704,7 +4805,7 @@ bool simple_wallet::claim_cd(const std::vector<std::string>& args) {
       success_msg_writer() << "    Base (CD yield pool): " << m_currency.formatAmount(claimInfo.baseInterest) << " HEAT";
     }
     if (claimInfo.poolInfoPresent && claimInfo.bonusInterest > 0) {
-      success_msg_writer() << "    Bonus (Bonus Vault, tier): " << m_currency.formatAmount(claimInfo.bonusInterest)
+      success_msg_writer() << "    Bonus (Bonus Vault yield floor): " << m_currency.formatAmount(claimInfo.bonusInterest)
                            << " HEAT (vault: " << m_currency.formatAmount(claimInfo.bonusVaultBalance) << ")";
     }
   }

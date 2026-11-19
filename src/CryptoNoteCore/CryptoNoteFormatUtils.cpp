@@ -341,7 +341,7 @@ bool check_inputs_types_supported(const TransactionPrefix& tx) {
   return true;
 }
 
-bool check_outs_valid(const TransactionPrefix& tx, std::string* error) {
+bool check_outs_valid(const TransactionPrefix& tx, std::string* error, uint32_t depositMinTerm, uint32_t depositMaxTerm) {
   for (const TransactionOutput& out : tx.outputs) {
     if (out.target.type() == typeid(KeyOutput)) {
       if (out.amount == 0) {
@@ -403,8 +403,7 @@ bool check_outs_valid(const TransactionPrefix& tx, std::string* error) {
           commitment.term != parameters::DEPOSIT_TERM_POOL_XFG &&
           commitment.term != parameters::DEPOSIT_TERM_POOL_HEAT &&
           commitment.term != parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG &&
-          (commitment.term < parameters::DEPOSIT_MIN_TERM ||
-           commitment.term > parameters::DEPOSIT_MAX_TERM)) {
+          (commitment.term < depositMinTerm || commitment.term > depositMaxTerm)) {
         if (error) {
           *error = "Commitment output has invalid term";
         }

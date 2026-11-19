@@ -21,6 +21,10 @@ enum class AssetType : uint8_t {
 
 // The single commitment-term -> asset table; see AssetType.cpp. Currency::classifyCommitmentTermAsset delegates here.
 AssetType classifyCommitmentTermAsset(uint32_t term);
+// A CD: the only time-locked commitment. Marker terms (HEAT, LP, swap receive, DIGM, pool) are not block counts.
+bool isCdCommitmentTerm(uint32_t term);
+// HEAT a wallet holds: spendable HEAT_TERM outputs and CDs.
+bool isWalletHeatTerm(uint32_t term);
 
 struct AssetBalance {
     uint64_t xfg  = 0;

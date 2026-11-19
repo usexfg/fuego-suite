@@ -16,6 +16,7 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "TransfersContainer.h"
+#include "CryptoNoteCore/AssetType.h"
 #include "IWalletLegacy.h"
 #include "Common/StdInputStream.h"
 #include "Common/StdOutputStream.h"
@@ -1007,7 +1008,10 @@ bool TransfersContainer::isSpendTimeUnlocked(const TransactionOutputInformationE
     return current_time + m_currency.lockedTxAllowedDeltaSeconds_v2() >= info.unlockTime;
   }
 
-  if (isOuputUnlocked && (info.type == TransactionTypes::OutputType::Multisignature || info.type == TransactionTypes::OutputType::Commitment) && info.term != 0 && info.term != parameters::HEAT_TERM) {
+  const bool timeLockedDeposit =
+      (info.type == TransactionTypes::OutputType::Multisignature && info.term != 0) ||
+      (info.type == TransactionTypes::OutputType::Commitment && isCdCommitmentTerm(info.term));
+  if (isOuputUnlocked && timeLockedDeposit) {
     // Deposit matures when currentHeight >= creationHeight + term.
     // HEAT_TERM (0xFFFFFFFF) outputs are mints/burns, NOT time-locked CDs.
     // The +1 offset was removed to align with consensus (Blockchain.cpp:checkCommitmentSpendInput)
@@ -1038,7 +1042,8 @@ bool TransfersContainer::isIncluded(const TransactionOutputInformationEx& output
     ((flags & IncludeTypeKey) != 0            && output.type == TransactionTypes::OutputType::Key) ||
     ((flags & IncludeTypeMultisignature) != 0 && output.type == TransactionTypes::OutputType::Multisignature && output.term == 0) ||
     ((flags & IncludeTypeDeposit) != 0        && output.type == TransactionTypes::OutputType::Multisignature && output.term > 0) ||
-    ((flags & IncludeTypeDeposit) != 0        && output.type == TransactionTypes::OutputType::Commitment && output.term > 0 && output.term != parameters::HEAT_TERM)
+    ((flags & IncludeTypeDeposit) != 0        && output.type == TransactionTypes::OutputType::Commitment && output.term > 0 && output.term != parameters::HEAT_TERM) ||
+    ((flags & IncludeTypeHeat) != 0           && output.type == TransactionTypes::OutputType::Commitment && output.term == parameters::HEAT_TERM)
     )
     &&
     // filter by state

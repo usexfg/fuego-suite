@@ -218,15 +218,10 @@ uint64_t bankedBurn(const CryptoNote::TransactionExtraField& f, uint8_t blockMaj
   return 0;
 }
 
-// A commitment output that is a CD. LP and swap-receive markers, pool markers
-// and plain HEAT are not CDs and never earn.
+// A commitment output that is a CD, the only time-locked commitment. LP,
+// swap-receive, DIGM and pool markers and plain HEAT are not CDs and never earn.
 bool isCdOutputTerm(uint32_t term) {
-  using namespace CryptoNote;
-  return term > 0 && term != parameters::HEAT_TERM &&
-         term != parameters::DEPOSIT_TERM_POOL_XFG &&
-         term != parameters::DEPOSIT_TERM_POOL_HEAT &&
-         term != parameters::DEPOSIT_TERM_LP &&
-         term != parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG;
+  return CryptoNote::isCdCommitmentTerm(term);
 }
 
 // XFG a transaction's alias registrations owe from v11: the fee for every
@@ -520,6 +515,9 @@ public:
           throw;
         }
       }
+      if (s.type() == ISerializer::INPUT) {
+        m_bs.rebuildLimitOrderIndex();
+      }
 
       // Alias registry: without persistence, every registered/released/
       // transferred alias was wiped on every normal daemon restart (only
@@ -783,16 +781,33 @@ namespace {
 std::vector<std::pair<Crypto::Hash, CryptoNote::Blockchain::LimitDepositInfo>>
 CryptoNote::Blockchain::pruneSettledLimitDeposits(uint32_t height) {
   std::vector<std::pair<Crypto::Hash, LimitDepositInfo>> pruned;
-  for (auto it = m_limitDeposits.begin(); it != m_limitDeposits.end();) {
-    const LimitDepositInfo& dep = it->second;
-    if (dep.withdrawn && dep.withdrawnHeight + MAX_ROLLBACK_HISTORY < height) {
-      pruned.push_back(*it);
-      it = m_limitDeposits.erase(it);
-    } else {
-      ++it;
-    }
+  for (const Crypto::Hash& orderId : m_withdrawnLimitOrders) {
+    const LimitDepositInfo& deposit = m_limitDeposits.at(orderId);
+    if (deposit.withdrawnHeight + MAX_ROLLBACK_HISTORY < height) pruned.emplace_back(orderId, deposit);
+  }
+  for (const auto& entry : pruned) {
+    m_limitDeposits.erase(entry.first);
+    indexLimitOrder(entry.first);
   }
   return pruned;
+}
+
+void CryptoNote::Blockchain::indexLimitOrder(const Crypto::Hash& orderId) {
+  m_restingLimitOrders.erase(orderId);
+  m_withdrawnLimitOrders.erase(orderId);
+  const auto it = m_limitDeposits.find(orderId);
+  if (it == m_limitDeposits.end()) return;
+  if (it->second.withdrawn) {
+    m_withdrawnLimitOrders.insert(orderId);
+  } else if (!it->second.expired) {
+    m_restingLimitOrders.insert(orderId);
+  }
+}
+
+void CryptoNote::Blockchain::rebuildLimitOrderIndex() {
+  m_restingLimitOrders.clear();
+  m_withdrawnLimitOrders.clear();
+  for (const auto& kv : m_limitDeposits) indexLimitOrder(kv.first);
 }
 
 // Every fill of an auction moves two parties. Settling some and skipping
@@ -840,7 +855,10 @@ void CryptoNote::Blockchain::restoreOrderbookSnapshotFor(uint32_t poppedHeight) 
       g_orderbookMempool.addOrder(o);
     // Restore pool orders
     g_orderbookMempool.setPoolOrders(snap.poolOrders);
-    for (const auto& pruned : snap.prunedDeposits) m_limitDeposits.insert(pruned);
+    for (const auto& pruned : snap.prunedDeposits) {
+      m_limitDeposits.insert(pruned);
+      indexLimitOrder(pruned.first);
+    }
     m_orderbookSnapshots.pop_back();
   }
 }
@@ -1347,6 +1365,8 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
     m_aliasIndex.reset();
     m_aliasUndoLog.clear();
     m_blockEpochDistributions.clear();
+    m_limitDeposits.clear();
+    rebuildLimitOrderIndex();
 
     // Orderbook globals: same initial values as a fresh sync.
     g_orderbookMempool.clear();
@@ -1994,7 +2014,7 @@ bool CryptoNote::Blockchain::prevalidate_miner_transaction(const Block& b, uint3
     return false;
   }
 
-  if (!check_outs_valid(b.baseTransaction)) {
+  if (!check_outs_valid(b.baseTransaction, nullptr, m_currency.depositMinTerm(), m_currency.depositMaxTerm())) {
     logger(INFO, BRIGHT_RED) << "miner transaction have invalid outputs";
     return false;
   }
@@ -2557,9 +2577,10 @@ bool CryptoNote::Blockchain::getOutsByAmountAndIndexes(uint64_t amount,
 }
 
 bool CryptoNote::Blockchain::getRandomCommitmentOutputsForAmount(uint64_t amount, uint64_t count,
-    std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS_out_entry>& result, uint32_t max_height) {
+    std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS_out_entry>& result, uint32_t max_height, uint32_t ringTerm) {
   if (!m_indexManager.isReady()) return false;
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
+  const uint32_t currentHeight = getCurrentBlockchainHeight();
 
   auto it = m_indexManager.commitmentOutputs().find(amount);
   if (it == m_indexManager.commitmentOutputs().end() || it->second.empty()) {
@@ -2570,17 +2591,11 @@ bool CryptoNote::Blockchain::getRandomCommitmentOutputsForAmount(uint64_t amount
   std::vector<size_t> validIndices;
   validIndices.reserve(allRefs.size());
 
-  // Filter by height: only outputs created at or before max_height
-  if (max_height > 0) {
-    for (size_t i = 0; i < allRefs.size(); ++i) {
-      if (allRefs[i].transactionIndex.block <= max_height) {
-        validIndices.push_back(i);
-      }
+  for (size_t i = 0; i < allRefs.size(); ++i) {
+    const bool withinHeightCap = max_height == 0 || allRefs[i].transactionIndex.block <= max_height;
+    if (withinHeightCap && ringMayHoldDecoy(allRefs[i], ringTerm, currentHeight)) {
+      validIndices.push_back(i);
     }
-  } else {
-    // No filter: all indices are valid
-    validIndices.resize(allRefs.size());
-    std::iota(validIndices.begin(), validIndices.end(), 0);
   }
 
   if (validIndices.empty()) return true;
@@ -2921,7 +2936,7 @@ bool CryptoNote::Blockchain::checkTransactionInputs(const Transaction& tx, const
         }
 
         if (!isInCheckpointZone(getCurrentBlockchainHeight())) {
-          if (!checkCommitmentTransferInput(xfer, tx_prefix_hash, tx.signatures[inputIndex], pmax_used_block_height)) {
+          if (!checkCommitmentTransferInput(xfer, tx_prefix_hash, tx.signatures[inputIndex], pmax_used_block_height, blockMajorVersion)) {
             logger(INFO, BRIGHT_WHITE) << "CommitmentTransfer ring signature check failed in tx " << transactionHash;
             return false;
           }
@@ -3027,6 +3042,31 @@ bool CryptoNote::Blockchain::check_tx_input(const KeyInput& txin, const Crypto::
 // validates TransactionInputCommitmentSpend ring-sig against global
 // commitment output index (m_commitmentOutputs) using same algorithm as
 // check_tx_input for KeyInput ring sigs.
+bool CryptoNote::Blockchain::ringMayHoldDecoy(const CommitmentOutputRef& ref, uint32_t ringTerm,
+                                              uint32_t currentHeight) const {
+  if (ref.isSlashed || ref.term == parameters::DEPOSIT_TERM_POOL_XFG || ref.term == parameters::DEPOSIT_TERM_POOL_HEAT ||
+      isUnspendableAfterHeatwave(ref) || (ringTerm != 0 && ref.term != ringTerm)) {
+    return false;
+  }
+  if (!isCdOutputTerm(ref.term)) {
+    return true;
+  }
+  const uint32_t maturityHeight = ref.transactionIndex.block + ref.term;
+  return maturityHeight >= ref.transactionIndex.block && currentHeight >= maturityHeight;
+}
+
+bool CryptoNote::Blockchain::isUnspendableAfterHeatwave(const CommitmentOutputRef& ref) const {
+  const bool preHeatwaveBurn = ref.term == parameters::HEAT_TERM &&
+      getBlockMajorVersionForHeight(ref.transactionIndex.block) < BLOCK_MAJOR_VERSION_11;
+  const bool disabledDigm = ref.term == parameters::DIGM_TERM;
+  return preHeatwaveBurn || disabledDigm;
+}
+
+bool CryptoNote::Blockchain::isTimeLockedRingMember(const CommitmentOutputRef& ref, uint8_t blockMajorVersion) {
+  return blockMajorVersion >= BLOCK_MAJOR_VERSION_11 ? isCdOutputTerm(ref.term)
+                                                     : ref.term > 0 && ref.term != parameters::HEAT_TERM;
+}
+
 bool CryptoNote::Blockchain::checkCommitmentSpendInput(const TransactionInputCommitmentSpend& txin,
                                             const Crypto::Hash& tx_prefix_hash,
                                             const std::vector<Crypto::Signature>& sig,
@@ -3075,6 +3115,31 @@ bool CryptoNote::Blockchain::checkCommitmentSpendInput(const TransactionInputCom
   uint32_t youngestRingMemberTerm = 0;
   bool youngestRingMemberRolled = false;
   bool youngestTermInitialized = false;
+  // Rule set for the block THIS transaction belongs to.
+  //
+  // blockMajorVersion is supplied by the block-validation path, which knows the
+  // block being validated. It used to be derived here as
+  // getBlockMajorVersionForHeight(currentHeight + 1), which was off by one:
+  // currentHeight is m_blocks.size(), and during a block's own validation that is
+  // the height of the block being validated, so +1 applied the NEXT height's rules
+  // to it. At the v11 fork height the tightened v11 caps (finite-CD ring,
+  // CD-activation gate, fee-pool cap) therefore applied to a block that its own
+  // height still versions as v10 -- conservative for value, but a fork at that
+  // height, and it disagreed with settlement, which gates bonusByInput on
+  // block.bl.majorVersion.
+  //
+  // Paths with no block in hand (mempool, block template) pass 0 and fall back to
+  // the height-derived version, which is correct there because they are judging a
+  // transaction against the chain tip rather than against a specific block.
+  uint8_t validatingBlockVersion = blockMajorVersion;
+  if (validatingBlockVersion == 0) {
+    // Mempool / block-template: the block a tx would land in is the NEXT one, at
+    // height m_blocks.size(). This must match checkTransactionSettlement, which
+    // resolves the same block's version as getBlockMajorVersionForHeight(
+    // m_blocks.size()) with NO +1. Using +1 here made the mempool internally
+    // inconsistent at an upgrade height -- lax settlement, strict input caps.
+    validatingBlockVersion = getBlockMajorVersionForHeight(currentHeight);
+  }
   for (uint64_t absIdx : absoluteIndexes) {
     if (absIdx >= amountRefs.size()) {
       logger(INFO) << "CommitmentSpend: global index " << absIdx << " out of range (" << amountRefs.size() << " commitment outputs at this amount)";
@@ -3090,9 +3155,12 @@ bool CryptoNote::Blockchain::checkCommitmentSpendInput(const TransactionInputCom
       return false;
     }
 
-    const bool finiteCd = ref.term > 0 && ref.term != CryptoNote::parameters::HEAT_TERM &&
-                          ref.term != parameters::DEPOSIT_TERM_POOL_XFG &&
-                          ref.term != parameters::DEPOSIT_TERM_POOL_HEAT;
+    if (validatingBlockVersion >= BLOCK_MAJOR_VERSION_11 && isUnspendableAfterHeatwave(ref)) {
+      logger(INFO) << "CommitmentSpend: ring member at index " << absIdx << " is a pre-v11 burn or a DIGM output";
+      return false;
+    }
+
+    const bool finiteCd = isCdOutputTerm(ref.term);
     if (!finiteCd) {
       ringHasNonCdMember = true;
     }
@@ -3126,9 +3194,9 @@ bool CryptoNote::Blockchain::checkCommitmentSpendInput(const TransactionInputCom
         }
       }
 
-      // All non-FOREVER ring members must be mature — prevents early withdrawal.
+      // Time-locked ring members must be mature — prevents early withdrawal.
       // Auto-rolled CDs have doubled maturity (one-time extension at first roll).
-      if (ref.term > 0) {
+      if (isTimeLockedRingMember(ref, validatingBlockVersion)) {
         uint32_t maturityHeight = rolled
             ? memberHeight + 2 * ref.term
             : memberHeight + ref.term;
@@ -3173,9 +3241,9 @@ bool CryptoNote::Blockchain::checkCommitmentSpendInput(const TransactionInputCom
     }
   }
 
-  // Degenerate-ring guard: if every member is FOREVER-term, no valid real spend
-  // is possible (all keyScalars were discarded for burns). Reject immediately.
-  if (!hasNonForever) {
+  // Before v11 every HEAT_TERM output is a burn. From v11, members created
+  // before v11 are refused above, so an all-HEAT_TERM ring holds only HEAT.
+  if (!hasNonForever && validatingBlockVersion < BLOCK_MAJOR_VERSION_11) {
     logger(INFO) << "CommitmentSpend: all ring members are burned outputs — no valid real spend possible";
     return false;
   }
@@ -3215,31 +3283,6 @@ bool CryptoNote::Blockchain::checkCommitmentSpendInput(const TransactionInputCom
     // No HEAT CD can exist below cdActivationHeight, so a ring whose youngest
     // member is older than that may be a legacy deposit: withdraw-only.
     uint32_t cdStartHeight = m_currency.cdActivationHeight();
-    // Rule set for the block THIS transaction belongs to.
-    //
-    // blockMajorVersion is supplied by the block-validation path, which knows the
-    // block being validated. It used to be derived here as
-    // getBlockMajorVersionForHeight(currentHeight + 1), which was off by one:
-    // currentHeight is m_blocks.size(), and during a block's own validation that is
-    // the height of the block being validated, so +1 applied the NEXT height's rules
-    // to it. At the v11 fork height the tightened v11 caps (finite-CD ring,
-    // CD-activation gate, fee-pool cap) therefore applied to a block that its own
-    // height still versions as v10 -- conservative for value, but a fork at that
-    // height, and it disagreed with settlement, which gates bonusByInput on
-    // block.bl.majorVersion.
-    //
-    // Paths with no block in hand (mempool, block template) pass 0 and fall back to
-    // the height-derived version, which is correct there because they are judging a
-    // transaction against the chain tip rather than against a specific block.
-    uint8_t validatingBlockVersion = blockMajorVersion;
-    if (validatingBlockVersion == 0) {
-      // Mempool / block-template: the block a tx would land in is the NEXT one, at
-      // height m_blocks.size(). This must match checkTransactionSettlement, which
-      // resolves the same block's version as getBlockMajorVersionForHeight(
-      // m_blocks.size()) with NO +1. Using +1 here made the mempool internally
-      // inconsistent at an upgrade height -- lax settlement, strict input caps.
-      validatingBlockVersion = getBlockMajorVersionForHeight(currentHeight);
-    }
     if (validatingBlockVersion >= BLOCK_MAJOR_VERSION_11 &&
         youngestRingMemberHeight < cdStartHeight) {
       logger(INFO) << "CommitmentSpend: interest claim on a pre-CD deposit (youngest ring member at height "
@@ -3335,7 +3378,8 @@ bool CryptoNote::Blockchain::checkCommitmentTransferInput(
     const TransactionInputCommitmentTransfer& txin,
     const Crypto::Hash& tx_prefix_hash,
     const std::vector<Crypto::Signature>& sig,
-    uint32_t* pmax_related_block_height) {
+    uint32_t* pmax_related_block_height,
+    uint8_t blockMajorVersion) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
 
   // Subgroup check (same as CommitmentSpend)
@@ -3390,6 +3434,8 @@ bool CryptoNote::Blockchain::checkCommitmentTransferInput(
   ringKeys.reserve(absoluteIndexes.size());
   bool hasNonForever = false;
   uint32_t currentHeight = getCurrentBlockchainHeight();
+  const uint8_t transferBlockVersion =
+      blockMajorVersion != 0 ? blockMajorVersion : getBlockMajorVersionForHeight(currentHeight);
   for (uint64_t absIdx : absoluteIndexes) {
     if (absIdx >= amountRefs.size()) {
       logger(INFO) << "CommitmentTransfer: global index " << absIdx << " out of range";
@@ -3405,9 +3451,14 @@ bool CryptoNote::Blockchain::checkCommitmentTransferInput(
       return false;
     }
 
+    if (transferBlockVersion >= BLOCK_MAJOR_VERSION_11 && isUnspendableAfterHeatwave(ref)) {
+      logger(INFO) << "CommitmentTransfer: ring member at index " << absIdx << " is a pre-v11 burn or a DIGM output";
+      return false;
+    }
+
     if (ref.term != CryptoNote::parameters::HEAT_TERM) {
       hasNonForever = true;
-      if (ref.term > 0) {
+      if (isTimeLockedRingMember(ref, transferBlockVersion)) {
         uint32_t memberHeight = ref.transactionIndex.block;
         uint32_t maturityHeight = memberHeight + ref.term;
         if (maturityHeight < memberHeight || currentHeight < maturityHeight) {
@@ -3433,8 +3484,7 @@ bool CryptoNote::Blockchain::checkCommitmentTransferInput(
     }
   }
 
-  // All-FOREVER guard (same as CommitmentSpend)
-  if (!hasNonForever) {
+  if (!hasNonForever && transferBlockVersion < BLOCK_MAJOR_VERSION_11) {
     logger(INFO) << "CommitmentTransfer: all ring members are burned outputs — no valid transfer possible";
     return false;
   }
@@ -4609,18 +4659,21 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
   // withdraw and do NOT participate in the auction or the backstop in their
   // expiry block (expiry at height H means no fills at H).
   if (block.majorVersion >= BLOCK_MAJOR_VERSION_11) {
-    for (auto& kv : m_limitDeposits) {
-      LimitDepositInfo& dep = kv.second;
-      if (dep.withdrawn || dep.expired) continue;
-      if (dep.expiration > 0 && height >= dep.expiration) {
-        dep.expired = true;
-        OrderFillRecord rec;
-        rec.orderId = kv.first;
-        rec.side = dep.side;
-        rec.xfg = 0; rec.heat = 0; rec.feeHeat = 0;
-        rec.newlyExpired = true;
-        fillsThisBlock.push_back(rec);
-      }
+    std::vector<Crypto::Hash> expiring;
+    for (const Crypto::Hash& orderId : m_restingLimitOrders) {
+      const LimitDepositInfo& dep = m_limitDeposits.at(orderId);
+      if (dep.expiration > 0 && height >= dep.expiration) expiring.push_back(orderId);
+    }
+    for (const Crypto::Hash& orderId : expiring) {
+      LimitDepositInfo& dep = m_limitDeposits.at(orderId);
+      dep.expired = true;
+      indexLimitOrder(orderId);
+      OrderFillRecord rec;
+      rec.orderId = orderId;
+      rec.side = dep.side;
+      rec.xfg = 0; rec.heat = 0; rec.feeHeat = 0;
+      rec.newlyExpired = true;
+      fillsThisBlock.push_back(rec);
     }
   }
 
@@ -4634,12 +4687,11 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
   // backstop below serves the unfilled remainder).
   if (block.majorVersion >= BLOCK_MAJOR_VERSION_11 && !g_orderbookIsInBootstrap) {
     std::vector<CryptoNote::AuctionOrder> auctionBids, auctionAsks;
-    for (const auto& kv : m_limitDeposits) {
-      const LimitDepositInfo& dep = kv.second;
-      if (dep.withdrawn || dep.expired || dep.amount == 0) continue;
-      if (dep.targetPrice == 0) continue;
+    for (const Crypto::Hash& orderId : m_restingLimitOrders) {
+      const LimitDepositInfo& dep = m_limitDeposits.at(orderId);
+      if (dep.amount == 0 || dep.targetPrice == 0) continue;
       CryptoNote::AuctionOrder o;
-      o.orderId = kv.first;
+      o.orderId = orderId;
       o.price = dep.targetPrice;
       o.createdHeight = dep.createdHeight;
       o.addressHash = dep.addressHash;
@@ -4797,9 +4849,9 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
           ((uint128_t)auctionMatchedVolume * parameters::HEARTH_BACKSTOP_MAX_BPS) / 100, UINT64_MAX)));
     }
 
-    for (auto& kv : m_limitDeposits) {
-      LimitDepositInfo& dep = kv.second;
-      if (dep.withdrawn || dep.expired || dep.targetPrice == 0 || backstopRemaining == 0) continue;
+    for (const Crypto::Hash& orderId : m_restingLimitOrders) {
+      LimitDepositInfo& dep = m_limitDeposits.at(orderId);
+      if (dep.targetPrice == 0 || backstopRemaining == 0) continue;
       const uint64_t spot = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
       if (spot == 0) continue;
 
@@ -4836,7 +4888,7 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
         dep.proceedsHeat += heatPaid;
 
         OrderFillRecord rec;
-        rec.orderId = kv.first;
+        rec.orderId = orderId;
         rec.side = 1;
         rec.xfg = fillXfg;
         rec.heat = grossHeat;
@@ -4888,7 +4940,7 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
         dep.proceedsXfg += netXfg;
 
         OrderFillRecord rec;
-        rec.orderId = kv.first;
+        rec.orderId = orderId;
         rec.side = 0;
         rec.xfg = netXfg + cdFeeXfg;
         rec.heat = heatCost;
@@ -6191,25 +6243,7 @@ bool CryptoNote::Blockchain::withdrawTreasuryLp(uint64_t sharesToBurn) {
   return true;
 }
 
-void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
-  if (m_blocks.empty()) {
-    logger(ERROR, BRIGHT_RED) <<
-      "Attempt to pop block from empty blockchain.";
-    return;
-  }
-
-  std::vector<Transaction> transactions(m_blocks.back().transactions.size() - 1);
-  for (size_t i = 0; i < m_blocks.back().transactions.size() - 1; ++i) {
-    transactions[i] = m_blocks.back().transactions[1 + i].tx;
-  }
-
-  uint32_t height = m_blocks.size(); //height of popped block should be same as number of blocks
-  saveTransactions(transactions, height);
-
-  uint32_t poppedHeight = m_blocks.back().height;
-  rollbackFciBlock(poppedHeight);
-  unrecordRemint(poppedHeight);
-
+void CryptoNote::Blockchain::reverseOrderFillsFor(uint32_t poppedHeight) {
   // Reverse OOB limit-order fills BEFORE reversing settlement. The push path
   // settles transactions first and executes fills second, so rollback must
   // undo fills first: this restores the pending escrow exactly when a deposit
@@ -6222,7 +6256,10 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
       const auto& rec = *it;
       auto depIt = m_limitDeposits.find(rec.orderId);
       if (rec.newlyExpired) {
-        if (depIt != m_limitDeposits.end()) depIt->second.expired = false;
+        if (depIt != m_limitDeposits.end()) {
+          depIt->second.expired = false;
+          indexLimitOrder(rec.orderId);
+        }
         continue;
       }
       if (rec.side == 1) {
@@ -6295,6 +6332,28 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
       << "popBlock: order-fill rollback records evicted before height "
       << poppedHeight << " — pool state may diverge (reorg deeper than rollback history)";
   }
+}
+
+void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
+  if (m_blocks.empty()) {
+    logger(ERROR, BRIGHT_RED) <<
+      "Attempt to pop block from empty blockchain.";
+    return;
+  }
+
+  std::vector<Transaction> transactions(m_blocks.back().transactions.size() - 1);
+  for (size_t i = 0; i < m_blocks.back().transactions.size() - 1; ++i) {
+    transactions[i] = m_blocks.back().transactions[1 + i].tx;
+  }
+
+  uint32_t height = m_blocks.size(); //height of popped block should be same as number of blocks
+  saveTransactions(transactions, height);
+
+  uint32_t poppedHeight = m_blocks.back().height;
+  rollbackFciBlock(poppedHeight);
+  unrecordRemint(poppedHeight);
+
+  reverseOrderFillsFor(poppedHeight);
 
   // Reverse this block's alias register/release/transfer mutations. Must
   // undo LIFO (applyAliasUndo's own contract) so a block that both
@@ -6642,18 +6701,6 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
           m_indexManager.transactionMap().erase(transactionHash);
         return false;
       }
-    } else if (inv.type() == typeid(TransactionInputCommitmentSpend)) {
-      if (have_tx_keyimg_as_spent(::boost::get<TransactionInputCommitmentSpend>(inv).keyImage)) {
-        logger(ERROR, BRIGHT_RED) << "Double spending commitment transaction was pushed to blockchain.";
-          m_indexManager.transactionMap().erase(transactionHash);
-        return false;
-      }
-    } else if (inv.type() == typeid(TransactionInputCommitmentTransfer)) {
-      if (have_tx_keyimg_as_spent(::boost::get<TransactionInputCommitmentTransfer>(inv).keyImage)) {
-        logger(ERROR, BRIGHT_RED) << "Double spending commitment transfer was pushed to blockchain.";
-          m_indexManager.transactionMap().erase(transactionHash);
-        return false;
-      }
     }
   }
 
@@ -6986,7 +7033,7 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
       }
 
       uint64_t authLpAddXfg = 0, authLpAddHeat = 0, authLpAddShares = 0;
-      uint64_t authLpRemoveShares = 0;
+      uint64_t authLpRemoveShares = 0, authLpRemoveXfg = 0, authLpRemoveHeat = 0;
       for (const auto& f : tx_extra_fields) {
         if (f.type() == typeid(TransactionExtraLpAddAuth)) {
           const auto& a = boost::get<TransactionExtraLpAddAuth>(f);
@@ -6995,7 +7042,10 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
           }
         }
         if (f.type() == typeid(TransactionExtraLpRemoveAuth)) {
-          authLpRemoveShares = boost::get<TransactionExtraLpRemoveAuth>(f).lpSharesBurned;
+          const auto& r = boost::get<TransactionExtraLpRemoveAuth>(f);
+          authLpRemoveShares = r.lpSharesBurned;
+          authLpRemoveXfg = r.minAmountXfg;
+          authLpRemoveHeat = r.minAmountHeat;
         }
       }
       // The RETIRED legacy LP tags (TransactionExtraAmmAddLiquidity /
@@ -7053,10 +7103,12 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
       // v11+ auth-only LP remove
       if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11 &&
           authLpRemoveShares > 0) {
-        uint64_t amountXfg = 0, amountHeat = 0;
+        uint64_t formulaXfg = 0, formulaHeat = 0;
         ammGetWithdrawalAmounts(authLpRemoveShares, m_ammPool.totalLpShares,
-          m_ammPool.reserveXfg, m_ammPool.reserveHeat, amountXfg, amountHeat);
-        if (amountXfg == 0 || amountHeat == 0 ||
+          m_ammPool.reserveXfg, m_ammPool.reserveHeat, formulaXfg, formulaHeat);
+        const uint64_t amountXfg = authLpRemoveXfg;
+        const uint64_t amountHeat = authLpRemoveHeat;
+        if (formulaXfg < amountXfg || formulaHeat < amountHeat ||
             m_ammPool.reserveXfg < amountXfg || m_ammPool.reserveHeat < amountHeat ||
             m_ammPool.totalLpShares < authLpRemoveShares) {
           logger(ERROR, BRIGHT_RED) << "LP remove settlement: invariant violation";
@@ -7100,6 +7152,7 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
             dep.addressHash, false};
           m_limitDeposits[dep.orderId].depositedAmount = dep.amount;
           m_limitDeposits[dep.orderId].createdHeight = block.height;
+          indexLimitOrder(dep.orderId);
         } else if (field.type() == typeid(TransactionExtraTreasuryFund)) {
           const auto& fund = boost::get<TransactionExtraTreasuryFund>(field);
           if (fund.asset == 0) {
@@ -7124,6 +7177,7 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
           auto depIt = m_limitDeposits.find(cancel.orderId);
           if (depIt != m_limitDeposits.end() && !depIt->second.withdrawn) {
             depIt->second.expired = true;
+            indexLimitOrder(cancel.orderId);
           }
         } else if (field.type() == typeid(TransactionExtraLimitWithdraw)) {
           const auto& wd = boost::get<TransactionExtraLimitWithdraw>(field);
@@ -7155,6 +7209,7 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
             depIt->second.withdrawnAmount = depIt->second.amount;
             depIt->second.withdrawn = true;
             depIt->second.withdrawnHeight = block.height;
+            indexLimitOrder(wd.orderId);
             g_orderbookMempool.cancelOrder(wd.orderId);
           }
         }
@@ -7552,9 +7607,8 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
             amountHeat = m_blockLpRemoveAmounts.back().second.back().second;
             m_blockLpRemoveAmounts.back().second.pop_back();
           } else {
-            ammGetWithdrawalAmounts(std::min(a.lpSharesBurned, m_ammPool.totalLpShares),
-              m_ammPool.totalLpShares, m_ammPool.reserveXfg, m_ammPool.reserveHeat,
-              amountXfg, amountHeat);
+            amountXfg = a.minAmountXfg;
+            amountHeat = a.minAmountHeat;
           }
           m_ammPool.totalLpShares += a.lpSharesBurned;
           m_ammPool.reserveHeat += amountHeat;
@@ -7583,9 +7637,14 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
             m_ammPool.pendingHeat -= deposited;
         }
         m_limitDeposits.erase(dep.orderId);
+        indexLimitOrder(dep.orderId);
       } else if (field.type() == typeid(TransactionExtraOrderCancel)) {
-        auto depIt = m_limitDeposits.find(boost::get<TransactionExtraOrderCancel>(field).orderId);
-        if (depIt != m_limitDeposits.end()) depIt->second.expired = false;
+        const Crypto::Hash& orderId = boost::get<TransactionExtraOrderCancel>(field).orderId;
+        auto depIt = m_limitDeposits.find(orderId);
+        if (depIt != m_limitDeposits.end()) {
+          depIt->second.expired = false;
+          indexLimitOrder(orderId);
+        }
       } else if (field.type() == typeid(TransactionExtraLimitWithdraw)) {
         const auto& wd = boost::get<TransactionExtraLimitWithdraw>(field);
         auto depIt = m_limitDeposits.find(wd.orderId);
@@ -7609,6 +7668,7 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
           depIt->second.withdrawnAmount = 0;
           depIt->second.withdrawn = false;
           depIt->second.withdrawnHeight = 0;
+          indexLimitOrder(wd.orderId);
         }
       }
     }
@@ -7622,12 +7682,6 @@ void CryptoNote::Blockchain::popTransactions(const BlockEntry& block, const Cryp
   }
 
   popTransaction(block.bl.baseTransaction, minerTransactionHash, block.height, block.bl.majorVersion);
-  
-  // Clean index manager outputs after popping transactions to prevent phantom index persistence
-  m_indexManager.outputs().clear();
-  m_indexManager.multisigOutputs().clear();
-  m_indexManager.commitmentOutputs().clear();
-  m_indexManager.swapEscrowOutputs().clear();
 }
 
   bool CryptoNote::Blockchain::validateSwapEscrowInput(const TransactionInputSwapEscrow &input, const Crypto::Hash &transactionHash, const Crypto::Hash &transactionPrefixHash, const std::vector<Crypto::Signature> &transactionSignatures) {
@@ -8316,8 +8370,8 @@ bool CryptoNote::Blockchain::validateSettlement(const Transaction& tx, uint32_t 
     ammGetWithdrawalAmounts(a.lpSharesBurned, m_ammPool.totalLpShares,
                             m_ammPool.reserveXfg, m_ammPool.reserveHeat, lpRemoveXfg, lpRemoveHeat);
     flows.lpSink = a.lpSharesBurned;
-    flows.xfgSource = lpRemoveXfg;
-    flows.heatSource = lpRemoveHeat;
+    flows.xfgSource = a.minAmountXfg;
+    flows.heatSource = a.minAmountHeat;
   } else if (kind == typeid(TransactionExtraTreasuryFund)) {
     const auto& f = boost::get<TransactionExtraTreasuryFund>(*tag);
     if (f.amount == 0 || f.asset > 1) {
@@ -8622,7 +8676,11 @@ bool CryptoNote::Blockchain::validateSettlement(const Transaction& tx, uint32_t 
       return false;
     }
     if (lpRemoveXfg < a.minAmountXfg || lpRemoveHeat < a.minAmountHeat) {
-      error = "LP remove: payout below the declared minimum";
+      error = "LP remove: declared payout exceeds what the shares withdraw";
+      return false;
+    }
+    if (a.minAmountXfg == 0 && a.minAmountHeat == 0) {
+      error = "LP remove: no declared payout";
       return false;
     }
   } else if (kind == typeid(TransactionExtraTreasuryFund)) {

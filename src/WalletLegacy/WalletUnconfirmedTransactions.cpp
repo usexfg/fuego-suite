@@ -21,6 +21,7 @@
 #include "CryptoNoteCore/CryptoNoteTools.h"
 #include "Serialization/ISerializer.h"
 #include "Serialization/SerializationOverloads.h"
+#include <iterator>
 
 using namespace Crypto;
 
@@ -111,6 +112,7 @@ bool WalletUnconfirmedTransactions::eraseDepositSpendingTransaction(const Crypto
 void WalletUnconfirmedTransactions::add(const Transaction& tx, TransactionId transactionId, 
   uint64_t amount, const std::vector<TransactionOutputInformation>& usedOutputs) {
 
+  releaseReservedOutputs(transactionId);
   UnconfirmedTransferDetails& utd = m_unconfirmedTxs[getObjectHash(tx)];
 
   utd.amount = amount;
@@ -200,7 +202,21 @@ uint64_t WalletUnconfirmedTransactions::countUnconfirmedTransactionsAmount() con
 }
 
 bool WalletUnconfirmedTransactions::isUsed(const TransactionOutputInformation& out) const {
-  return m_usedOutputs.find(getOutputId(out)) != m_usedOutputs.end();
+  const TransactionOutputId id = getOutputId(out);
+  return m_usedOutputs.count(id) != 0 || m_reservedOutputs.count(id) != 0;
+}
+
+void WalletUnconfirmedTransactions::reserveOutputs(TransactionId transactionId,
+                                                   const std::vector<TransactionOutputInformation>& outputs) {
+  for (const auto& out : outputs) {
+    m_reservedOutputs[getOutputId(out)] = transactionId;
+  }
+}
+
+void WalletUnconfirmedTransactions::releaseReservedOutputs(TransactionId transactionId) {
+  for (auto it = m_reservedOutputs.begin(); it != m_reservedOutputs.end();) {
+    it = it->second == transactionId ? m_reservedOutputs.erase(it) : std::next(it);
+  }
 }
 
 void WalletUnconfirmedTransactions::collectUsedOutputs() {
@@ -214,6 +230,7 @@ void WalletUnconfirmedTransactions::collectUsedOutputs() {
 void WalletUnconfirmedTransactions::reset() {
   m_unconfirmedTxs.clear();
   m_usedOutputs.clear();
+  m_reservedOutputs.clear();
 }
 
 void WalletUnconfirmedTransactions::deleteUsedOutputs(const std::vector<TransactionOutputId>& usedOutputs) {

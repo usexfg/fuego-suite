@@ -4,7 +4,7 @@
 
 **Goal:** Make a HEAT spend valid and private on mainnet, and replace the CD interest claim with an exit that does not identify the CD, while yield still comes only from fees.
 
-**Architecture:** Phase 0 implements option R1, the owner's choice for v11. Phase 2A implements option A, the owner's choice for v12 CDs. Phases 1 and 2 keep the full option lists for later decisions. Part 3 states what each option does to public supply auditing.
+**Architecture:** Phase 0 implements option R1, the owner's choice for v11. Phase V11 adds the v11 network, transaction-shape and wallet privacy tasks. Phase 2A implements option A, the owner's choice for v12 CDs. Phase 3 lists the v12 privacy tasks: Tor/I2P, R2, R3, the post-quantum note pool and private HEAT transfers. Phases 1 and 2 keep the full option lists. Part 3 states what each option does to public supply auditing.
 
 **Tech Stack:** C++17, CMake/Make, existing binaries `core_tests`, `test_hearth_amm`.
 
@@ -29,6 +29,16 @@
 3. A pre-v11 commitment output with a known key is rejected as a HEAT input, in any ring.
 4. A wallet restored from seed finds the bills a matured CD paid out (Phase 2, option A).
 5. A reorg across a block that paid out CDs restores vault balances exactly.
+
+## Order of work (2026-11-17)
+
+1. Owner decisions that block v11: readiness plan D1, D3 and D5 (defaults set, unconfirmed); P-15 to P-17 and P-21 below.
+2. Owner lifts the implementation hold. `CHANGELOG.agent.md` sections for the readiness plan, R1 and Phase V11.
+3. Reproductions, all expected to fail on current code: readiness plan Task 0, R1 Task 1, and the reproductions in Tasks V11-2 and V11-3.
+4. Task V11-1 (Dandelion++) in parallel. It changes relay behaviour only, not consensus.
+5. Readiness plan Phases A–F (Phase F: DIGM, Tasks 19–20); R1 Tasks 2–10; Tasks V11-2 to V11-5; then V11-7 after readiness Tasks 5–7.
+6. Gates on the reset testnet: R1 Task 11, Task V11-6, readiness plan Task 18.
+7. In parallel from step 2: note-pool plan Tasks N0-2 (specification) and N0-3 (benchmark). Their results decide whether the pool and private HEAT can ship in v12.
 
 ---
 
@@ -89,7 +99,7 @@ R1 is the owner's choice for v11 (2026-11-13). When this phase is done, a HEAT s
 | R1-d | An LP output (`term == DEPOSIT_TERM_LP`) has an amount in `LP_BILL_DENOMINATIONS`. An LP-class commitment spend has exactly `HEAT_RING_SIZE` (16) distinct members, each an LP output of the same amount, from a block of version 11 or later, at least `HEAT_SPEND_MIN_AGE` blocks old. An LP add declares `lpShares` as a multiple of `LP_BILL_UNIT`, no more than the shares its deposit buys; its LP outputs are bills summing to `lpShares`. Value the floor leaves behind stays in the reserves and accrues to all LPs. |
 | R1-e | `DEPOSIT_TERM_SWAP_RECEIVE_XFG` outputs are rejected. A swap pays XFG as ordinary key outputs. |
 | R1-f | `TransactionInputCommitmentTransfer` is rejected. |
-| R1-g | HEAT that a transaction takes from a consensus-computed source is floored to `HEAT_BILL_UNIT` (0.1 HEAT). Limit-order dust is credited to `reserveHeat`; LP-removal dust is never debited from the reserves. |
+| R1-g | HEAT that a transaction takes from a consensus-computed source is a whole number of `HEAT_BILL_UNIT` (0.1 HEAT) steps. Limit orders fill only in whole steps (Task V11-7), so their refunds and proceeds have no HEAT dust. LP removal pays the HEAT below a step as XFG at the pool spot price (rule WS-f). |
 
 Each rule lives in one function that both block validation and the mempool call. Blocks below version 11 validate exactly as before.
 
@@ -167,14 +177,13 @@ Cost to know: a commitment output serializes about 330 bytes, of which 288 are t
 **Files:** `src/CryptoNoteCore/Blockchain.cpp` — `validateSettlement` limit-withdraw branch (8095-8110) and LP-remove branch (8116-8126); the connect paths for both in `pushTransaction` (LP remove near 6825, limit withdraw near 6950); their inverses in `popTransaction`; `Blockchain.h` (`LimitDepositInfo`).
 
 **Interfaces (produced):**
-- `LimitDepositInfo::forfeitedHeat` (serialized with the struct): the dust credited to reserves when the order was withdrawn.
-- `void lpRemovalPayout(uint64_t shares, const AmmPoolState& pool, uint64_t& xfg, uint64_t& heat);` — `ammGetWithdrawalAmounts` with `heat` floored to the unit. `validateSettlement` and the connect path both call it.
+- `void lpRemovalPayout(uint64_t shares, const AmmPoolState& pool, uint64_t& xfg, uint64_t& heat);` — `ammGetWithdrawalAmounts` with `heat` floored to whole steps and the HEAT below the step added to `xfg` at the pool spot price (rule WS-f). `validateSettlement` and the connect path both call it.
 
-- [ ] Limit withdraw: the HEAT owed is `proceedsHeat` (sell order) or the remaining `amount` (buy order). `flows.heatSource = floorToHeatBillUnit(owed)`. At connect, `reserveHeat += owed - floorToHeatBillUnit(owed)` and the same value is stored in `forfeitedHeat`. `popTransaction` subtracts it and clears the field.
-- [ ] LP remove: both sites use `lpRemovalPayout`; reserves are debited by the floored HEAT.
+- [ ] Limit withdraw: the HEAT owed is `proceedsHeat` (sell order) or the remaining `amount` (buy order). Under Task V11-7 both are whole steps, so `flows.heatSource = owed`; a non-step amount is a consensus defect and rejects the block.
+- [ ] LP remove: both sites use `lpRemovalPayout`; reserves are debited by the HEAT paid and by the XFG paid, including the sub-step HEAT paid as XFG.
 - [ ] LP add: `m_lpCommitmentShares` / `m_lpCommitTxGidx` (`Blockchain.cpp:6865-6871`, inverse at `:7347-7350`) record only the first LP output of a transaction. An output's amount now is its share count, so both maps are retired and removed from the block-state serializer (`:416`). Testnet reset covers the format change.
-- [ ] No rule is added for declared amounts (mint `heatMinted`, swap amounts, limit-deposit escrow, LP-add HEAT, treasury-fund HEAT). With bill inputs and bill outputs, exact HEAT balance already forces each to a multiple of the unit; test this instead of coding it.
-- [ ] Tests: `LimitWithdrawPaysBillsAndCreditsDustToReserves`, `PopRestoresReservesAfterDustCredit`, `LpRemovePaysBillSumAndLeavesDustInReserves`, `MintOfNonUnitHeatFailsBalance`, `SwapWithNonUnitHeatOutputFailsBalance`, and `heatInExistence` (readiness plan Task 0) unchanged across each.
+- [ ] No rule is added for declared amounts (mint `heatMinted`, swap amounts, limit-deposit escrow, LP-add HEAT, treasury-fund HEAT). With HEAT bills on both sides, exact HEAT balance already forces each to a multiple of the unit; test this instead of coding it.
+- [ ] Tests: `LimitWithdrawPaysWholeSteps`, `NonStepLimitProceedsRejectBlock`, `LpRemovePaysSubStepHeatAsXfg`, `PopRestoresLpRemovalPayout`, `MintOfNonUnitHeatFailsBalance`, `SwapWithNonUnitHeatOutputFailsBalance`, and `heatInExistence` (readiness plan Task 0) unchanged across each.
 - [ ] Mutation, checkpoint.
 
 ### Task 7: Decoy RPC returns only eligible members (H-2, H-5)
@@ -189,6 +198,8 @@ Cost to know: a commitment output serializes about 330 bytes, of which 288 are t
 - [ ] The request gains `uint8_t ring_class` (0 = HEAT, 1 = LP). The picker builds its candidate list with `isEligibleHeatRingMember` or `isEligibleLpRingMember` at `tipHeight + 1` and samples from that list with the existing triangular bias toward recent outputs. If the list holds no more than `count` entries it returns all of them.
 - [ ] Tests: `DecoyRpcReturnsOnlyEligibleOutputs`; `DecoyRpcLpClassReturnsOnlyLpBills`; `DecoyRpcCoversWholeEligibleRange` (over 1,000 calls, entries both older and newer than the median output appear).
 - [ ] Mutation: sample from all outputs of the amount; `DecoyRpcReturnsOnlyEligibleOutputs` must fail. Checkpoint.
+
+Superseded in part by Task V11-5: decoys are picked by the wallet, and this task's eligibility filter moves into `/get_output_distribution`. Build Task 7's eligibility rules; do not build the node-side picker.
 
 Limit to know: the triangular bias is a guess. The right distribution is the chain's own spend-age distribution, which cannot be measured before HEAT has traffic. Re-fit it after launch. A remote node also learns which bill denomination a wallet is about to spend.
 
@@ -245,6 +256,155 @@ Feeds the readiness plan's Task 18. Each line is an observation on live nodes us
 
 ---
 
+## Phase V11 — v11 privacy tasks (owner, 2026-11-17)
+
+These tasks close the leaks used most in practice against chains with public amounts. None needs new cryptography. V11-1 changes relay behaviour only. V11-2 and V11-3 add consensus rules at version 11. V11-4 and V11-5 are wallet and RPC work.
+
+Facts read on 2026-11-17 (code-read, not executed):
+- No code path that originates a transaction, swap offer or order sets `dandelion_stem`. Every node floods its own messages to all peers on the first hop (`CHANGELOG.agent.md`, section "Investigate order deanonymization"; `docs/V11_LAUNCH_READINESS.md` item 1.10).
+- XFG rings: minimum 8 members from version 10 (`MIN_TX_MIXIN_SIZE_V10`), maximum 33. The minimum is checked only when `!keeped_by_block` (`Core.cpp:307`), so a block may carry an XFG spend with a ring of one. This is the XFG form of H-4.
+- XFG amounts are split 1–9 × 10^k by wallets only. The coinbase uses powers of ten down to 0.0001 XFG. Consensus enforces no denomination.
+- `MINIMUM_FEE` is 0.0008 XFG (`CryptoNoteConfig.h:64`).
+- Wallet RPC lets a sender set any `unlockTime` (`WalletGreen.cpp:4138`). Payment IDs in `TX_EXTRA_NONCE` are built by `WalletRpcServer.cpp` and `PoolRpcServer.cpp`. Message (0x04) and TTL (0x05) tags exist.
+- XFG decoys are chosen by the node (`Blockchain::getRandomOutsByAmount`, `Blockchain.cpp:2269-2310`), not by the wallet.
+
+### Task V11-1: Dandelion++ origination
+
+**Files:** `src/Rpc/RpcServer.cpp` (transaction submission, near 1697); `src/InProcessNode/InProcessNode.cpp` (near 385); `src/CryptoNoteCore/SwapOfferRelay.cpp` (offers 350-381, orders 911-996); `src/CryptoNoteProtocol/CryptoNoteProtocolHandler.cpp` (402-426, 944-960, 1204-1217); `src/P2p/P2pProtocolDefinitions.h` (332, 495); existing `DandelionStemTest.cpp`.
+
+- [ ] Every `dandelion_stem` field gets a default initializer of `false` or `0`. `COMMAND_ORDER_OPEN::request` has none today, so a default-constructed message would serialize stack bytes.
+- [ ] Locally originated transactions and swap offers set the stem flag and go to `externalRelayNotifyToStem`. No message struct gains a field: Levin parsing is positional, and a new field breaks peers that have not upgraded.
+- [ ] Order messages: the gossiped order book is retired (AGENTS.md). If no live path still sends these messages, delete their relay code. Otherwise route them the same way.
+- [ ] The embargo (`DANDELION_EMBARGO_SECONDS = 30`) fluffs any stem message the node has not seen fluffed in time. A dead or hostile successor then delays a message by at most the embargo and never drops it.
+- [ ] Tests: `LocalTransactionStartsInStem`, `LocalSwapOfferStartsInStem`, `StemMessageFluffsAfterEmbargoWhenSuccessorDrops`, `DefaultConstructedMessagesSerializeZeroStem`.
+- [ ] Gate on the reset testnet: at least 12 nodes and one spy node connected to all of them. Over 200 transactions, record how often the spy's first-seen peer is the originator. Target below 20% (decision P-17).
+
+Limit: a wallet that uses a remote node hands its transaction straight to that node. Dandelion hides the node's IP, not the wallet's. Wallets need their own node or Task V12-1.
+
+### Task V11-2: XFG bills and fixed rings
+
+Rules at version 11:
+
+| # | Rule |
+|---|---|
+| X-a | A non-coinbase key output has an amount in `XFG_BILL_DENOMINATIONS`: 1 and 5 × 10^k atomic units, from 0.0001 XFG to 1,000,000 XFG. These are the 21 sizes of the note pool, so v11 bills later cross the bridge one for one. |
+| X-b | Every `KeyInput` has exactly `XFG_RING_SIZE` (16) distinct members. Each member is an unlocked key output of the input's amount and at least `HEAT_SPEND_MIN_AGE` blocks old (coinbase outputs: `minedMoneyUnlockWindow`). When fewer than 16 eligible outputs of that amount exist, the ring holds all of them. Checked in blocks as well as the mempool. |
+| X-c | The coinbase pays the largest bill sum not above reward plus `m_rewardDustCarry`. The remainder becomes the new carry (block cache and undo record). This moves note-pool Task N6-1 forward to v11. |
+| X-d | The fee is at least `MINIMUM_FEE` (0.0008 XFG, unchanged) and a multiple of 0.0001 XFG. |
+| X-e | XFG a transaction takes from a consensus-computed source (limit proceeds, LP removal, swap output) is floored to 0.0001 XFG, and the dust stays in `reserveXfg`. Consensus-computed charges paid in XFG (CD creation fee, alias fees) are rounded up to 0.0001 XFG. |
+
+Legacy outputs of any amount stay spendable as inputs under X-b.
+
+**Files:** `src/CryptoNoteCore/Core.cpp:297-350` (the `KeyInput` rule moves into `Blockchain::checkTransactionInputs` so blocks and mempool share it); `Blockchain.cpp` (`check_tx_outputs`, the `KeyInput` branch near 2771, `getRandomOutsByAmount`, `validate_miner_transaction`, block-cache serializer, `popBlock`); `Currency.cpp` (`constructMinerTx`); `CryptoNoteFormatUtils.h:119-175`; every wallet builder that creates key outputs.
+
+**Interfaces (produced),** in the Task 2 file, renamed `RingRules.{h,cpp}`:
+- `const uint64_t XFG_BILL_UNIT = 1000;` `const uint64_t XFG_RING_SIZE = 16;` `const std::vector<uint64_t> XFG_BILL_DENOMINATIONS;`
+- `bool isXfgBill(uint64_t amount);` `uint64_t floorToXfgBillUnit(uint64_t amount);` `std::vector<uint64_t> splitIntoXfgBills(uint64_t amount);`
+- `bool Blockchain::isEligibleXfgRingMember(uint64_t amount, uint32_t globalIndex, uint32_t spendHeight) const;`
+- `size_t Blockchain::eligibleXfgCount(uint64_t amount, uint32_t spendHeight) const;`
+
+- [ ] Reproductions first, expected to fail: `XfgRingOfOneInBlockAccepted`, `NonBillXfgOutputAcceptedAtV11`.
+- [ ] Tests: `XfgRingOfOneInBlockRejected`, `XfgRingOfFifteenRejectedWhenSixteenExist`, `XfgRareAmountRingMustHoldAllEligible`, `NonBillXfgOutputRejectedAtV11`, `LegacyDigitOutputStillSpendable`, `CoinbasePaysBillsAndCarriesDust`, `PopBlockRestoresRewardDustCarry`, `FeeBelowOrOffUnitRejected`, `LimitWithdrawXfgDustStaysInReserves`.
+- [ ] Mutation: restore the `!keeped_by_block` exemption; `XfgRingOfOneInBlockRejected` must fail. Checkpoint.
+
+Costs to accept:
+- Two more sizes (0.0001 and 0.0005 XFG) than a 0.001 XFG floor would give, each with its own thin ring set at first (decision P-14). The minimum fee stays 0.0008 XFG.
+- Payments need more outputs: 7 XFG becomes 5 + 1 + 1.
+- A legacy amount with few outputs on chain gives a small ring. The wallet should spend such outputs early, into bills.
+- A rare large bill (1,000,000 XFG) has small rings until many exist. XFG takes the small ring rather than refusing the spend, because refusing would lock legacy funds.
+
+### Task V11-3: One transaction shape
+
+Rules at version 11 (consensus, unless marked otherwise):
+
+| # | Rule |
+|---|---|
+| T-a | A non-coinbase transaction has `unlockTime == 0`. Before adding the rule, list every builder and reader of `unlockTime` and confirm none is a protocol lock: CD terms, limit expiry and swap timeouts use their own fields. |
+| T-b | `extra` holds exactly one transaction public key, then only the tags allowed for the transaction's action, each at most once, in ascending tag order, with no padding. `TX_EXTRA_NONCE` (payment IDs) is rejected (decision P-15). |
+| T-c | Message (0x04) and TTL (0x05) tags: decision P-16. |
+| T-d | Wallet: at least two outputs. When there is no change, the wallet splits a recipient bill so the count is still two or more. Outputs are shuffled, and every wallet uses one transaction version. |
+| T-e | Relay: the fee is the minimum fee per started KB, rounded up to 0.0001 XFG, times a priority level of 1, 4 or 20. The mempool does not relay other fees. |
+
+**Files:** `src/CryptoNoteCore/Blockchain.cpp` (a new `checkTransactionShape`, called from block validation and the mempool); `TransactionExtra.cpp` (`parseTransactionExtra`); `TransactionPool.cpp` (fee); `src/Wallet/WalletGreen.cpp:4138`; `WalletRpcServer.cpp`; `PoolRpcServer.cpp`; `src/CryptoNoteCore/Transaction.cpp`; SimpleWallet.
+
+- [ ] Reproductions first, expected to fail: `NonZeroUnlockTimeAcceptedAtV11`, `PaymentIdNonceAcceptedAtV11`.
+- [ ] Tests: `NonZeroUnlockTimeRejectedAtV11`, `ExtraWithNonceRejectedAtV11`, `ExtraOutOfOrderRejected`, `ExtraDuplicateTagRejected`, `ExtraPaddingRejected`, `WalletNeverBuildsSingleOutput`, `ChangePositionIsUniform`, `NonStandardFeeNotRelayed`.
+- [ ] Mutation: for each rule, remove it; its test must fail. Checkpoint.
+
+Cost to accept: rejecting payment IDs breaks integrated addresses and the exchange deposit flows that use them. Exchanges must move to subaddresses before the fork, and the change must be announced ahead of the fork height.
+
+### Task V11-4: Wallet input handling
+
+**Files:** `src/Wallet/WalletGreen.cpp` (`selectTransfers` and its callers at 1216, 1484, 1588, 1709, 1829, 3906); `src/WalletLegacy/WalletTransactionSender.cpp`; TUI and SimpleWallet prompts.
+
+- [ ] Input selection takes inputs from the fewest receiving transactions and never combines outputs received on different subaddress accounts.
+- [ ] When a payment needs inputs from several sources, the wallet offers to pay in several transactions at random intervals, and asks for confirmation before merging.
+- [ ] The wallet shows a linkability warning when a spend uses protocol proceeds (mint, withdraw, swap, LP removal) within `PROTOCOL_FOLLOWUP_WARN_BLOCKS` (proposed 20) of receiving them.
+- [ ] Tests: `SelectionPrefersSingleSource`, `SubaddressAccountsNeverMerged`, `MergeNeedsConfirmation`, `QuickFollowUpWarns`. Checkpoint.
+
+Limit: these are wallet defaults. Nothing stops another wallet from merging inputs.
+
+### Task V11-5: Decoys chosen by the wallet
+
+**Files:** `src/CryptoNoteCore/Blockchain.cpp:2233-2422`; `src/Rpc/RpcServer.cpp`, `CoreRpcServerCommandsDefinitions.h`; `include/INode.h`, `NodeRpcProxy`, `InProcessNode`; `WalletGreen.cpp` (`requestMixinOuts`, `prepareHeatSpends`); WalletLegacy.
+
+- [ ] New open RPC `/get_output_distribution`: for an XFG amount, or for a bill and ring class of commitment outputs, the cumulative count of eligible outputs by height.
+- [ ] New open RPC `/get_outs_by_index`: the outputs at a list of global indexes for one amount and class.
+- [ ] The wallet picks decoys itself. It samples an age from a gamma distribution over log output age (the method of Möser et al., "An Empirical Analysis of Traceability in the Monero Blockchain", PoPETs 2018), maps the age to an index through the distribution, drops ineligible picks, and repeats until it has 15. It then requests all 16 indexes in shuffled order. The node never chooses decoys and never learns which index is real.
+- [ ] R1 Task 7's node-side picker is replaced by this. Its eligibility filter moves into `/get_output_distribution`.
+- [ ] `getrandom_outs.bin` and `getrandom_outs_json` are removed at v11.
+- [ ] Re-fit the parameters to Fuego's own spend ages once a year of v11 traffic exists.
+- [ ] Tests: `WalletDecoyAgesFollowDistribution`, `NodeRequestDoesNotRevealRealIndex` (request sets are identically distributed whatever the real member's position), `IneligibleIndexesNeverChosen`, `DistributionRpcMatchesChainState`. Checkpoint.
+
+Limit: the gamma parameters were fitted to Monero's spend behaviour, not Fuego's.
+
+### Task V11-7: Whole-step HEAT fills
+
+The smallest HEAT bill stays 0.1 HEAT, and DIGM is not minted until a later release (owner, 2026-11-18 and 2026-11-19). So nothing smaller than 0.1 HEAT can be paid at v11. Rather than forfeit a remainder, Hearth fills users only in whole 0.1 HEAT steps and leaves the rest of an order unfilled and refundable. Depends on readiness plan Tasks 5–7 (auction application, pool as maker, band pricing), which change the same code.
+
+Rules at version 11:
+
+| # | Rule |
+|---|---|
+| WS-a | After the call auction finds its clearing price `P*` and matched volume, the matched HEAT volume is floored to whole steps of `HEAT_BILL_UNIT` and allocated to user orders in whole steps, in the existing priority (price, then order id; user orders before pool orders at the same price). Pool orders (`0xF0`) take any atomic remainder. A user selling XFG gives `ceil(steps × HEAT_BILL_UNIT × COIN / P*)` atomic XFG; a user buying XFG receives `floor(...)`. The difference, at most one atomic unit per fill, goes to `reserveXfg`. |
+| WS-b | A taker that receives HEAT pays its fee in XFG. A taker that pays HEAT pays its fee in HEAT, inside its whole steps. The CD share of an XFG fee is exchanged for HEAT against the pool at `P*` and credited to `cdHearthFeeAccumulator`. The maker share is paid in the fee's asset. |
+| WS-c | The AMM backstop fills user leftovers against the curve in whole HEAT steps. Its XFG leg comes from `ammCostToTake`, rounded in the pool's favour by at most one atomic unit. |
+| WS-d | An order whose remaining escrow is worth less than one step at `P*` does not fill in that block. It rests until it fills, expires or is withdrawn, and is then refunded in full. |
+| WS-e | HEAT escrow refunds and HEAT proceeds are whole steps by WS-a, so no HEAT dust exists. XFG refunds and proceeds are paid as XFG bills; the part below 0.0001 XFG stays in `reserveXfg` (rule X-e). |
+| WS-f | LP removal pays the HEAT leg in whole steps. The HEAT below the step is paid as XFG at the pool spot price; XFG below 0.0001 XFG stays in the reserves. |
+
+Example at the launch price (8 XFG per HEAT): a sell of 0.5 XFG cannot fill, because one step costs 0.8 XFG; it expires and refunds 0.5 XFG. A sell of 2 XFG fills 2 steps (0.2 HEAT) for 1.6 XFG plus a 0.016 XFG fee, and 0.384 XFG stays in the order.
+
+Before coding: read how `OrderbookAuction.cpp` and `validateSettlement` charge the taker fee today, and record it in the changelog. WS-b changes the fee's asset for takers that receive HEAT.
+
+**Files:** `src/CryptoNoteCore/OrderbookAuction.{h,cpp}` (allocation); `src/CryptoNoteCore/Blockchain.cpp` (auction application, backstop, fee routing, `validateSettlement` limit-withdraw and LP-remove branches, their connect and pop paths); `src/CryptoNoteCore/AmmPool.cpp` (`ammCostToTake` rounding); `src/Wallet/WalletGreen.cpp`; `src/SimpleWallet/SimpleWallet.cpp` (`place_order`); TUI swap and order entry.
+
+**Interfaces (produced):**
+- `uint64_t wholeHeatSteps(uint64_t heatAtomic);` — the number of `HEAT_BILL_UNIT` steps in an amount.
+- `std::vector<UserFill> allocateWholeSteps(const AuctionResult& result, const std::vector<Order>& userOrders);` — WS-a.
+- `uint64_t minimumFillableXfg(uint64_t spotPrice);` — one step of HEAT at spot, plus the fee, rounded up to 0.0001 XFG. Used by wallets.
+
+- [ ] Reproduction first, expected to fail: `SmallSellOrderRefundsInFull` (a 0.5 XFG sell at the launch price ends with 0.5 XFG returned, nothing forfeited).
+- [ ] Wallet: shows the minimum fillable order and warns below it. Direct AMM swaps quote a whole-step HEAT output and an XFG input rounded up to 0.0001 XFG, and refuse a swap below one step.
+- [ ] Tests: `SmallSellOrderRefundsInFull`, `UserFillsAreWholeHeatSteps`, `AuctionConservesHeatAndXfgUnderStepAllocation`, `PoolOrdersAbsorbAtomicRemainder`, `TakerReceivingHeatPaysFeeInXfg`, `XfgFeeCdShareReachesAccumulatorAsHeat`, `BackstopFillsWholeSteps`, `BuyOrderRefundIsWholeSteps`, `LpRemovalPaysSubStepHeatAsXfg`, `PopRestoresStepAllocatedFills`, and `heatInExistence` unchanged across each.
+- [ ] Mutation: allocate user fills in atomic HEAT; `UserFillsAreWholeHeatSteps` must fail. Checkpoint.
+
+Costs to accept:
+- Nothing worth less than 0.1 HEAT trades at v11: about 0.8 XFG at launch. The minimum falls in XFG terms as XFG gains value against HEAT (0.001 XFG at 100 HEAT per XFG).
+- The fee's asset differs by side (WS-b), which adds an exchange step for the CD share of XFG fees.
+- Every rounding favours the protocol by at most one atomic unit per fill, or 0.0001 XFG per refund.
+- From the v12 pool on, hidden HEAT holds any atomic amount, and Hearth payouts into hidden notes need no whole steps.
+
+### Task V11-6: v11 privacy gate on the reset testnet
+
+- [ ] The Task V11-1 measurement is recorded and meets decision P-17.
+- [ ] Every v11 transaction on chain has rings of 16 (or every eligible output, for XFG), only bill outputs, `unlockTime` 0, canonical `extra` and a standard fee.
+- [ ] A hostile corpus is rejected by every node: a ring of one inside a mined block, a non-bill output, a payment-ID nonce, a non-zero unlock time, a DIGM output.
+- [ ] A 0.5 XFG limit sell expires and refunds 0.5 XFG; a 2 XFG sell fills two whole steps and refunds the rest.
+- [ ] Feeds readiness plan Task 18, beside Task 11. Sign off the changelog table.
+
+---
+
 ## Phase 1 — HEAT ring options
 
 Phase 0 is option R1. A ring cannot be larger than the number of eligible outputs that exist: at launch every option has thin sets, and no design changes that.
@@ -265,7 +425,7 @@ Notes:
 - **R4–R6** hide amounts; see Part 3.
 - Outside all of these: the node that first relays a transaction is a separate leak. The changelog records the Dandelion stem phase as disabled.
 
-**Chosen for v11:** R1, implemented by Phase 0. Recommended next: R2, as the consensus groundwork for R3. R4–R6 only after decision P-5.
+**Chosen for v11:** R1, implemented by Phase 0. R2 and R3 are targeted at v12 (Phase 3), subject to decision P-18. Hidden HEAT amounts are built inside the post-quantum pool (Phase 3, Task V12-5); R4 is the classical alternative under decision P-19.
 
 ---
 
@@ -525,6 +685,55 @@ Steps of `closeCdEpoch`, in this order, with `e` the epoch being closed:
 
 ---
 
+## Phase 3 — v12 privacy tasks (owner, 2026-11-17)
+
+Scope set by the owner: Tor/I2P transport, R2 batch rings, R3 log-size rings, the post-quantum note pool, and private HEAT amounts between wallets, all targeted at v12 alongside option A for CDs.
+
+Stated plainly:
+- This makes v12 the largest release in these plans by far. The pool alone is a new proof system, a new crate, a new transaction family, a new wallet key scheme and a bridge. Its benchmark gate (pool plan Task N0-3) and its audits set its date, not the version number. If its gates are not met, v12 ships without the pool and without private HEAT. The gates are never lowered to hold the date.
+- R2 and R3 are classical ring designs for legacy-format outputs. Once the pool is active, no legacy output can be created, so R2 and R3 protect only spends into the bridge. If the pool makes v12, most of the R2 work and all of the R3 work goes into a format that ends at migration. Recommended: build R2 only if the pool misses v12, and R3 only if the pool is abandoned (decision P-18).
+- Private HEAT amounts (Task V12-5) are built inside the pool and cannot ship without it, unless decision P-19 picks the classical route.
+
+### Task V12-1: Tor and I2P transport
+
+**Files:** `src/P2p/NetNode.{h,cpp}`, `NetNodeConfig.{h,cpp}`, `NetworkAddressTypes.{h,cpp}`; daemon options; `src/NodeRpcProxy/` (wallet-to-daemon connection).
+
+- [ ] Daemon option: send the node's own transactions and swap offers only through a SOCKS5 proxy to Tor or I2P peers. Option: accept inbound peers on an onion or I2P address.
+- [ ] Wallet option: reach its daemon through the proxy.
+- [ ] When the proxy fails, the node holds its own messages. It never falls back to clearnet.
+- [ ] Tests: `OwnTransactionsLeaveOnlyThroughProxy`, `ProxyFailureDoesNotFallBackToClearnet`, `OnionPeerAddressRoundTrips`. Checkpoint.
+
+Limit: opt-in. It protects only users who turn it on, which is why Task V11-1 ranks above it.
+
+### Task V12-2: R2 fixed batch rings (subject to P-18)
+
+- [ ] Rules as in Phase 1, note R2: bill outputs (XFG, HEAT, LP) are assigned to batches per 20-block window by a permutation seeded with the window's closing block hash. A batch holds 16 to 32 outputs, a short batch merges into the one before it, and the ring is the whole batch. An output is spendable once its batch closes.
+- [ ] Tests: `BatchMembershipFixedByClosingHash`, `ShortBatchMergesIntoPrevious`, `RingMustEqualBatch`, `OutputUnspendableBeforeBatchCloses`, `PopBlockRestoresBatches`. Mutation, checkpoint.
+
+Risk: a miner can grind the closing hash at the cost of block rewards.
+
+### Task V12-3: R3 log-size rings (subject to P-18)
+
+- [ ] A linkable ring signature of Triptych class over R2 batches enlarged to 1,024–4,096 members. Specification and independent audit before any consensus code.
+- [ ] Tests: soundness and linkability vectors; `KeyImageFromBatchMemberDetectsDoubleSpend`; verification-time bound per batch size.
+
+Cost: a new signature scheme to audit; verification time grows linearly with the batch. Monero studied this class and did not deploy it.
+
+### Task V12-4: Post-quantum note pool
+
+- [ ] Implemented by `docs/plans/2026-09-29-v11-pq-shielded-note-pool.md`, Phases N0–N10, targeted at v12. Tasks N0-2 and N0-3 start as soon as the hold is lifted.
+
+### Task V12-5: Private HEAT between wallets
+
+- [ ] Implemented by pool plan section 2.8: one hidden-amount HEAT class inside the pool. Amounts are hidden for transfers between wallets. HEAT entering or leaving a protocol action (mint, burn, Hearth, LP, CD) is public at that boundary. A turnstile counter keeps the hidden float from going negative.
+- [ ] A CD then pays out as one HEAT note of its exact value, with no sibling bills (pool plan Task N7-5).
+
+Why not classical hidden amounts (Pedersen commitments with Bulletproofs): their binding rests on discrete log. A quantum computer can open a commitment to a different amount and mint HEAT that no one can see. That conflicts with the post-quantum goal. They are faster to build and do not need the pool (decision P-19).
+
+What it costs: the integrity of hidden HEAT rests on the proof. The turnstile bounds a forgery to the hidden float, which may be most of the HEAT in existence, and reveals it only when exits would exceed the float.
+
+---
+
 ## Part 3 — Effect on public supply auditing
 
 | Options | Amounts | What "anyone can count the supply" becomes |
@@ -536,7 +745,7 @@ Steps of `closeCdEpoch`, in this order, with `e` the epoch being closed:
 - This codebase's unbacked-HEAT paths (readiness plan C2 and C3, and those recorded in the changelog) were found by reading public accounting. Under hidden amounts the same class of defect leaves no trace on chain.
 - Precedent: the Zcash Sprout counterfeiting flaw was found in 2018, fixed in Sapling and disclosed in 2019. Zcash later added a consensus rule that a shielded pool's total balance may never go negative.
 - If hidden amounts are adopted, the conservative shape is: XFG stays publicly countable; only HEAT is hidden; and a turnstile counter bounds every public sink (pool reserves, CD deposits, burns) so that HEAT arriving from hidden outputs can never exceed HEAT that entered them. A flaw is then limited to the hidden float and is detected when the counter would go negative.
-- XFG stays out of every shielded pool and every hidden-amount output (owner, 2026-11-14). The 2026-09-29 STARK design (`docs/plans/2026-09-29-v11-pq-shielded-note-pool.md`) puts XFG and HEAT in one pool; that part is rejected. That file was rewritten on 2026-11-15 as a post-quantum note pool with public bill amounts for XFG, HEAT and LP shares (XFG bills 1 and 5 × 10^k, 0.001 to 1,000,000 XFG); it is the path after v12. R6 and CD F as hidden-amount designs, if ever built, hold HEAT only.
+- XFG stays out of every shielded pool and every hidden-amount output (owner, 2026-11-14). The 2026-09-29 STARK design (`docs/plans/2026-09-29-v11-pq-shielded-note-pool.md`) puts XFG and HEAT in one pool; that part is rejected. That file was rewritten on 2026-11-15 as a post-quantum note pool with public bill amounts for XFG, HEAT and LP shares (XFG bills 1 and 5 × 10^k, 0.0001 to 1,000,000 XFG). On 2026-11-17 the owner targeted it at v12 and added hidden HEAT amounts between wallets inside it (Phase 3). R6 and CD F as hidden-amount designs, if ever built, hold HEAT only.
 
 ---
 
@@ -544,11 +753,11 @@ Steps of `closeCdEpoch`, in this order, with `e` the epoch being closed:
 
 | # | Decision | Status or default |
 |---|---|---|
-| P-1 | HEAT ring for v11 | Chosen 2026-11-13: R1 (Phase 0). R2 and R3 stay open for later |
+| P-1 | HEAT ring for v11 | Chosen 2026-11-13: R1 (Phase 0). R2 and R3 targeted at v12 (owner, 2026-11-17), subject to P-18 |
 | P-2 | Ring size | 16 |
 | P-3 | Spend-age floor | 10 blocks; coinbase outputs follow the 60-block mined-money window |
 | P-4 | CD exit for v12 | Chosen 2026-11-13: A (Phase 2A) |
-| P-5 | Hidden amounts | Never for XFG (owner, 2026-11-14). For HEAT only after R3 and A are live, with a turnstile |
+| P-5 | Hidden amounts | Never for XFG (owner, 2026-11-14; confirmed 2026-11-19 after review of hiding XFG everywhere except at public pools, which would make the XFG supply count depend on the proof). HEAT transfers between wallets hidden at v12, inside the post-quantum pool, with a turnstile (owner, 2026-11-17) |
 | P-6 | Pre-v11 commitment outputs | Closed 2026-11-13: the owner states mainnet holds none. R1-b keeps any pre-v11 output out of HEAT rings regardless |
 | P-7 | CD principal | One public output per CD, a multiple of 0.1 HEAT, at most 5,000 HEAT. Not a bill: under A it is never in a ring |
 | P-8 | Accrual | Per-epoch index: compounding, and solvent by construction. Alternative: keep per-epoch rates with simple interest on principal |
@@ -557,3 +766,11 @@ Steps of `closeCdEpoch`, in this order, with `e` the epoch being closed:
 | P-11 | Payout capacity | 128 bills per block; the head CD is always paid |
 | P-12 | Fees collected before any CD exists | Carry. Nothing is released for the first 6 epochs after v12; then one seventy-second of the starting carry per epoch. No cap on the resulting rate (owner, 2026-11-13). Alternative: all of it to the first epoch's depositors |
 | P-13 | LP share spends | Chosen 2026-11-14: LP bills, {1, 5} × 10^k shares, rings of 16 (R1-d). Hides the add-to-remove link; position size at add stays public |
+| P-14 | Smallest XFG bill at v11 | Chosen 2026-11-18: 0.0001 XFG, matching `DEFAULT_DUST_THRESHOLD` and the smallest coinbase piece. The minimum fee stays 0.0008 XFG |
+| P-15 | Payment IDs at v11 | Default: rejected. Exchanges move to subaddresses before the fork |
+| P-16 | Message (0x04) and TTL (0x05) tags | Open. Keeping them marks every transaction that uses them. Rejecting them removes the feature. A fixed-size message slot in every transaction hides use and costs bytes on every transaction |
+| P-17 | Dandelion gate | Default: the spy node identifies the originator in under 20% of 200 testnet transactions |
+| P-18 | R2 and R3 when the pool targets v12 | Recommended: R2 only if the pool misses v12; R3 only if the pool is abandoned |
+| P-20 | Amounts below 0.1 HEAT at v11 | Chosen 2026-11-19: whole-step fills (Task V11-7). Smallest HEAT bill stays 0.1 HEAT. DIGM is not minted at v11 and is not used for small change |
+| P-21 | Fee asset under whole-step fills | Default: a taker receiving HEAT pays in XFG, a taker paying HEAT pays in HEAT (rule WS-b) |
+| P-19 | How private HEAT is built | Default: inside the post-quantum pool (needs the pool). Alternative: classical Pedersen commitments and Bulletproofs, faster to build, but a quantum computer can inflate HEAT unseen |

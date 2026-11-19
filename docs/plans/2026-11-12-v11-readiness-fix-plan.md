@@ -47,7 +47,7 @@
 ### Task 0: Changelog entry and failing reproductions
 
 **Files:**
-- Modify: `CHANGELOG.agent.md` (new section "v11 readiness fixes", tasks 0–18, sign-off table)
+- Modify: `CHANGELOG.agent.md` (new section "v11 readiness fixes", tasks 0–20, sign-off table)
 - Modify: `tests/CoreTests/TreasuryCoreTests.cpp`, `tests/CoreTests/HearthAmmTests.cpp`, `tests/CoreTests/OrderbookAuctionTest.cpp`, `src/SwapDaemon/tests/test_swap_escrow_claim.cpp`
 
 **Interfaces:**
@@ -64,7 +64,10 @@
   - `RebuildAndLiveAgreeOnMintPrice` (C5): three epochs past v11; compare the mint price on a live chain, a cache-reloaded chain and a `rebuildCache` chain.
   - `SwapFeeIsChainDerived` (C3): assert no public method lets a test raise `m_currentEpochSwapFees` without a block.
   - `EscrowSpendRejectsForeignKeyImage` (C6): escrow claim carrying a key image other than its derivation is rejected by `checkTransactionInputs`.
-- [ ] **Step 3:** Run `make -j$(nproc)` then each binary. Expected: the six tests FAIL, all earlier tests PASS. A test that passes here falsifies its finding: stop, record it in the changelog, and drop the matching task.
+  - `DigmOutputCannotBeSpentAsHeat` (C7): a 1 DIGM output (10^7 atomic) spent in a ring of DIGM outputs into HEAT outputs of 1 HEAT is rejected. Today `classifyCommitmentTermAsset` returns HEAT for `DIGM_TERM`, so it is valued at ten times its peg.
+  - `DigmMintWithXfgInputRejectedAtV11` (C8): a DIGM mint funded by an XFG commitment input is rejected at v11. Today the mint is gated only from v12, and `DigmMintEngine::validateMint` counts every commitment input as HEAT.
+  - `DigmOutputWithoutMintRejectedAtV11` (M7): a transaction that creates a DIGM output with no mint is rejected at v11. Today `check_tx_outputs` accepts `DIGM_TERM` (`Blockchain.cpp:3295`).
+- [ ] **Step 3:** Run `make -j$(nproc)` then each binary. Expected: the nine tests FAIL, all earlier tests PASS. A test that passes here falsifies its finding: stop, record it in the changelog, and drop the matching task.
 - [ ] **Step 4:** Checkpoint.
 
 ---
@@ -362,7 +365,37 @@ Each line is a pass/fail observation on live nodes, two of which are restarted m
 - [ ] Restart a node inside an epoch with resting orders; it stays on chain for 200 blocks.
 - [ ] A 3-block reorg across an epoch boundary; all nodes converge on one state hash.
 - [ ] Two epochs past v11, mints validate identically on a live, a restarted and a resynced node.
+- [ ] A DIGM output cannot be spent as HEAT, and no DIGM output is accepted at v11 (Tasks 19–20).
 - [ ] Record results in `docs/RELEASE_READINESS_CHECK.md`; sign off the changelog table.
+
+---
+
+## Phase F — DIGM (C7, C8, M7)
+
+Findings, code-read on 2026-11-18, not executed:
+- C7: `classifyCommitmentTermAsset` (`AssetType.cpp`) returns HEAT for `DIGM_TERM`. A DIGM output is valued at its atomic amount as HEAT, so 1 DIGM counts as 1 HEAT against a peg of 0.1 HEAT. A ring of DIGM outputs passes the same-asset check (`Blockchain.cpp:2885`) and is not caught by the all-`HEAT_TERM` rejection.
+- C8: `DigmMintEngine::validateMint` sums `spend.amount` over every `TransactionInputCommitmentSpend` as HEAT with no asset check, so XFG or LP inputs pay for nothing. The mint is rejected only from v12 (`Blockchain.cpp:3937`, and again near 4031), so v11 blocks still admit it.
+- M7: `check_tx_outputs` accepts `DIGM_TERM` outputs at v11 (`Blockchain.cpp:3295`) whether or not the transaction is a mint.
+
+### Task 19: DIGM is its own asset (C7)
+
+**Files:** `src/CryptoNoteCore/AssetType.h`, `AssetType.cpp`; `src/CryptoNoteCore/Blockchain.cpp` (`checkCommitmentSpendInput` near 2885, `checkCommitmentTransferInput` near 3200, input classification near 7961-7990, `validateSettlement`, block-cache serializer, `popTransaction`); `Blockchain.h`.
+
+**Interfaces (produced):** `AssetType::Digm`; `classifyCommitmentTermAsset(DIGM_TERM)` returns it.
+
+- [ ] `validateSettlement` balances DIGM as its own asset. DIGM and HEAT do not exchange at v11; DIGM's later release (owner, 2026-11-19: DIGM is not minted until much later) designs its mint, backing and exchange.
+- [ ] Tests: `DigmOutputCannotBeSpentAsHeat`, `MixedHeatDigmRingRejected`, `DigmBalanceIsSeparateFromHeat`.
+- [ ] Mutation: map `DIGM_TERM` back to HEAT; `DigmOutputCannotBeSpentAsHeat` must fail. Checkpoint.
+
+### Task 20: No DIGM creation outside an authenticated path from v11 (C8, M7)
+
+**Files:** `src/CryptoNoteCore/Blockchain.cpp` (both mint gates, `check_tx_outputs`); `src/CryptoNoteCore/DigmMintEngine.{h,cpp}`; `Core.cpp` and `TransactionPool.cpp` (mempool path).
+
+- [ ] Keep one mint gate, called by block validation and the mempool, at `BLOCK_MAJOR_VERSION_11`. v11 is not active on mainnet, and the testnet reset (Task 17) covers already-mined testnet blocks.
+- [ ] At v11, `check_tx_outputs` rejects every `DIGM_TERM` output. DIGM creation returns only with DIGM's own release.
+- [ ] `DigmMintEngine::validateMint` is deleted. When DIGM is released, its mint is priced in `validateSettlement` from resolved inputs, not from summed `spend.amount`.
+- [ ] Tests: `DigmMintWithXfgInputRejectedAtV11`, `DigmOutputWithoutMintRejectedAtV11`, `MempoolAndBlockAgreeOnDigm`.
+- [ ] Mutation: move the gate back to v12; `DigmMintWithXfgInputRejectedAtV11` must fail. Checkpoint.
 
 ## Not in this plan
 

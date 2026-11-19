@@ -2,25 +2,27 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** design, rewritten 2026-11-15. It replaces the 2026-09-29 text of this file. Nothing here is implemented. No audit, benchmark or network upgrade is claimed.
+**Status:** design, rewritten 2026-11-15, amended 2026-11-17 (target v12; hidden HEAT amounts between wallets). It replaces the 2026-09-29 text of this file. Nothing here is implemented. No audit, benchmark or network upgrade is claimed.
 
-**Goal:** Give XFG, HEAT and LP shares a spend path that a quantum computer cannot forge or trace, while every amount stays public and the supply stays countable by anyone.
+**Goal:** Give XFG, HEAT and LP shares a spend path that a quantum computer cannot forge or trace. XFG and LP amounts stay public. HEAT amounts are hidden for transfers between wallets and public wherever HEAT meets a protocol action. Supply stays countable by anyone.
 
-**Architecture:** Value is held as notes of fixed bill sizes. Each bill size of each asset has its own append-only hash tree. A spend publishes a nullifier and a hash-based proof that it owns some unspent leaf of one tree; it does not say which. Amounts never enter the proof: consensus adds up public bill sizes in the clear. Protocol state (pool reserves, vaults, CD totals, AuntPoL) stays public consensus state.
+**Architecture:** Value is held as notes of fixed bill sizes. Each bill size of each asset has its own append-only hash tree. A spend publishes a nullifier and a hash-based proof that it owns some unspent leaf of one tree; it does not say which. XFG and LP amounts never enter the proof: consensus adds up public bill sizes in the clear. HEAT notes carry a hidden value, and the proof shows HEAT balance against public amounts entering and leaving hidden HEAT (section 2.8). Protocol state (pool reserves, vaults, CD totals, AuntPoL) stays public consensus state.
 
 **Tech Stack:** C++17 daemon and wallets; one new Rust crate (`fuego-notepool/`) for hashing, note encryption, prover and verifier, linked through a C ABI as `fuego-swapd-adaptor/` is today; ML-KEM-768 ([NIST FIPS 203](https://csrc.nist.gov/pubs/fips/203/final)) for note delivery; a STARK ([original paper](https://eprint.iacr.org/2018/046)) for the spend proof.
 
 **Spec (owner decisions):**
 - 2026-11-14: XFG never enters a hidden-amount pool. The one-pool, hidden-amount design of 2026-09-29 is rejected.
 - 2026-11-14: option A for XFG — a post-quantum pool with public amounts.
-- 2026-11-15: bill sizes are 1 and 5 × 10^k. Fall back to 1, 2, 5 × 10^k only if the benchmark in Task N0-3 shows per-input proving cost dominates.
+- 2026-11-15: bill sizes are 1 and 5 × 10^k. 2026-11-18: the smallest XFG bill is 0.0001 XFG. Fall back to 1, 2, 5 × 10^k only if the benchmark in Task N0-3 shows per-input proving cost dominates.
+- 2026-11-19: XFG amounts stay public, confirmed after review of hiding them everywhere except at public pools.
+- 2026-11-17: the pool is targeted at v12. HEAT transfers between wallets hide their amounts inside the pool, with a turnstile (section 2.8). XFG and LP stay public bills.
 
-**Companion plans:** `docs/plans/2026-11-12-v11-readiness-fix-plan.md` (v11 blockers) and `docs/plans/2026-11-13-heat-cd-privacy-plan.md` (R1 rings for v11, option A for v12 CDs). Both land first. This pool is a later version.
+**Companion plans:** `docs/plans/2026-11-12-v11-readiness-fix-plan.md` (v11 blockers) and `docs/plans/2026-11-13-heat-cd-privacy-plan.md` (R1 rings for v11, option A for v12 CDs). Both land first. This pool is targeted at v12 (privacy plan Phase 3, Tasks V12-4 and V12-5). Its gates, not the version number, set its date: if they are not met, v12 ships without it.
 
 ## Global Constraints
 
-- Every amount on chain is public. No commitment, range proof or encrypted amount exists in this design.
-- Consensus checks value balance in the clear. No proof is trusted for an amount.
+- Every XFG and LP amount on chain is public. HEAT amounts are hidden only inside HEAT notes, and are public at every protocol boundary.
+- Consensus checks XFG and LP balance in the clear. HEAT balance across hidden notes rests on the proof, bounded by the turnstile of section 2.8. No proof is trusted for an XFG or LP amount.
 - No elliptic-curve assumption appears in note ownership, note delivery, the spend proof or the final verifier.
 - Yield comes only from fees paid. Nothing in this plan changes fee routing, mint pricing or CD rules.
 - `CHANGELOG.agent.md` entry before any source edit. No commit or push without the owner's go-ahead.
@@ -35,6 +37,7 @@
 4. A view-only wallet sees incoming notes and its own spends, and cannot spend.
 5. A reorg restores every tree, root history, nullifier set and class counter exactly.
 6. A legacy output credited through the bridge can never also be spent under the legacy rules.
+7. No `HEAT_HIDDEN` transaction balances unless constraints 6–8 hold, and `hiddenHeatFloat` can never go negative.
 
 ---
 
@@ -42,13 +45,13 @@
 
 | Topic | 2026-09-29 | This plan |
 |---|---|---|
-| Amounts | Hidden inside the proof | Public bills; balance checked in the clear |
+| Amounts | Hidden inside the proof | XFG and LP: public bills, balance checked in the clear. HEAT: hidden between wallets, public at protocol boundaries, turnstile |
 | Asset type | Hidden | Public |
 | Supply audit | Depends on proof soundness | Arithmetic over public counters; independent of the proof |
 | Proof statement | Membership, ownership, nullifier, value conservation, range, per-asset balance, policy | Membership, ownership, nullifier only |
 | Trees | One | One per bill class |
 | Hearth, CDs, vaults | Open question: private or public state | Public state, decided |
-| Release | "v11 design" | A later version; v11 and v12 ship on rings first |
+| Release | "v11 design" | Targeted at v12; v11 ships on rings |
 | Legacy commitment key fix (P0) | Urgent, open | `deriveCommitmentOutputKey` in `TransactionExtra.cpp` now binds the recipient spend key. Verify against `docs/developer/v11-p0-commitment-keys-and-asset-accounting-guide.md` before bridge work (Task N9-1) |
 
 `docs/developer/v11-pq-shielded-stark-implementation-guide.md` and `docs/plans/PQ_PHASES_2_3_DEV_GUIDE.md` describe the hidden-amount design. They are historical once this plan is accepted; Task N0-1 marks them so.
@@ -63,14 +66,14 @@ A bill class is one (asset, size) pair. It has an id, a tree and two counters.
 
 | Asset | Sizes | Classes | Smallest | Largest |
 |---|---|---|---|---|
-| XFG | 1, 5 × 10^k | 19 | 0.001 XFG (10^4 atomic) | 1,000,000 XFG |
-| HEAT | `HEAT_BILL_DENOMINATIONS` (already 1, 5 × 10^k) | 8 | 0.1 HEAT | 500 HEAT |
+| XFG | 1, 5 × 10^k | 21 | 0.0001 XFG (10^3 atomic) | 1,000,000 XFG |
+| HEAT | One hidden-amount class, `HEAT_HIDDEN` (section 2.8) | 1 | 1 atomic unit | 2^64 − 1 atomic units |
 | LP shares | `LP_BILL_DENOMINATIONS` (privacy plan R1-d) | 14 | 10^5 shares | 5 × 10^11 shares |
 
 - Max supply is about 8.0M XFG; a larger holding is several 1,000,000 bills.
-- Today's minimum fee is below 0.001 XFG. With bill inputs and bill outputs a fee is a multiple of 0.001 XFG, so the pool's minimum fee becomes 0.001 XFG (decision N-6).
-- A block reward is not a bill sum. The coinbase pays the largest bill sum not above the reward; the remainder below 0.001 XFG is carried in consensus state to the next block's reward (Task N6-1).
-- The R1 HEAT bills and LP bills of v11 have the same sizes as these classes. That is why R1 enforces them: they cross the bridge one for one.
+- With bill inputs and bill outputs a fee is a multiple of 0.0001 XFG. Today's minimum fee, 0.0008 XFG, already is one, so it stays (decision N-6).
+- A block reward is not a bill sum. The coinbase pays the largest bill sum not above the reward; the remainder below 0.0001 XFG is carried in consensus state to the next block's reward (Task N6-1).
+- The v11 XFG bills (privacy plan Task V11-2) and LP bills have the same sizes as these classes, so they cross the bridge one for one. R1 HEAT bills enter `HEAT_HIDDEN` as notes of their public value.
 
 ### 2.2 Notes and keys
 
@@ -109,7 +112,7 @@ The prover knows `sk`, `d`, `rho`, `position` and a Merkle path, and proves:
 4. The path from `cm` at `position` reaches the public root.
 5. `nf = H("fuego-np-nf" ‖ nk ‖ classId ‖ position ‖ cm)`.
 
-`sighash` is absorbed into the proof transcript, so the proof also authorizes the transaction; no separate signature exists. One proof covers all inputs of a transaction. There is no amount, range or balance constraint: that is the whole statement.
+`sighash` is absorbed into the proof transcript, so the proof also authorizes the transaction; no separate signature exists. One proof covers all inputs of a transaction. For XFG and LP there is no amount, range or balance constraint: that is the whole statement. A transaction with HEAT notes adds constraints 6–8 of section 2.8.
 
 ### 2.4 Transaction format
 
@@ -136,7 +139,8 @@ A proof verifies against any root within the last `NOTE_ANCHOR_DEPTH` blocks (pr
 
 | Item | Why it is public |
 |---|---|
-| Every note's asset and size, at creation and at spend | Balance is checked in the clear |
+| Every XFG and LP note's size, at creation and at spend; the asset of every note | XFG and LP balance is checked in the clear |
+| HEAT amounts entering or leaving hidden notes | Protocol actions move public totals (reserves, CDs, burns) |
 | Pool reserves, total LP shares | Pricing and LP payouts are checked by every node |
 | Total HEAT in CDs; each CD's size and term | Yield is fees divided by the total on deposit |
 | `CD_APY_POOL`, Bonus Vault, fee inflows | Payouts must never exceed the vault |
@@ -146,12 +150,33 @@ Hidden: which leaf a spend consumes, who owns any note, and the link between a p
 
 ### 2.7 What an observer still learns
 
-- The size of every bill spent and created, and the transaction's bill count. A payment's total is visible.
+- The size of every XFG and LP bill spent and created, and the transaction's note count. An XFG payment's total is visible. A HEAT payment between wallets shows no amount.
 - Bills spent together in one transaction belong to one owner.
 - Timing. A bill class with few leaves hides little; at launch every class is thin, and no design changes that.
 - The node that first relays a transaction. The changelog records the Dandelion stem phase as disabled.
 - A wallet that asks a remote node for a Merkle path names its note. Wallets must build class trees from block data themselves, or download whole subtree ranges (Task N8-3).
 - Hearth tags, limit-order ids, CD outputs and LP adds are public actions. The pool hides which notes paid for them and which notes their proceeds become, not the actions.
+
+### 2.8 Hidden HEAT amounts (owner, 2026-11-17)
+
+HEAT transfers between wallets hide their amounts. XFG and LP shares stay public bills.
+
+- One class, `HEAT_HIDDEN`, replaces the eight HEAT bill classes. Its notes carry a 64-bit value inside the commitment: `cm = H("fuego-np-cm" ‖ classId ‖ ownerTag_d ‖ value ‖ rho)`. Binding rests on the hash, not on discrete log, so a quantum computer cannot open a note to another value.
+- The anonymity set of a HEAT spend is every HEAT note, not one bill size.
+- Values are atomic HEAT. No bill unit applies inside the class, so the whole-step limit of v11 (privacy plan Task V11-7) does not apply inside the pool.
+- Each transaction carries two public fields: `heatPublicIn`, the public HEAT entering hidden notes (mint output, Hearth or limit proceeds, LP removal, CD payout, R1 bills crossing the bridge), and `heatPublicOut`, the hidden HEAT leaving to a public sink (burn, Hearth input, limit deposit, LP add, CD deposit, treasury). Every protocol boundary keeps a public amount, as today.
+- Consensus-created HEAT notes (CD payouts, mint outputs) have a value public at creation. It is hidden once spent, because a spend does not name its leaf. A CD pays out as one note of its exact value, with no sibling bills.
+- Turnstile: consensus keeps `hiddenHeatFloat = Σ heatPublicIn − Σ heatPublicOut` and rejects a block that would make it negative. Public HEAT supply stays public mints minus public burns. The hidden float is the part of it whose integrity rests on the proof.
+
+Statement additions (section 2.3) for a transaction with HEAT inputs or outputs:
+6. Each HEAT input value and output value is below 2^64 (bit decomposition).
+7. Each HEAT output commitment is computed in the proof from its value, owner tag and `rho`, so a sender cannot publish a commitment to a value it did not prove.
+8. Σ HEAT input values + `heatPublicIn` = Σ HEAT output values + `heatPublicOut`.
+
+What it costs:
+- Measures F-2 and F-3 bound a forgery per bill size. For `HEAT_HIDDEN` the bound is the whole hidden float, which may be most HEAT in existence. A forger who breaks the proof can take hidden HEAT out through Hearth for real XFG; it shows only when honest exits would push the float below zero. F-6 is therefore required for this class (decision N-11).
+- Proving cost rises by the range and sum constraints. Task N0-3 measures it.
+- A wallet's HEAT balance and the amounts it sends are hidden from observers, but not from anyone holding its incoming or full view key.
 
 ---
 
@@ -165,15 +190,16 @@ For each class, consensus keeps `created` and `spent`, and rejects a block in wh
 
 - A forged spend raises `spent` by one and creates outputs worth the same. The supply figure does not move.
 - What the forger takes is a place in the queue. The class now has more real notes than `created − spent` allows, and the last honest holders of that size are refused.
-- So a forgery here is theft from the holders of one bill size, bounded by that size's unspent float. It is never an increase in XFG or HEAT supply. Under hidden amounts the same flaw is unbounded and invisible; that is the difference this design buys.
+- So a forgery in an XFG or LP class is theft from the holders of one bill size, bounded by that size's unspent float. It never raises the public supply figure. Under hidden amounts without a turnstile the same flaw is unbounded and invisible.
+- In `HEAT_HIDDEN` the turnstile gives the same kind of bound, but over the whole hidden float, not one bill size (section 2.8).
 - Precedent for the class of flaw: the CryptoNote key-image flaw disclosed in 2017, which allowed outputs to be spent more than once on affected chains.
 
 ### 3.2 Measures, what each stops, what each costs
 
 | # | Measure | Stops | Cost | Status |
 |---|---|---|---|---|
-| F-1 | Balance outside the proof (2.4) | Every value-arithmetic forgery: overflow, negative value, wrong asset, unbalanced transaction. These are the flaws behind most known counterfeiting bugs | None | Core rule |
-| F-2 | One tree per class; `classId` in the leaf hash, the nullifier and the public inputs | A proof for a 0.001 bill presented as a 1,000,000 bill. The size is not a witness, so nothing in the proof can misstate it | 41 small trees | Core rule |
+| F-1 | Balance outside the proof (2.4) | Every value-arithmetic forgery in XFG and LP: overflow, negative value, wrong asset, unbalanced transaction. These are the flaws behind most known counterfeiting bugs. For `HEAT_HIDDEN` the balance is inside the proof; the turnstile bounds what a flaw can take | None | Core rule |
+| F-2 | One tree per class; `classId` in the leaf hash, the nullifier and the public inputs | A proof for a 0.0001 bill presented as a 1,000,000 bill. The size is not a witness, so nothing in the proof can misstate it. Does not apply to `HEAT_HIDDEN`, whose value is a witness | 36 trees | Core rule |
 | F-3 | Per-class counters with rejection at `spent > created` (3.1) | Inflation of supply. Caps theft at one class's float | Two integers per class | Core rule |
 | F-4 | One nullifier per leaf: `nk` bound in `ownerTag`, `position` and `cm` in the nullifier, duplicate `cm` rejected | Double-spending a real note by re-deriving a nullifier; duplicate-commitment attacks | None | Core rule |
 | F-5 | Leaves are appended only by consensus from accepted outputs; proofs verify only against stored recent roots | Membership in a tree the forger built | Root history | Core rule |
@@ -195,12 +221,13 @@ Stated plainly:
 
 | Path | In the pool | Publicly visible |
 |---|---|---|
-| XFG and HEAT payments | Notes in, notes out, public fee | Bill sizes and counts |
+| XFG payments | Notes in, notes out, public fee | Bill sizes and counts |
+| HEAT payments between wallets | Hidden HEAT notes in and out, public XFG fee | Note counts only |
 | Miner reward | Coinbase creates XFG notes to the miner's address; sub-bill remainder carried | Reward size, as today |
 | HEAT mint and burn | XFG notes in, burn and mint tag, HEAT notes out (and the reverse) | Amounts and price, as today |
 | Hearth swap, limit deposit and withdraw | Notes in; tag; reserves or escrow move as today; notes out | The action and its amounts. A limit withdraw names its order, so it links to its deposit |
 | LP add and remove | Asset notes in, LP notes out; LP notes in, asset notes out | Add and remove sizes. The pool replaces the ring of 16 with the whole LP class |
-| CDs (option A) | HEAT notes in, public CD output; at maturity consensus creates HEAT notes for the CD's `ownerTag`, with `rho = H("fuego-np-cd" ‖ cdId ‖ billIndex)` | CD size, term, yield and its payout notes. A CD needs its own diversifier |
+| CDs (option A) | Hidden HEAT notes in with a public `heatPublicOut`, public CD output; at maturity consensus creates one hidden HEAT note of the exact payout value for the CD's `ownerTag`, with `rho = H("fuego-np-cd" ‖ cdId)` | CD size, term, yield and its payout note's value at creation. A CD needs its own diversifier |
 | Vaults, AuntPoL, reserves | Not notes. Public balances in consensus state | Everything |
 | Atomic swaps | Escrow stays a public output with classical adaptor signatures; funded from notes, paid out to notes | The escrow. It is exposed to a quantum attacker for its lifetime, and the other chain's leg is outside this plan |
 | Aliases, DIGM, dev-fund fee | Paid from notes to a public address's notes | The payment size |
@@ -210,7 +237,7 @@ Stated plainly:
 ## Part 5 — Legacy outputs and the quantum timeline
 
 - Every legacy output (ed25519 key outputs, commitment outputs) is spent once through a bridge transaction: legacy inputs under their historical rules, note outputs, public amounts. From pool activation, no transaction may create a legacy output.
-- Legacy digit amounts are re-cut into bills at the bridge (7 XFG becomes 5 + 1 + 1). Anything below 0.001 XFG goes to the fee.
+- Legacy digit amounts are re-cut into bills at the bridge (7 XFG becomes 5 + 1 + 1). Anything below 0.0001 XFG goes to the fee.
 - A bridge transaction is as traceable as a legacy spend. Privacy starts with the first spend inside the pool.
 - Chain history already recorded with rings is traced by a quantum computer, whatever is done later. This cannot be repaired.
 - An unmigrated legacy output can be stolen once discrete logs can be solved. In CryptoNote the wallet seed is the spend secret itself, so no proof of an earlier hash preimage can rescue an owner afterwards (to confirm against the wallet's key derivation in Task N9-1). Migration before that day is the only protection.
@@ -236,9 +263,9 @@ Line numbers are not given where they were not read for this rewrite; locate eac
 - [ ] Independent review of the statement in 2.3 before any circuit code.
 
 **Task N0-3: Benchmark gate**
-- [ ] Implement the Task N3-1 circuit first, then measure: proving time and memory for 1, 4, 8 and 16 inputs on the reference phone and desktop; verification time on the reference node; proof size; the same with a second proof (F-6) and with each candidate hash.
+- [ ] Implement the Task N3-1 circuit first, then measure: proving time and memory for 1, 4, 8 and 16 inputs on the reference phone and desktop; verification time on the reference node; proof size; the same with a second proof (F-6), with each candidate hash, and with all inputs and outputs in `HEAT_HIDDEN` (constraints 6–8).
 - [ ] Record results in the spec. Gates (proposed; owner confirms, decision N-1): 16 inputs prove within 20 s on the reference phone; a transaction verifies within 50 ms; a 16-input transaction is at most 250 KB.
-- [ ] If per-input proving dominates and the phone gate fails: switch XFG to 1, 2, 5 × 10^k (28 classes) and re-measure. If it still fails, stop and report; do not weaken parameters to pass.
+- [ ] If per-input proving dominates and the phone gate fails: switch XFG to 1, 2, 5 × 10^k (31 classes) and re-measure. If it still fails, stop and report; do not weaken parameters to pass.
 
 ### Phase N1 — Shared definitions (C++)
 
@@ -248,12 +275,12 @@ Line numbers are not given where they were not read for this rewrite; locate eac
 
 **Interfaces (produced):**
 - `enum class NoteAsset : uint8_t { Xfg, Heat, Lp };`
-- `const std::vector<uint64_t> XFG_BILL_DENOMINATIONS;` — 19 sizes, atomic units, ascending.
+- `const std::vector<uint64_t> XFG_BILL_DENOMINATIONS;` — 21 sizes, atomic units, ascending.
 - `uint16_t noteClassId(NoteAsset asset, uint64_t size);` `bool noteClassOf(uint16_t classId, NoteAsset& asset, uint64_t& size);` — ids are assigned once in the spec and never reused.
 - `std::vector<uint64_t> splitIntoBills(NoteAsset asset, uint64_t amount);` `uint64_t floorToBillUnit(NoteAsset asset, uint64_t amount);`
 - `const uint32_t NOTE_TREE_DEPTH = 32;` `const uint32_t NOTE_ANCHOR_DEPTH = 100;` `const size_t NOTE_MAX_INPUTS = 16;` `const size_t NOTE_MAX_OUTPUTS = 32;`
 
-- [ ] Unit tests `tests/UnitTests/NotePoolRulesTests.cpp`: `ClassIdsAreUniqueAndStable`, `SplitReturnsOnlyBills`, `SplitSumsToInput`, `UnknownClassIdRejected`, `HeatAndLpClassesMatchR1Bills`.
+- [ ] Unit tests `tests/UnitTests/NotePoolRulesTests.cpp`: `ClassIdsAreUniqueAndStable`, `SplitReturnsOnlyBills`, `SplitSumsToInput`, `UnknownClassIdRejected`, `XfgAndLpClassesMatchV11Bills`, `HeatHiddenIsOneClass`.
 
 ### Phase N2 — Cryptography crate (Rust)
 
@@ -298,7 +325,7 @@ Line numbers are not given where they were not read for this rewrite; locate eac
 - [ ] Verification is deterministic and identical on every supported platform; a cross-platform vector suite runs in CI.
 
 **Task N3-2: One negative test per constraint**
-- [ ] For each of the five constraints in 2.3 and each public input: a witness or input that violates only that item, and a test that the proof fails or cannot be produced: `WrongSkRejected`, `WrongNkRejected`, `WrongDiversifierRejected`, `WrongRhoRejected`, `WrongPathRejected`, `WrongPositionRejected`, `WrongClassRejected`, `StaleRootRejected`, `ChangedSighashRejected`, `NullifierFromOtherLeafRejected`.
+- [ ] For each of the five constraints in 2.3 and each public input: a witness or input that violates only that item, and a test that the proof fails or cannot be produced: `WrongSkRejected`, `WrongNkRejected`, `WrongDiversifierRejected`, `WrongRhoRejected`, `WrongPathRejected`, `WrongPositionRejected`, `WrongClassRejected`, `StaleRootRejected`, `ChangedSighashRejected`, `NullifierFromOtherLeafRejected`; for `HEAT_HIDDEN`: `HeatValueAboveRangeRejected`, `HeatSumMismatchRejected`, `HeatOutputCommitmentWrongValueRejected`, `HeatPublicInOutChangedRejected`.
 - [ ] Mutation: remove each constraint from the circuit in turn; its test must fail. A constraint whose removal breaks no test is a defect in the test set.
 
 **Task N3-3: Second verifier, and second proof if chosen (F-7, F-6)**
@@ -334,7 +361,8 @@ uint64_t NotePoolState::unspentCount(uint16_t classId) const;
 - [ ] `spent > created` for any class rejects the block (F-3).
 - [ ] The commitment index used by `hasCommitment` is persisted; it cannot be rebuilt from the frontier.
 - [ ] Undo records are kept for `MAX_ROLLBACK_HISTORY` blocks. State rebuilt from genesis equals state loaded from cache.
-- [ ] Tests: `AppendChangesRootDeterministically`, `RootHistoryKeepsAnchorDepth`, `DuplicateCommitmentRejected`, `DuplicateNullifierRejected`, `SpentAboveCreatedRejectsBlock`, `PopBlockRestoresEveryClass`, `RebuildFromGenesisMatchesCache`.
+- [ ] `uint64_t hiddenHeatFloat` in the block cache and undo record; a block that would make it negative is rejected.
+- [ ] Tests: `HiddenHeatFloatNeverNegative`, `PopBlockRestoresHiddenHeatFloat`, `AppendChangesRootDeterministically`, `RootHistoryKeepsAnchorDepth`, `DuplicateCommitmentRejected`, `DuplicateNullifierRejected`, `SpentAboveCreatedRejectsBlock`, `PopBlockRestoresEveryClass`, `RebuildFromGenesisMatchesCache`.
 - [ ] Mutation: skip the counter check; `SpentAboveCreatedRejectsBlock` must fail.
 
 **Task N4-2: Supply identity**
@@ -364,7 +392,7 @@ Order of checks, cheapest first:
 3. No output commitment already in its class tree or repeated in the transaction.
 4. One anchor per input class, each an accepted root.
 5. Balance per asset in the clear, including Hearth and protocol flows, with 128-bit sums.
-6. Fee at least the minimum and a multiple of 0.001 XFG.
+6. Fee at least the minimum and a multiple of 0.0001 XFG.
 7. Both verifiers accept the proof (and the second proof, if F-6).
 
 - [ ] The mempool fee policy charges per input and per proof byte, set from the Task N0-3 measurements.
@@ -390,7 +418,7 @@ For each:
 - [ ] The tag and its consensus effect are unchanged. Only the value legs change from ring inputs and commitment or key outputs to note inputs and note outputs.
 - [ ] Consensus-computed payouts (limit proceeds, LP removal, CD payout) are floored to the bill unit; dust goes where the privacy plan's R1-g and A-e already send it.
 - [ ] Tests: the action confirms with notes on both sides; `heatInExistence` and `publicSupply` are unchanged across it except by its defined mint or burn; the action's reversal in `popBlock` restores trees, counters, reserves and vaults.
-- [ ] N7-5 only: a CD output carries an `ownerTag` and a KEM key from a diversifier used for that CD alone. Payout notes use the public `rho` of Part 4. Test `CdPayoutNotesAreSpendableOnlyByCdOwner` and `WalletRestoredFromSeedFindsCdPayoutNotes`.
+- [ ] N7-5 only: a CD output carries an `ownerTag` and a KEM key from a diversifier used for that CD alone. The payout is one `HEAT_HIDDEN` note of the exact payout value, with the public `rho` of Part 4. Test `CdPayoutNotesAreSpendableOnlyByCdOwner` and `WalletRestoredFromSeedFindsCdPayoutNotes`.
 
 ### Phase N8 — Wallets
 
@@ -456,7 +484,7 @@ For each:
 
 ## Part 7 — Recommendations and other points
 
-- **Order of work.** v11 with R1 rings and the readiness fixes, then v12 CDs under option A, then this pool. The pool needs nothing from v11 or v12 to be redone: their bills, public CD outputs and coinbase payouts were shaped to carry over.
+- **Order of work.** v11 with R1 rings, the v11 privacy tasks and the readiness fixes; then v12 with CDs under option A and, if its gates pass, this pool with hidden HEAT. The pool needs nothing from v11 or v12 to be redone: their bills, public CD outputs and coinbase payouts were shaped to carry over.
 - **Start now, in parallel:** Tasks N0-2 and N0-3. The benchmark decides the hash, the second proof and the XFG bill set; everything else waits on it.
 - **Do not claim more than is built.** Until the bridge is used, funds are classical. Wallets should show pool and classical balances separately.
 - **Network layer.** A post-quantum spend proof does not hide the sender's IP address. Restoring the Dandelion stem phase is separate work and matters as much for practical privacy.
@@ -465,7 +493,7 @@ For each:
 - **Chain growth.** Nullifiers and commitments are never pruned. Proofs can be pruned from old blocks once nodes trust a checkpoint; that policy is not designed here.
 - **Light wallets.** Scanning needs every transaction's two ciphertexts, about 2.2 KB each. A scanning service that holds a view key learns that wallet's incoming notes. There is no private light-wallet scan in this design.
 - **Hardware wallets.** Proving on a hardware device is not practical. The usual split applies: the device holds `sk` and authorizes; a host proves. That needs a statement where the host cannot spend on its own, which is extra design work not in this plan.
-- **Hidden amounts for HEAT** remain a separate, later option under privacy-plan decision P-5. Nothing here needs it, and adding it would bring back the supply risk for HEAT that this design removes.
+- **Hidden HEAT is the riskiest part of this plan.** The XFG and LP classes keep supply independent of the proof. `HEAT_HIDDEN` does not: a proof flaw lets a forger take up to the whole hidden float out through Hearth for real XFG, and it shows only when exits would exceed the float. That is why F-6 is required for this class (decision N-11).
 
 ## Decisions for the owner
 
@@ -476,11 +504,14 @@ For each:
 | N-3 | Second independent proof (F-6) | Recommended if N-1 still passes with it. Two verifiers (F-7) are the minimum either way |
 | N-4 | Generations (F-9) | Off at launch. Revisit when classes hold enough leaves that a generation is still a large set |
 | N-5 | Anchor depth | 100 blocks |
-| N-6 | Minimum fee | 0.001 XFG, the smallest bill; today's floor is lower |
+| N-6 | Minimum fee | 0.0008 XFG, today's floor; fees are multiples of the 0.0001 XFG bill (owner, 2026-11-18) |
 | N-7 | Freeze of unmigrated legacy outputs | Open. Bridge stays open until decided |
 | N-8 | Thin-class warning threshold | 1,000 leaves |
 | N-9 | XFG bill set | Chosen 2026-11-15: 1, 5 × 10^k. Fallback 1, 2, 5 × 10^k by benchmark only |
-| N-10 | Version number for the pool | Open; `BLOCK_MAJOR_VERSION_13` is marked deprecated in `CryptoNoteConfig.h` and should not be reused |
+| N-10 | Version number for the pool | Targeted at v12 (owner, 2026-11-17). If the pool activates after the v12 CD height, it needs its own number; `BLOCK_MAJOR_VERSION_13` is marked deprecated in `CryptoNoteConfig.h` and should not be reused |
+| N-11 | Second independent proof for `HEAT_HIDDEN` | Required (F-6), not optional: a flaw in this class is bounded only by the whole hidden float |
+| N-12 | LP notes | Public LP bills as written. Hidden LP amounts would add a second turnstile class; not proposed |
+| N-13 | DIGM in the pool | Open. DIGM is not minted until a later release; its pool path is designed with it |
 
 ## Verification status and references
 

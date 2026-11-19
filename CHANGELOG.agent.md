@@ -7586,3 +7586,20 @@ Open: walletd end to end; concurrent WalletLegacy sends can pick the same fee in
 | Mutation checks | DONE — every consensus, node and container rule above fails its test when reverted |
 | End to end | SimpleWallet DONE; walletd NOT DONE |
 | Signed | Claude, 2026-11-19 |
+
+## V11 production readiness plan
+
+**Agent**: Claude
+**Start date**: 2026-11-19
+**Plan**: owner instruction 2026-11-19 ("version eleven production ready first then twelve"); written as `docs/V11_LAUNCH_TODO.md`.
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `docs/V11_LAUNCH_TODO.md`: testnet v11 window (owner decision), live passes on both wallets, two-node reorg and resync, mainnet replay, concurrent WalletLegacy sends, release documents, CI, earlier blockers | Claude | 2026-11-19 | DONE |
+| 2 | CI: the Mintlify check failed on an unescaped `<` in `docs/PQ-MIGRATION-PLAN.md` (already on `master` since #69); escaped | Claude | 2026-11-19 | DONE |
+| 3 | `RELEASE_NOTES_V11.md`: testnet v11 activates at block 30, not 25 | Claude | 2026-11-19 | DONE |
+
+| Gate | Status |
+|------|--------|
+| Source changes | None (documents only) |
+| Signed | Claude, 2026-11-19 |

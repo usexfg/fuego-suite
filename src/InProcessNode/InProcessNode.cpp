@@ -1163,6 +1163,7 @@ std::error_code InProcessNode::getAmmPoolInfo(AmmPoolInfo& info) {
   info.reserveHeat = coreInfo.reserveHeat;
   info.spotPrice = coreInfo.spotPrice;
   info.totalLpShares = coreInfo.totalLpShares;
+  info.hearthTwap = core.getHearthTwap();
   return {};
 }
 } //namespace CryptoNote

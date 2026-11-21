@@ -44,6 +44,7 @@ bool WalletUnconfirmedTransactions::serialize(ISerializer& s) {
 
   if (s.type() == ISerializer::INPUT) {
     collectUsedOutputs();
+    stampSpentDepositsOnLoad();
   }
 
   return true;
@@ -154,12 +155,15 @@ void WalletUnconfirmedTransactions::addDepositSpendingTransaction(const Hash& tr
   m_spentDepositsRecordedAt[transactionHash] = time(nullptr);
 }
 
-// The saved file does not carry when a deposit spend was recorded; on load the
-// owner supplies each spending transaction's send time.
-void WalletUnconfirmedTransactions::stampSpentDeposits(const std::function<time_t(TransactionId)>& sentTimeOf) {
+// The saved file does not carry when a deposit spend was recorded. A commitment
+// spend's unconfirmed record, saved under the same hash, carries its send time; a
+// spend without one (legacy multisig withdraw) counts from the load.
+void WalletUnconfirmedTransactions::stampSpentDepositsOnLoad() {
+  const time_t loadTime = time(nullptr);
   m_spentDepositsRecordedAt.clear();
   for (const auto& kv : m_spentDeposits) {
-    m_spentDepositsRecordedAt[kv.first] = sentTimeOf(kv.second.transactionId);
+    const auto unconfirmed = m_unconfirmedTxs.find(kv.first);
+    m_spentDepositsRecordedAt[kv.first] = unconfirmed != m_unconfirmedTxs.end() ? unconfirmed->second.sentTime : loadTime;
   }
 }
 

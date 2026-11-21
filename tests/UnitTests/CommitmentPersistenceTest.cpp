@@ -239,7 +239,7 @@ TEST_F(CommitmentPersistence, CacheWithCommitmentsFromBeforeVersion4IsRefused) {
                                    olderContainerStream(current.str(), commitKey, 1)}) {
     std::stringstream stream(older);
     TransfersContainer restored(currency, kSpendableAge);
-    EXPECT_THROW(restored.load(stream), std::runtime_error);
+    EXPECT_THROW(restored.load(stream), TransfersCacheNeedsRescan);
   }
 }
 

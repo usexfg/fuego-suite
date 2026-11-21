@@ -101,11 +101,12 @@ public:
   void reset();
 
   std::vector<TransactionId> deleteOutdatedTransactions();
-  void stampSpentDeposits(const std::function<time_t(TransactionId)>& sentTimeOf);
+
 
 private:
 
   void collectUsedOutputs();
+  void stampSpentDepositsOnLoad();
 
   void deleteUsedOutputs(const std::vector<TransactionOutputId>& usedOutputs);
 

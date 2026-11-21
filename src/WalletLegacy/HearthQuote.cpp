@@ -64,15 +64,15 @@ LpRemovePayout quoteLpRemovePayout(INode& node, uint64_t lpShares) {
   return payout;
 }
 
-// The pool query surfaces a node or connection error that getHearthTwap, which
-// answers 0 on failure, would report as "no TWAP yet".
+// One pool query: a node or connection error is reported as such, never as
+// "no TWAP yet".
 HeatMintQuote quoteHeatMint(INode& node, uint64_t xfgBurned) {
   INode::AmmPoolInfo pool;
   const std::error_code ec = node.getAmmPoolInfo(pool);
   if (ec) {
     throw std::system_error(ec, "Hearth pool unavailable");
   }
-  return quoteHeatMintAt(node.getHearthTwap(), xfgBurned);
+  return quoteHeatMintAt(pool.hearthTwap, xfgBurned);
 }
 
 HeatMintQuote quoteHeatMintAt(uint64_t hearthTwap, uint64_t xfgBurned) {

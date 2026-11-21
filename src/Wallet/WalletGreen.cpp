@@ -2900,7 +2900,8 @@ namespace CryptoNote
     containerData.assign(decrypted.begin() + 32, decrypted.end());
   }
 
-  void WalletGreen::loadWalletCache(std::unordered_set<Crypto::PublicKey> &addedKeys, std::unordered_set<Crypto::PublicKey> &deletedKeys, std::string &extra)
+  void WalletGreen::loadWalletCache(std::unordered_set<Crypto::PublicKey> &addedKeys, std::unordered_set<Crypto::PublicKey> &deletedKeys, std::string &extra,
+                                    bool &transfersNeedRescan)
   {
     assert(m_containerStorage.isOpened());
 
@@ -2929,6 +2930,7 @@ namespace CryptoNote
     s.load(containerStream, reinterpret_cast<const ContainerStoragePrefix *>(m_containerStorage.prefix())->version);
     addedKeys = std::move(s.addedKeys());
     deletedKeys = std::move(s.deletedKeys());
+    transfersNeedRescan = s.transfersNeedRescan();
 
     m_logger(INFO) << "Container cache loaded";
   }
@@ -3148,12 +3150,15 @@ namespace CryptoNote
         {
           std::unordered_set<Crypto::PublicKey> addedSpendKeys;
           std::unordered_set<Crypto::PublicKey> deletedSpendKeys;
-          loadWalletCache(addedSpendKeys, deletedSpendKeys, extra);
+          bool transfersNeedRescan = false;
+          loadWalletCache(addedSpendKeys, deletedSpendKeys, extra, transfersNeedRescan);
           applySubaddressJanusPolicy();
 
-          if (!addedSpendKeys.empty())
+          if (!addedSpendKeys.empty() || transfersNeedRescan)
           {
-            m_logger(WARNING, BRIGHT_YELLOW) << "Found addresses not saved in container cache. Resynchronize container";
+            m_logger(WARNING, BRIGHT_YELLOW) << (transfersNeedRescan
+                ? "Transfers cache predates commitment spend tracking. Resynchronize container"
+                : "Found addresses not saved in container cache. Resynchronize container");
             clearCaches(false, true);
             subscribeWallets();
           }
@@ -3164,7 +3169,7 @@ namespace CryptoNote
             deleteOrphanTransactions(deletedSpendKeys);
           }
 
-          if (!addedSpendKeys.empty() || !deletedSpendKeys.empty())
+          if (!addedSpendKeys.empty() || !deletedSpendKeys.empty() || transfersNeedRescan)
           {
             saveWalletCache(m_containerStorage, m_key, WalletSaveLevel::SAVE_ALL, extra);
           }

@@ -16,6 +16,7 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "WalletSerializationV2.h"
+#include "Transfers/TransfersContainer.h"
 #include "IWallet.h"
 #include "CryptoNoteCore/CryptoNoteSerialization.h"
 #include "Serialization/BinaryInputStreamSerializer.h"
@@ -466,7 +467,13 @@ void WalletSerializerV2::loadTransfersSynchronizer(CryptoNote::ISerializer& seri
   serializer(transfersSynchronizerData, "transfersSynchronizer");
 
   std::stringstream stream(transfersSynchronizerData);
-  m_synchronizer.load(stream);
+  try {
+    m_synchronizer.load(stream);
+  } catch (const TransfersCacheNeedsRescan&) {
+    // The synchronizer rolled every subscription back to a fresh state; the rest
+    // of the wallet file still loads, and the owner resynchronizes.
+    m_transfersNeedRescan = true;
+  }
 }
 
 void WalletSerializerV2::saveTransfersSynchronizer(CryptoNote::ISerializer& serializer) {

@@ -148,6 +148,7 @@ public:
     uint64_t reserveHeat = 0;
     uint64_t spotPrice = 0; // FixedPoint64: reserveXfg / reserveHeat
     uint64_t totalLpShares = 0;
+    uint64_t hearthTwap = 0; // HEAT per XFG × COIN; 0 before the Hearth has a TWAP
   };
   virtual std::error_code getAmmPoolInfo(AmmPoolInfo& info) {
     return std::make_error_code(std::errc::not_supported);

@@ -5,9 +5,11 @@
 // WalletLegacy input reservation: a send holds the inputs it selected until it is
 // built, sent or fails, so sends started back to back never pick the same input.
 
+#include <chrono>
 #include <deque>
 #include <memory>
 #include <sstream>
+#include <thread>
 #include <vector>
 
 #include "gtest/gtest.h"
@@ -285,37 +287,58 @@ TEST(WalletCacheExpiry, DroppedDepositSpendReleasesItsDeposit) {
   EXPECT_EQ(0u, cache.countUnconfirmedSpentDepositsTotalAmount());
 }
 
-// A pending deposit spend expires from the time its transaction was sent, also
-// across a reload. It used to be re-stamped on every load, so a wallet restarted
-// more often than the live time never released the deposit.
-TEST(WalletCacheExpiry, ReloadedDepositSpendExpiresFromItsSendTime) {
-  const uint64_t liveTime = 60 * 60;
-  WalletUserTransactionsCache saved(liveTime);
-  Deposit deposit{};
-  deposit.amount = 1000;
-  deposit.spendingTransactionId = WALLET_LEGACY_INVALID_TRANSACTION_ID;
-  const DepositId depositId = saved.insertDeposit(deposit, 0, Crypto::Hash{});
-  const TransactionId withdraw = saved.addNewTransaction(0, 10, std::string(), {}, 0, {});
-  saved.getTransaction(withdraw).hash.data[0] = 7;
-  saved.getTransaction(withdraw).state = WalletLegacyTransactionState::Active;
-  saved.getTransaction(withdraw).sentTime = static_cast<uint64_t>(time(nullptr)) - 2 * liveTime;
-  saved.getDeposit(depositId).spendingTransactionId = withdraw;
-  saved.addDepositSpendingTransaction(saved.getTransaction(withdraw).hash, UnconfirmedSpentDepositDetails{withdraw, 1000, 10});
-
-  std::stringstream stream;
-  {
-    Common::StdOutputStream output(stream);
-    BinaryOutputStreamSerializer serializer(output);
-    ASSERT_TRUE(saved.serialize(serializer));
+// A commitment withdraw is recorded twice under one hash: as an unconfirmed
+// transaction (whose send time is saved) and as a pending deposit spend (whose
+// time is not). After a reload the spend counts from that saved send time.
+struct PendingWithdraw {
+  explicit PendingWithdraw(uint64_t liveTime) : saved(liveTime), liveTime(liveTime) {
+    Deposit deposit{};
+    deposit.amount = 1000;
+    deposit.spendingTransactionId = WALLET_LEGACY_INVALID_TRANSACTION_ID;
+    depositId = saved.insertDeposit(deposit, 0, Crypto::Hash{});
+    withdraw = saved.addNewTransaction(0, 10, std::string(), {}, 0, {});
+    Transaction tx{};
+    tx.version = TRANSACTION_VERSION_2;
+    saved.updateTransaction(withdraw, tx, 0, {});
+    saved.updateTransactionSendingState(withdraw, std::error_code());
+    saved.getDeposit(depositId).spendingTransactionId = withdraw;
+    saved.addDepositSpendingTransaction(getObjectHash(tx), UnconfirmedSpentDepositDetails{withdraw, 1000, 10});
   }
-  WalletUserTransactionsCache loaded(liveTime);
-  {
+
+  void reloadInto(WalletUserTransactionsCache& loaded) {
+    std::stringstream stream;
+    {
+      Common::StdOutputStream output(stream);
+      BinaryOutputStreamSerializer serializer(output);
+      EXPECT_TRUE(saved.serialize(serializer));
+    }
     Common::StdInputStream input(stream);
     BinaryInputStreamSerializer serializer(input);
-    ASSERT_TRUE(loaded.serialize(serializer));
+    EXPECT_TRUE(loaded.serialize(serializer));
   }
-  EXPECT_EQ(WalletLegacyTransactionState::Deleted, loaded.getTransaction(withdraw).state);
-  EXPECT_EQ(WALLET_LEGACY_INVALID_TRANSACTION_ID, loaded.getDeposit(depositId).spendingTransactionId);
+
+  WalletUserTransactionsCache saved;
+  uint64_t liveTime;
+  DepositId depositId = 0;
+  TransactionId withdraw = 0;
+};
+
+TEST(WalletCacheExpiry, FreshPendingWithdrawSurvivesAReload) {
+  PendingWithdraw pending(60 * 60);
+  WalletUserTransactionsCache loaded(pending.liveTime);
+  pending.reloadInto(loaded);
+  EXPECT_EQ(WalletLegacyTransactionState::Active, loaded.getTransaction(pending.withdraw).state);
+  EXPECT_EQ(pending.withdraw, loaded.getDeposit(pending.depositId).spendingTransactionId);
+  EXPECT_EQ(1000u, loaded.countUnconfirmedSpentDepositsTotalAmount());
+}
+
+TEST(WalletCacheExpiry, ReloadedWithdrawPastItsLiveTimeExpires) {
+  PendingWithdraw pending(1);
+  std::this_thread::sleep_for(std::chrono::seconds(2));
+  WalletUserTransactionsCache loaded(pending.liveTime);
+  pending.reloadInto(loaded);
+  EXPECT_EQ(WalletLegacyTransactionState::Deleted, loaded.getTransaction(pending.withdraw).state);
+  EXPECT_EQ(WALLET_LEGACY_INVALID_TRANSACTION_ID, loaded.getDeposit(pending.depositId).spendingTransactionId);
   EXPECT_EQ(0u, loaded.countUnconfirmedSpentDepositsTotalAmount());
 }
 

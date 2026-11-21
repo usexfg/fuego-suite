@@ -129,9 +129,6 @@ bool WalletUserTransactionsCache::serialize(CryptoNote::ISerializer& s) {
 
   if (s.type() == CryptoNote::ISerializer::INPUT) {
     updateUnconfirmedTransactions();
-    m_unconfirmedTransactions.stampSpentDeposits([this](TransactionId id) {
-      return id < m_transactions.size() ? m_transactions[id].sentTime : time_t(0);
-    });
     deleteOutdatedTransactions();
     restoreTransactionOutputToBankingIndex();
     rebuildPaymentsIndex();

@@ -1004,7 +1004,7 @@ void TransfersContainer::load(std::istream& in) {
   if (version < FIRST_VERSION_TRACKING_COMMITMENT_SPENDS &&
       (holdsCommitmentOutput(unconfirmedTransfers) || holdsCommitmentOutput(availableTransfers) ||
        holdsCommitmentOutput(spentTransfers))) {
-    throw std::runtime_error("Transfers cache predates commitment spend tracking; rescan required");
+    throw TransfersCacheNeedsRescan("Transfers cache predates commitment spend tracking; rescan required");
   }
 
   m_currentHeight = currentHeight;

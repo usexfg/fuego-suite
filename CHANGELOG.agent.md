@@ -7615,5 +7615,5 @@ Open: walletd end to end; concurrent WalletLegacy sends can pick the same fee in
 |------|--------|
 | Tests | `ctest -LE manual` 75/75 (includes `heat_e2e_tests` 6/6, `wallet_input_reservation_tests` 15/15, `commitment_persistence_tests` 12/12); core_tests 790/790 |
 | Mutation checks | DONE — removing the reservation fails the 3 send tests; each row 8 fix and the row 7 rollback fail their own test when reverted; the old testnet v12 height fails `testTestnetRunsV11PastTheBootstrap` |
-| Guardian review | Pass 1 (rows 4, 7) and pass 2 (fixes) adversarial; all findings fixed in rows 7, 8, 9; pass 3 findings fixed in row 12, pass 4 findings fixed in row 13, pass 5 PASS with low findings fixed in row 14, pass 6 findings fixed in row 15; pass 7 on row 15 pending |
+| Guardian review | Pass 1 (rows 4, 7) and pass 2 (fixes) adversarial; all findings fixed in rows 7, 8, 9; pass 3 findings fixed in row 12, pass 4 findings fixed in row 13, pass 5 PASS with low findings fixed in row 14, pass 6 findings fixed in row 15, pass 7 PASS. Open, non-blocking: the V1 walletd loader (unreachable: no V1 writer, V1 predates commitments) keeps unlock jobs and uncommitted transactions on a cache rescan where V2 clears them; the consumer-state rollback has no dedicated test; one wallet test sleeps 2 s |
 | Signed | Claude, 2026-11-19 |

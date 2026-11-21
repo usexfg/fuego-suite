@@ -137,6 +137,7 @@ struct MsgRingRound1 {
   Crypto::EllipticCurvePoint ringNonceHp;     // k*Hp(escrowPub)
   std::vector<uint32_t> ringGlobalIndices;    // sorted, incl. real escrow entry
   std::vector<Crypto::PublicKey> ringPubKeys; // parallel to ringGlobalIndices
+  bool janusFiller = false;                   // leader's F8 0x09 decision, echoed by the follower
 };
 
 // Phase 5b (Round 2): Partial response for the real ring position.

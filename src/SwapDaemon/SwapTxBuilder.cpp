@@ -23,6 +23,8 @@
 
 #include <algorithm>
 #include <cstring>
+
+#include <openssl/crypto.h>
 #include <stdexcept>
 
 extern "C" {
@@ -95,14 +97,48 @@ static unsigned int signerIndex(SwapRole role) {
 
 // ─── Step 1: Build unsigned tx ───────────────────────────────────────
 
-bool SwapTxBuilder::addJanusFillerAtChainTip(FuegoRpcClient& rpc, CryptoNote::Transaction& tx,
-                                             const Crypto::SecretKey& txSecret) {
+bool SwapTxBuilder::janusFillerExpectedAtTip(FuegoRpcClient& rpc, bool& expected) {
   NodeInfo tip;
   if (!rpc.getInfo(tip)) {
     return false;
   }
-  return !CryptoNote::funsaSubaddressActivated(tip.blockMajorVersion) ||
-         CryptoNote::addJanusFillerWhenMissing(tx.extra, txSecret);
+  expected = CryptoNote::funsaSubaddressActivated(tip.blockMajorVersion);
+  return true;
+}
+
+bool SwapTxBuilder::addJanusFillerAtChainTip(FuegoRpcClient& rpc, CryptoNote::Transaction& tx,
+                                             const Crypto::SecretKey& txSecret) {
+  bool expected = false;
+  return janusFillerExpectedAtTip(rpc, expected) &&
+         (!expected || CryptoNote::addJanusFillerWhenMissing(tx.extra, txSecret));
+}
+
+bool SwapTxBuilder::cooperativeEscrowTxKey(const SwapParams& params,
+                                           const Crypto::PublicKey& destinationKey,
+                                           CryptoNote::KeyPair& txKey) {
+  static const char domain[] = "fuego-swap-coop-escrow-txkey";
+  const size_t domainLen = sizeof(domain) - 1;
+  Crypto::KeyDerivation sharedSecret;
+  if (!Crypto::generate_key_derivation(params.peerSwapPubKey, params.ourSwapSecKey, sharedSecret)) {
+    return false;
+  }
+  uint8_t preimage[sizeof(domain) - 1 + sizeof(Crypto::KeyDerivation) + 2 * sizeof(Crypto::PublicKey)];
+  uint8_t* cursor = preimage;
+  std::memcpy(cursor, domain, domainLen);
+  cursor += domainLen;
+  std::memcpy(cursor, &sharedSecret, sizeof(sharedSecret));
+  cursor += sizeof(sharedSecret);
+  std::memcpy(cursor, &params.escrowPubKey, sizeof(Crypto::PublicKey));
+  cursor += sizeof(Crypto::PublicKey);
+  std::memcpy(cursor, &destinationKey, sizeof(Crypto::PublicKey));
+  Crypto::EllipticCurveScalar scalar;
+  Crypto::hash_to_scalar(preimage, sizeof(preimage), scalar);
+  std::memcpy(&txKey.secretKey, &scalar, sizeof(Crypto::SecretKey));
+  const bool derived = Crypto::secret_key_to_public_key(txKey.secretKey, txKey.publicKey);
+  OPENSSL_cleanse(preimage, sizeof(preimage));
+  OPENSSL_cleanse(&scalar, sizeof(scalar));
+  OPENSSL_cleanse(&sharedSecret, sizeof(sharedSecret));
+  return derived;
 }
 
 bool SwapTxBuilder::buildUnsignedEscrowSpend(
@@ -112,6 +148,7 @@ bool SwapTxBuilder::buildUnsignedEscrowSpend(
     uint64_t protocolFee,
     const Crypto::PublicKey& treasuryKey,
     uint64_t fee,
+    bool janusFiller,
     CryptoNote::Transaction& tx,
     Crypto::Hash& prefixHash,
     CollaborativeRingState& ringState,
@@ -210,13 +247,17 @@ bool SwapTxBuilder::buildUnsignedEscrowSpend(
   tx.version = CryptoNote::TRANSACTION_VERSION_1;
   tx.unlockTime = 0;
 
-  // Generate a one-time tx keypair for the output derivation.
-  // For the escrow spend, the destination key is already a one-time key
-  // provided by the caller, so we use a fresh tx pubkey for extra.
+  // Every build by either party must produce the same prefix, so the tx key
+  // and the 0x09 decision come from the swap, never from randomness or the
+  // local node.
   CryptoNote::KeyPair txKey;
-  Crypto::generate_keys(txKey.publicKey, txKey.secretKey);
+  if (!cooperativeEscrowTxKey(params, destinationKey, txKey)) {
+    return false;
+  }
   CryptoNote::addTransactionPublicKeyToExtra(tx.extra, txKey.publicKey);
-  if (!addJanusFillerAtChainTip(rpc, tx, txKey.secretKey)) {
+  const bool fillerWritten = !janusFiller || CryptoNote::addJanusFillerWhenMissing(tx.extra, txKey.secretKey);
+  OPENSSL_cleanse(&txKey.secretKey, sizeof(txKey.secretKey));
+  if (!fillerWritten) {
     return false;
   }
 
@@ -504,6 +545,69 @@ bool SwapTxBuilder::ringRound2Finalize(
   input.keyImage = ringState.aggregateKeyImage;
 
   return true;
+}
+
+// ─── Cooperative escrow spend ───────────────────────────────────────
+
+namespace {
+
+void restoreRoundOneMaterial(const SwapParams& params, CollaborativeRingState& ringState) {
+  ringState.ourPartialKeyImage = params.ringOurPartialKeyImage;
+  ringState.ourRingNoncePub    = params.ringOurRingNoncePub;
+  ringState.ourRingNonceHp     = params.ringOurRingNonceHp;
+  ringState.ourRingNonceSec    = params.ringOurRingNonceSec;
+  ringState.peerPartialKeyImage = params.ringPeerPartialKeyImage;
+  ringState.peerRingNoncePub    = params.ringPeerRingNoncePub;
+  ringState.peerRingNonceHp     = params.ringPeerRingNonceHp;
+}
+
+bool ringSignatureVerifies(const CryptoNote::Transaction& tx, const Crypto::Hash& prefixHash,
+                           const CollaborativeRingState& ringState) {
+  std::vector<const Crypto::PublicKey*> ring;
+  for (const auto& key : ringState.ringPubKeys) ring.push_back(&key);
+  return !tx.signatures.empty() && tx.signatures[0].size() == ring.size() &&
+         Crypto::check_ring_signature(prefixHash, ringState.aggregateKeyImage, ring, tx.signatures[0].data());
+}
+
+} // namespace
+
+bool SwapTxBuilder::prepareCooperativeSpend(
+    FuegoRpcClient& rpc,
+    const SwapParams& params,
+    const CooperativeSpendTerms& terms,
+    CryptoNote::Transaction& tx,
+    Crypto::Hash& prefixHash,
+    CollaborativeRingState& ringState) {
+  if (!params.ringDescriptorValid || !params.ringOurRound1MaterialValid || !params.ringPeerRound1Received) {
+    return false;
+  }
+  if (!buildUnsignedEscrowSpend(rpc, params, terms.destinationKey, terms.treasuryFee, terms.treasuryKey,
+                                MIN_FEE, params.ringJanusFiller, tx, prefixHash, ringState,
+                                &params.ringGlobalIndices, &params.ringPubKeys)) {
+    return false;
+  }
+  restoreRoundOneMaterial(params, ringState);
+  return writeAggregateKeyImageToTx(tx, ringState) &&
+         CryptoNote::getObjectHash(static_cast<CryptoNote::TransactionPrefix&>(tx), prefixHash) &&
+         ringRound1Finalize(prefixHash, ringState);
+}
+
+bool SwapTxBuilder::completeCooperativeSpend(
+    FuegoRpcClient& rpc,
+    const SwapParams& params,
+    const CooperativeSpendTerms& terms,
+    CryptoNote::Transaction& tx) {
+  if (!params.ringOurRound2Sent || !params.ringPeerRound2Received) {
+    return false;
+  }
+  Crypto::Hash prefixHash;
+  CollaborativeRingState ringState;
+  if (!prepareCooperativeSpend(rpc, params, terms, tx, prefixHash, ringState)) {
+    return false;
+  }
+  ringState.ourPartialResponse = params.ringOurPartialResponse;
+  ringState.peerPartialResponse = params.ringPeerPartialResponse;
+  return ringRound2Finalize(ringState, tx) && ringSignatureVerifies(tx, prefixHash, ringState);
 }
 
 // ─── Utility ─────────────────────────────────────────────────────────

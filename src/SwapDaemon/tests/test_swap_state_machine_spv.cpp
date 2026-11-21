@@ -1226,9 +1226,88 @@ static bool test_stalled_point_claim_fee_raised(bool paysByChild) {
   return ok;
 }
 
+static SwapStateMachine cooperativeRoundsInProgress(bool broadcast) {
+  SwapParams params{};
+  params.swapId = "coop-rounds";
+  params.pair = SwapPair::BCH;
+  params.role = SwapRole::ALICE;
+  params.ringGlobalIndices = {10, 20, 30};
+  params.ringPubKeys.resize(3);
+  params.ringRealIndex = 1;
+  params.ringDescriptorValid = true;
+  params.ringJanusFiller = true;
+  params.ringOurRound1Sent = true;
+  params.ringPeerRound1Received = true;
+  params.ringTxBroadcast = broadcast;
+  return SwapStateMachine(params);
+}
+
+static bool test_ring_janus_filler_survives_restart() {
+  std::cout << "  test_ring_janus_filler_survives_restart... ";
+  const SwapStateMachine restored = SwapStateMachine::deserialize(cooperativeRoundsInProgress(false).serialize());
+  const SwapParams& p = restored.params();
+  if (!p.ringJanusFiller || !p.ringDescriptorValid || !p.ringOurRound1Sent || p.ringGlobalIndices.size() != 3) {
+    std::cout << "FAIL: agreed ring or 0x09 decision lost on reload\n";
+    return false;
+  }
+  std::cout << "PASS\n";
+  return true;
+}
+
+static bool test_pre_fix_ring_rounds_are_discarded() {
+  std::cout << "  test_pre_fix_ring_rounds_are_discarded... ";
+  Common::JsonValue unsent = Common::JsonValue::fromString(cooperativeRoundsInProgress(false).serialize());
+  unsent.erase("ringJanusFiller");
+  const SwapParams reset = SwapStateMachine::deserialize(unsent.toString()).params();
+  if (reset.ringOurRound1Sent || reset.ringPeerRound1Received || reset.ringDescriptorValid ||
+      reset.ringOurRound1MaterialValid || !reset.ringGlobalIndices.empty()) {
+    std::cout << "FAIL: rounds from the broken protocol survived\n";
+    return false;
+  }
+  Common::JsonValue sent = Common::JsonValue::fromString(cooperativeRoundsInProgress(true).serialize());
+  sent.erase("ringJanusFiller");
+  if (!SwapStateMachine::deserialize(sent.toString()).params().ringDescriptorValid) {
+    std::cout << "FAIL: a broadcast spend lost its ring\n";
+    return false;
+  }
+  std::cout << "PASS\n";
+  return true;
+}
+
+static bool test_ring_round1_carries_janus_filler() {
+  std::cout << "  test_ring_round1_carries_janus_filler... ";
+  PeerMessage withFiller;
+  withFiller.type = PeerMessageType::RING_ROUND1;
+  withFiller.swapId = "coop-rounds";
+  withFiller.ringRound1.ringGlobalIndices = {10, 20, 30};
+  withFiller.ringRound1.ringPubKeys.resize(3);
+  withFiller.ringRound1.janusFiller = true;
+  PeerMessage withoutFiller = withFiller;
+  withoutFiller.ringRound1.janusFiller = false;
+
+  PeerMessage decoded;
+  const bool roundTrip = deserializePeerMessage(serializePeerMessage(withFiller), decoded) &&
+                         decoded.ringRound1.janusFiller;
+  const Crypto::Hash signedWith = peerMessageDigest(withFiller);
+  const Crypto::Hash signedWithout = peerMessageDigest(withoutFiller);
+  const bool signedOver = std::memcmp(&signedWith, &signedWithout, sizeof(signedWith)) != 0;
+
+  Common::JsonValue legacy = Common::JsonValue::fromString(serializePeerMessage(withFiller));
+  legacy("payload").erase("janusFiller");
+  PeerMessage refused;
+  const bool legacyRefused = !deserializePeerMessage(legacy.toString(), refused);
+  if (!roundTrip || !signedOver || !legacyRefused) {
+    std::cout << "FAIL: round trip " << roundTrip << ", signed " << signedOver
+              << ", flagless message refused " << legacyRefused << "\n";
+    return false;
+  }
+  std::cout << "PASS\n";
+  return true;
+}
+
 int main() {
   std::cout << "=== SwapStateMachine SPV state tests ===\n\n";
-  int pass = 0, total = 27;
+  int pass = 0, total = 30;
   if (test_spv_waiting_to_confirmed())    ++pass;
   if (test_spv_waiting_stays_on_retry())  ++pass;
   if (test_spv_waiting_to_refunded())     ++pass;
@@ -1256,6 +1335,9 @@ int main() {
   if (test_point_lock_notice_keeps_the_whole_state("ptlc:", SwapPair::SOL)) ++pass;
   if (test_stalled_point_claim_fee_raised(false)) ++pass;
   if (test_stalled_point_claim_fee_raised(true)) ++pass;
+  if (test_ring_janus_filler_survives_restart()) ++pass;
+  if (test_pre_fix_ring_rounds_are_discarded()) ++pass;
+  if (test_ring_round1_carries_janus_filler()) ++pass;
 
   std::cout << "\n=== " << pass << "/" << total << " tests passed ===\n";
   return (pass == total) ? 0 : 1;

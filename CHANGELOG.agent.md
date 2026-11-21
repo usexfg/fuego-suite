@@ -1,3 +1,36 @@
+## DeXFG: legacy cooperative escrow spend
+
+**Started**: 2026-11-21
+**Agent**: Claude Code
+**Status**: DONE (Linux GCC build and tests).
+**Plan**: `docs/dexfg/SWAP_REMEDIATION_PLAN.md` section 7 (owner approval 2026-11-21, "fix swap").
+**Scope**: `src/SwapDaemon/{SwapTxBuilder.{h,cpp},SwapDaemon.{h,cpp},SwapPeerProtocol.{h,cpp},SwapStateMachine.cpp,SwapTypes.h}`, `src/SwapDaemon/tests/{test_ring_collab,test_swap_state_machine_spv}.cpp`, `docs/dexfg/SWAP_REMEDIATION_PLAN.md`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Claim and refund pick their route from the escrow output on chain: a v11 swap-escrow output goes direct, a `KeyOutput` to the escrow key goes cooperative (amount protocol 1 only), anything else waits. Before, a set `escrowTxHash` always chose the direct route, which a legacy escrow can never pass | Claude Code | 2026-11-21 | DONE |
+| 2 | The cooperative spend's tx key is `H_s(domain ‖ 8ab·G ‖ escrow key ‖ destination)`: equal for both parties, unknown to anyone else, so every build signs one prefix and the spend cannot be linked to its escrow by recomputing the key (secrets wiped with `OPENSSL_cleanse`) | Claude Code | 2026-11-21 | DONE |
+| 3 | Leader/follower rounds: the destination owner (Alice for the claim, Bob for the refund) picks the ring and the 0x09 decision and sends Round 1; the follower adopts both, then sends Round 1 and Round 2. A Round 1 that changes a held ring, 0x09 flag or peer nonce, and a changed Round 2, are refused | Claude Code | 2026-11-21 | DONE |
+| 4 | `janusFiller` in the signed Round 1 digest and JSON (a message without it is refused) and persisted; round state saved by the old code is discarded on load unless its tx was already broadcast | Claude Code | 2026-11-21 | DONE |
+| 5 | The assembled tx is broadcast only if its ring signature verifies; a send refused because the peer already sent it counts as sent; only the leader records the protocol fee. The per-tick path also lets a follower answer, and fixes the refund destination it used for Alice (her own key instead of Bob's) | Claude Code | 2026-11-21 | DONE |
+| 6 | Tests: `test_ring_collab` 6/6 (both parties build independently and assemble one verifying tx, with and without 0x09; a different 0x09 decision cannot complete; the tx key is shared, per destination, and differs for an outsider); `test_swap_state_machine_spv` 30/30 (flag survives reload, pre-fix rounds discarded, flag signed and required) | Claude Code | 2026-11-21 | DONE |
+
+**Mutation checks**: a random tx key, assembly without signature verification, no reset of old rounds, and an unsigned flag each fail their test; restoring the code passes.
+
+**Open items:**
+- Not covered by tests: the route lookup, the leader/follower sequencing in `SwapDaemon` and the Round 1 refusals. They need a node RPC; check them on testnet with two daemons before relying on them.
+- Both parties must run this daemon. An old daemon's Round 1 is refused, and it could not complete the spend anyway.
+- A leader whose node is still before v11 sends no 0x09; if the spend is not mined before v11 + 720 it is rejected and the rounds must be redone.
+- Legacy escrows exist only if DeXFG ran on mainnet before 96293c48 (2026-08-20); that is not known from the repository.
+
+| Gate | Status | Signed |
+|------|--------|--------|
+| Build compiles | Linux GCC Release with `BUILD_TESTS=ON`: all targets | Claude Code 2026-11-21 |
+| Tests pass | ctest 72/73; the failure is `commitment_owner_bound_tests`, present on `master` since 33e787a5 | Claude Code 2026-11-21 |
+| All tasks done | DONE; daemon-level testnet check pending | Claude Code 2026-11-21 |
+
+---
+
 ## master build fix: two extra-field types missing from the variant
 
 **Started**: 2026-11-21

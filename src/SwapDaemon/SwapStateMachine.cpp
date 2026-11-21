@@ -21,6 +21,8 @@
 #include <sstream>
 #include <cstring>
 
+#include <openssl/crypto.h>
+
 namespace XfgSwap {
 
 namespace {
@@ -61,6 +63,32 @@ bool decodeRingPubKeys(const std::string& hex, std::vector<Crypto::PublicKey>& k
   return true;
 }
 
+// Round state written before the cooperative spend fix (random tx key, both
+// parties choosing a ring) can never complete. Its nonces were bound to
+// prefixes that will not be signed again, so fresh rounds are safe.
+void discardRingRoundsFromBrokenProtocol(SwapParams& params) {
+  params.ringPeerPartialKeyImage = Crypto::KeyImage{};
+  params.ringPeerRingNoncePub = Crypto::PublicKey{};
+  params.ringPeerRingNonceHp = Crypto::EllipticCurvePoint{};
+  params.ringPeerPartialResponse = Crypto::EllipticCurveScalar{};
+  params.ringPeerRound1Received = false;
+  params.ringPeerRound2Received = false;
+  params.ringOurRound1Sent = false;
+  params.ringOurRound2Sent = false;
+  params.ringGlobalIndices.clear();
+  params.ringPubKeys.clear();
+  params.ringRealIndex = 0;
+  params.ringDescriptorValid = false;
+  params.ringJanusFiller = false;
+  params.ringOurPartialKeyImage = Crypto::KeyImage{};
+  params.ringOurRingNoncePub = Crypto::PublicKey{};
+  params.ringOurRingNonceHp = Crypto::EllipticCurvePoint{};
+  OPENSSL_cleanse(&params.ringOurRingNonceSec, sizeof(params.ringOurRingNonceSec));
+  params.ringOurPartialResponse = Crypto::EllipticCurveScalar{};
+  params.ringOurRound1MaterialValid = false;
+  params.encRingNonceBlob.clear();
+}
+
 } // anonymous namespace
 
 SwapStateMachine::SwapStateMachine()
@@ -97,6 +125,7 @@ SwapStateMachine::SwapStateMachine()
   m_params.ringPubKeys.clear();
   m_params.ringRealIndex = 0;
   m_params.ringDescriptorValid = false;
+  m_params.ringJanusFiller = false;
   m_params.pair = SwapPair::SOL;
   m_params.role = SwapRole::BOB;
   m_params.xfgAmount = 0;
@@ -420,6 +449,7 @@ std::string SwapStateMachine::serialize() const {
   root.insert("ringPubKeys", encodeRingPubKeys(m_params.ringPubKeys));
   root.insert("ringRealIndex", static_cast<int64_t>(m_params.ringRealIndex));
   root.insert("ringDescriptorValid", static_cast<int64_t>(m_params.ringDescriptorValid ? 1 : 0));
+  root.insert("ringJanusFiller", static_cast<int64_t>(m_params.ringJanusFiller ? 1 : 0));
   root.insert("adaptorSecretRevealedToPeer",
               static_cast<int64_t>(m_params.adaptorSecretRevealedToPeer ? 1 : 0));
   root.insert("adaptorSecretReceived",
@@ -665,6 +695,10 @@ SwapStateMachine SwapStateMachine::deserialize(const std::string& json) {
     params.ringRealIndex = static_cast<size_t>(root("ringRealIndex").getInteger());
   if (root.contains("ringDescriptorValid"))
     params.ringDescriptorValid = root("ringDescriptorValid").getInteger() != 0;
+  if (root.contains("ringJanusFiller"))
+    params.ringJanusFiller = root("ringJanusFiller").getInteger() != 0;
+  else if (!params.ringTxBroadcast)
+    discardRingRoundsFromBrokenProtocol(params);
   if (root.contains("adaptorSecretRevealedToPeer"))
     params.adaptorSecretRevealedToPeer = root("adaptorSecretRevealedToPeer").getInteger() != 0;
   if (root.contains("adaptorSecretReceived"))

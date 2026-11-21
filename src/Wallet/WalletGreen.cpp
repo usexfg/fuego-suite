@@ -6302,12 +6302,13 @@ namespace CryptoNote
     auto walletOuts = sourceAddresses.empty() ? pickWalletsWithMoney() : pickWallets(sourceAddresses);
     std::array<size_t, std::numeric_limits<uint64_t>::digits10 + 1> bucketSizes;
     bucketSizes.fill(0);
+    const uint32_t knownHeight = m_node.getLastKnownBlockHeight();
     for (size_t walletIndex = 0; walletIndex < walletOuts.size(); ++walletIndex)
     {
       for (auto &out : walletOuts[walletIndex].outs)
       {
         uint8_t powerOfTen = 0;
-        if (m_currency.isAmountApplicableInFusionTransactionInput(out.amount, threshold, powerOfTen, m_node.getLastKnownBlockHeight()))
+        if (m_currency.isAmountApplicableInFusionTransactionInput(out.amount, threshold, powerOfTen, knownHeight))
         {
           assert(powerOfTen < std::numeric_limits<uint64_t>::digits10 + 1);
           bucketSizes[powerOfTen]++;
@@ -6336,12 +6337,13 @@ namespace CryptoNote
     auto walletOuts = addresses.empty() ? pickWalletsWithMoney() : pickWallets(addresses);
     std::array<size_t, std::numeric_limits<uint64_t>::digits10 + 1> bucketSizes;
     bucketSizes.fill(0);
+    const uint32_t knownHeight = m_node.getLastKnownBlockHeight();
     for (size_t walletIndex = 0; walletIndex < walletOuts.size(); ++walletIndex)
     {
       for (auto &out : walletOuts[walletIndex].outs)
       {
         uint8_t powerOfTen = 0;
-        if (m_currency.isAmountApplicableInFusionTransactionInput(out.amount, threshold, powerOfTen, m_node.getLastKnownBlockHeight()))
+        if (m_currency.isAmountApplicableInFusionTransactionInput(out.amount, threshold, powerOfTen, knownHeight))
         {
           allFusionReadyOuts.push_back({std::move(out), walletOuts[walletIndex].wallet});
           assert(powerOfTen < std::numeric_limits<uint64_t>::digits10 + 1);

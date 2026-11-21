@@ -73,8 +73,17 @@ public:
     m_changed.notify_all();
   }
 
-  void synchronizationCompleted(std::error_code) override {
+  void synchronizationCompleted(std::error_code result) override {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_syncCompleted = m_syncCompleted || !result;
     m_changed.notify_all();
+  }
+
+  // The synchronizer reports completion once the wallet has caught up with the
+  // node; with the in-process node's known height wrapped it never did.
+  bool waitSyncCompleted() {
+    std::unique_lock<std::mutex> lock(m_mutex);
+    return m_changed.wait_for(lock, kWaitLimit, [&] { return m_syncCompleted; });
   }
 
   void saveCompleted(std::error_code result) override {
@@ -90,13 +99,15 @@ public:
 
   void initCompleted(std::error_code result) override {
     std::lock_guard<std::mutex> lock(m_mutex);
-    m_initialised = !result;
+    m_initResult = result;
+    m_initCompleted = true;
     m_changed.notify_all();
   }
 
-  bool waitInitialised() {
+  std::error_code waitInitialised() {
     std::unique_lock<std::mutex> lock(m_mutex);
-    return m_changed.wait_for(lock, kWaitLimit, [&] { return m_initialised; });
+    const bool completed = m_changed.wait_for(lock, kWaitLimit, [&] { return m_initCompleted; });
+    return completed ? m_initResult : std::make_error_code(std::errc::timed_out);
   }
 
   void sendTransactionCompleted(TransactionId transactionId, std::error_code result) override {
@@ -121,7 +132,9 @@ private:
   std::condition_variable m_changed;
   uint32_t m_syncedHeight = 0;
   bool m_saved = false;
-  bool m_initialised = false;
+  bool m_syncCompleted = false;
+  bool m_initCompleted = false;
+  std::error_code m_initResult;
   std::map<TransactionId, std::error_code> m_sendResults;
 };
 
@@ -240,7 +253,7 @@ protected:
   bool syncAll() {
     const uint32_t tip = nodeHeight();
     for (auto& w : wallets) {
-      if (!w->events.waitSyncedTo(tip)) {
+      if (!w->events.waitSyncedTo(tip) || !w->events.waitSyncCompleted()) {
         return false;
       }
     }
@@ -442,7 +455,8 @@ TEST_F(HeatWalletScenario, ReopenedWalletKeepsItsHeat) {
   WalletEvents reopenedEvents;
   reopened.addObserver(&reopenedEvents);
   reopened.initAndLoad(saved, "scenario");
-  ASSERT_TRUE(reopenedEvents.waitInitialised());
+  const std::error_code loadResult = reopenedEvents.waitInitialised();
+  ASSERT_FALSE(loadResult) << loadResult.message();
   // A wallet reopened at the tip has nothing to sync and reports no progress.
   const auto heatNow = [&] { return reopened.actualHeatBalance() + reopened.pendingHeatBalance(); };
   EXPECT_TRUE(eventually([&] { return heatNow() == minted && reopened.actualBalance() == xfg; }));

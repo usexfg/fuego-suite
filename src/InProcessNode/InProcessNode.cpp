@@ -424,14 +424,7 @@ uint32_t InProcessNode::getLocalBlockCount() const {
 }
 
 uint32_t InProcessNode::getKnownBlockCount() const {
-  {
-    std::unique_lock<std::mutex> lock(mutex);
-    if (state != INITIALIZED) {
-      throw std::system_error(make_error_code(CryptoNote::error::NOT_INITIALIZED));
-    }
-  }
-
-  return protocol.getObservedHeight();
+  return getLastKnownBlockHeight() + 1;
 }
 
 uint32_t InProcessNode::getLastLocalBlockHeight() const {

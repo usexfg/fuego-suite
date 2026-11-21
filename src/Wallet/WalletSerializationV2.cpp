@@ -314,10 +314,14 @@ void WalletSerializerV2::loadKeyListAndBanalces(CryptoNote::ISerializer& seriali
         wallet.pendingBalance = pendingBalance;
         wallet.lockedDepositBalance = lockedDepositBalance;
         wallet.unlockedDepositBalance = unlockedDepositBalance;
-        wallet.isSubAddress = isSubAddress;
-        wallet.subaddrMajor = subaddrMajor;
-        wallet.subaddrMinor = subaddrMinor;
-        wallet.subaddrVersion = subaddrVersion;
+        // The key record's kind is authoritative; the cache only fills a record
+        // upgraded from a file that could not hold it.
+        if (!wallet.addressKindRecorded) {
+          wallet.isSubAddress = isSubAddress;
+          wallet.subaddrMajor = subaddrMajor;
+          wallet.subaddrMinor = subaddrMinor;
+          wallet.subaddrVersion = subaddrVersion;
+        }
       });
     }
   }

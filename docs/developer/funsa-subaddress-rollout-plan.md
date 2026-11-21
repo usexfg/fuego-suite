@@ -85,7 +85,7 @@ whichever explorer is deployed:
 | # | Work | Why |
 |---|---|---|
 | F1 | Scan mainnet for any historical tx whose extra parses with a well-formed 0x06 or 0x09 field | upgraded nodes reject such a block before v11; one hit means resync breaks |
-| F2 | Make subaddress metadata durable outside the cache (or rebuild it by scanning indexes) | a cache that fails to load turns V2 records into standard ones: Janus off, linkable address shown |
+| F2 | Subaddress kind and index in the key record (section 4.2) | a cache that fails to load turned V2 records into standard ones: Janus off, linkable address shown |
 | F3 | walletd JSON-RPC methods for `createSubAddress` / `listSubAddresses` | WalletGreen has the functions but walletd exposes no method |
 | F4 | Clang, macOS and Windows builds of the branch | only Linux GCC is verified |
 | F5 | `commitment_owner_bound_tests` (5 cases fail on `master` since 33e787a5) | the CI test step now runs `tests/`, so this shows red until fixed |
@@ -113,6 +113,28 @@ Consequences:
 - A key-input tx whose extra does not parse is rejected after the grace window. No builder in this repository writes a tag the parser refuses; external tools that put arbitrary bytes in extra will break.
 - Valise V5 must add the filler before v11 + 720.
 - SwapDaemon parties on different versions build different escrow-spend prefixes and fail to co-sign. Both must upgrade before v11 + 720.
+
+### 4.2 F2: subaddress kind and index in the key record
+
+Problem: whether an address is a V2 subaddress, and its (major, minor), live only in the
+wallet cache. A cache that fails to load, or a file saved with keys only, turns V2
+records into standard ones: the Janus check goes off and the linkable `fire` form is
+shown. The kind cannot be recomputed: the stored spend key `b + m` looks like any random
+key without the index, and `createSubAddress` accepts any 32-bit index, so no bounded
+search is complete.
+
+| Item | Rule |
+|---|---|
+| Record v10 | each address record's encrypted, HMAC-protected plaintext is `spend public ‖ spend secret ‖ timestamp ‖ kind (u8) ‖ major (u32 LE) ‖ minor (u32 LE)`; kind 0 = standard, 2 = V2 subaddress, 0xFF = not yet recorded. File version 10 |
+| Authority | the record's kind wins over the cache. A recorded V2 kind is checked on load: `B + H_s(a, major, minor)·G` must equal the stored spend public key, or loading fails |
+| Upgrade | a v8 or v9 file is rewritten as v10 on load (original kept as `<file>.v9.backup`). Non-primary records start as "not yet recorded"; the first cache load fills their kind, checks the derivation, and writes it into the record. If the cache never loads, those records stay unrecorded and are treated as standard, the pre-F2 behaviour, until a cache load succeeds |
+| Old binaries | refuse a v10 file ("Unsupported wallet version") instead of loading V2 records as standard ones |
+| Record crypto | one module seals and opens records; sealing always takes the next IV and advances it |
+
+Pre-existing defects fixed on the way, all ChaCha8 keystream reuse:
+`reset()` re-encrypted every record under one IV; the legacy-file conversion encrypted the
+first spend record under the view keys' IV; the v7→v8 migration encrypted every record
+under one IV.
 
 ## 5. Gate before v11 activation
 

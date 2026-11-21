@@ -54,7 +54,7 @@ public:
   std::unordered_set<Crypto::PublicKey>& deletedKeys();
 
   static const uint8_t MIN_VERSION = 6;
-  static const uint8_t SERIALIZATION_VERSION = 9;
+  static const uint8_t SERIALIZATION_VERSION = 10;
 
 private:
   void loadKeyListAndBanalces(CryptoNote::ISerializer& serializer, bool saveCache, uint8_t version);

@@ -264,14 +264,17 @@ protected:
   void convertAndLoadWalletFile(const std::string &path, std::ifstream &&walletFileStream);
   size_t getTxSize(const TransactionParameters &sendingTransaction);
 
-  static void decryptKeyPair(const EncryptedWalletRecord& cipher, Crypto::PublicKey& publicKey, Crypto::SecretKey& secretKey, uint64_t& creationTimestamp, const Crypto::chacha8_key& key, uint8_t version);
-  void decryptKeyPair(const EncryptedWalletRecord& cipher, Crypto::PublicKey& publicKey, Crypto::SecretKey& secretKey, uint64_t& creationTimestamp) const;
-  static EncryptedWalletRecord encryptKeyPair(const Crypto::PublicKey& publicKey, const Crypto::SecretKey& secretKey, uint64_t creationTimestamp, const Crypto::chacha8_key& key, const Crypto::chacha8_iv& iv);
-  EncryptedWalletRecord encryptKeyPair(const Crypto::PublicKey& publicKey, const Crypto::SecretKey& secretKey, uint64_t creationTimestamp) const;
-  Crypto::chacha8_iv getNextIv() const;
-  static void deriveMacKey(const Crypto::chacha8_key &key, uint8_t macKey[32]);
-  static void incIv(Crypto::chacha8_iv& iv);
-  void incNextIv();
+  KeyPairRecord openViewKeys() const;
+  // Sealing takes the file's next IV and advances it, so no two records share a keystream.
+  void sealViewKeys(uint64_t creationTimestamp);
+  StoredAddress openAddressRecord(const EncryptedAddressRecord& record) const;
+  EncryptedAddressRecord sealAddressRecord(const StoredAddress& address);
+  static StoredAddress storedAddressOf(const WalletRecord& wallet);
+  static WalletRecord walletRecordOf(const StoredAddress& address);
+  bool subaddressDerivationMatches(const WalletRecord& wallet, const Crypto::PublicKey& primarySpendPublicKey) const;
+  void recordAddressKindsFromCache();
+  void upgradeToAddressKindRecords(const std::string& path);
+  void shutdownAndReload();
   void initWithKeys(const std::string& path, const std::string& password, const Crypto::PublicKey& viewPublicKey, const Crypto::SecretKey& viewSecretKey);
   std::string doCreateAddress(const Crypto::PublicKey &spendPublicKey, const Crypto::SecretKey &spendSecretKey, uint64_t creationTimestamp);
   std::string doCreateAddress(const NewAddressData &addressData);
@@ -321,13 +324,6 @@ protected:
     AddressAmounts amounts;
   };
 
-#pragma pack(push, 1)
-  struct ContainerStoragePrefix {
-    uint8_t version;
-    Crypto::chacha8_iv nextIv;
-    EncryptedWalletRecord encryptedViewKeys;
-  };
-#pragma pack(pop)
 
   typedef std::unordered_map<std::string, AddressAmounts> TransfersMap;
 

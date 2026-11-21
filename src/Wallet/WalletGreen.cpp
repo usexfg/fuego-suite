@@ -114,6 +114,19 @@ namespace
   };
   #pragma pack(pop)
 
+  EncryptedWalletRecord untaggedRecord(const LegacyEncryptedWalletRecord &legacy)
+  {
+    EncryptedWalletRecord record{};
+    record.iv = legacy.iv;
+    std::memcpy(record.data, legacy.data, sizeof(record.data));
+    return record;
+  }
+
+  bool storesKeyPairRecords(int fileVersion)
+  {
+    return fileVersion >= FIRST_AUTHENTICATED_RECORD_VERSION && fileVersion < FIRST_ADDRESS_KIND_RECORD_VERSION;
+  }
+
   std::vector<uint64_t> split(uint64_t amount, uint64_t dustThreshold)
   {
     std::vector<uint64_t> amounts;
@@ -2288,98 +2301,109 @@ namespace CryptoNote
     }
   }
 
-  void WalletGreen::decryptKeyPair(const EncryptedWalletRecord &cipher, PublicKey &publicKey, SecretKey &secretKey,
-                                   uint64_t &creationTimestamp, const Crypto::chacha8_key &key, uint8_t version)
-  {
-    if (version >= 8) {
-      uint8_t macKey[32];
-      deriveMacKey(key, macKey);
-
-      uint8_t computedTag[32];
-      unsigned int computedLen = 32;
-
-      // Compute HMAC-SHA256(macKey, iv || encryptedData)
-      HMAC_CTX* hmacCtx = HMAC_CTX_new();
-      HMAC_Init_ex(hmacCtx, macKey, 32, EVP_sha256(), nullptr);
-      HMAC_Update(hmacCtx, reinterpret_cast<const unsigned char*>(&cipher.iv), sizeof(cipher.iv));
-      HMAC_Update(hmacCtx, cipher.data, sizeof(cipher.data));
-      HMAC_Final(hmacCtx, computedTag, &computedLen);
-      HMAC_CTX_free(hmacCtx);
-
-      if (computedLen != 32 || CRYPTO_memcmp(computedTag, cipher.tag, 32) != 0) {
-        throw std::runtime_error("Key record integrity check failed — data may be tampered");
-      }
-    }
-
-    std::array<char, sizeof(cipher.data)> buffer;
-    chacha8(cipher.data, sizeof(cipher.data), key, cipher.iv, buffer.data());
-
-    MemoryInputStream stream(buffer.data(), buffer.size());
-    BinaryInputStreamSerializer serializer(stream);
-
-    serializer(publicKey, "publicKey");
-    serializer(secretKey, "secretKey");
-    serializer.binary(&creationTimestamp, sizeof(uint64_t), "creationTimestamp");
-  }
-
-  void WalletGreen::decryptKeyPair(const EncryptedWalletRecord &cipher, PublicKey &publicKey, SecretKey &secretKey, uint64_t &creationTimestamp) const
-  {
-    uint8_t version = reinterpret_cast<const ContainerStoragePrefix *>(m_containerStorage.prefix())->version;
-    decryptKeyPair(cipher, publicKey, secretKey, creationTimestamp, m_key, version);
-  }
-
-  EncryptedWalletRecord WalletGreen::encryptKeyPair(const PublicKey &publicKey, const SecretKey &secretKey, uint64_t creationTimestamp, const Crypto::chacha8_key &key, const Crypto::chacha8_iv &iv)
-  {
-
-    EncryptedWalletRecord result;
-
-    std::string serializedKeys;
-    StringOutputStream outputStream(serializedKeys);
-    BinaryOutputStreamSerializer serializer(outputStream);
-
-    serializer(const_cast<PublicKey &>(publicKey), "publicKey");
-    serializer(const_cast<SecretKey &>(secretKey), "secretKey");
-    serializer.binary(&creationTimestamp, sizeof(uint64_t), "creationTimestamp");
-
-    assert(serializedKeys.size() == sizeof(result.data));
-
-    result.iv = iv;
-    chacha8(serializedKeys.data(), serializedKeys.size(), key, result.iv, reinterpret_cast<char *>(result.data));
-
-    // Compute HMAC-SHA256(macKey, iv || encryptedData) for AEAD
-    uint8_t macKey[32];
-    deriveMacKey(key, macKey);
-    unsigned int tagLen = 32;
-
-    HMAC_CTX* hmacCtx = HMAC_CTX_new();
-    HMAC_Init_ex(hmacCtx, macKey, 32, EVP_sha256(), nullptr);
-    HMAC_Update(hmacCtx, reinterpret_cast<const unsigned char*>(&result.iv), sizeof(result.iv));
-    HMAC_Update(hmacCtx, result.data, sizeof(result.data));
-    HMAC_Final(hmacCtx, result.tag, &tagLen);
-    HMAC_CTX_free(hmacCtx);
-
-    return result;
-  }
-
-  Crypto::chacha8_iv WalletGreen::getNextIv() const
+  KeyPairRecord WalletGreen::openViewKeys() const
   {
     const auto *prefix = reinterpret_cast<const ContainerStoragePrefix *>(m_containerStorage.prefix());
-    return prefix->nextIv;
+    return openKeyPair(prefix->encryptedViewKeys, m_key, prefix->version);
   }
 
-  EncryptedWalletRecord WalletGreen::encryptKeyPair(const PublicKey &publicKey, const SecretKey &secretKey, uint64_t creationTimestamp) const
+  void WalletGreen::sealViewKeys(uint64_t creationTimestamp)
   {
-    return encryptKeyPair(publicKey, secretKey, creationTimestamp, m_key, getNextIv());
+    auto *prefix = reinterpret_cast<ContainerStoragePrefix *>(m_containerStorage.prefix());
+    prefix->encryptedViewKeys = sealKeyPair(KeyPairRecord{m_viewPublicKey, m_viewSecretKey, creationTimestamp}, m_key, prefix->nextIv);
+    advanceIv(prefix->nextIv);
   }
 
-  void WalletGreen::deriveMacKey(const Crypto::chacha8_key &key, uint8_t macKey[32]) {
-    unsigned int macKeyLen = 32;
-    if (!HMAC(EVP_sha256(),
-              key.data, sizeof(key.data),
-              reinterpret_cast<const unsigned char*>("fuego-wallet-hmac"), 18,
-              macKey, &macKeyLen) || macKeyLen != 32) {
-      throw std::runtime_error("MAC key derivation failed");
+  StoredAddress WalletGreen::openAddressRecord(const EncryptedAddressRecord &record) const
+  {
+    return openAddress(record, m_key);
+  }
+
+  EncryptedAddressRecord WalletGreen::sealAddressRecord(const StoredAddress &address)
+  {
+    auto *prefix = reinterpret_cast<ContainerStoragePrefix *>(m_containerStorage.prefix());
+    const EncryptedAddressRecord record = sealAddress(address, m_key, prefix->nextIv);
+    advanceIv(prefix->nextIv);
+    return record;
+  }
+
+  StoredAddress WalletGreen::storedAddressOf(const WalletRecord &wallet)
+  {
+    StoredAddress address;
+    address.keys = KeyPairRecord{wallet.spendPublicKey, wallet.spendSecretKey, static_cast<uint64_t>(wallet.creationTimestamp)};
+    if (!wallet.addressKindRecorded)
+    {
+      address.kind = StoredAddressKind::Unrecorded;
     }
+    else if (wallet.isSubAddress && wallet.subaddrVersion == Crypto::SUBADDRESS_VERSION_V2)
+    {
+      address.kind = StoredAddressKind::SubaddressV2;
+      address.subaddrMajor = wallet.subaddrMajor;
+      address.subaddrMinor = wallet.subaddrMinor;
+    }
+    return address;
+  }
+
+  WalletRecord WalletGreen::walletRecordOf(const StoredAddress &address)
+  {
+    WalletRecord wallet;
+    wallet.spendPublicKey = address.keys.publicKey;
+    wallet.spendSecretKey = address.keys.secretKey;
+    wallet.creationTimestamp = static_cast<time_t>(address.keys.creationTimestamp);
+    wallet.addressKindRecorded = address.kind != StoredAddressKind::Unrecorded;
+    if (address.kind == StoredAddressKind::SubaddressV2)
+    {
+      wallet.isSubAddress = true;
+      wallet.subaddrVersion = Crypto::SUBADDRESS_VERSION_V2;
+      wallet.subaddrMajor = address.subaddrMajor;
+      wallet.subaddrMinor = address.subaddrMinor;
+    }
+    return wallet;
+  }
+
+  bool WalletGreen::subaddressDerivationMatches(const WalletRecord &wallet, const Crypto::PublicKey &primarySpendPublicKey) const
+  {
+    const Crypto::SubAddressKeys derived = Crypto::deriveSubAddressKeysV2(
+        m_viewSecretKey, primarySpendPublicKey, nullptr, wallet.subaddrMajor, wallet.subaddrMinor);
+    return derived.spendPublicKey == wallet.spendPublicKey;
+  }
+
+  // Records upgraded from a file before version 10 learn their kind from the
+  // first cache that loads; from then on the record itself carries it.
+  void WalletGreen::recordAddressKindsFromCache()
+  {
+    auto &index = m_walletsContainer.get<RandomAccessIndex>();
+    if (index.empty())
+    {
+      return;
+    }
+    const Crypto::PublicKey primarySpendPublicKey = index[0].spendPublicKey;
+    for (size_t i = 0; i < index.size(); ++i)
+    {
+      if (index[i].addressKindRecorded)
+      {
+        continue;
+      }
+      const bool claimsV2 = index[i].isSubAddress && index[i].subaddrVersion == Crypto::SUBADDRESS_VERSION_V2;
+      const bool provenV2 = claimsV2 && subaddressDerivationMatches(index[i], primarySpendPublicKey);
+      if (index[i].isSubAddress && !provenV2)
+      {
+        m_logger(ERROR, BRIGHT_RED) << "Cached subaddress metadata does not derive address " << i << "; recording it as a standard address";
+      }
+      index.modify(index.begin() + i, [provenV2](WalletRecord &wallet) {
+        wallet.addressKindRecorded = true;
+        if (!provenV2)
+        {
+          wallet.isSubAddress = false;
+          wallet.subaddrVersion = 0;
+          wallet.subaddrMajor = 0;
+          wallet.subaddrMinor = 0;
+        }
+      });
+      m_containerStorage[i] = sealAddressRecord(storedAddressOf(index[i]));
+      m_logger(INFO) << "Recorded the kind of address " << i << " in the wallet file";
+    }
+    m_containerStorage.flush();
   }
 
   void WalletGreen::loadSpendKeys()
@@ -2387,10 +2411,16 @@ namespace CryptoNote
     bool isTrackingMode;
     for (size_t i = 0; i < m_containerStorage.size(); ++i)
     {
-      WalletRecord wallet;
-      uint64_t creationTimestamp;
-      decryptKeyPair(m_containerStorage[i], wallet.spendPublicKey, wallet.spendSecretKey, creationTimestamp);
-      wallet.creationTimestamp = creationTimestamp;
+      WalletRecord wallet = walletRecordOf(openAddressRecord(m_containerStorage[i]));
+
+      if (i == 0 && wallet.isSubAddress)
+      {
+        throw std::system_error(make_error_code(error::BAD_ADDRESS), "The primary address record is marked as a subaddress");
+      }
+      if (i > 0 && wallet.isSubAddress && !subaddressDerivationMatches(wallet, m_walletsContainer.get<RandomAccessIndex>()[0].spendPublicKey))
+      {
+        throw std::system_error(make_error_code(error::BAD_ADDRESS), "A subaddress record does not derive from this wallet's keys");
+      }
 
       if (i == 0)
       {
@@ -2586,7 +2616,8 @@ namespace CryptoNote
     Crypto::generate_chacha8_key(cnContext, password, m_key);
 
     uint64_t creationTimestamp = time(nullptr);
-    prefix->encryptedViewKeys = encryptKeyPair(viewPublicKey, viewSecretKey, creationTimestamp, m_key, prefix->nextIv);
+    prefix->encryptedViewKeys = sealKeyPair(KeyPairRecord{viewPublicKey, viewSecretKey, creationTimestamp}, m_key, prefix->nextIv);
+    advanceIv(prefix->nextIv);
 
     newStorage.flush();
     m_containerStorage.swap(newStorage);
@@ -2595,7 +2626,6 @@ namespace CryptoNote
       m_logger(WARNING) << "Failed to set restrictive permissions on wallet file";
     }
 #endif
-    incNextIv();
 
     m_viewPublicKey = viewPublicKey;
     m_viewSecretKey = viewSecretKey;
@@ -2648,19 +2678,16 @@ namespace CryptoNote
     size_t counter = 0;
     ContainerStoragePrefix *srcPrefix = reinterpret_cast<ContainerStoragePrefix *>(src.prefix());
 
-    for (auto &encryptedSpendKeys : src)
+    for (auto &encryptedAddress : src)
     {
-      Crypto::PublicKey publicKey;
-      Crypto::SecretKey secretKey;
-      uint64_t creationTimestamp;
-      decryptKeyPair(encryptedSpendKeys, publicKey, secretKey, creationTimestamp, srcKey, srcPrefix->version);
+      const StoredAddress address = openAddress(encryptedAddress, srcKey);
 
-      // push_back() can resize container, and dstPrefix address can be changed, so it is requested for each key pair
+      // push_back() can resize container, and dstPrefix address can be changed, so it is requested for each record
       ContainerStoragePrefix *dstPrefix = reinterpret_cast<ContainerStoragePrefix *>(dst.prefix());
-      Crypto::chacha8_iv keyPairIv = dstPrefix->nextIv;
-      incIv(dstPrefix->nextIv);
+      Crypto::chacha8_iv recordIv = dstPrefix->nextIv;
+      advanceIv(dstPrefix->nextIv);
 
-      dst.push_back(encryptKeyPair(publicKey, secretKey, creationTimestamp, dstKey, keyPairIv));
+      dst.push_back(sealAddress(address, dstKey, recordIv));
     }
   }
 
@@ -2671,12 +2698,9 @@ namespace CryptoNote
     dstPrefix->version = srcPrefix->version;
     dstPrefix->nextIv = Crypto::randomChachaIV();
 
-    Crypto::PublicKey publicKey;
-    Crypto::SecretKey secretKey;
-    uint64_t creationTimestamp;
-    decryptKeyPair(srcPrefix->encryptedViewKeys, publicKey, secretKey, creationTimestamp, srcKey, srcPrefix->version);
-    dstPrefix->encryptedViewKeys = encryptKeyPair(publicKey, secretKey, creationTimestamp, dstKey, dstPrefix->nextIv);
-    incIv(dstPrefix->nextIv);
+    const KeyPairRecord viewKeys = openKeyPair(srcPrefix->encryptedViewKeys, srcKey, srcPrefix->version);
+    dstPrefix->encryptedViewKeys = sealKeyPair(viewKeys, dstKey, dstPrefix->nextIv);
+    advanceIv(dstPrefix->nextIv);
   }
 
   void WalletGreen::exportWalletKeys(const std::string &path, bool encrypt, WalletSaveLevel saveLevel, const std::string &extra)
@@ -2832,12 +2856,10 @@ namespace CryptoNote
     ContainerStoragePrefix *prefix = reinterpret_cast<ContainerStoragePrefix *>(m_containerStorage.prefix());
     prefix->version = WalletSerializerV2::SERIALIZATION_VERSION;
     prefix->nextIv = Crypto::randomChachaIV();
-    uint64_t creationTimestamp = time(nullptr);
-    prefix->encryptedViewKeys = encryptKeyPair(m_viewPublicKey, m_viewSecretKey, creationTimestamp);
-    for (auto spendKeys : m_walletsContainer.get<RandomAccessIndex>())
+    sealViewKeys(time(nullptr));
+    for (const auto &wallet : m_walletsContainer.get<RandomAccessIndex>())
     {
-      m_containerStorage.push_back(encryptKeyPair(spendKeys.spendPublicKey, spendKeys.spendSecretKey, spendKeys.creationTimestamp));
-      incNextIv();
+      m_containerStorage.push_back(sealAddressRecord(storedAddressOf(wallet)));
     }
     saveWalletCache(m_containerStorage, m_key, WalletSaveLevel::SAVE_ALL, "");
     boost::filesystem::rename(path, bakPath);
@@ -2859,13 +2881,6 @@ namespace CryptoNote
     }
 #endif
     m_logger(INFO, BRIGHT_WHITE) << "Wallet file converted! Previous version: " << bakPath;
-  }
-
-  void WalletGreen::incNextIv()
-  {
-    static_assert(sizeof(uint64_t) == sizeof(Crypto::chacha8_iv), "Bad Crypto::chacha8_iv size");
-    auto *prefix = reinterpret_cast<ContainerStoragePrefix *>(m_containerStorage.prefix());
-    incIv(prefix->nextIv);
   }
 
   void WalletGreen::loadAndDecryptContainerData(ContainerStorage &storage, const Crypto::chacha8_key &key, BinaryArray &containerData)
@@ -2957,6 +2972,70 @@ namespace CryptoNote
     m_logger(INFO) << "Container cache loaded";
   }
 
+  // Version 8 and 9 files keep only the key pair in each address record. The
+  // rewrite carries the cache and IV counter over unchanged; non-primary
+  // records start unrecorded until the cache confirms their kind.
+  void WalletGreen::upgradeToAddressKindRecords(const std::string &path)
+  {
+    m_logger(INFO, BRIGHT_WHITE) << "Upgrading wallet file to address records with their kind (v"
+                                 << static_cast<int>(WalletSerializerV2::SERIALIZATION_VERSION) << ")...";
+    boost::filesystem::path tmpPath = boost::filesystem::unique_path(path + ".tmp.%%%%-%%%%");
+    Tools::ScopeExit tmpFileDeleter([&tmpPath] {
+      boost::system::error_code ignore;
+      boost::filesystem::remove(tmpPath, ignore);
+    });
+    uint8_t legacyVersion = 0;
+    {
+      Common::FileMappedVector<EncryptedWalletRecord> legacy(path, FileMappedVectorOpenMode::OPEN, sizeof(ContainerStoragePrefix));
+      const ContainerStoragePrefix legacyPrefix = *reinterpret_cast<const ContainerStoragePrefix *>(legacy.prefix());
+      legacyVersion = legacyPrefix.version;
+      ContainerStorage upgraded(tmpPath.string(), FileMappedVectorOpenMode::CREATE, sizeof(ContainerStoragePrefix));
+      upgraded.setAutoFlush(false);
+      auto *prefix = reinterpret_cast<ContainerStoragePrefix *>(upgraded.prefix());
+      prefix->version = WalletSerializerV2::SERIALIZATION_VERSION;
+      prefix->nextIv = legacyPrefix.nextIv;
+      prefix->encryptedViewKeys = legacyPrefix.encryptedViewKeys;
+      for (size_t i = 0; i < legacy.size(); ++i)
+      {
+        StoredAddress address;
+        address.keys = openKeyPair(legacy[i], m_key, legacyPrefix.version);
+        address.kind = i == 0 ? StoredAddressKind::Standard : StoredAddressKind::Unrecorded;
+        // push_back() can remap the file, so the prefix is looked up for each record
+        auto *currentPrefix = reinterpret_cast<ContainerStoragePrefix *>(upgraded.prefix());
+        const Crypto::chacha8_iv recordIv = currentPrefix->nextIv;
+        advanceIv(currentPrefix->nextIv);
+        upgraded.push_back(sealAddress(address, m_key, recordIv));
+        OPENSSL_cleanse(&address.keys.secretKey, sizeof(address.keys.secretKey));
+      }
+      upgraded.resizeSuffix(legacy.suffixSize());
+      std::copy(legacy.suffix(), legacy.suffix() + legacy.suffixSize(), upgraded.suffix());
+      upgraded.flush();
+    }
+
+    boost::filesystem::path backupPath = path + ".v" + std::to_string(legacyVersion) + ".backup";
+    if (boost::filesystem::exists(backupPath))
+    {
+      backupPath = boost::filesystem::unique_path(path + ".%%%%-%%%%.backup");
+    }
+    boost::filesystem::rename(path, backupPath);
+    boost::system::error_code renameError;
+    boost::filesystem::rename(tmpPath, path, renameError);
+    if (renameError)
+    {
+      boost::system::error_code ignore;
+      boost::filesystem::rename(backupPath, path, ignore);
+      throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR), "Failed to replace the wallet file during upgrade");
+    }
+    tmpFileDeleter.cancel();
+#ifndef _WIN32
+    if (chmod(path.c_str(), S_IRUSR | S_IWUSR) != 0)
+    {
+      m_logger(WARNING) << "Failed to set restrictive permissions on upgraded wallet";
+    }
+#endif
+    m_logger(INFO, BRIGHT_GREEN) << "Wallet file upgraded; previous file kept at " << backupPath.string();
+  }
+
   void WalletGreen::loadContainerStorage(const std::string &path)
   {
     try
@@ -2994,13 +3073,17 @@ namespace CryptoNote
         oldFile.close();
 
         // Perform migration in memory
-        decryptKeyPair(*reinterpret_cast<const EncryptedWalletRecord*>(&oldPrefix.encryptedViewKeys), m_viewPublicKey, m_viewSecretKey, m_creationTimestamp, m_key, version);
-        
+        const KeyPairRecord viewKeys = openKeyPair(untaggedRecord(oldPrefix.encryptedViewKeys), m_key, version);
+        m_viewPublicKey = viewKeys.publicKey;
+        m_viewSecretKey = viewKeys.secretKey;
+        m_creationTimestamp = viewKeys.creationTimestamp;
+
         for (const auto& oldRec : oldRecords) {
+          const KeyPairRecord spendKeys = openKeyPair(untaggedRecord(oldRec), m_key, version);
           WalletRecord wallet;
-          uint64_t creationTimestamp;
-          decryptKeyPair(*reinterpret_cast<const EncryptedWalletRecord*>(&oldRec), wallet.spendPublicKey, wallet.spendSecretKey, creationTimestamp, m_key, version);
-          wallet.creationTimestamp = creationTimestamp;
+          wallet.spendPublicKey = spendKeys.publicKey;
+          wallet.spendSecretKey = spendKeys.secretKey;
+          wallet.creationTimestamp = static_cast<time_t>(spendKeys.creationTimestamp);
           wallet.actualBalance = 0;
           wallet.pendingBalance = 0;
           wallet.lockedDepositBalance = 0;
@@ -3015,10 +3098,10 @@ namespace CryptoNote
         ContainerStoragePrefix *prefix = reinterpret_cast<ContainerStoragePrefix *>(m_containerStorage.prefix());
         prefix->version = WalletSerializerV2::SERIALIZATION_VERSION;
         prefix->nextIv = oldPrefix.nextIv;
-        prefix->encryptedViewKeys = encryptKeyPair(m_viewPublicKey, m_viewSecretKey, m_creationTimestamp);
-        
+        sealViewKeys(m_creationTimestamp);
+
         for (const auto& wallet : m_walletsContainer) {
-          m_containerStorage.push_back(encryptKeyPair(wallet.spendPublicKey, wallet.spendSecretKey, wallet.creationTimestamp));
+          m_containerStorage.push_back(sealAddressRecord(storedAddressOf(wallet)));
         }
 
         // Save suffix (cache)
@@ -3044,9 +3127,10 @@ namespace CryptoNote
       ContainerStoragePrefix *prefix = reinterpret_cast<ContainerStoragePrefix *>(m_containerStorage.prefix());
       assert(prefix->version >= WalletSerializerV2::MIN_VERSION);
 
-      uint64_t creationTimestamp;
-      decryptKeyPair(prefix->encryptedViewKeys, m_viewPublicKey, m_viewSecretKey, creationTimestamp);
-      m_creationTimestamp = creationTimestamp;
+      const KeyPairRecord viewKeys = openViewKeys();
+      m_viewPublicKey = viewKeys.publicKey;
+      m_viewSecretKey = viewKeys.secretKey;
+      m_creationTimestamp = viewKeys.creationTimestamp;
       throwIfKeysMissmatch(m_viewSecretKey, m_viewPublicKey, "Restored view public key doesn't correspond to secret key");
       m_logger = Logging::LoggerRef(m_logger.getLogger(), "WalletGreen/" + podToHex(m_viewPublicKey).substr(0, 5));
 
@@ -3070,7 +3154,7 @@ namespace CryptoNote
     ContainerStoragePrefix *prefix = reinterpret_cast<ContainerStoragePrefix *>(storage.prefix());
 
     Crypto::chacha8_iv suffixIv = prefix->nextIv;
-    incIv(prefix->nextIv);
+    advanceIv(prefix->nextIv);
 
     // Derive independent MAC key from encryption key
     uint8_t macKey[32];
@@ -3108,20 +3192,6 @@ namespace CryptoNote
 
     storage.resizeSuffix(suffix.size());
     std::copy(suffix.begin(), suffix.end(), storage.suffix());
-  }
-
-  void WalletGreen::incIv(Crypto::chacha8_iv &iv)
-  {
-    static_assert(sizeof(uint64_t) == sizeof(Crypto::chacha8_iv), "Bad Crypto::chacha8_iv size");
-    uint64_t *i = reinterpret_cast<uint64_t *>(&iv);
-    if (*i < std::numeric_limits<uint64_t>::max())
-    {
-      ++(*i);
-    }
-    else
-    {
-      throw std::runtime_error("ChaCha8 IV overflow — keystream reuse risk. Reset wallet container.");
-    }
   }
 
   void WalletGreen::load(const std::string &path, const std::string &password, std::string &extra)
@@ -3163,6 +3233,10 @@ namespace CryptoNote
         throw std::system_error(make_error_code(error::WRONG_VERSION), "Unsupported wallet version");
       }
 
+      if (storesKeyPairRecords(version))
+      {
+        upgradeToAddressKindRecords(path);
+      }
       loadContainerStorage(path);
       subscribeWallets();
 
@@ -3173,6 +3247,7 @@ namespace CryptoNote
           std::unordered_set<Crypto::PublicKey> addedSpendKeys;
           std::unordered_set<Crypto::PublicKey> deletedSpendKeys;
           loadWalletCache(addedSpendKeys, deletedSpendKeys, extra);
+          recordAddressKindsFromCache();
           applySubaddressJanusPolicy();
 
           if (!addedSpendKeys.empty())
@@ -3591,8 +3666,7 @@ namespace CryptoNote
       {
         m_logger(DEBUGGING) << "Reset is required";
         save(WalletSaveLevel::SAVE_KEYS_AND_TRANSACTIONS, m_extra);
-        shutdown();
-        load(m_path, m_password);
+        shutdownAndReload();
       }
     }
     catch (const std::exception &e)
@@ -3645,9 +3719,6 @@ namespace CryptoNote
       throw std::system_error(make_error_code(error::ADDRESS_ALREADY_EXISTS));
     }
 
-    m_containerStorage.push_back(encryptKeyPair(spendPublicKey, spendSecretKey, creationTimestamp));
-    incNextIv();
-
     WalletRecord wallet;
     wallet.spendPublicKey = spendPublicKey;
     wallet.spendSecretKey = spendSecretKey;
@@ -3656,6 +3727,8 @@ namespace CryptoNote
     wallet.subaddrMajor = addressData.subaddrMajor;
     wallet.subaddrMinor = addressData.subaddrMinor;
     wallet.subaddrVersion = addressData.subaddrVersion;
+
+    m_containerStorage.push_back(sealAddressRecord(storedAddressOf(wallet)));
 
     try
     {
@@ -4439,28 +4512,19 @@ namespace CryptoNote
     /* Stop so things can't be added to the container as we're looping */
     stop();
 
-    /* Grab the wallet encrypted prefix */
-    auto *prefix = reinterpret_cast<ContainerStoragePrefix *>(m_containerStorage.prefix());
     m_logger(INFO, BRIGHT_WHITE) << "reset with height " << scanHeight;
     uint64_t newTimestamp = scanHeightToTimestamp((uint32_t)scanHeight);
 
     m_logger(INFO, BRIGHT_WHITE) << "new timestamp " << newTimestamp;
 
     /* Reencrypt with the new creation timestamp so we rescan from here when we relaunch */
-    prefix->encryptedViewKeys = encryptKeyPair(m_viewPublicKey, m_viewSecretKey, newTimestamp);
+    sealViewKeys(newTimestamp);
 
-    /* As a reference so we can update it */
-    for (auto &encryptedSpendKeys : m_containerStorage)
+    for (auto &encryptedAddress : m_containerStorage)
     {
-      Crypto::PublicKey publicKey;
-      Crypto::SecretKey secretKey;
-      uint64_t oldTimestamp;
-
-      /* Decrypt the key pair we're pointing to */
-      decryptKeyPair(encryptedSpendKeys, publicKey, secretKey, oldTimestamp);
-
-      /* Re-encrypt with the new timestamp */
-      encryptedSpendKeys = encryptKeyPair(publicKey, secretKey, newTimestamp);
+      StoredAddress address = openAddressRecord(encryptedAddress);
+      address.keys.creationTimestamp = newTimestamp;
+      encryptedAddress = sealAddressRecord(address);
     }
 
     /* Start again so we can save */
@@ -4469,16 +4533,22 @@ namespace CryptoNote
     /* Save just the keys + timestamp to file */
     save(CryptoNote::WalletSaveLevel::SAVE_KEYS_ONLY);
 
-    /* Stop and shutdown */
     stop();
+    shutdownAndReload();
+  }
 
-    /* Shutdown the wallet */
+  // shutdown() wipes the stored password, so the reload keeps its own copy.
+  void WalletGreen::shutdownAndReload()
+  {
+    const std::string path = m_path;
+    std::string password = m_password;
+    Tools::ScopeExit wipePassword([&password] {
+      password.assign(password.size(), '\0');
+      password.clear();
+    });
     shutdown();
-
     start();
-
-    /* Reopen from truncated storage */
-    load(m_path, m_password);
+    load(path, password);
   }
 
   bool WalletGreen::updateTransactionTransfers(size_t transactionId, const std::vector<ContainerAmounts> &containerAmountsList,

@@ -1,3 +1,35 @@
+## funsa F2: subaddress kind and index in the wallet key record
+
+**Started**: 2026-11-21
+**Agent**: Claude Code
+**Status**: DONE (Linux GCC build and tests).
+**Plan**: `docs/developer/funsa-subaddress-rollout-plan.md` section 4.2 (owner approval 2026-11-21, "yes f two").
+**Scope**: `src/Wallet/{WalletRecordCrypto.{h,cpp} (new),WalletGreen.{h,cpp},WalletIndices.h,WalletSerializationV2.{h,cpp}}`, `tests/UnitTests/SubaddressWalletTest.cpp`, `docs/developer/funsa-subaddress-rollout-plan.md`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `WalletRecordCrypto`: one module seals and opens the view-key record and the address records (ChaCha8 + HMAC-SHA256, unchanged algorithm and MAC key); plaintext buffers wiped | Claude Code | 2026-11-21 | DONE |
+| 2 | Wallet file version 10: each address record also holds its kind (standard, V2 subaddress, not yet recorded) and (major, minor). The record wins over the cache; a V2 record must derive from the wallet's view key and primary spend key, or loading fails | Claude Code | 2026-11-21 | DONE |
+| 3 | v8/v9 files are rewritten as v10 on load (original kept as `<file>.v<N>.backup`, cache and IV counter carried over). Non-primary records start unrecorded; the first cache that loads fills them after the derivation check and they are written back. Without a cache they load as standard, as before | Claude Code | 2026-11-21 | DONE |
+| 4 | Pre-existing ChaCha8 keystream reuse fixed: `reset()` re-encrypted every record under one IV; the legacy-file conversion gave the first spend record the view keys' IV; the v7→v8 migration gave every record one IV. Sealing now always takes the next IV and advances it | Claude Code | 2026-11-21 | DONE |
+| 5 | Pre-existing since 4ab50eb9 (2026-05-14): `shutdown()` wipes the password, after which `reset()` and the address import that rescans reloaded with an empty password, so both always failed with an integrity error. `shutdownAndReload` keeps its own copy, wiped after use | Claude Code | 2026-11-21 | DONE |
+| 6 | Tests (`subaddress_wallet_tests`, 8 new, 11/11): keys-only save, lost cache, corrupted cache, v9 upgrade then cache loss, v9 without cache, record with another index refused, `reset()` of a password-protected wallet, distinct IVs for every record and the cache | Claude Code | 2026-11-21 | DONE |
+
+**Mutation checks**: storing every record as standard, never recording from the cache, skipping the derivation check, not advancing the IV, and reloading with the wiped password each fail their tests; restoring the code passes.
+
+**Consequences:**
+- Binaries before this change refuse a v10 file ("Unsupported wallet version") instead of loading V2 records as standard ones. Upgrading a wallet is one-way except through the backup file.
+- A v8/v9 wallet whose cache never loads keeps its subaddresses as standard records until a cache load succeeds; nothing can recover the index without it.
+- Records sealed under a reused IV before this change stay as they are until rewritten; `reset()` or the v10 upgrade rewrites every record.
+
+| Gate | Status | Signed |
+|------|--------|--------|
+| Build compiles | Linux GCC Release with `BUILD_TESTS=ON`: all targets | Claude Code 2026-11-21 |
+| Tests pass | ctest 72/73; the failure is `commitment_owner_bound_tests`, present on `master` since 33e787a5 | Claude Code 2026-11-21 |
+| All tasks done | DONE | Claude Code 2026-11-21 |
+
+---
+
 ## DeXFG: legacy cooperative escrow spend
 
 **Started**: 2026-11-21

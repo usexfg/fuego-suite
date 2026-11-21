@@ -183,7 +183,11 @@ add_test(NAME wallet_input_reservation_tests COMMAND wallet_input_reservation_te
 add_executable(commitment_persistence_tests
     UnitTests/CommitmentPersistenceTest.cpp
 )
-target_include_directories(commitment_persistence_tests PRIVATE ${CMAKE_SOURCE_DIR}/external/gtest/include)
+target_include_directories(commitment_persistence_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/external/gtest/include
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include
+)
 target_link_libraries(commitment_persistence_tests PRIVATE
     Transfers
     CryptoNoteCore
@@ -191,6 +195,8 @@ target_link_libraries(commitment_persistence_tests PRIVATE
     Logging
     Common
     Crypto
+    System
+    ${Boost_LIBRARIES}
     gtest
     gtest_main
 )

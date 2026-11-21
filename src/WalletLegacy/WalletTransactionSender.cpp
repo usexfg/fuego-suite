@@ -1047,6 +1047,10 @@ namespace CryptoNote
       unconfirmed.depositsSum = totalSum;
       unconfirmed.fee = transactionInfo.fee;
       unconfirmed.transactionId = context->transactionId;
+      // An unconfirmed record carries the send time the wallet file saves, so the
+      // withdraw expires from when it was sent even across reloads. It moves no
+      // XFG: amount 0 and no key inputs.
+      m_transactionsCache.updateTransaction(context->transactionId, lowlevelTransaction, 0, {});
       m_transactionsCache.addDepositSpendingTransaction(transaction->getTransactionHash(), unconfirmed);
 
       return std::unique_ptr<WalletRelayDepositTransactionRequest>(new WalletRelayDepositTransactionRequest(lowlevelTransaction,

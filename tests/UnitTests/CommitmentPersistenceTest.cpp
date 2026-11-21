@@ -20,13 +20,17 @@
 #include "Common/StdInputStream.h"
 #include "Common/StdOutputStream.h"
 #include "CryptoNoteConfig.h"
+#include "CryptoNoteCore/Account.h"
 #include "CryptoNoteCore/Currency.h"
 #include "CryptoNoteCore/TransactionApi.h"
 #include "CryptoNoteCore/TransactionExtra.h"
 #include "Logging/ConsoleLogger.h"
 #include "Serialization/BinaryInputStreamSerializer.h"
 #include "Serialization/BinaryOutputStreamSerializer.h"
+#include "Transfers/BlockchainSynchronizer.h"
 #include "Transfers/TransfersContainer.h"
+#include "Transfers/TransfersSynchronizer.h"
+#include "NullNode.h"
 
 using namespace CryptoNote;
 
@@ -317,3 +321,63 @@ TEST(CommitmentPersistenceRecords, V1ReaderZeroInitialisesTheKey) {
   EXPECT_EQ(Crypto::PublicKey{}, reader.commitmentKey);
   EXPECT_EQ(Crypto::KeyImage{}, reader.keyImage);
 }
+
+// A wallet holding commitment outputs saved by a binary from before cache version 4
+// must rescan. Loading such a synchronizer state raises TransfersCacheNeedsRescan
+// (the wallets catch it and resynchronize) and leaves the subscription fresh, with
+// no transfers from the untrusted cache and no known blocks to resume from.
+TEST(CommitmentPersistenceSynchronizer, OldCacheWithCommitmentsLoadsFreshForRescan) {
+  Logging::ConsoleLogger logger(Logging::ERROR);
+  Currency currency = CurrencyBuilder(logger).currency();
+  NullNode node;
+  AccountBase account;
+  account.generate();
+  AccountSubscription subscription{};
+  subscription.keys = account.getAccountKeys();
+  subscription.transactionSpendableAge = kSpendableAge;
+
+  std::string savedState;
+  std::string containerState;
+  {
+    BlockchainSynchronizer chain(node, currency.genesisBlockHash());
+    TransfersSyncronizer transfers(currency, logger, chain, node);
+    auto& container = dynamic_cast<TransfersContainer&>(transfers.addSubscription(subscription).getContainer());
+
+    auto tx = createTransaction();
+    TransactionOutputCommitment out;
+    out.commitKey = patternKey(30);
+    out.term = parameters::HEAT_TERM;
+    tx->addOutput(kAmount, out);
+    TransactionOutputInformationIn info{};
+    info.type = TransactionTypes::OutputType::Commitment;
+    info.amount = kAmount;
+    info.globalOutputIndex = 5;
+    info.transactionPublicKey = tx->getTransactionPublicKey();
+    info.term = parameters::HEAT_TERM;
+    info.keyImage = patternImage(30);
+    info.commitmentKey = out.commitKey;
+    ASSERT_TRUE(container.addTransaction(TransactionBlockInfo{kHeight, 1000000}, *tx, {info}, {}, nullptr));
+
+    std::stringstream containerStream;
+    container.save(containerStream);
+    containerState = containerStream.str();
+    std::stringstream stream;
+    transfers.save(stream);
+    savedState = stream.str();
+  }
+
+  const size_t containerAt = savedState.find(containerState);
+  ASSERT_NE(std::string::npos, containerAt) << "the container state is stored verbatim";
+  ASSERT_EQ(4, static_cast<unsigned char>(savedState[containerAt]));
+  savedState[containerAt] = 3;
+
+  BlockchainSynchronizer chain(node, currency.genesisBlockHash());
+  TransfersSyncronizer transfers(currency, logger, chain, node);
+  ITransfersContainer& container = transfers.addSubscription(subscription).getContainer();
+  const auto freshKnownBlocks = transfers.getViewKeyKnownBlocks(subscription.keys.address.viewPublicKey);
+  std::stringstream stream(savedState);
+  EXPECT_THROW(transfers.load(stream), TransfersCacheNeedsRescan);
+  EXPECT_EQ(0u, container.transfersCount());
+  EXPECT_EQ(freshKnownBlocks, transfers.getViewKeyKnownBlocks(subscription.keys.address.viewPublicKey));
+}
+

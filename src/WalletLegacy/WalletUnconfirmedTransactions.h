@@ -20,7 +20,6 @@
 #include "IWalletLegacy.h"
 #include "ITransfersContainer.h"
 
-#include <functional>
 #include <unordered_map>
 #include <unordered_set>
 #include <time.h>
@@ -48,7 +47,6 @@ struct hash<CryptoNote::TransactionOutputId> {
 }
 
 namespace CryptoNote {
-
 
 struct UnconfirmedTransferDetails {
 
@@ -101,7 +99,6 @@ public:
   void reset();
 
   std::vector<TransactionId> deleteOutdatedTransactions();
-
 
 private:
 

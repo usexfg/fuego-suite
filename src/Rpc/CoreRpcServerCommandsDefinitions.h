@@ -2795,17 +2795,17 @@ struct COMMAND_RPC_AMM_POOL_INFO {
   typedef EMPTY_STRUCT request;
 
   struct response {
-    uint64_t reserve_xfg;
-    uint64_t reserve_heat;
-    uint64_t total_lp_shares;
-    uint64_t spot_price;
-    uint64_t epoch_swap_fees;
-    uint64_t hearth_twap;
-    uint64_t height;
+    uint64_t reserve_xfg = 0;
+    uint64_t reserve_heat = 0;
+    uint64_t total_lp_shares = 0;
+    uint64_t spot_price = 0;
+    uint64_t epoch_swap_fees = 0;
+    uint64_t hearth_twap = 0;
+    uint64_t height = 0;
     // Taker-fee split in force at `height`: the CD share of the 1% Hearth fee
     // (percent). v11 = 30, v12 = 70. Wallets quote against this rather than
     // assuming one version's split.
-    uint64_t hearth_cd_share_pct;
+    uint64_t hearth_cd_share_pct = 0;
     std::string status;
     void serialize(ISerializer &s) {
       KV_MEMBER(reserve_xfg)

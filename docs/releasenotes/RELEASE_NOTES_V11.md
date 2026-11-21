@@ -6,7 +6,7 @@
 | **Block Version** | `BLOCK_MAJOR_VERSION_11` |
 | **Activation Height** | 1,111,111 |
 | **Release Version** | v1.11.00 |
-| **Testnet Activation** | Block 30 (v12 at block 180) |
+| **Testnet Activation** | Block 30 (v12 at block 1000; CDs from block 1001). Testnet relaunched 2026-11-19: every node must wipe its testnet data |
 | **Previous** | v1.10.02 Wildfire (height 1,003,000) |
 | **Next** | v1.12.00 SILENTFIRE (height 2,666,666) — HEAT CDs + unified outputs |
 

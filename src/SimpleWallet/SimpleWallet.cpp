@@ -4174,40 +4174,17 @@ bool simple_wallet::mint_heat(const std::vector<std::string>& args) {
     return false;
   }
 
-  // Query live AMM pool rate from daemon — consensus validates against this, not hardcoded ratio
-  uint64_t poolTwap = 0;
+  HeatMintQuote quote;
   try {
-    COMMAND_RPC_AMM_POOL_INFO::request poolReq;
-    COMMAND_RPC_AMM_POOL_INFO::response poolRes;
-    HttpClient httpClient(m_dispatcher, m_daemon_host, m_daemon_port);
-    invokeJsonCommand(httpClient, "/amm_pool_info", poolReq, poolRes);
-    poolTwap = poolRes.hearth_twap;
+    quote = quoteHeatMint(*m_node, xfgAmount);
   } catch (const std::exception& e) {
-    fail_msg_writer() << "Failed to query Hearth pool: " << e.what();
+    fail_msg_writer() << "Failed to price the mint: " << e.what();
     return false;
   }
-  if (poolTwap == 0) {
-    fail_msg_writer() << "No Hearth TWAP yet — HEAT mints open two blocks into v11";
-    return false;
-  }
-
-  // Consensus prices the mint at the Hearth oracle price; build a little under it so
-  // the TWAP moving before inclusion does not invalidate the mint.
-  //
-  // The v11 mint premium is a haircut inside the burn: heat(premiumXfg) of the
-  // burn is minted to the AuntPoL HEAT leg, so the minter receives
-  // heat(xfgAmount) - heat(premiumXfg). Price the two terms separately to match
-  // consensus exactly (their truncation can differ by an atomic).
-  const uint64_t premiumXfg = heatMintPremiumXfg(
-      xfgAmount, BLOCK_MAJOR_VERSION_11);
-  const uint64_t expectedHeat = static_cast<uint64_t>(
-      (static_cast<uint128_t>(xfgAmount) * poolTwap) / parameters::COIN);
-  const uint64_t premiumHeat = static_cast<uint64_t>(
-      (static_cast<uint128_t>(premiumXfg) * poolTwap) / parameters::COIN);
-  const uint64_t userCap =
-      premiumHeat < expectedHeat ? expectedHeat - premiumHeat : 0;
-  uint64_t heatAmount =
-      userCap * (10000 - parameters::WALLET_MINT_TWAP_MARGIN_BPS) / 10000;
+  const uint64_t poolTwap = quote.hearthTwap;
+  const uint64_t premiumXfg = quote.premiumXfg;
+  const uint64_t premiumHeat = quote.premiumHeat;
+  uint64_t heatAmount = quote.heatToMinter;
 
   // Enforce minimum HEAT mint (0.1 HEAT mainnet, 0.01 HEAT testnet)
   uint64_t minHeat = m_currency.isTestnet()
@@ -4335,8 +4312,7 @@ bool simple_wallet::swap(const std::vector<std::string>& args) {
     const uint64_t reserveOut = direction == 0 ? poolRes.reserve_heat : poolRes.reserve_xfg;
     const uint64_t gross = ammGetOutputAmount(amount, reserveIn, reserveOut, 0);
     const uint64_t net = ammSwapNetOutput(amount, reserveIn, reserveOut);
-    outputAmount = static_cast<uint64_t>(
-        (static_cast<uint128_t>(net) * (10000 - parameters::WALLET_SWAP_SLIPPAGE_BPS)) / 10000);
+    outputAmount = quoteSwapOutput(*m_node, direction, amount);
     // Where the trade leaves the pool: the output and the fee's CD share leave.
     // The split is versioned and comes from the daemon, not from a constant.
     const uint64_t cdFee = (gross - net) * poolRes.hearth_cd_share_pct / 100;

@@ -40,6 +40,7 @@
 #include <string>
 #include <vector>
 #include <filesystem>
+#include <functional>
 #ifdef _WIN32
 #include <process.h>
 #define getpid _getpid
@@ -765,7 +766,10 @@ struct TestChain {
   bool keepDirectory = false;
 
   explicit TestChain(const std::string& tag, bool testnet = false)
-      : currency(testnet ? CurrencyBuilder(log).testnet(true).currency() : CurrencyBuilder(log).currency()),
+      : TestChain(tag, [testnet](CurrencyBuilder& builder) { builder.testnet(testnet); }) {}
+
+  TestChain(const std::string& tag, const std::function<void(CurrencyBuilder&)>& configure)
+      : currency(configuredCurrency(log, configure)),
         pool(currency, chain, timeProvider, log),
         chain(currency, pool, log, false, false),
         dir(std::filesystem::temp_directory_path() /
@@ -774,6 +778,12 @@ struct TestChain {
     std::filesystem::create_directories(dir);
     ok = chain.init(dir.string(), false);
   }
+  static Currency configuredCurrency(Logging::ILogger& logger, const std::function<void(CurrencyBuilder&)>& configure) {
+    CurrencyBuilder builder(logger);
+    configure(builder);
+    return builder.currency();
+  }
+
   ~TestChain() {
     if (keepDirectory) {
       return;
@@ -1069,6 +1079,24 @@ void testCdActivationHeight() {
     TEST(network->blockMajorVersionAtHeight(network->cdActivationHeight()) < BLOCK_MAJOR_VERSION_12);
     TEST(network->blockMajorVersionAtHeight(network->cdActivationHeight() + 1) == BLOCK_MAJOR_VERSION_12);
   }
+}
+
+// Testnet must run v11 rules past the Hearth bootstrap for long enough to exercise
+// the call auction and two FCI quarters of vote tallies before v12 starts. At the
+// old v12 height (180) the auction ran for 79 blocks (102..180).
+void testTestnetRunsV11PastTheBootstrap() {
+  Logging::LoggerGroup nullLog;
+  Currency testnet = CurrencyBuilder(nullLog).testnet(true).currency();
+  TEST(testnet.upgradeHeight(BLOCK_MAJOR_VERSION_11) == parameters::TESTNET_UPGRADE_HEIGHT_V11);
+  TEST(testnet.upgradeHeight(BLOCK_MAJOR_VERSION_12) == parameters::TESTNET_UPGRADE_HEIGHT_V12);
+  TEST(parameters::TESTNET_UPGRADE_HEIGHT_V12 == 1000);
+  TEST(testnet.hasIncreasingUpgradeSchedule());
+  TEST(CurrencyBuilder(nullLog).currency().hasIncreasingUpgradeSchedule());
+  const uint32_t auctionStart = testnet.upgradeHeight(BLOCK_MAJOR_VERSION_11) + testnet.bootstrapBlocks();
+  const uint32_t twoFciQuarters =
+      2 * parameters::FCI_EPOCHS_PER_QUARTER * static_cast<uint32_t>(parameters::TESTNET_EPOCH_DURATION_BLOCKS);
+  TEST(testnet.upgradeHeight(BLOCK_MAJOR_VERSION_12) >= auctionStart + twoFciQuarters);
+  TEST(testnet.blockMajorVersionAtHeight(auctionStart + twoFciQuarters) == BLOCK_MAJOR_VERSION_11);
 }
 
 // Limit fills are priced on the curve: an order's limit holds for its average
@@ -2924,6 +2952,43 @@ bool mineUpTo(TestChain& t, const AccountPublicAddress& miner, uint32_t nextHeig
   return true;
 }
 
+// A testnet node upgraded across a schedule change without wiping its data holds
+// blocks of the wrong version. On start it rolls back to the last block the
+// current schedule accepts, instead of building on a chain no peer accepts.
+void testStoredChainFromAnotherScheduleRollsBack() {
+  const uint32_t oldV12Height = parameters::TESTNET_UPGRADE_HEIGHT_V11 + 5;
+  std::filesystem::path dir;
+  {
+    TestChain old("schedule_change", [oldV12Height](CurrencyBuilder& builder) {
+      builder.testnet(true).upgradeHeightV12(oldV12Height);
+    });
+    TEST(old.ok);
+    TEST(mineUpTo(old, newMinerAddress(), oldV12Height + 4));
+    TEST(old.chain.getBlockMajorVersionForHeight(oldV12Height + 1) == BLOCK_MAJOR_VERSION_12);
+    old.chain.deinit();
+    old.keepDirectory = true;
+    dir = old.dir;
+  }
+  {
+    struct ReopenedNode {
+      Logging::LoggerGroup log;
+      Currency currency;
+      RealTimeProvider timeProvider;
+      tx_memory_pool pool;
+      Blockchain chain;
+      ReopenedNode()
+          : currency(CurrencyBuilder(log).testnet(true).currency()),
+            pool(currency, chain, timeProvider, log),
+            chain(currency, pool, log, false, false) {}
+    } upgraded;
+    TEST(upgraded.chain.init(dir.string(), true));
+    TEST(upgraded.chain.getCurrentBlockchainHeight() == oldV12Height + 1);
+    upgraded.chain.deinit();
+  }
+  std::error_code ec;
+  std::filesystem::remove_all(dir, ec);
+}
+
 // Popping a block removes that block's outputs from the indexes and nothing
 // else. It used to clear every output index, so after any reorg the node had
 // no ring members left and refused every ring spend.
@@ -3066,6 +3131,8 @@ int main() {
   testHeatMetricsSeedRedemptionPrice();
   testSwapPriceBand();
   testCdActivationHeight();
+  testTestnetRunsV11PastTheBootstrap();
+  testStoredChainFromAnotherScheduleRollsBack();
   testBankingIndexTallyAndReversal();
   testBankingIndexSerializationRoundtrip();
   testFiftyFiftySplitDust();

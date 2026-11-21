@@ -143,6 +143,43 @@ TEST_F(CommitmentPersistence, MarkerTermOutputsBecomeSpendable) {
   }
 }
 
+// A commitment input names the output it spends by key image. The container used
+// to index commitment outputs under a descriptor no input could match, so spent
+// HEAT, CDs and LP shares stayed available and a rescanned wallet counted them.
+template <class CommitmentInput>
+void expectInputSpendsTheOutput(TransfersContainer& container, const Crypto::Hash& outputTx,
+                                const Crypto::KeyImage& keyImage) {
+  auto spend = createTransaction();
+  CommitmentInput input{};
+  input.amount = kAmount;
+  input.outputIndexes = {5};
+  input.keyImage = keyImage;
+  spend->addInput(input);
+  TransactionBlockInfo block{kHeight + 20, 1000200};
+  ASSERT_TRUE(container.addTransaction(block, *spend, {}, {}, nullptr));
+
+  TransactionOutputInformation out;
+  ITransfersContainer::TransferState state;
+  ASSERT_TRUE(container.getTransfer(outputTx, 0, out, state));
+  EXPECT_EQ(ITransfersContainer::TransferState::TransferSpent, state);
+  std::vector<TransactionOutputInformation> available;
+  container.getOutputs(available, ITransfersContainer::IncludeTypeHeat | ITransfersContainer::IncludeStateUnlocked |
+                                     ITransfersContainer::IncludeStateLocked | ITransfersContainer::IncludeStateSoftLocked);
+  EXPECT_TRUE(available.empty());
+}
+
+TEST_F(CommitmentPersistence, CommitmentSpendMarksTheOutputSpent) {
+  auto heat = addCommitmentTransaction(patternKey(10), patternImage(10));
+  container.advanceHeight(kHeight + 10);
+  expectInputSpendsTheOutput<TransactionInputCommitmentSpend>(container, heat->getTransactionHash(), patternImage(10));
+}
+
+TEST_F(CommitmentPersistence, CommitmentTransferMarksTheOutputSpent) {
+  auto heat = addCommitmentTransaction(patternKey(11), patternImage(11));
+  container.advanceHeight(kHeight + 10);
+  expectInputSpendsTheOutput<TransactionInputCommitmentTransfer>(container, heat->getTransactionHash(), patternImage(11));
+}
+
 // A cache written before storage version 2 has no commit key, and one written before
 // version 3 has no Janus flag (the byte that follows the commit key). Build genuine older
 // streams from the current bytes by excising those fields and patching the version.

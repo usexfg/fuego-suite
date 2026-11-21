@@ -138,10 +138,17 @@ bool WalletUserTransactionsCache::serialize(CryptoNote::ISerializer& s) {
   return true;
 }
 
+// A send saved while it was still waiting for decoys was never built: it has no
+// hash and can never reach the network. It is marked failed so its deposits
+// return to the wallet instead of staying held by a send that no longer exists.
 void WalletUserTransactionsCache::releaseDepositsOfUnsentTransactions() {
   for (TransactionId id = 0; id < m_transactions.size(); ++id) {
-    const WalletLegacyTransactionState state = m_transactions[id].state;
-    if (state == WalletLegacyTransactionState::Failed || state == WalletLegacyTransactionState::Cancelled) {
+    WalletLegacyTransaction& transaction = m_transactions[id];
+    if (transaction.state == WalletLegacyTransactionState::Sending && transaction.hash == NULL_HASH) {
+      transaction.state = WalletLegacyTransactionState::Failed;
+    }
+    if (transaction.state == WalletLegacyTransactionState::Failed || transaction.state == WalletLegacyTransactionState::Cancelled ||
+        transaction.state == WalletLegacyTransactionState::Deleted) {
       releaseDepositsSpentBy(id);
     }
   }
@@ -286,6 +293,7 @@ void WalletUserTransactionsCache::updateTransactionSendingState(TransactionId tr
   } else {
     txInfo.sentTime = time(nullptr); // update sending time
     txInfo.state = WalletLegacyTransactionState::Active;
+    m_unconfirmedTransactions.releaseReservedOutputs(transactionId);
   }
 }
 
@@ -375,8 +383,6 @@ std::deque<std::unique_ptr<WalletLegacyEvent>> WalletUserTransactionsCache::onTr
   TransactionId id = CryptoNote::WALLET_LEGACY_INVALID_TRANSACTION_ID;
   if (m_unconfirmedTransactions.findTransactionId(transactionHash, id)) {
     m_unconfirmedTransactions.erase(transactionHash);
-    // LOG_ERROR("Unconfirmed transaction is deleted: id = " << id << ", hash = " << transactionHash);
-    assert(false);
   } else {
     id = findTransactionByHash(transactionHash);
   }
@@ -562,9 +568,9 @@ bool WalletUserTransactionsCache::isUsed(const TransactionOutputInformation& out
   return m_unconfirmedTransactions.isUsed(out);
 }
 
-void WalletUserTransactionsCache::reserveOutputs(TransactionId transactionId,
+bool WalletUserTransactionsCache::reserveOutputs(TransactionId transactionId,
                                                  const std::vector<TransactionOutputInformation>& outputs) {
-  m_unconfirmedTransactions.reserveOutputs(transactionId, outputs);
+  return m_unconfirmedTransactions.reserveOutputs(transactionId, outputs);
 }
 
 WalletLegacyTransaction& WalletUserTransactionsCache::getTransaction(TransactionId transactionId) {
@@ -603,6 +609,7 @@ std::vector<TransactionId> WalletUserTransactionsCache::deleteOutdatedTransactio
   for (auto id: deletedTransactions) {
     assert(id < m_transactions.size());
     m_transactions[id].state = WalletLegacyTransactionState::Deleted;
+    releaseDepositsSpentBy(id);
   }
 
   return deletedTransactions;

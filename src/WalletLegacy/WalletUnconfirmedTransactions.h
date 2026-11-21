@@ -95,7 +95,7 @@ public:
   uint64_t countUnconfirmedOutsAmount() const;
   uint64_t countUnconfirmedTransactionsAmount() const;
   bool isUsed(const TransactionOutputInformation& out) const;
-  void reserveOutputs(TransactionId transactionId, const std::vector<TransactionOutputInformation>& outputs);
+  bool reserveOutputs(TransactionId transactionId, const std::vector<TransactionOutputInformation>& outputs);
   void releaseReservedOutputs(TransactionId transactionId);
   void reset();
 
@@ -104,6 +104,7 @@ public:
 private:
 
   void collectUsedOutputs();
+  void stampSpentDepositsAsRecordedNow();
   void deleteUsedOutputs(const std::vector<TransactionOutputId>& usedOutputs);
 
   bool eraseUnconfirmedTransaction(const Crypto::Hash& hash);
@@ -122,6 +123,7 @@ private:
 
   std::unordered_map<DepositId, uint64_t> m_createdDeposits;
   std::unordered_map<Crypto::Hash, UnconfirmedSpentDepositDetails> m_spentDeposits;
+  std::unordered_map<Crypto::Hash, time_t> m_spentDepositsRecordedAt;
 };
 
 } // namespace CryptoNote

@@ -103,7 +103,7 @@ public:
   Deposit& getDeposit(DepositId depositId);
 
   bool isUsed(const TransactionOutputInformation& out) const;
-  void reserveOutputs(TransactionId transactionId, const std::vector<TransactionOutputInformation>& outputs);
+  bool reserveOutputs(TransactionId transactionId, const std::vector<TransactionOutputInformation>& outputs);
   bool isUnspentDepositRecord(const Crypto::Hash& creatingTransactionHash, uint32_t outputInTransaction) const;
   void reset();
 

@@ -948,6 +948,7 @@ namespace CryptoNote {
     bool removeLastBlock();
     bool checkCheckpoints(uint32_t &lastValidCheckpointHeight);
     bool checkUpgradeHeight(const UpgradeDetector& upgradeDetector);
+    uint32_t firstBlockWithWrongMajorVersion();
 
     bool storeBlockchainIndices();
     bool loadBlockchainIndices();

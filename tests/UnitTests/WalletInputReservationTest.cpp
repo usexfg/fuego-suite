@@ -7,18 +7,25 @@
 
 #include <deque>
 #include <memory>
+#include <sstream>
 #include <vector>
 
 #include "gtest/gtest.h"
 
+#include "Common/StdInputStream.h"
+#include "Common/StdOutputStream.h"
 #include "CryptoNoteCore/Account.h"
+#include "CryptoNoteCore/CryptoNoteTools.h"
 #include "CryptoNoteCore/CryptoNoteFormatUtils.h"
 #include "CryptoNoteCore/Currency.h"
 #include "CryptoNoteCore/TransactionApi.h"
 #include "Logging/ConsoleLogger.h"
+#include "Serialization/BinaryInputStreamSerializer.h"
+#include "Serialization/BinaryOutputStreamSerializer.h"
 #include "NullNode.h"
 #include "Transfers/TransfersContainer.h"
 #include "WalletLegacy/WalletLegacyEvent.h"
+#include "WalletLegacy/WalletSendTransactionContext.h"
 #include "WalletLegacy/WalletTransactionSender.h"
 #include "WalletLegacy/WalletUserTransactionsCache.h"
 #include "Wallet/WalletErrors.h"
@@ -148,4 +155,132 @@ TEST_F(WalletInputReservation, SendIsRefusedWhenEveryInputIsHeld) {
   TransactionId transactionId;
   EXPECT_THROW(sender.makeSendRequest(transactionSecret, false, transactionId, events, transfers, currency.minimumFee()),
                std::system_error);
+}
+
+// A second claim on an output that a send already holds is refused, so a later
+// selection that skipped the held-output check (fusion did) cannot take it over.
+TEST_F(WalletInputReservation, HeldInputCannotBeTakenOver) {
+  const StartedSend first = startSend();
+  ASSERT_EQ(1u, first.inputs.size());
+  const TransactionId otherSend = cache.addNewTransaction(0, currency.minimumFee(), std::string(), {}, 0, {});
+  EXPECT_FALSE(cache.reserveOutputs(otherSend, spendableOutputs()));
+
+  cache.updateTransactionSendingState(otherSend, make_error_code(error::INTERNAL_WALLET_ERROR));
+  size_t held = 0;
+  for (const auto& out : spendableOutputs()) {
+    held += cache.isUsed(out) ? 1 : 0;
+  }
+  EXPECT_EQ(1u, held) << "the refused claim released nothing that belongs to the first send";
+}
+
+// A send that completes without being recorded as unconfirmed (the multisig deposit
+// withdraw) gives its reservation back.
+TEST_F(WalletInputReservation, CompletedSendReleasesItsReservation) {
+  const StartedSend first = startSend();
+  ASSERT_EQ(1u, first.inputs.size());
+  cache.updateTransactionSendingState(first.transactionId, std::error_code());
+  for (const auto& out : spendableOutputs()) {
+    EXPECT_FALSE(cache.isUsed(out));
+  }
+}
+
+// The node answers one decoy set per selected input, for that input's amount.
+TEST(WalletDecoyResponse, MustMatchTheSelectedInputs) {
+  SendTransactionContext context;
+  TransactionOutputInformation first{};
+  first.amount = 7;
+  TransactionOutputInformation second{};
+  second.amount = 9;
+  context.selectedTransfers = {first, second};
+
+  COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount firstSet{};
+  firstSet.amount = 7;
+  COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount secondSet{};
+  secondSet.amount = 9;
+
+  context.outs = {firstSet};
+  EXPECT_FALSE(WalletTransactionSender::decoysMatchSelectedInputs(context)) << "one set short";
+  context.outs = {secondSet, firstSet};
+  EXPECT_FALSE(WalletTransactionSender::decoysMatchSelectedInputs(context)) << "sets for other amounts";
+  context.outs = {firstSet, secondSet};
+  EXPECT_TRUE(WalletTransactionSender::decoysMatchSelectedInputs(context));
+}
+
+// A commitment spend is recorded under one hash in both the unconfirmed
+// transactions and the spent deposits. Both go when it confirms or fails.
+TEST(WalletUnconfirmedSpends, EraseRemovesTheSpentDepositRecordToo) {
+  WalletUnconfirmedTransactions unconfirmed(60 * 60);
+  Transaction tx{};
+  tx.version = TRANSACTION_VERSION_2;
+  const Crypto::Hash hash = getObjectHash(tx);
+  unconfirmed.add(tx, 0, 0, {});
+  unconfirmed.addDepositSpendingTransaction(hash, UnconfirmedSpentDepositDetails{0, 500, 10});
+  ASSERT_EQ(490u, unconfirmed.countSpentDepositsProfit() + unconfirmed.countSpentDepositsTotalAmount() - 500);
+
+  unconfirmed.erase(hash);
+  EXPECT_EQ(0u, unconfirmed.countSpentDepositsTotalAmount());
+  TransactionId id = 0;
+  EXPECT_FALSE(unconfirmed.findTransactionId(hash, id));
+}
+
+// A send saved while it waited for decoys was never built. On load it is failed
+// and the deposit it held is spendable again.
+TEST(WalletCacheLoad, UnbuiltSendReleasesItsDeposit) {
+  WalletUserTransactionsCache saved;
+  Deposit deposit{};
+  deposit.amount = 1000;
+  deposit.term = 10;
+  deposit.locked = false;
+  deposit.spendingTransactionId = WALLET_LEGACY_INVALID_TRANSACTION_ID;
+  const DepositId depositId = saved.insertDeposit(deposit, 0, Crypto::Hash{});
+  const TransactionId unbuilt = saved.addNewTransaction(0, 10, std::string(), {}, 0, {});
+  saved.getDeposit(depositId).spendingTransactionId = unbuilt;
+
+  std::stringstream stream;
+  {
+    Common::StdOutputStream output(stream);
+    BinaryOutputStreamSerializer serializer(output);
+    ASSERT_TRUE(saved.serialize(serializer));
+  }
+  WalletUserTransactionsCache loaded;
+  {
+    Common::StdInputStream input(stream);
+    BinaryInputStreamSerializer serializer(input);
+    ASSERT_TRUE(loaded.serialize(serializer));
+  }
+  EXPECT_EQ(WalletLegacyTransactionState::Failed, loaded.getTransaction(unbuilt).state);
+  EXPECT_EQ(WALLET_LEGACY_INVALID_TRANSACTION_ID, loaded.getDeposit(depositId).spendingTransactionId);
+}
+
+// A refused send leaves no transaction record behind.
+TEST_F(WalletInputReservation, RefusedSendLeavesNoRecord) {
+  const StartedSend first = startSend();
+  ASSERT_EQ(1u, first.inputs.size());
+  SendTransactionContext context;
+  context.selectedTransfers = spendableOutputs();
+  const size_t recordsBefore = cache.getTransactionCount();
+  EXPECT_THROW(sender.recordSendHoldingInputs(context, [&] {
+    return cache.addNewTransaction(0, currency.minimumFee(), std::string(), {}, 0, {});
+  }), std::system_error);
+  EXPECT_EQ(recordsBefore, cache.getTransactionCount());
+}
+
+// A deposit spend the node dropped expires like any other send, and its deposit
+// becomes spendable again instead of staying held for good.
+TEST(WalletCacheExpiry, DroppedDepositSpendReleasesItsDeposit) {
+  WalletUserTransactionsCache cache(0);
+  Deposit deposit{};
+  deposit.amount = 1000;
+  deposit.spendingTransactionId = WALLET_LEGACY_INVALID_TRANSACTION_ID;
+  const DepositId depositId = cache.insertDeposit(deposit, 0, Crypto::Hash{});
+  const TransactionId withdraw = cache.addNewTransaction(0, 10, std::string(), {}, 0, {});
+  cache.getDeposit(depositId).spendingTransactionId = withdraw;
+  Crypto::Hash withdrawHash;
+  withdrawHash.data[0] = 1;
+  cache.addDepositSpendingTransaction(withdrawHash, UnconfirmedSpentDepositDetails{withdraw, 1000, 10});
+
+  cache.deleteOutdatedTransactions();
+  EXPECT_EQ(WalletLegacyTransactionState::Deleted, cache.getTransaction(withdraw).state);
+  EXPECT_EQ(WALLET_LEGACY_INVALID_TRANSACTION_ID, cache.getDeposit(depositId).spendingTransactionId);
+  EXPECT_EQ(0u, cache.countUnconfirmedSpentDepositsTotalAmount());
 }

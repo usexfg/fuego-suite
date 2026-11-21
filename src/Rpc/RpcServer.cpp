@@ -878,8 +878,6 @@ bool RpcServer::on_get_random_outs(const COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOU
   std::for_each(res.outs.begin(), res.outs.end(), [&](outs_for_amount& ofa)  {
     ss << "[" << ofa.amount << "]:";
 
-    assert(ofa.outs.size() && "internal error: ofa.outs.size() is empty");
-
     std::for_each(ofa.outs.begin(), ofa.outs.end(), [&](out_entry& oe)
     {
       ss << oe.global_amount_index << " ";

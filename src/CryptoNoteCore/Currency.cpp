@@ -82,20 +82,6 @@ namespace CryptoNote
     }
 
 		if (isTestnet()) {
-			m_upgradeHeightV2 = 2;
-			m_upgradeHeightV3 = 3;
-			m_upgradeHeightV4 = 4;
-			m_upgradeHeightV5 = 5;
-			m_upgradeHeightV6 = 6;
-			m_upgradeHeightV7 = 17;
-			m_upgradeHeightV8 = 18;
-		m_upgradeHeightV9 = 19;
-		m_upgradeHeightV10 = 25;
-		m_upgradeHeightV11 = 30;
-		m_upgradeHeightV12 = 180;
-		m_bootstrapBlocks = TESTNET_BOOTSTRAP_BLOCKS;
-		m_difficultyTarget = 10;  // 10-second target for testnet (fast mining)
-
       m_blocksFileName = "testnet_" + m_blocksFileName;
       m_blocksCacheFileName = "testnet_" + m_blocksCacheFileName;
       m_blockIndexesFileName = "testnet_" + m_blockIndexesFileName;
@@ -157,6 +143,15 @@ namespace CryptoNote
 
 	uint32_t Currency::heatwaveTagCutoffHeight() const {
 		return m_testnet ? m_upgradeHeightV11 : parameters::HEATWAVE_TAG_CUTOFF_HEIGHT;
+	}
+
+	bool Currency::hasIncreasingUpgradeSchedule() const {
+		for (uint8_t version = BLOCK_MAJOR_VERSION_3; version <= BLOCK_MAJOR_VERSION_12; ++version) {
+			if (upgradeHeight(version) < upgradeHeight(version - 1)) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	uint32_t Currency::upgradeHeight(uint8_t majorVersion) const {
@@ -1763,19 +1758,7 @@ double Currency::getBurnPercentage() const {
     mempoolTxFromAltBlockLiveTime(parameters::CRYPTONOTE_MEMPOOL_TX_FROM_ALT_BLOCK_LIVETIME);
     numberOfPeriodsToForgetTxDeletedFromPool(parameters::CRYPTONOTE_NUMBER_OF_PERIODS_TO_FORGET_TX_DELETED_FROM_POOL);
 
-    upgradeHeightV2(parameters::UPGRADE_HEIGHT_V2);
-    upgradeHeightV3(parameters::UPGRADE_HEIGHT_V3);
-    upgradeHeightV4(parameters::UPGRADE_HEIGHT_V4);
-    upgradeHeightV5(parameters::UPGRADE_HEIGHT_V5);
-    upgradeHeightV6(parameters::UPGRADE_HEIGHT_V6);
-    upgradeHeightV7(parameters::UPGRADE_HEIGHT_V7);
-    upgradeHeightV8(parameters::UPGRADE_HEIGHT_V8);
-    upgradeHeightV9(parameters::UPGRADE_HEIGHT_V9);
-    upgradeHeightV10(parameters::UPGRADE_HEIGHT_V10); // upgradekit
-    upgradeHeightV11(parameters::UPGRADE_HEIGHT_V11); // HearthAMM+HEAT
-    upgradeHeightV12(parameters::UPGRADE_HEIGHT_V12); // CDs + unified outputs
-
-    bootstrapBlocks(BOOTSTRAP_BLOCKS);
+    applyMainnetSchedule();
 
     upgradeVotingThreshold(parameters::UPGRADE_VOTING_THRESHOLD);
     upgradeVotingWindow(parameters::UPGRADE_VOTING_WINDOW);
@@ -1800,7 +1783,9 @@ double Currency::getBurnPercentage() const {
 		CryptoNote::AccountPublicAddress ac = boost::value_initialized<CryptoNote::AccountPublicAddress>();
 		BinaryArray extraNonce;
 		if (m_currency.m_testnet) {
-			uint32_t nonce = m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_10);
+			// Both genesis transactions were generated with the mainnet v10 height
+			// as their extra nonce; the testnet schedule must not change it.
+			uint32_t nonce = parameters::UPGRADE_HEIGHT_V10;
 			extraNonce.resize(4);
 			memcpy(extraNonce.data(), &nonce, 4);
 		}
@@ -1959,4 +1944,36 @@ double Currency::getBurnPercentage() const {
 		return true;
 	}
 
-} // namespace CryptoNote
+  void CurrencyBuilder::applyMainnetSchedule() {
+    upgradeHeightV2(parameters::UPGRADE_HEIGHT_V2);
+    upgradeHeightV3(parameters::UPGRADE_HEIGHT_V3);
+    upgradeHeightV4(parameters::UPGRADE_HEIGHT_V4);
+    upgradeHeightV5(parameters::UPGRADE_HEIGHT_V5);
+    upgradeHeightV6(parameters::UPGRADE_HEIGHT_V6);
+    upgradeHeightV7(parameters::UPGRADE_HEIGHT_V7);
+    upgradeHeightV8(parameters::UPGRADE_HEIGHT_V8);
+    upgradeHeightV9(parameters::UPGRADE_HEIGHT_V9);
+    upgradeHeightV10(parameters::UPGRADE_HEIGHT_V10);
+    upgradeHeightV11(parameters::UPGRADE_HEIGHT_V11);
+    upgradeHeightV12(parameters::UPGRADE_HEIGHT_V12);
+    bootstrapBlocks(BOOTSTRAP_BLOCKS);
+    difficultyTarget(parameters::DIFFICULTY_TARGET);
+  }
+
+  void CurrencyBuilder::applyTestnetSchedule() {
+    upgradeHeightV2(parameters::TESTNET_UPGRADE_HEIGHT_V2);
+    upgradeHeightV3(parameters::TESTNET_UPGRADE_HEIGHT_V3);
+    upgradeHeightV4(parameters::TESTNET_UPGRADE_HEIGHT_V4);
+    upgradeHeightV5(parameters::TESTNET_UPGRADE_HEIGHT_V5);
+    upgradeHeightV6(parameters::TESTNET_UPGRADE_HEIGHT_V6);
+    upgradeHeightV7(parameters::TESTNET_UPGRADE_HEIGHT_V7);
+    upgradeHeightV8(parameters::TESTNET_UPGRADE_HEIGHT_V8);
+    upgradeHeightV9(parameters::TESTNET_UPGRADE_HEIGHT_V9);
+    upgradeHeightV10(parameters::TESTNET_UPGRADE_HEIGHT_V10);
+    upgradeHeightV11(parameters::TESTNET_UPGRADE_HEIGHT_V11);
+    upgradeHeightV12(parameters::TESTNET_UPGRADE_HEIGHT_V12);
+    bootstrapBlocks(TESTNET_BOOTSTRAP_BLOCKS);
+    difficultyTarget(parameters::TESTNET_DIFFICULTY_TARGET);
+  }
+
+}

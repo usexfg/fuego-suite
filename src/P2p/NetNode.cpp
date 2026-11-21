@@ -822,7 +822,10 @@ namespace CryptoNote
         }
       }
     } else {
-      m_network_id.data[0] += 1;
+      // Testnet's own id. The old id (mainnet's with the first byte + 1) belongs
+      // to nodes on the pre-2026-11-19 testnet schedule (v12 after 180), which
+      // reject every block the current schedule produces.
+      m_network_id = CRYPTONOTE_NETWORK_TESTNET;
     }
 
     if (!handleConfig(config)) {

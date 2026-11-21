@@ -745,6 +745,12 @@ std::list<TransactionOutputInformation> WalletLegacy::selectFusionTransfersToSen
   std::vector<TransactionOutputInformation> outputs;
   std::vector<TransactionOutputInformation> allFusionReadyOuts;
   m_transferDetails->getOutputs(outputs, ITransfersContainer::IncludeKeyUnlocked);
+  {
+    std::unique_lock<std::mutex> lock(m_cacheMutex);
+    outputs.erase(std::remove_if(outputs.begin(), outputs.end(),
+                                 [this](const TransactionOutputInformation& out) { return m_transactionsCache.isUsed(out); }),
+                  outputs.end());
+  }
   std::array<size_t, std::numeric_limits<uint64_t>::digits10 + 1> bucketSizes;
   bucketSizes.fill(0);
   for (auto& out : outputs) {

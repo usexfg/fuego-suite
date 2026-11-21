@@ -20,6 +20,13 @@
 
 namespace CryptoNote {
 
+struct HeatMintQuote {
+  uint64_t hearthTwap = 0;
+  uint64_t premiumXfg = 0;
+  uint64_t premiumHeat = 0;
+  uint64_t heatToMinter = 0;
+};
+
 struct LpRemovePayout {
   uint64_t xfg = 0;
   uint64_t heat = 0;
@@ -30,5 +37,15 @@ struct LpRemovePayout {
 // reserves move with almost every block before then.
 uint64_t quoteLpAddShares(INode& node, uint64_t amountXfg, uint64_t amountHeat);
 LpRemovePayout quoteLpRemovePayout(INode& node, uint64_t lpShares);
+
+// Prices a v11 mint at the node's Hearth oracle price, as consensus does: the
+// premium is priced separately (its truncation can differ by an atomic), and the
+// minter's HEAT is quoted WALLET_MINT_TWAP_MARGIN_BPS under the price so a TWAP
+// move before inclusion does not invalidate the mint.
+HeatMintQuote quoteHeatMint(INode& node, uint64_t xfgBurned);
+
+// Hearth swap output on the constant-product curve, net of the taker fee, less
+// WALLET_SWAP_SLIPPAGE_BPS. direction 0 sells XFG for HEAT, 1 sells HEAT for XFG.
+uint64_t quoteSwapOutput(INode& node, uint8_t direction, uint64_t inputAmount);
 
 }

@@ -37,6 +37,10 @@ INode::AmmPoolInfo currentPool(INode& node) {
   return pool;
 }
 
+uint64_t heatAtPrice(uint64_t xfg, uint64_t price) {
+  return static_cast<uint64_t>((static_cast<uint128_t>(xfg) * price) / parameters::COIN);
+}
+
 uint64_t lessSlippage(uint64_t amount) {
   return static_cast<uint64_t>((static_cast<uint128_t>(amount) * (10000 - parameters::WALLET_SWAP_SLIPPAGE_BPS)) / 10000);
 }
@@ -58,6 +62,28 @@ LpRemovePayout quoteLpRemovePayout(INode& node, uint64_t lpShares) {
   payout.xfg = lessSlippage(payout.xfg);
   payout.heat = lessSlippage(payout.heat);
   return payout;
+}
+
+HeatMintQuote quoteHeatMint(INode& node, uint64_t xfgBurned) {
+  HeatMintQuote quote;
+  quote.hearthTwap = node.getHearthTwap();
+  if (quote.hearthTwap == 0) {
+    throw std::system_error(make_error_code(error::WRONG_STATE), "No Hearth TWAP yet; HEAT mints open two blocks into v11");
+  }
+  quote.premiumXfg = heatMintPremiumXfg(xfgBurned, BLOCK_MAJOR_VERSION_11);
+  const uint64_t burnHeat = heatAtPrice(xfgBurned, quote.hearthTwap);
+  quote.premiumHeat = heatAtPrice(quote.premiumXfg, quote.hearthTwap);
+  const uint64_t minterCap = quote.premiumHeat < burnHeat ? burnHeat - quote.premiumHeat : 0;
+  quote.heatToMinter = static_cast<uint64_t>(
+      (static_cast<uint128_t>(minterCap) * (10000 - parameters::WALLET_MINT_TWAP_MARGIN_BPS)) / 10000);
+  return quote;
+}
+
+uint64_t quoteSwapOutput(INode& node, uint8_t direction, uint64_t inputAmount) {
+  const INode::AmmPoolInfo pool = currentPool(node);
+  const uint64_t reserveIn = direction == 0 ? pool.reserveXfg : pool.reserveHeat;
+  const uint64_t reserveOut = direction == 0 ? pool.reserveHeat : pool.reserveXfg;
+  return lessSlippage(ammSwapNetOutput(inputAmount, reserveIn, reserveOut));
 }
 
 }

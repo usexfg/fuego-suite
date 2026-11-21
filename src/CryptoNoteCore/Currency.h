@@ -196,6 +196,7 @@ public:
   uint64_t numberOfPeriodsToForgetTxDeletedFromPool() const { return m_numberOfPeriodsToForgetTxDeletedFromPool; }
 
   uint32_t upgradeHeight(uint8_t majorVersion) const;
+  bool hasIncreasingUpgradeSchedule() const;
   // The v12 height on every network: CD outputs are admitted only in v12 blocks,
   // and a ring whose youngest member is below this height may hold a legacy deposit.
   uint32_t cdActivationHeight() const;
@@ -593,6 +594,8 @@ public:
   CurrencyBuilder& txPoolFileName(const std::string& val) { m_currency.m_txPoolFileName = val; return *this; }
   CurrencyBuilder& blockchinIndicesFileName(const std::string& val) { m_currency.m_blockchinIndicesFileName = val; return *this; }
 
+  // Selects the network and applies its whole upgrade schedule, bootstrap length
+  // and difficulty target. Set any of those after this call, not before.
   CurrencyBuilder& testnet(bool val) {
     m_currency.m_testnet = val;
 
@@ -605,18 +608,23 @@ public:
       depositMaxTerm(parameters::TESTNET_CD_MAX_EPOCHS * parameters::TESTNET_EPOCH_DURATION_BLOCKS);
       // Set testnet-specific mined money unlock window
       minedMoneyUnlockWindow(parameters::CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW_TESTNET);
+      applyTestnetSchedule();
     } else {
       // Set mainnet deposit terms when switching from testnet to mainnet
       depositMinTerm(parameters::CD_MIN_EPOCHS * parameters::EPOCH_DURATION_BLOCKS);
       depositMaxTerm(parameters::CD_MAX_EPOCHS * parameters::EPOCH_DURATION_BLOCKS);
       // Set mainnet mined money unlock window
       minedMoneyUnlockWindow(parameters::CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW);
+      applyMainnetSchedule();
     }
 
     return *this;
   }
 
   private:
+    void applyTestnetSchedule();
+    void applyMainnetSchedule();
+
     Currency m_currency;
   };
 

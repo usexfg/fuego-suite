@@ -291,3 +291,25 @@ target_link_libraries(fci_oracle_json_tests PRIVATE
     gtest_main
 )
 add_test(NAME fci_oracle_json_tests COMMAND fci_oracle_json_tests)
+
+# In-process multi-node framework (plan docs/V11_LAUNCH_TODO.md item 9.2).
+file(GLOB IntegrationTestLibSources IntegrationTestLib/*.cpp)
+add_library(IntegrationTestLib STATIC ${IntegrationTestLibSources})
+target_include_directories(IntegrationTestLib PUBLIC
+    ${CMAKE_SOURCE_DIR}/external/gtest/include
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)
+target_link_libraries(IntegrationTestLib PUBLIC
+    InProcessNode NodeRpcProxy P2P Rpc Http Wallet Transfers CryptoNoteCore
+    Serialization Logging Common Crypto System ${Boost_LIBRARIES} gtest)
+
+
+# End-to-end HEAT scenarios on a real in-process node with real wallets.
+file(GLOB HeatE2ESources E2E/*.cpp)
+add_executable(heat_e2e_tests ${HeatE2ESources})
+# Wallet, Transfers, P2P and CryptoNoteCore reference each other; link them as one group.
+target_link_libraries(heat_e2e_tests PRIVATE IntegrationTestLib gtest_main "$<LINK_GROUP:RESCAN,Wallet,Transfers,P2P,CryptoNoteCore>")
+add_test(NAME heat_e2e_tests COMMAND heat_e2e_tests)
+set_tests_properties(heat_e2e_tests PROPERTIES TIMEOUT 1800)

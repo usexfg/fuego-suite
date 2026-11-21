@@ -553,6 +553,20 @@ const uint32_t UPGRADE_HEIGHT_V12 =
     2666666; //{SILENTFIRE}  HEAT CDs + unified outputs + hidden amounts + MLSAG
              //+ BP+
 const uint32_t CD_ACTIVATION_HEIGHT = UPGRADE_HEIGHT_V12;
+// Testnet schedule. v12 starts after 1000 so v11 rules (Hearth auction after the
+// 72-block bootstrap, re-mint quarters, FCI vote tallies) run long enough to test.
+const uint32_t TESTNET_UPGRADE_HEIGHT_V2 = 2;
+const uint32_t TESTNET_UPGRADE_HEIGHT_V3 = 3;
+const uint32_t TESTNET_UPGRADE_HEIGHT_V4 = 4;
+const uint32_t TESTNET_UPGRADE_HEIGHT_V5 = 5;
+const uint32_t TESTNET_UPGRADE_HEIGHT_V6 = 6;
+const uint32_t TESTNET_UPGRADE_HEIGHT_V7 = 17;
+const uint32_t TESTNET_UPGRADE_HEIGHT_V8 = 18;
+const uint32_t TESTNET_UPGRADE_HEIGHT_V9 = 19;
+const uint32_t TESTNET_UPGRADE_HEIGHT_V10 = 25;
+const uint32_t TESTNET_UPGRADE_HEIGHT_V11 = 30;
+const uint32_t TESTNET_UPGRADE_HEIGHT_V12 = 1000;
+const uint64_t TESTNET_DIFFICULTY_TARGET = DIFFICULTY_TARGET_TESTNET;
 const uint32_t HEATWAVE_TAG_CUTOFF_HEIGHT = UPGRADE_HEIGHT_V11;
              // upgradekit
              //

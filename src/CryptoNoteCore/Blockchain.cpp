@@ -1199,6 +1199,30 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
     rollbackBlockchainTo(upgradeHeight);
     reinitUpgradeDetectors = true;
   }
+  // The checks above look at one block per upgrade height. A chain stored under
+  // a different upgrade schedule (a testnet node upgraded across a height change
+  // without wiping its data) can match at those heights and still hold blocks of
+  // the wrong version between them.
+  const uint32_t firstWrongVersionHeight = firstBlockWithWrongMajorVersion();
+  // Undo data covers only the last MAX_ROLLBACK_HISTORY blocks; a deeper rollback
+  // would leave HEAT, Hearth and alias state that matches no block.
+  if (firstWrongVersionHeight < m_blocks.size() && m_blocks.size() - firstWrongVersionHeight > MAX_ROLLBACK_HISTORY) {
+    logger(ERROR, BRIGHT_RED) << "Block " << firstWrongVersionHeight << " has version "
+      << static_cast<int>(m_blocks[firstWrongVersionHeight].bl.majorVersion) << ", the upgrade schedule expects "
+      << static_cast<int>(m_currency.blockMajorVersionAtHeight(firstWrongVersionHeight)) << ", "
+      << m_blocks.size() - firstWrongVersionHeight << " blocks back. The data directory was written under another "
+      << "upgrade schedule; delete its blockchain files and resync.";
+    return false;
+  }
+  if (firstWrongVersionHeight < m_blocks.size()) {
+    logger(WARNING, BRIGHT_YELLOW) << "Block " << firstWrongVersionHeight << " has version "
+      << static_cast<int>(m_blocks[firstWrongVersionHeight].bl.majorVersion) << ", the upgrade schedule expects "
+      << static_cast<int>(m_currency.blockMajorVersionAtHeight(firstWrongVersionHeight))
+      << ". Rollback blockchain to height=" << firstWrongVersionHeight - 1;
+    rollbackBlockchainTo(firstWrongVersionHeight - 1);
+    reinitUpgradeDetectors = true;
+  }
+
   // V11 and V12 were previously missing from this list, so a rollback triggered
   // by any version left their detectors stale.
   if (reinitUpgradeDetectors && (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDetectorV4.init() || !m_upgradeDetectorV5.init() || !m_upgradeDetectorV6.init() || !m_upgradeDetectorV7.init() || !m_upgradeDetectorV8.init() || !m_upgradeDetectorV9.init() || !m_upgradeDetectorV10.init() || !m_upgradeDetectorV11.init() || !m_upgradeDetectorV12.init())) {
@@ -7880,6 +7904,34 @@ void CryptoNote::Blockchain::popTransactions(const BlockEntry& block, const Cryp
     popBlock(blockHash);
     return true;
   }
+
+// Stored block versions never decrease with height, so the first block of each
+// version is found by binary search and compared with the schedule's first block
+// of that version. Versions without a fixed height (voted upgrades) are skipped.
+// Requires fixed upgrade heights that do not decrease with version
+// (Currency::hasIncreasingUpgradeSchedule, checked by core tests).
+uint32_t CryptoNote::Blockchain::firstBlockWithWrongMajorVersion() {
+  const uint32_t chainSize = static_cast<uint32_t>(m_blocks.size());
+  if (!m_currency.hasIncreasingUpgradeSchedule()) {
+    return chainSize;
+  }
+  uint32_t firstWrong = chainSize;
+  for (uint8_t version = BLOCK_MAJOR_VERSION_2; version <= BLOCK_MAJOR_VERSION_12; ++version) {
+    const uint32_t upgradeHeight = m_currency.upgradeHeight(version);
+    if (upgradeHeight == UpgradeDetectorBase::UNDEF_HEIGHT) {
+      continue;
+    }
+    const uint32_t scheduledFirst = upgradeHeight + 1;
+    const auto storedIt = std::lower_bound(m_blocks.begin(), m_blocks.end(), version,
+      [](const BlockEntry& block, uint8_t v) { return block.bl.majorVersion < v; });
+    const uint32_t storedFirst = static_cast<uint32_t>(storedIt - m_blocks.begin());
+    const uint32_t earlier = std::min(storedFirst, scheduledFirst);
+    if (storedFirst != scheduledFirst && earlier < chainSize) {
+      firstWrong = std::min(firstWrong, earlier);
+    }
+  }
+  return firstWrong;
+}
 
 bool CryptoNote::Blockchain::checkUpgradeHeight(const UpgradeDetector& upgradeDetector) {
   uint32_t upgradeHeight = upgradeDetector.upgradeHeight();

@@ -313,8 +313,7 @@ namespace CryptoNote
       context->messages.push_back({message.message, true, address});
     }
 
-    transactionId = m_transactionsCache.addNewTransaction(neededMoney, fee, extra, transfers, unlockTimestamp, messages);
-    claimSelectedInputs(*context, transactionId);
+    transactionId = recordSendHoldingInputs(*context, [&] { return m_transactionsCache.addNewTransaction(neededMoney, fee, extra, transfers, unlockTimestamp, messages); });
     context->mixIn = mixIn;
     context->ttl = ttl;
 
@@ -368,8 +367,7 @@ namespace CryptoNote
 
     throwIf(context->foundMoney < neededMoney, error::WRONG_AMOUNT);
 
-    transactionId = m_transactionsCache.addNewTransaction(neededMoney, fee, std::string(), {}, 0, {});
-    claimSelectedInputs(*context, transactionId);
+    transactionId = recordSendHoldingInputs(*context, [&] { return m_transactionsCache.addNewTransaction(neededMoney, fee, std::string(), {}, 0, {}); });
     context->mixIn = mixIn;
     context->depositTerm = static_cast<uint32_t>(term);
 
@@ -411,8 +409,7 @@ namespace CryptoNote
     context->selectedTransfers = std::move(depositTransfers);
     throwIf(context->foundMoney < fee, error::WRONG_AMOUNT);
 
-    transactionId = m_transactionsCache.addNewTransaction(context->foundMoney, fee, std::string(), {}, 0, {});
-    claimSelectedInputs(*context, transactionId);
+    transactionId = recordSendHoldingInputs(*context, [&] { return m_transactionsCache.addNewTransaction(context->foundMoney, fee, std::string(), {}, 0, {}); });
     context->mixIn = 0;
     setSpendingTransactionToDeposits(transactionId, depositIds);
     return doSendDepositWithdrawTransaction(std::move(context), events, depositIds);
@@ -440,8 +437,7 @@ namespace CryptoNote
     CryptoNote::addTreasuryFundToExtra(extraVec, 0, amount);
     std::string extra(extraVec.begin(), extraVec.end());
 
-    transactionId = m_transactionsCache.addNewTransaction(neededMoney, fee, extra, {}, 0, {});
-    claimSelectedInputs(*context, transactionId);
+    transactionId = recordSendHoldingInputs(*context, [&] { return m_transactionsCache.addNewTransaction(neededMoney, fee, extra, {}, 0, {}); });
 
     return makeGetRandomOutsRequest(std::move(context), false, transactionSK);
   }
@@ -472,8 +468,7 @@ namespace CryptoNote
 
     const std::vector<TransactionMessage> messages;
 
-    transactionId = m_transactionsCache.addNewTransaction(neededMoney, fee, extra, transfers, unlockTimestamp, messages);
-    claimSelectedInputs(*context, transactionId);
+    transactionId = recordSendHoldingInputs(*context, [&] { return m_transactionsCache.addNewTransaction(neededMoney, fee, extra, transfers, unlockTimestamp, messages); });
     context->mixIn = mixIn;
     Crypto::SecretKey transactionSK;
 
@@ -483,6 +478,25 @@ namespace CryptoNote
     }
 
     return doSendTransaction(std::move(context), events, transactionSK);
+  }
+
+  // The node answers one decoy set per selected input, in request order. A node
+  // that answers fewer, or for other amounts, would have the ring builder index
+  // past the sets it returned.
+  bool WalletTransactionSender::decoysMatchSelectedInputs(const SendTransactionContext &context)
+  {
+    if (context.outs.size() != context.selectedTransfers.size())
+    {
+      return false;
+    }
+    for (size_t i = 0; i < context.outs.size(); ++i)
+    {
+      if (context.outs[i].amount != context.selectedTransfers[i].amount)
+      {
+        return false;
+      }
+    }
+    return true;
   }
 
   std::unique_ptr<WalletRequest> WalletTransactionSender::makeGetRandomOutsRequest(std::shared_ptr<SendTransactionContext> &&context, bool isMultisigTransaction, Crypto::SecretKey &transactionSK)
@@ -598,6 +612,11 @@ namespace CryptoNote
     if (m_isStoping)
     {
       ec = make_error_code(error::TX_CANCELLED);
+    }
+
+    if (!ec && !decoysMatchSelectedInputs(*context))
+    {
+      ec = make_error_code(error::INTERNAL_WALLET_ERROR);
     }
 
     if (ec)
@@ -1383,8 +1402,8 @@ namespace CryptoNote
       }
 
       Deposit deposit;
-      bool r = m_transactionsCache.getDeposit(id, deposit);
-      assert(r);
+      throwIf(!m_transactionsCache.getDeposit(id, deposit), error::DEPOSIT_DOESNOT_EXIST);
+      throwIf(deposit.spendingTransactionId != WALLET_LEGACY_INVALID_TRANSACTION_ID, error::DEPOSIT_LOCKED);
 
       foundMoney += deposit.amount;
     }
@@ -1424,8 +1443,7 @@ namespace CryptoNote
     context->v10HeatMinted = heatMinted;
     context->dynamicRingSize = m_currency.isTestnet();  // allow bootstrap ring sizes on testnet
 
-    transactionId = m_transactionsCache.addNewTransaction(neededMoney, fee, std::string(), {}, 0, {});
-    claimSelectedInputs(*context, transactionId);
+    transactionId = recordSendHoldingInputs(*context, [&] { return m_transactionsCache.addNewTransaction(neededMoney, fee, std::string(), {}, 0, {}); });
 
     // Build auth tag extra inline — will be appended in doSendHeatMintV10Transaction
     std::vector<uint8_t> extra;
@@ -1665,8 +1683,7 @@ namespace CryptoNote
     context->foundMoney = selectTransfersToSend(neededMoney, false, context->dustPolicy.dustThreshold, context->selectedTransfers);
     throwIf(context->foundMoney < neededMoney, error::WRONG_AMOUNT);
 
-    transactionId = m_transactionsCache.addNewTransaction(neededMoney, fee, std::string(), {}, 0, {});
-    claimSelectedInputs(*context, transactionId);
+    transactionId = recordSendHoldingInputs(*context, [&] { return m_transactionsCache.addNewTransaction(neededMoney, fee, std::string(), {}, 0, {}); });
     context->isV10AmmSwap = true;
     context->v10SwapDirection = direction;
     context->v10SwapInput = inputAmount;
@@ -1747,18 +1764,26 @@ namespace CryptoNote
     throwIf(context.foundMoney < needed, error::WRONG_AMOUNT);
   }
 
-  void WalletTransactionSender::claimSelectedInputs(SendTransactionContext &context, TransactionId transactionId)
+  // Refuses before the send's record exists, so a refused send leaves no record.
+  // Every caller holds the wallet's cache lock, so nothing can claim the inputs
+  // between the check and the reservation.
+  TransactionId WalletTransactionSender::recordSendHoldingInputs(SendTransactionContext &context,
+                                                                 const std::function<TransactionId()> &addRecord)
   {
+    const bool anyHeld = std::any_of(context.selectedTransfers.begin(), context.selectedTransfers.end(),
+                                     [this](const TransactionOutputInformation &out) { return m_transactionsCache.isUsed(out); });
+    throwIf(anyHeld, error::WRONG_STATE);
+    const TransactionId transactionId = addRecord();
     context.transactionId = transactionId;
     m_transactionsCache.reserveOutputs(transactionId, context.selectedTransfers);
+    return transactionId;
   }
 
   std::unique_ptr<WalletRequest> WalletTransactionSender::registerCommitmentSpend(
       std::shared_ptr<SendTransactionContext> &&context, TransactionId &transactionId,
       uint64_t xfgLeavingWallet, uint64_t fee, std::deque<std::unique_ptr<WalletLegacyEvent>> &events)
   {
-    transactionId = m_transactionsCache.addNewTransaction(xfgLeavingWallet, fee, std::string(), {}, 0, {});
-    claimSelectedInputs(*context, transactionId);
+    transactionId = recordSendHoldingInputs(*context, [&] { return m_transactionsCache.addNewTransaction(xfgLeavingWallet, fee, std::string(), {}, 0, {}); });
     context->usesCommitmentPipeline = true;
     setSpendingTransactionToDeposits(transactionId, context->spentDepositIds);
     if (context->selectedTransfers.empty()) {
@@ -2339,8 +2364,7 @@ namespace CryptoNote
     context->foundMoney = selectTransfersToSend(neededFee, false, context->dustPolicy.dustThreshold, context->selectedTransfers);
     throwIf(context->foundMoney < neededFee, error::WRONG_AMOUNT);
 
-    transactionId = m_transactionsCache.addNewTransaction(0, fee, std::string(), {}, 0, {});
-    claimSelectedInputs(*context, transactionId);
+    transactionId = recordSendHoldingInputs(*context, [&] { return m_transactionsCache.addNewTransaction(0, fee, std::string(), {}, 0, {}); });
 
     Crypto::SecretKey transactionSK;
     return makeGetRandomOutsRequest(std::move(context), false, transactionSK);

@@ -30,6 +30,7 @@
 #include "CryptoNoteCore/CryptoNoteTools.h"
 #include "CryptoNoteCore/TransactionExtra.h"
 #include "CryptoNoteCore/Currency.h"
+#include "CryptoNoteCore/SubaddressTx.h"
 #include "IntegrationTestLib/InProcTestNode.h"
 #include "IWalletLegacy.h"
 #include "Logging/ConsoleLogger.h"
@@ -87,6 +88,17 @@ public:
     return m_changed.wait_for(lock, kWaitLimit, [&] { return m_saved; });
   }
 
+  void initCompleted(std::error_code result) override {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_initialised = !result;
+    m_changed.notify_all();
+  }
+
+  bool waitInitialised() {
+    std::unique_lock<std::mutex> lock(m_mutex);
+    return m_changed.wait_for(lock, kWaitLimit, [&] { return m_initialised; });
+  }
+
   void sendTransactionCompleted(TransactionId transactionId, std::error_code result) override {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_sendResults[transactionId] = result;
@@ -109,6 +121,7 @@ private:
   std::condition_variable m_changed;
   uint32_t m_syncedHeight = 0;
   bool m_saved = false;
+  bool m_initialised = false;
   std::map<TransactionId, std::error_code> m_sendResults;
 };
 
@@ -236,10 +249,19 @@ protected:
 
   core& nodeCore() { return node->getCore(); }
 
+  // Once the tip is v11 every key-input transaction must carry a janus base (F8),
+  // enforced after a grace window this chain does not reach; the check here
+  // holds every wallet-built transaction to the enforced rule.
   void expectSent(ScenarioWallet& sender, TransactionId transactionId) {
     ASSERT_NE(WALLET_LEGACY_INVALID_TRANSACTION_ID, transactionId);
     const std::error_code result = sender.events.waitSendResult(transactionId);
     ASSERT_FALSE(result) << result.message();
+    WalletLegacyTransaction sent;
+    ASSERT_TRUE(sender.wallet.getTransaction(transactionId, sent));
+    Transaction tx;
+    ASSERT_TRUE(nodeCore().getTransaction(sent.hash, tx, true));
+    std::string error;
+    EXPECT_TRUE(validateSubaddressTxExtra(tx, BLOCK_MAJOR_VERSION_11, true, &error)) << error;
   }
 
   void confirm() {
@@ -420,8 +442,11 @@ TEST_F(HeatWalletScenario, ReopenedWalletKeepsItsHeat) {
   WalletEvents reopenedEvents;
   reopened.addObserver(&reopenedEvents);
   reopened.initAndLoad(saved, "scenario");
-  ASSERT_TRUE(reopenedEvents.waitSyncedTo(nodeHeight()));
-  EXPECT_EQ(minted, reopened.actualHeatBalance() + reopened.pendingHeatBalance());
+  ASSERT_TRUE(reopenedEvents.waitInitialised());
+  // A wallet reopened at the tip has nothing to sync and reports no progress.
+  const auto heatNow = [&] { return reopened.actualHeatBalance() + reopened.pendingHeatBalance(); };
+  EXPECT_TRUE(eventually([&] { return heatNow() == minted && reopened.actualBalance() == xfg; }));
+  EXPECT_EQ(minted, heatNow());
   EXPECT_EQ(xfg, reopened.actualBalance());
   reopened.removeObserver(&reopenedEvents);
   reopened.shutdown();

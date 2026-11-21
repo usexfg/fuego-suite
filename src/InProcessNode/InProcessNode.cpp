@@ -17,6 +17,8 @@
 
 #include "InProcessNode.h"
 
+#include <algorithm>
+
 #include <functional>
 #include <boost/utility/value_init.hpp>
 #include <CryptoNoteCore/TransactionApi.h>
@@ -456,7 +458,15 @@ uint32_t InProcessNode::getLastKnownBlockHeight() const {
     }
   }
 
-  return protocol.getObservedHeight() - 1;
+  // With no peer yet the observed height is 0; it must not wrap to the largest
+  // height (which reads as the newest block version), and the node's own tip is
+  // known regardless of peers.
+  const uint32_t observedHeight = protocol.getObservedHeight();
+  const uint32_t observedTip = observedHeight > 0 ? observedHeight - 1 : 0;
+  uint32_t localTip = 0;
+  Crypto::Hash localTipHash;
+  core.get_blockchain_top(localTip, localTipHash);
+  return std::max(observedTip, localTip);
 }
 
 uint64_t InProcessNode::getLastLocalBlockTimestamp() const {

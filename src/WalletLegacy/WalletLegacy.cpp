@@ -204,7 +204,10 @@ WalletLegacy::~WalletLegacy() {
   {
     std::unique_lock<std::mutex> lock(m_cacheMutex);
     if (m_state != NOT_INITIALIZED) {
-      m_sender->stop();
+      // A wallet destroyed while it is still loading has no sender yet.
+      if (m_sender) {
+        m_sender->stop();
+      }
       m_isStopping = true;
     }
   }
@@ -212,7 +215,7 @@ WalletLegacy::~WalletLegacy() {
   m_blockchainSync.removeObserver(this);
   m_blockchainSync.stop();
   m_asyncContextCounter.waitAsyncContextsFinish();
-  m_sender.release();
+  m_sender.reset();
 }
 
 void WalletLegacy::addObserver(IWalletLegacyObserver* observer) {

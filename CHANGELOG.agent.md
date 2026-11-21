@@ -1,8 +1,90 @@
+## DeXFG: legacy cooperative escrow spend
+
+**Started**: 2026-11-21
+**Agent**: Claude Code
+**Status**: DONE (Linux GCC build and tests).
+**Plan**: `docs/dexfg/SWAP_REMEDIATION_PLAN.md` section 7 (owner approval 2026-11-21, "fix swap").
+**Scope**: `src/SwapDaemon/{SwapTxBuilder.{h,cpp},SwapDaemon.{h,cpp},SwapPeerProtocol.{h,cpp},SwapStateMachine.cpp,SwapTypes.h}`, `src/SwapDaemon/tests/{test_ring_collab,test_swap_state_machine_spv}.cpp`, `docs/dexfg/SWAP_REMEDIATION_PLAN.md`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Claim and refund pick their route from the escrow output on chain: a v11 swap-escrow output goes direct, a `KeyOutput` to the escrow key goes cooperative (amount protocol 1 only), anything else waits. Before, a set `escrowTxHash` always chose the direct route, which a legacy escrow can never pass | Claude Code | 2026-11-21 | DONE |
+| 2 | The cooperative spend's tx key is `H_s(domain ‖ 8ab·G ‖ escrow key ‖ destination)`: equal for both parties, unknown to anyone else, so every build signs one prefix and the spend cannot be linked to its escrow by recomputing the key (secrets wiped with `OPENSSL_cleanse`) | Claude Code | 2026-11-21 | DONE |
+| 3 | Leader/follower rounds: the destination owner (Alice for the claim, Bob for the refund) picks the ring and the 0x09 decision and sends Round 1; the follower adopts both, then sends Round 1 and Round 2. A Round 1 that changes a held ring, 0x09 flag or peer nonce, and a changed Round 2, are refused | Claude Code | 2026-11-21 | DONE |
+| 4 | `janusFiller` in the signed Round 1 digest and JSON (a message without it is refused) and persisted; round state saved by the old code is discarded on load unless its tx was already broadcast | Claude Code | 2026-11-21 | DONE |
+| 5 | The assembled tx is broadcast only if its ring signature verifies; a send refused because the peer already sent it counts as sent; only the leader records the protocol fee. The per-tick path also lets a follower answer, and fixes the refund destination it used for Alice (her own key instead of Bob's) | Claude Code | 2026-11-21 | DONE |
+| 6 | Tests: `test_ring_collab` 6/6 (both parties build independently and assemble one verifying tx, with and without 0x09; a different 0x09 decision cannot complete; the tx key is shared, per destination, and differs for an outsider); `test_swap_state_machine_spv` 30/30 (flag survives reload, pre-fix rounds discarded, flag signed and required) | Claude Code | 2026-11-21 | DONE |
+
+**Mutation checks**: a random tx key, assembly without signature verification, no reset of old rounds, and an unsigned flag each fail their test; restoring the code passes.
+
+**Open items:**
+- Not covered by tests: the route lookup, the leader/follower sequencing in `SwapDaemon` and the Round 1 refusals. They need a node RPC; check them on testnet with two daemons before relying on them.
+- Both parties must run this daemon. An old daemon's Round 1 is refused, and it could not complete the spend anyway.
+- A leader whose node is still before v11 sends no 0x09; if the spend is not mined before v11 + 720 it is rejected and the rounds must be redone.
+- Legacy escrows exist only if DeXFG ran on mainnet before 96293c48 (2026-08-20); that is not known from the repository.
+
+| Gate | Status | Signed |
+|------|--------|--------|
+| Build compiles | Linux GCC Release with `BUILD_TESTS=ON`: all targets | Claude Code 2026-11-21 |
+| Tests pass | ctest 72/73; the failure is `commitment_owner_bound_tests`, present on `master` since 33e787a5 | Claude Code 2026-11-21 |
+| All tasks done | DONE; daemon-level testnet check pending | Claude Code 2026-11-21 |
+
+---
+
+## master build fix: two extra-field types missing from the variant
+
+**Started**: 2026-11-21
+**Agent**: Claude Code
+**Status**: DONE (Linux GCC build and tests).
+**Scope**: `src/CryptoNoteCore/TransactionExtra.h`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `master` a3f0bd73 (#79) parses tags 0x0D (`TransactionExtraRemintBurn`) and 0x0E (`TransactionExtraCdCreationFee`) into `TransactionExtraField` and reads them back with `boost::get`, but never added either type to the variant, so `master` does not compile (its "Build check" run 44049378089 failed). Both types are now variant members; the tag values collide with no live tag | Claude Code | 2026-11-21 | DONE; full build, ctest 72/73 (pre-existing `commitment_owner_bound_tests`) |
+
+Not covered: #79's push/pop tests for these tags are in `tests/CoreTests`, which ctest does not run.
+
+---
+
+## funsa F8: a 0x09 Janus base on every key-input transaction
+
+**Started**: 2026-11-17
+**Agent**: Claude Code
+**Status**: DONE (Linux GCC build and tests; not pushed).
+**Plan**: `docs/developer/funsa-subaddress-rollout-plan.md` section 4.1 (F8, owner approval 2026-11-17). F6 closed there: no aliases are registered, so none needs moving.
+**Owner decision (2026-11-17)**: F8 yes. This is a consensus change and a hard fork for every tx builder.
+**Scope**: `src/CryptoNoteConfig.h`, `src/crypto/subaddress.{h,cpp}`, `src/CryptoNoteCore/{SubaddressTx,Currency,Transaction,TransactionApi,TransactionPool,CryptoNoteFormatUtils,Blockchain,Core}`, `include/ITransaction.h`, `src/Wallet/WalletGreen.cpp`, `src/WalletLegacy/WalletTransactionSender.cpp`, `src/Transfers/TransfersConsumer.cpp`, `src/PaymentGate/WalletService.cpp`, `src/SwapDaemon/{SwapTxBuilder.{h,cpp},SwapDaemon.cpp}`, `tests/UnitTests/{SubaddressScannerTest,SubaddressV2Test}.cpp`, `docs/developer/funsa-subaddress-rollout-plan.md`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Filler `J = H_s("FuegoJanusFiller" ‖ r)·G` (`Crypto::janusFillerForTxSecret`, preimage, scalar and filler secret wiped); `addJanusFillerWhenMissing` writes it through the same field writer as a real Janus base and leaves an existing 0x09 alone | Claude Code | 2026-11-17 | DONE |
+| 2 | Consensus: after `upgradeHeight(11) + JANUS_BASE_GRACE_BLOCKS` (720), a tx with a `KeyInput` needs an extra that parses and contains 0x09; coinbase and txs without key inputs are exempt. `Currency::janusBaseRequiredAtHeight` adds in 64 bits, so an unscheduled v11 height never wraps into enforcement. Block validation, mempool admission and `fill_block_template` each apply it at the height they target | Claude Code | 2026-11-17 | DONE |
+| 3 | Builders add the filler once the tip block is v11: `createOutgoingTransaction` for all 25 WalletGreen and WalletLegacy tx sites, where `TransactionImpl` seals the filler before the first signature (per-output txs keep their own list); `constructTransaction` (new `janusBaseRequired` argument); SwapDaemon `fundEscrow` and `buildUnsignedEscrowSpend`, which fail if the daemon cannot report its tip version. Swap claim and refund txs have no key inputs and are unchanged | Claude Code | 2026-11-17 | DONE |
+| 4 | `messageTransactionKey` takes the recipient kind: only a funsa recipient of a single-key tx uses the 0x09 key. Without this, every standard recipient would lose its messages once a filler is present | Claude Code | 2026-11-17 | DONE |
+| 5 | Tests (`subaddress_scanner_tests`, 11 new): rule on and off, exemptions, unparseable extra, grace boundary and overflow, filler determinism and idempotence, `TransactionImpl` sealing, per-output txs under the rule, tip gating of `createOutgoingTransaction`, `constructTransaction` filler, standard-recipient message beside a filler, block template dropping a grace-era tx after the window | Claude Code | 2026-11-17 | DONE |
+
+**Review findings and open items:**
+- HIGH (consequence, accepted by the owner): after v11 + 720, any wallet, exchange, pool payout script or third-party builder that does not add 0x09 has its txs rejected. Valise V5 must ship the filler before then.
+- MEDIUM: SwapDaemon `buildUnsignedEscrowSpend` draws a random tx key, yet its header says both parties build identical prefixes. Either one side's tx is used for both signatures or the collaborative ring signature cannot complete; not resolved here. If the tx key becomes shared, both parties must also agree on the filler, which they decide from their own node's tip.
+- LOW: a key-input tx whose extra uses a tag the parser refuses is rejected after the grace window. No builder in this repository writes one (checked: every tag written in `src/` parses).
+- LOW: a grace-era tx without 0x09 stays in the mempool until it expires (12 h) but is never placed in a template that enforces the rule.
+- Not covered by tests: the SwapDaemon builders (need a running daemon) and the call wiring in `Blockchain`/`Core` (one line each, compiled).
+
+**Mutation checks**: disabling the consensus check, the seal, the recipient-kind selector, the template filter, the grace comparison (`>=`), the tip gate, and the `constructTransaction` filler each fail the matching test; restoring the code passes again.
+
+| Gate | Status | Signed |
+|------|--------|--------|
+| Build compiles | Linux GCC Release with `BUILD_TESTS=ON`: all targets | Claude Code 2026-11-17 |
+| Tests pass | ctest 72/73 (`subaddress_scanner_tests` 28/28); the failure is `commitment_owner_bound_tests`, present on `master` since 33e787a5 | Claude Code 2026-11-17 |
+| All tasks done | F8 DONE; Valise V5 filler, xfg-api, explorer pending | Claude Code 2026-11-17 |
+
+---
+
 ## funsa V2 subaddresses: remediation against the plan
 
 **Started**: 2026-11-12
 **Agent**: Claude Code
-**Status**: fuego-suite core DONE (Linux GCC build and tests; not pushed). fuego-valise, xfg-api and explorer work is planned in `docs/developer/funsa-subaddress-rollout-plan.md`, not started.
+**Status**: fuego-suite core DONE (Linux GCC build and tests); on `master` since 8b7d084c (owner approval 2026-11-17). fuego-valise, xfg-api and explorer work is planned in `docs/developer/funsa-subaddress-rollout-plan.md`, not started.
 **Plan**: the funsa subaddress plan (owner upload, 2026-11-12) plus the gaps found in review: per-output Janus keys, strict crediting, fail-closed address parsing, coinbase refusal, deterministic per-output tx secrets, reload re-subscription, Valise send support.
 **Owner decisions (2026-11-12)**: v11 is still upcoming, so the v11 gate stays. Full wallets credit a V2 subaddress output only when its Janus check passes; view-only wallets credit it flagged `unverified`. Change from a funsa source returns to that subaddress. Scope: fuego-suite core plus fuego-valise.
 **Scope**: `src/crypto/subaddress.*`, `src/CryptoNoteCore/{SubaddressTx,SubaddressTxProof,TransactionExtra,Transaction,Currency,CryptoNoteFormatUtils,Blockchain}`, `src/Transfers/{TransfersConsumer,TransfersContainer,TransfersSubscription}`, `src/Wallet/{WalletGreen,WalletIndices,WalletUtils,WalletRpcServer}`, `src/WalletLegacy/{WalletLegacy,WalletTransactionSender}`, `src/PaymentGate/{WalletService,PaymentServiceJsonRpcMessages}`, `src/Rpc/RpcServer.*`, `src/SimpleWallet/{SimpleWallet,TransferCmd}`, `include/{IWallet,IWalletLegacy,ITransfersContainer,ITransfersSynchronizer}.h`, `tests/UnitTests/{SubaddressV2Test,SubaddressScannerTest,SubaddressWalletTest,CommitmentPersistenceTest,TestWalletService}.cpp`, `tests/CMakeLists.txt`, `.github/workflows/check.yml`

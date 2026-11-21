@@ -89,15 +89,36 @@ whichever explorer is deployed:
 | F3 | walletd JSON-RPC methods for `createSubAddress` / `listSubAddresses` | WalletGreen has the functions but walletd exposes no method |
 | F4 | Clang, macOS and Windows builds of the branch | only Linux GCC is verified |
 | F5 | `commitment_owner_bound_tests` (5 cases fail on `master` since 33e787a5) | the CI test step now runs `tests/`, so this shows red until fixed |
-| F6 | Alias move to a funsa owner after v11 (0xED transfer) and an owner-signed release flow | plan section G; registration already issues funsa owners |
+| F6 | Not needed: no aliases are registered on mainnet, so none needs moving to a funsa owner. Registration already issues funsa owners | closed 2026-11-17 |
 | F7 | Explain subaddress-to-primary linking in user docs: do not publish the primary address next to subaddresses | the Janus check does not cover it |
-| F8 | Optional: every v11 tx carries a 0x09 key so subaddress txs are not recognisable | removes the single-key fingerprint at about 34 bytes per tx |
+| F8 | Every key-input tx carries 0x09 after the grace window (section 4.1) | approved 2026-11-17; removes the single-key fingerprint at 34 bytes per tx |
+
+### 4.1 F8: 0x09 on every key-input transaction
+
+Problem: only single-key subaddress txs carry 0x09 without 0x06, so the tag alone marks
+a payment to a subaddress.
+
+| Item | Rule |
+|---|---|
+| Filler | a tx with no subaddress destination carries `0x09 = [J]`, `J = H_s("FuegoJanusFiller" ‖ r)·G`. Without `r`, `J` is indistinguishable from the `r·G` of a single-key subaddress tx. Deterministic, so two swap parties building from one `r` agree |
+| Builders | add the filler once the chain tip is a v11 block: `TransactionImpl` seals it before the first signature (WalletGreen, WalletLegacy), `constructTransaction`, SwapDaemon `fundEscrow` and `buildUnsignedEscrowSpend`. Swap claim and refund txs spend `TransactionInputSwapEscrow`, not key inputs, and stay unchanged |
+| Consensus | from `upgradeHeight(11) + JANUS_BASE_GRACE_BLOCKS` (720 blocks, about 4 days), a tx with at least one `KeyInput` must have an extra that parses and contains 0x09. Coinbase and txs without key inputs are exempt |
+| Grace | between v11 and v11 + 720, 0x09 is optional. Mempool txs built before v11 (pool lifetime 12 h = 90 blocks) and saved swap txs can still be mined |
+| Mempool | admission and `fill_block_template` apply the rule at the height they target, so a tx admitted during grace without 0x09 is never placed in a block that enforces the rule |
+| Messages | the receiver picks the message key by its own address kind: 0x09 key only for a funsa recipient of a single-key tx; standard recipients always use the main key. Before F8, a lone 0x09 was enough, which would break messages to standard addresses once every tx carries a filler |
+
+Consequences:
+
+- After v11 + 720, every wallet, exchange, pool payout script and third-party builder that does not add 0x09 has its txs rejected. This is a hard fork for tx builders, not only for nodes.
+- A key-input tx whose extra does not parse is rejected after the grace window. No builder in this repository writes a tag the parser refuses; external tools that put arbitrary bytes in extra will break.
+- Valise V5 must add the filler before v11 + 720.
+- SwapDaemon parties on different versions build different escrow-spend prefixes and fail to co-sign. Both must upgrade before v11 + 720.
 
 ## 5. Gate before v11 activation
 
 1. fuego-suite branch merged after review, CI green on all platforms (F4, F5).
 2. F1 scan result recorded.
-3. Valise V1–V9 released, with the cross-implementation test passing in both directions.
+3. Valise V1–V9 released, V5 including the F8 filler, with the cross-implementation test passing in both directions.
 4. xfg-api A1–A4 deployed.
 5. Testnet soak: funsa sends between fuego-suite walletd, simplewallet and Valise, including
    HEAT sends, change from a subaddress, view-only wallets, restart and reload, and ProofV2

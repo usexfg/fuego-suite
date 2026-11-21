@@ -76,6 +76,19 @@ public:
   // Minimum fee in atomic units (0.001 XFG)
   static constexpr uint64_t MIN_FEE = 10000;
 
+  // F8: once the daemon's tip block is v11, a key-input tx carries the filler
+  // 0x09 janus base of its tx secret. Fails if the daemon cannot be asked.
+  static bool janusFillerExpectedAtTip(FuegoRpcClient& rpc, bool& expected);
+  static bool addJanusFillerAtChainTip(FuegoRpcClient& rpc, CryptoNote::Transaction& tx,
+                                       const Crypto::SecretKey& txSecret);
+
+  // Tx key of a cooperative escrow spend: H_s(domain || 8ab*G || escrow key ||
+  // destination). Both parties derive it from their own per-swap secret and the
+  // peer's public key; nobody else can, so the spend is not linkable to the escrow.
+  static bool cooperativeEscrowTxKey(const SwapParams& params,
+                                     const Crypto::PublicKey& destinationKey,
+                                     CryptoNote::KeyPair& txKey);
+
   // ── Step 1: Build unsigned transaction skeleton ──────────────────────
 
   // Construct the unsigned transaction spending the escrow output.
@@ -97,6 +110,7 @@ public:
       uint64_t protocolFee,                      // protocol fee sent to treasury (0 = no treasury output)
       const Crypto::PublicKey& treasuryKey,      // treasury output key (ignored if protocolFee == 0)
       uint64_t fee,                              // network fee
+      bool janusFiller,                          // F8 0x09 filler, agreed in Round 1
       CryptoNote::Transaction& tx,
       Crypto::Hash& prefixHash,
       CollaborativeRingState& ringState,
@@ -161,6 +175,34 @@ public:
   // signature and attach it to the transaction.
   static bool ringRound2Finalize(
       CollaborativeRingState& ringState,
+      CryptoNote::Transaction& tx);
+
+  // ── Cooperative escrow spend from persisted round state ─────────────
+
+  struct CooperativeSpendTerms {
+    Crypto::PublicKey destinationKey;
+    uint64_t treasuryFee = 0;
+    Crypto::PublicKey treasuryKey;
+  };
+
+  // Rebuilds the agreed tx from the persisted ring and 0x09 decision, writes
+  // the aggregate key image and computes the Round 1 challenge. Needs both
+  // parties' Round 1 material in params. Every call by either party yields the
+  // same prefix hash.
+  static bool prepareCooperativeSpend(
+      FuegoRpcClient& rpc,
+      const SwapParams& params,
+      const CooperativeSpendTerms& terms,
+      CryptoNote::Transaction& tx,
+      Crypto::Hash& prefixHash,
+      CollaborativeRingState& ringState);
+
+  // Assembles the ring signature from both Round 2 responses and accepts the
+  // tx only if the signature verifies.
+  static bool completeCooperativeSpend(
+      FuegoRpcClient& rpc,
+      const SwapParams& params,
+      const CooperativeSpendTerms& terms,
       CryptoNote::Transaction& tx);
 
   // ── Utility ──────────────────────────────────────────────────────────

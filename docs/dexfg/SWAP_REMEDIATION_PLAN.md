@@ -155,3 +155,44 @@ Rollout: BTC, then LTC and BCH (same client family), then KMD, DOGE, DASH, ZEC f
 3. R3 + R4 + R5 (EVM trust and config) in parallel with Phase 1
 4. Phase 3.1 / 3.2 (small, needs network access to the feeds)
 5. Phase 2 and Phase 3.3 (Tempo) only if their value justifies the work
+
+## 7. Legacy cooperative escrow spend (2026-11-21, owner approval "fix swap")
+
+Applies only to swaps whose XFG escrow is the legacy 2-of-2 `KeyOutput` to the MuSig2
+aggregate key (funded before 96293c48, 2026-08-20). Their only spend is the collaborative
+ring signature; v11 `TransactionOutputSwapEscrow` swaps use the direct claim and refund and
+are unchanged.
+
+Defects found:
+
+| # | Defect | Effect |
+|---|---|---|
+| L1 | `finalizeEscrowSpend` and the refund path take the v11 direct route whenever `escrowTxHash` is set; legacy funding sets it too | a legacy escrow loops on a direct claim or refund the chain rejects and never reaches the cooperative path |
+| L2 | `buildUnsignedEscrowSpend` draws a random tx key on every build | each build, including a party's own Round 2 and final builds, signs a different prefix: the ring signature can never verify |
+| L3 | both parties fetch their own decoys in Round 1, and the Round 1 handler overwrites the local ring with the peer's | the two parties sign different rings |
+| L4 | the responder cannot send Round 2 without its own Round 1, and its Round 1 fetches fresh decoys | the round order depends on both sides starting at once, which is the L3 race |
+| L5 | `test_ring_collab` signs a fixed 0x7e… prefix | none of L2–L4 can show in tests |
+| L6 | F8: whether the spend carries 0x09 is decided by each party's node tip | after L2 is fixed, the two sides can still build different prefixes at the v11 boundary |
+
+Fix:
+
+1. Route by the escrow output on chain (`getTransactionOutputs`): `isSwapEscrow` takes the direct
+   path; a `KeyOutput` to `escrowPubKey` takes the cooperative path (amount protocol v1 only);
+   anything else, or an RPC failure, stops and retries.
+2. Tx key `r = H_s("fuego-swap-coop-escrow-txkey" ‖ D ‖ escrowPubKey ‖ destinationKey)`, where
+   `D = 8·a·B = 8·b·A` from the two per-swap keys. Both parties derive the same key; nobody
+   else can, so the spend cannot be linked to the escrow by recomputing it (the claim tx's
+   escrow-hash seed would allow that).
+3. One leader per spend: the owner of the destination (Alice for the claim, Bob for the
+   refund). The leader picks the decoys and the 0x09 decision, then sends Round 1 with the ring
+   and a `janusFiller` flag. The follower waits for it, adopts both, then sends its Round 1 (an echo
+   of the ring and flag) and its Round 2. The leader sends Round 2 after the follower's Round 1.
+   A Round 1 whose ring or flag differs from one already held is refused, not adopted.
+4. `janusFiller` is in the signed Round 1 digest and persisted with the ring.
+5. Both parties may broadcast the finished tx; a send that fails while the tx is already known
+   to the node counts as sent. Only the leader records the protocol fee, so it is counted once.
+6. Test: both parties build independently from their own keys, exchange the rounds the way the
+   daemon does, and the assembled tx must pass `check_ring_signature` with and without 0x09.
+
+Both parties need the fixed daemon. A Round 1 from an old daemon has no flag and a
+different digest, so it is refused.

@@ -421,7 +421,7 @@ bool core::check_tx_semantic(const Transaction& tx, bool keeped_by_block, uint32
   bool hasHeatMintAuth = false;
   std::string subaddrErr;
   const uint8_t extraMajorVersion = m_currency.blockMajorVersionAtHeight(height);
-  if (!validateSubaddressTxExtra(tx, extraMajorVersion, &subaddrErr)) {
+  if (!validateSubaddressTxExtra(tx, extraMajorVersion, m_currency.janusBaseRequiredAtHeight(height), &subaddrErr)) {
     logger(ERROR) << "tx subaddress extra rejected for tx id= " << getObjectHash(tx) << ": " << subaddrErr;
     return false;
   }

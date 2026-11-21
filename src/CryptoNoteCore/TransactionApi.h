@@ -21,7 +21,13 @@
 #include "ITransaction.h"
 
 namespace CryptoNote {
+  class Currency;
+
   std::unique_ptr<ITransaction> createTransaction();
+  // An outgoing tx for the chain whose top block is tipHeight: once that block is
+  // v11, the tx carries a 0x09 janus base (F8).
+  std::unique_ptr<ITransaction> createOutgoingTransaction(const Currency& currency, uint32_t tipHeight);
+  bool janusBaseExpectedAtTip(const Currency& currency, uint32_t tipHeight);
   std::unique_ptr<ITransaction> createTransaction(const BinaryArray& transactionBlob);
   std::unique_ptr<ITransaction> createTransaction(const Transaction& tx);
 

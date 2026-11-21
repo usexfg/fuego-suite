@@ -675,7 +675,7 @@ void TransfersConsumer::processOutputs(const TransactionBlockInfo& blockInfo, Tr
       assert(subscribtionTxInfo.blockHeight == blockInfo.height);
     }
   } else {
-    auto messages = get_messages_from_extra(tx.getExtra(), messageTransactionKey(tx.getExtra(), tx.getTransactionPublicKey()), &sub.getKeys().spendSecretKey);
+    auto messages = get_messages_from_extra(tx.getExtra(), messageTransactionKey(tx.getExtra(), tx.getTransactionPublicKey(), sub.isJanusCheckRequired()), &sub.getKeys().spendSecretKey);
     updated = sub.addTransaction(blockInfo, tx, transfers, std::move(messages));
     contains = updated;
   }

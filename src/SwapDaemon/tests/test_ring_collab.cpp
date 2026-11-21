@@ -5,11 +5,16 @@
 // SwapTxBuilder ring Round1/Round2 and the resulting ring signature must
 // verify under Crypto::check_ring_signature for the aggregate escrow pubkey.
 
+#include <algorithm>
 #include <cstring>
+#include <iterator>
 #include <iostream>
 #include <vector>
 
+#include "CryptoNoteCore/CryptoNoteTools.h"
+#include "CryptoNoteCore/SubaddressTx.h"
 #include "SwapDaemon/AdaptorSwap.h"
+#include "SwapDaemon/FuegoRpcClient.h"
 #include "SwapDaemon/SwapTxBuilder.h"
 #include "SwapDaemon/SwapTypes.h"
 #include "crypto/crypto.h"
@@ -217,11 +222,196 @@ static bool test_collab_ring_with_decoys() {
   return true;
 }
 
+// ── Cooperative spend as the daemon runs it: each party rebuilds the tx
+// from its own persisted state, never from a shared prefix.
+
+static const uint64_t ESCROW_AMOUNT = 1000000000;
+static const uint32_t ESCROW_GLOBAL_INDEX = 500;
+
+static void agreeOnRing(SwapParams& alice, SwapParams& bob) {
+  std::vector<uint32_t> indices;
+  std::vector<Crypto::PublicKey> keys;
+  for (uint32_t i = 0; i < 9; ++i) {
+    const uint32_t globalIndex = 100 + i * 100;
+    indices.push_back(globalIndex);
+    if (globalIndex == ESCROW_GLOBAL_INDEX) {
+      keys.push_back(alice.escrowPubKey);
+    } else {
+      Crypto::PublicKey decoy;
+      Crypto::SecretKey unused;
+      Crypto::generate_keys(decoy, unused);
+      keys.push_back(decoy);
+    }
+  }
+  for (SwapParams* party : {&alice, &bob}) {
+    party->xfgAmount = ESCROW_AMOUNT;
+    party->escrowOutputIndex = ESCROW_GLOBAL_INDEX;
+    party->ringGlobalIndices = indices;
+    party->ringPubKeys = keys;
+    party->ringRealIndex = 4;
+    party->ringDescriptorValid = true;
+  }
+}
+
+static void storeRoundOne(SwapParams& party, const CollaborativeRingState& ours) {
+  party.ringOurPartialKeyImage = ours.ourPartialKeyImage;
+  party.ringOurRingNoncePub = ours.ourRingNoncePub;
+  party.ringOurRingNonceHp = ours.ourRingNonceHp;
+  party.ringOurRingNonceSec = ours.ourRingNonceSec;
+  party.ringOurRound1MaterialValid = true;
+  party.ringOurRound1Sent = true;
+}
+
+static void receiveRoundOne(SwapParams& party, const SwapParams& peer) {
+  party.ringPeerPartialKeyImage = peer.ringOurPartialKeyImage;
+  party.ringPeerRingNoncePub = peer.ringOurRingNoncePub;
+  party.ringPeerRingNonceHp = peer.ringOurRingNonceHp;
+  party.ringPeerRound1Received = true;
+}
+
+static void exchangeRoundOne(SwapParams& alice, SwapParams& bob) {
+  CollaborativeRingState aliceRound, bobRound;
+  SwapTxBuilder::ringRound1Generate(alice, aliceRound);
+  SwapTxBuilder::ringRound1Generate(bob, bobRound);
+  storeRoundOne(alice, aliceRound);
+  storeRoundOne(bob, bobRound);
+  receiveRoundOne(alice, bob);
+  receiveRoundOne(bob, alice);
+}
+
+static SwapTxBuilder::CooperativeSpendTerms claimTerms(const SwapParams& alice) {
+  SwapTxBuilder::CooperativeSpendTerms terms;
+  terms.destinationKey = alice.ourSwapPubKey;
+  terms.treasuryFee = ESCROW_AMOUNT / 50;
+  Crypto::SecretKey unused;
+  Crypto::generate_keys(terms.treasuryKey, unused);
+  return terms;
+}
+
+static bool signRoundTwo(FuegoRpcClient& rpc, SwapParams& party,
+                         const SwapTxBuilder::CooperativeSpendTerms& terms, Crypto::Hash& prefixHash) {
+  CryptoNote::Transaction tx;
+  CollaborativeRingState ring;
+  if (!SwapTxBuilder::prepareCooperativeSpend(rpc, party, terms, tx, prefixHash, ring)) return false;
+  SwapTxBuilder::ringRound2Sign(party, ring);
+  party.ringOurPartialResponse = ring.ourPartialResponse;
+  party.ringOurRound2Sent = true;
+  return true;
+}
+
+static void receiveRoundTwo(SwapParams& party, const SwapParams& peer) {
+  party.ringPeerPartialResponse = peer.ringOurPartialResponse;
+  party.ringPeerRound2Received = true;
+}
+
+static bool runCooperativeClaim(bool aliceFiller, bool bobFiller, CryptoNote::Transaction& aliceTx,
+                                CryptoNote::Transaction& bobTx, bool& prefixesMatch,
+                                bool& aliceComplete, bool& bobComplete) {
+  SwapParams alice, bob;
+  if (!setupPair(alice, bob)) return false;
+  agreeOnRing(alice, bob);
+  alice.ringJanusFiller = aliceFiller;
+  bob.ringJanusFiller = bobFiller;
+  exchangeRoundOne(alice, bob);
+
+  FuegoRpcClient unusedRpc("127.0.0.1", 1);
+  const auto terms = claimTerms(alice);
+  Crypto::Hash alicePrefix, bobPrefix;
+  if (!signRoundTwo(unusedRpc, alice, terms, alicePrefix) || !signRoundTwo(unusedRpc, bob, terms, bobPrefix)) {
+    return false;
+  }
+  prefixesMatch = std::memcmp(&alicePrefix, &bobPrefix, sizeof(alicePrefix)) == 0;
+  receiveRoundTwo(alice, bob);
+  receiveRoundTwo(bob, alice);
+  aliceComplete = SwapTxBuilder::completeCooperativeSpend(unusedRpc, alice, terms, aliceTx);
+  bobComplete = SwapTxBuilder::completeCooperativeSpend(unusedRpc, bob, terms, bobTx);
+  return true;
+}
+
+static bool test_independent_builds_verify(bool janusFiller) {
+  std::cout << "[3] independent builds by both parties verify (0x09 " << (janusFiller ? "on" : "off") << ")\n";
+  CryptoNote::Transaction aliceTx, bobTx;
+  bool prefixesMatch = false, aliceComplete = false, bobComplete = false;
+  if (!runCooperativeClaim(janusFiller, janusFiller, aliceTx, bobTx, prefixesMatch, aliceComplete, bobComplete)) {
+    std::cout << "    FAIL: rounds could not run\n";
+    return false;
+  }
+  if (!prefixesMatch) {
+    std::cout << "    FAIL: the parties built different prefixes\n";
+    return false;
+  }
+  if (!aliceComplete || !bobComplete) {
+    std::cout << "    FAIL: assembled ring signature rejected (alice " << aliceComplete << ", bob " << bobComplete << ")\n";
+    return false;
+  }
+  if (CryptoNote::toBinaryArray(aliceTx) != CryptoNote::toBinaryArray(bobTx)) {
+    std::cout << "    FAIL: the parties assembled different transactions\n";
+    return false;
+  }
+  const size_t janusBases = CryptoNote::readSubaddressTxKeys(aliceTx.extra).janusBases.size();
+  if (janusBases != (janusFiller ? 1u : 0u)) {
+    std::cout << "    FAIL: 0x09 keys " << janusBases << "\n";
+    return false;
+  }
+  std::cout << "    PASS: identical, verifying transaction from both sides\n";
+  return true;
+}
+
+static bool test_disagreed_filler_never_verifies() {
+  std::cout << "[4] a party with a different 0x09 decision cannot complete the spend\n";
+  CryptoNote::Transaction aliceTx, bobTx;
+  bool prefixesMatch = true, aliceComplete = true, bobComplete = true;
+  if (!runCooperativeClaim(true, false, aliceTx, bobTx, prefixesMatch, aliceComplete, bobComplete)) {
+    std::cout << "    FAIL: rounds could not run\n";
+    return false;
+  }
+  if (prefixesMatch || aliceComplete || bobComplete) {
+    std::cout << "    FAIL: a mismatched spend was accepted\n";
+    return false;
+  }
+  std::cout << "    PASS: both sides refuse the mismatched signature\n";
+  return true;
+}
+
+static bool test_tx_key_is_shared_and_private() {
+  std::cout << "[5] the spend tx key is the same for both parties and unknown to others\n";
+  SwapParams alice, bob;
+  if (!setupPair(alice, bob)) return false;
+  CryptoNote::KeyPair aliceKey, bobKey, outsiderKey;
+  if (!SwapTxBuilder::cooperativeEscrowTxKey(alice, alice.ourSwapPubKey, aliceKey) ||
+      !SwapTxBuilder::cooperativeEscrowTxKey(bob, alice.ourSwapPubKey, bobKey)) {
+    std::cout << "    FAIL: derivation\n";
+    return false;
+  }
+  SwapParams outsider = alice;
+  Crypto::generate_keys(outsider.ourSwapPubKey, outsider.ourSwapSecKey);
+  if (!SwapTxBuilder::cooperativeEscrowTxKey(outsider, alice.ourSwapPubKey, outsiderKey)) return false;
+  CryptoNote::KeyPair refundKey;
+  if (!SwapTxBuilder::cooperativeEscrowTxKey(alice, bob.ourSwapPubKey, refundKey)) return false;
+  const bool shared = std::memcmp(&aliceKey.publicKey, &bobKey.publicKey, 32) == 0;
+  const bool outsiderDiffers = std::memcmp(&aliceKey.publicKey, &outsiderKey.publicKey, 32) != 0;
+  const bool perDestination = std::memcmp(&aliceKey.publicKey, &refundKey.publicKey, 32) != 0;
+  if (!shared || !outsiderDiffers || !perDestination) {
+    std::cout << "    FAIL: shared " << shared << ", outsider differs " << outsiderDiffers
+              << ", claim and refund differ " << perDestination << "\n";
+    return false;
+  }
+  std::cout << "    PASS\n";
+  return true;
+}
+
 int main() {
   std::cout << "=== Collaborative ring signature tests ===\n\n";
-  int pass = 0;
-  if (test_collab_ring_verifies()) ++pass;
-  if (test_collab_ring_with_decoys()) ++pass;
-  std::cout << "\n=== " << pass << "/2 tests passed ===\n";
-  return pass == 2 ? 0 : 1;
+  const bool results[] = {
+    test_collab_ring_verifies(),
+    test_collab_ring_with_decoys(),
+    test_independent_builds_verify(false),
+    test_independent_builds_verify(true),
+    test_disagreed_filler_never_verifies(),
+    test_tx_key_is_shared_and_private(),
+  };
+  const size_t total = sizeof(results) / sizeof(results[0]);
+  const size_t passed = static_cast<size_t>(std::count(std::begin(results), std::end(results), true));
+  std::cout << "\n=== " << passed << "/" << total << " tests passed ===\n";
+  return passed == total ? 0 : 1;
 }

@@ -1428,7 +1428,7 @@ namespace PaymentService
           if (wallet.getAddress(i) == rpcTransfer.address)
           {
             Crypto::SecretKey secretKey = wallet.getAddressSpendKey(wallet.getAddress(i)).secretKey;
-            std::vector<std::string> m = CryptoNote::get_messages_from_extra(extraBin, CryptoNote::messageTransactionKey(extraBin, publicKey), &secretKey);
+            std::vector<std::string> m = CryptoNote::get_messages_from_extra(extraBin, CryptoNote::messageTransactionKey(extraBin, publicKey, isSubaddressString(currency, rpcTransfer.address)), &secretKey);
             if (!m.empty())
             {
               rpcTransfer.message = m[0];
@@ -2065,8 +2065,9 @@ namespace PaymentService
         messages.clear();
         for (size_t i = 0; i < wallet.getAddressCount(); ++i)
         {
-          Crypto::SecretKey secretKey = wallet.getAddressSpendKey(wallet.getAddress(i)).secretKey;
-          std::vector<std::string> m = CryptoNote::get_messages_from_extra(extraBin, CryptoNote::messageTransactionKey(extraBin, publicKey), &secretKey);
+          const std::string address = wallet.getAddress(i);
+          Crypto::SecretKey secretKey = wallet.getAddressSpendKey(address).secretKey;
+          std::vector<std::string> m = CryptoNote::get_messages_from_extra(extraBin, CryptoNote::messageTransactionKey(extraBin, publicKey, isSubaddressString(currency, address)), &secretKey);
           messages.insert(std::end(messages), std::begin(m), std::end(m));
         }
       }

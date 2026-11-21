@@ -487,12 +487,28 @@ public:
   bool canStartNewSwap(SwapPair pair, SwapRole role, std::string* reason = nullptr,
                        bool refresh = true);
 
-  // Build an unsigned escrow-spend tx, run collaborative ring sig rounds
-  // with the peer, attach the final signature, and broadcast.
-  // txType: "spend" (adapted, Bob claims) or "refund" (cooperative, both sign)
-  bool buildAndBroadcastEscrowTx(SwapParams& params,
-                                 const Crypto::PublicKey& destinationKey,
-                                 const std::string& txType);
+  // Legacy 2-of-2 KeyOutput escrows (funded before v11 escrow outputs) are
+  // spent only by the collaborative ring signature. The owner of the
+  // destination leads: it picks the ring and the 0x09 decision.
+  enum class EscrowRoute { Direct, Cooperative, Unresolved };
+  enum class CooperativeProgress { Failed, Waiting, Broadcast };
+  struct CooperativeEscrowSpend {
+    std::string txType;  // "spend" (claim to Alice) or "refund" (to Bob)
+    SwapRole leader;
+    SwapTxBuilder::CooperativeSpendTerms terms;
+  };
+
+  EscrowRoute escrowSpendRoute(const SwapParams& params);
+  bool cooperativeClaim(const SwapParams& params, CooperativeEscrowSpend& spend);
+  bool cooperativeRefund(const SwapParams& params, CooperativeEscrowSpend& spend);
+  CooperativeProgress advanceCooperativeEscrowSpend(SwapStateMachine& sm, const CooperativeEscrowSpend& spend);
+  bool sendLeaderRoundOne(SwapStateMachine& sm, const CooperativeEscrowSpend& spend);
+  bool sendFollowerRoundOne(SwapStateMachine& sm);
+  void sendRoundOne(const SwapParams& params);
+  bool sendRoundTwo(SwapStateMachine& sm, const CooperativeEscrowSpend& spend);
+  bool broadcastCooperativeEscrowSpend(const SwapParams& params, const CooperativeEscrowSpend& spend);
+  bool recordCooperativeBroadcast(SwapStateMachine& sm, const CooperativeEscrowSpend& spend,
+                                  uint32_t currentHeight);
 
   // Handle an incoming peer message for an active swap.
   bool handlePeerMessage(const PeerMessage& msg);

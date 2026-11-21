@@ -128,6 +128,8 @@ public:
   virtual size_t addOutput(uint64_t amount, const TransactionOutputOrder& out) = 0;
   // transaction info
   virtual void setTransactionSecretKey(const Crypto::SecretKey& key) = 0;
+  // F8: before the first signature, add the filler 0x09 key if the tx has none.
+  virtual void requireJanusBase() = 0;
 
   // signing
   virtual void signInputKey(size_t input, const TransactionTypes::InputKeyInfo& info, const KeyPair& ephKeys) = 0;

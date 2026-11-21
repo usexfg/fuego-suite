@@ -216,6 +216,7 @@ Crypto::Hash peerMessageDigest(const PeerMessage& msg) {
       appendU32LE(buf, static_cast<uint32_t>(msg.ringRound1.ringGlobalIndices.size()));
       for (uint32_t idx : msg.ringRound1.ringGlobalIndices) appendU32LE(buf, idx);
       for (const auto& key : msg.ringRound1.ringPubKeys) appendPod(buf, key);
+      buf.push_back(msg.ringRound1.janusFiller ? 1 : 0);
       break;
     case PeerMessageType::RING_ROUND2:
       appendPod(buf, msg.ringRound2.partialResponse);
@@ -328,6 +329,7 @@ std::string serializePeerMessage(const PeerMessage& msg) {
       payload.insert("ringNonceHp", podHex(msg.ringRound1.ringNonceHp));
       payload.insert("ringGlobalIndices", encodeIndices(msg.ringRound1.ringGlobalIndices));
       payload.insert("ringPubKeys", encodePubKeys(msg.ringRound1.ringPubKeys));
+      payload.insert("janusFiller", Common::JsonValue(msg.ringRound1.janusFiller));
       break;
 
     case PeerMessageType::RING_ROUND2:
@@ -487,6 +489,9 @@ bool deserializePeerMessage(const std::string& json, PeerMessage& msg) {
           return false;
         if (msg.ringRound1.ringGlobalIndices.size() != msg.ringRound1.ringPubKeys.size())
           return false;
+        if (!p.contains("janusFiller") || !p("janusFiller").isBool())
+          return false;
+        msg.ringRound1.janusFiller = p("janusFiller").getBool();
         break;
 
       case PeerMessageType::RING_ROUND2:

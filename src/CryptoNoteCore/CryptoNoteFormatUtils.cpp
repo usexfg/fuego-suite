@@ -98,7 +98,8 @@ bool constructTransaction(
   Transaction& tx,
   uint64_t unlock_time,
   Logging::ILogger& log,
-  Crypto::SecretKey& transactionSK) {
+  Crypto::SecretKey& transactionSK,
+  bool janusBaseRequired) {
   LoggerRef logger(log, "construct_tx");
 
   tx.inputs.clear();
@@ -183,6 +184,10 @@ bool constructTransaction(
   }
   if (!applySubaddressTxExtra(tx.extra, subPlan)) {
     logger(ERROR, BRIGHT_RED) << "Failed to write subaddress extra";
+    return false;
+  }
+  if (janusBaseRequired && !addJanusFillerWhenMissing(tx.extra, txkey.secretKey)) {
+    logger(ERROR, BRIGHT_RED) << "Failed to write the janus base filler";
     return false;
   }
 

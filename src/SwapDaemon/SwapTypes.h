@@ -329,6 +329,9 @@ struct SwapParams {
   std::vector<Crypto::PublicKey> ringPubKeys;
   size_t ringRealIndex = 0;
   bool ringDescriptorValid = false;
+  // F8: whether the spend carries a 0x09 filler. The leader decides it with the
+  // ring and announces it in Round 1, so both parties build the same prefix.
+  bool ringJanusFiller = false;
 
   // Our Round 1 contributions (must be restored across ticks — never regenerate
   // after ringOurRound1Sent, or the peer's copy of our nonce becomes invalid).

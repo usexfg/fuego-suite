@@ -7,6 +7,8 @@
 // consensus extra validator.
 
 #include <cstring>
+#include <limits>
+#include <unordered_set>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -25,6 +27,7 @@
 #include "Common/Base58.h"
 #include "CryptoNoteCore/TransactionApi.h"
 #include "CryptoNoteCore/TransactionExtra.h"
+#include "CryptoNoteCore/TransactionPool.h"
 #include "INode.h"
 #include "IWallet.h"
 #include "ITransfersContainer.h"
@@ -236,7 +239,7 @@ TEST_F(SubaddressScanner, PerOutputKeysFromTransactionImplCreditBothRecipients) 
   ASSERT_TRUE(fromBinaryArray(raw, tx->getTransactionData()));
 
   std::string error;
-  EXPECT_TRUE(validateSubaddressTxExtra(raw, BLOCK_MAJOR_VERSION_11, &error)) << error;
+  EXPECT_TRUE(validateSubaddressTxExtra(raw, BLOCK_MAJOR_VERSION_11, false, &error)) << error;
 
   const SubaddressTxKeys keys = readSubaddressTxKeys(raw.extra);
   ASSERT_EQ(keys.additionalPubKeys.size(), 2u);
@@ -331,16 +334,16 @@ TEST(SubaddressConsensus, AdditionalKeysNeedOneJanusBasePerOutput) {
   std::string error;
 
   addAdditionalPubKeysToExtra(tx.extra, {randomPoint(), randomPoint()});
-  EXPECT_FALSE(validateSubaddressTxExtra(tx, BLOCK_MAJOR_VERSION_11, &error));
+  EXPECT_FALSE(validateSubaddressTxExtra(tx, BLOCK_MAJOR_VERSION_11, false, &error));
 
   addJanusBasesToExtra(tx.extra, {randomPoint()});
-  EXPECT_FALSE(validateSubaddressTxExtra(tx, BLOCK_MAJOR_VERSION_11, &error));
+  EXPECT_FALSE(validateSubaddressTxExtra(tx, BLOCK_MAJOR_VERSION_11, false, &error));
 
   tx.extra.clear();
   addAdditionalPubKeysToExtra(tx.extra, {randomPoint(), randomPoint()});
   addJanusBasesToExtra(tx.extra, {randomPoint(), randomPoint()});
-  EXPECT_TRUE(validateSubaddressTxExtra(tx, BLOCK_MAJOR_VERSION_11, &error)) << error;
-  EXPECT_FALSE(validateSubaddressTxExtra(tx, BLOCK_MAJOR_VERSION_10, &error));
+  EXPECT_TRUE(validateSubaddressTxExtra(tx, BLOCK_MAJOR_VERSION_11, false, &error)) << error;
+  EXPECT_FALSE(validateSubaddressTxExtra(tx, BLOCK_MAJOR_VERSION_10, false, &error));
 }
 
 TEST(SubaddressConsensus, SingleKeyTransactionCarriesExactlyOneJanusBase) {
@@ -349,11 +352,11 @@ TEST(SubaddressConsensus, SingleKeyTransactionCarriesExactlyOneJanusBase) {
   std::string error;
 
   addJanusBasesToExtra(tx.extra, {randomPoint()});
-  EXPECT_TRUE(validateSubaddressTxExtra(tx, BLOCK_MAJOR_VERSION_11, &error)) << error;
+  EXPECT_TRUE(validateSubaddressTxExtra(tx, BLOCK_MAJOR_VERSION_11, false, &error)) << error;
 
   tx.extra.clear();
   addJanusBasesToExtra(tx.extra, {randomPoint(), randomPoint()});
-  EXPECT_FALSE(validateSubaddressTxExtra(tx, BLOCK_MAJOR_VERSION_11, &error));
+  EXPECT_FALSE(validateSubaddressTxExtra(tx, BLOCK_MAJOR_VERSION_11, false, &error));
 }
 
 TEST(SubaddressContainer, JanusFlagSurvivesSaveAndLoad) {
@@ -455,6 +458,275 @@ TEST(SubaddressProof, OversizedProofIsRejectedBeforeVerification) {
   const std::string oversized = "ProofV2" + Tools::Base58::encode(std::string(257 * itemSize, '\x01'));
   PaymentProofResult proven;
   EXPECT_FALSE(checkPaymentProof(raw, getObjectHash(raw), recipient.publishedSub1(), true, oversized, proven));
+}
+
+Transaction keyInputTransaction(const std::vector<uint8_t>& extra) {
+  Transaction tx;
+  tx.version = TRANSACTION_VERSION_1;
+  tx.unlockTime = 0;
+  KeyInput input;
+  input.amount = 1000;
+  input.keyImage = reinterpret_cast<const KeyImage&>(static_cast<const PublicKey&>(randomPoint()));
+  input.outputIndexes.push_back(0);
+  tx.inputs.push_back(input);
+  TransactionOutput output;
+  output.amount = 900;
+  output.target = KeyOutput{randomPoint()};
+  tx.outputs.push_back(output);
+  tx.extra = extra;
+  tx.signatures.push_back(std::vector<Signature>(input.outputIndexes.size()));
+  return tx;
+}
+
+std::vector<uint8_t> mainKeyOnlyExtra(const KeyPair& txKey) {
+  std::vector<uint8_t> extra;
+  addTransactionPublicKeyToExtra(extra, txKey.publicKey);
+  return extra;
+}
+
+KeyPair freshKeyPair() {
+  KeyPair keys;
+  generate_keys(keys.publicKey, keys.secretKey);
+  return keys;
+}
+
+Currency currencyWithV11At(Logging::ILogger& logger, uint32_t height) {
+  return CurrencyBuilder(logger).upgradeHeightV11(height).upgradeHeightV12(height + 1000000).currency();
+}
+
+TEST(JanusBaseEverywhere, KeyInputTransactionNeedsJanusBaseOnceRequired) {
+  const KeyPair txKey = freshKeyPair();
+  Transaction bare = keyInputTransaction(mainKeyOnlyExtra(txKey));
+  std::string error;
+  EXPECT_TRUE(validateSubaddressTxExtra(bare, BLOCK_MAJOR_VERSION_11, false, &error)) << error;
+  EXPECT_FALSE(validateSubaddressTxExtra(bare, BLOCK_MAJOR_VERSION_11, true, &error));
+
+  Transaction sealed = bare;
+  ASSERT_TRUE(addJanusFillerWhenMissing(sealed.extra, txKey.secretKey));
+  EXPECT_TRUE(validateSubaddressTxExtra(sealed, BLOCK_MAJOR_VERSION_11, true, &error)) << error;
+  EXPECT_FALSE(validateSubaddressTxExtra(sealed, BLOCK_MAJOR_VERSION_10, false, &error));
+}
+
+TEST(JanusBaseEverywhere, TransactionWithoutKeyInputsIsExempt) {
+  Transaction coinbase;
+  coinbase.inputs.push_back(BaseInput{1});
+  addTransactionPublicKeyToExtra(coinbase.extra, randomPoint());
+  std::string error;
+  EXPECT_TRUE(validateSubaddressTxExtra(coinbase, BLOCK_MAJOR_VERSION_11, true, &error)) << error;
+
+  Transaction multisigSpend;
+  multisigSpend.inputs.push_back(MultisignatureInput{});
+  multisigSpend.extra = {0xFF, 0x00};
+  EXPECT_TRUE(validateSubaddressTxExtra(multisigSpend, BLOCK_MAJOR_VERSION_11, true, &error)) << error;
+}
+
+TEST(JanusBaseEverywhere, UnparseableExtraOnKeyInputTransactionIsRejectedOnceRequired) {
+  Transaction tx = keyInputTransaction({0xFF, 0x00});
+  std::string error;
+  EXPECT_TRUE(validateSubaddressTxExtra(tx, BLOCK_MAJOR_VERSION_11, false, &error)) << error;
+  EXPECT_FALSE(validateSubaddressTxExtra(tx, BLOCK_MAJOR_VERSION_11, true, &error));
+  EXPECT_FALSE(addJanusFillerWhenMissing(tx.extra, freshKeyPair().secretKey));
+}
+
+TEST(JanusBaseEverywhere, RuleStartsAfterTheGraceWindow) {
+  Logging::ConsoleLogger logger(Logging::ERROR);
+  const Currency mainnet = CurrencyBuilder(logger).currency();
+  const uint32_t lastOptional = parameters::UPGRADE_HEIGHT_V11 + parameters::JANUS_BASE_GRACE_BLOCKS;
+  EXPECT_FALSE(mainnet.janusBaseRequiredAtHeight(parameters::UPGRADE_HEIGHT_V11 + 1));
+  EXPECT_FALSE(mainnet.janusBaseRequiredAtHeight(lastOptional));
+  EXPECT_TRUE(mainnet.janusBaseRequiredAtHeight(lastOptional + 1));
+
+  const Currency unscheduled = currencyWithV11At(logger, std::numeric_limits<uint32_t>::max());
+  EXPECT_FALSE(unscheduled.janusBaseRequiredAtHeight(std::numeric_limits<uint32_t>::max()));
+}
+
+TEST(JanusBaseEverywhere, FillerIsDeterministicAndDiffersFromTheMainKey) {
+  const KeyPair txKey = freshKeyPair();
+  PublicKey first;
+  PublicKey second;
+  ASSERT_TRUE(janusFillerForTxSecret(txKey.secretKey, first));
+  ASSERT_TRUE(janusFillerForTxSecret(txKey.secretKey, second));
+  EXPECT_EQ(first, second);
+  EXPECT_NE(first, txKey.publicKey);
+  EXPECT_TRUE(check_key(first));
+
+  std::vector<uint8_t> extra = mainKeyOnlyExtra(txKey);
+  ASSERT_TRUE(addJanusFillerWhenMissing(extra, txKey.secretKey));
+  const std::vector<uint8_t> once = extra;
+  ASSERT_TRUE(addJanusFillerWhenMissing(extra, freshKeyPair().secretKey));
+  EXPECT_EQ(extra, once);
+  const SubaddressTxKeys keys = readSubaddressTxKeys(extra);
+  ASSERT_EQ(keys.janusBases.size(), 1u);
+  EXPECT_EQ(keys.janusBases[0], first);
+}
+
+TEST(JanusBaseEverywhere, TransactionImplSealsFillerBeforeFirstSignature) {
+  auto signedCopy = [](bool required) {
+    auto tx = createTransaction();
+    if (required) {
+      tx->requireJanusBase();
+    }
+    tx->addInput(MultisignatureInput{});
+    tx->addOutput(10, KeyOutput{randomPoint()});
+    tx->signInputMultisignature(0, freshKeyPair());
+    SecretKey txSecret;
+    EXPECT_TRUE(tx->getTransactionSecretKey(txSecret));
+    PublicKey expected;
+    EXPECT_TRUE(janusFillerForTxSecret(txSecret, expected));
+    return std::make_pair(readSubaddressTxKeys(tx->getExtra()), expected);
+  };
+
+  const auto sealed = signedCopy(true);
+  ASSERT_EQ(sealed.first.janusBases.size(), 1u);
+  EXPECT_EQ(sealed.first.janusBases[0], sealed.second);
+  EXPECT_TRUE(sealed.first.additionalPubKeys.empty());
+  EXPECT_TRUE(signedCopy(false).first.janusBases.empty());
+}
+
+TEST(JanusBaseEverywhere, PerOutputTransactionKeepsOneJanusBasePerOutputWhenSealed) {
+  AccountBase standard;
+  standard.generate();
+  AccountBase subaddressOwner;
+  subaddressOwner.generate();
+  const SubAddressKeys sub = deriveSubAddressKeysV2(subaddressOwner.getAccountKeys().viewSecretKey,
+                                                    subaddressOwner.getAccountKeys().address.spendPublicKey, nullptr, 1, 0);
+
+  auto tx = createTransaction();
+  tx->requireJanusBase();
+  tx->addInput(MultisignatureInput{});
+  tx->addOutput(10, standard.getAccountKeys().address, false);
+  tx->addOutput(20, AccountPublicAddress{sub.spendPublicKey, sub.viewPublicKey}, true);
+  tx->signInputMultisignature(0, freshKeyPair());
+
+  Transaction raw;
+  ASSERT_TRUE(fromBinaryArray(raw, tx->getTransactionData()));
+  std::string error;
+  EXPECT_TRUE(validateSubaddressTxExtra(raw, BLOCK_MAJOR_VERSION_11, true, &error)) << error;
+  EXPECT_EQ(readSubaddressTxKeys(raw.extra).janusBases.size(), 2u);
+}
+
+TEST(JanusBaseEverywhere, OutgoingTransactionCarriesFillerOnlyOnceTheTipIsV11) {
+  Logging::ConsoleLogger logger(Logging::ERROR);
+  const Currency currency = currencyWithV11At(logger, 100);
+  auto sealedJanusBases = [&currency](uint32_t tipHeight) {
+    auto tx = createOutgoingTransaction(currency, tipHeight);
+    tx->addInput(MultisignatureInput{});
+    tx->signInputMultisignature(0, freshKeyPair());
+    return readSubaddressTxKeys(tx->getExtra()).janusBases.size();
+  };
+  EXPECT_EQ(sealedJanusBases(100), 0u);
+  EXPECT_EQ(sealedJanusBases(101), 1u);
+}
+
+TEST(JanusBaseEverywhere, StandardRecipientDecryptsMessageBesideTheFiller) {
+  AccountBase recipient;
+  recipient.generate();
+  const KeyPair txKey = freshKeyPair();
+  std::vector<uint8_t> extra = mainKeyOnlyExtra(txKey);
+  ASSERT_TRUE(addJanusFillerWhenMissing(extra, txKey.secretKey));
+  tx_extra_message message;
+  ASSERT_TRUE(message.encrypt(0, "beside the filler", &recipient.getAccountKeys().address, txKey));
+  ASSERT_TRUE(append_message_to_extra(extra, message));
+
+  const SecretKey spendSecret = recipient.getAccountKeys().spendSecretKey;
+  const auto asStandard = get_messages_from_extra(extra, messageTransactionKey(extra, txKey.publicKey, false), &spendSecret);
+  ASSERT_EQ(asStandard.size(), 1u);
+  EXPECT_EQ(asStandard[0], "beside the filler");
+  EXPECT_TRUE(get_messages_from_extra(extra, messageTransactionKey(extra, txKey.publicKey, true), &spendSecret).empty());
+}
+
+TransactionSourceEntry ownedSource(const AccountKeys& owner, uint64_t amount) {
+  const KeyPair previousTxKey = freshKeyPair();
+  KeyDerivation derivation;
+  PublicKey outputKey;
+  EXPECT_TRUE(generate_key_derivation(previousTxKey.publicKey, owner.viewSecretKey, derivation));
+  EXPECT_TRUE(derive_public_key(derivation, 0, owner.address.spendPublicKey, outputKey));
+  TransactionSourceEntry source;
+  source.outputs.push_back({0, outputKey});
+  source.realOutput = 0;
+  source.realTransactionPublicKey = previousTxKey.publicKey;
+  source.realOutputIndexInTransaction = 0;
+  source.amount = amount;
+  return source;
+}
+
+TEST(JanusBaseEverywhere, ConstructTransactionAddsFillerOnlyWhenRequired) {
+  Logging::ConsoleLogger logger(Logging::ERROR);
+  AccountBase sender;
+  sender.generate();
+  AccountBase recipient;
+  recipient.generate();
+  const std::vector<TransactionDestinationEntry> destinations{{900, recipient.getAccountKeys().address}};
+
+  auto build = [&](bool janusBaseRequired, Transaction& tx, SecretKey& txSecret) {
+    return constructTransaction(sender.getAccountKeys(), {ownedSource(sender.getAccountKeys(), 1000)}, destinations,
+                                {}, 0, {}, tx, 0, logger, txSecret, janusBaseRequired);
+  };
+
+  Transaction sealed;
+  SecretKey sealedSecret;
+  ASSERT_TRUE(build(true, sealed, sealedSecret));
+  PublicKey expected;
+  ASSERT_TRUE(janusFillerForTxSecret(sealedSecret, expected));
+  const SubaddressTxKeys keys = readSubaddressTxKeys(sealed.extra);
+  ASSERT_EQ(keys.janusBases.size(), 1u);
+  EXPECT_EQ(keys.janusBases[0], expected);
+  std::string error;
+  EXPECT_TRUE(validateSubaddressTxExtra(sealed, BLOCK_MAJOR_VERSION_11, true, &error)) << error;
+
+  Transaction bare;
+  SecretKey bareSecret;
+  ASSERT_TRUE(build(false, bare, bareSecret));
+  EXPECT_TRUE(readSubaddressTxKeys(bare.extra).janusBases.empty());
+  EXPECT_FALSE(validateSubaddressTxExtra(bare, BLOCK_MAJOR_VERSION_11, true, &error));
+}
+
+class AcceptingValidator : public ITransactionValidator {
+public:
+  bool checkTransactionInputs(const Transaction&, BlockInfo&) override { return true; }
+  bool checkTransactionInputs(const Transaction&, BlockInfo&, BlockInfo&) override { return true; }
+  bool haveSpentKeyImages(const Transaction&) override { return false; }
+  bool checkTransactionSize(size_t) override { return true; }
+  bool checkTransactionSettlement(const Transaction&, uint64_t& fee) override { fee = settledFee; return true; }
+  uint64_t settledFee = 0;
+};
+
+class FixedTime : public ITimeProvider {
+public:
+  time_t now() override { return 1700000000; }
+};
+
+TEST(JanusBaseEverywhere, BlockTemplateDropsTransactionWithoutJanusBaseOnceRequired) {
+  Logging::ConsoleLogger logger(Logging::ERROR);
+  const uint32_t v11Height = 100;
+  const Currency currency = currencyWithV11At(logger, v11Height);
+  AcceptingValidator validator;
+  validator.settledFee = currency.minimumFee();
+  FixedTime clock;
+  tx_memory_pool pool(currency, validator, clock, logger);
+  ASSERT_TRUE(pool.init(::testing::TempDir() + "janus_pool_missing_dir"));
+
+  const KeyPair bareKey = freshKeyPair();
+  const Transaction bare = keyInputTransaction(mainKeyOnlyExtra(bareKey));
+  const KeyPair sealedKey = freshKeyPair();
+  Transaction sealed = keyInputTransaction(mainKeyOnlyExtra(sealedKey));
+  ASSERT_TRUE(addJanusFillerWhenMissing(sealed.extra, sealedKey.secretKey));
+  for (const Transaction& tx : {bare, sealed}) {
+    tx_verification_context tvc = boost::value_initialized<tx_verification_context>();
+    ASSERT_TRUE(pool.add_tx(tx, tvc, false, v11Height + 1));
+  }
+
+  auto templateAt = [&pool](uint32_t height) {
+    Block block;
+    block.majorVersion = BLOCK_MAJOR_VERSION_11;
+    size_t totalSize = 0;
+    uint64_t fee = 0;
+    EXPECT_TRUE(pool.fill_block_template(block, 1000000, 1000000, 0, totalSize, fee, height));
+    return std::unordered_set<Hash>(block.transactionHashes.begin(), block.transactionHashes.end());
+  };
+  const uint32_t lastOptional = v11Height + parameters::JANUS_BASE_GRACE_BLOCKS;
+  EXPECT_EQ(templateAt(lastOptional), (std::unordered_set<Hash>{getObjectHash(bare), getObjectHash(sealed)}));
+  EXPECT_EQ(templateAt(lastOptional + 1), (std::unordered_set<Hash>{getObjectHash(sealed)}));
 }
 
 } // namespace

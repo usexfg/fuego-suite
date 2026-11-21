@@ -4213,7 +4213,8 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
     // carry 0x06/0x09, and an 0x06 key list must cover every output exactly.
     {
       std::string subaddrErr;
-      if (!validateSubaddressTxExtra(transactions[i], block.bl.majorVersion, &subaddrErr)) {
+      if (!validateSubaddressTxExtra(transactions[i], block.bl.majorVersion,
+                                     m_currency.janusBaseRequiredAtHeight(block.height), &subaddrErr)) {
         isTransactionValid = false;
         logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
                                    << " has invalid subaddress extra: " << subaddrErr;

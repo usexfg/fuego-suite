@@ -568,6 +568,7 @@ const uint32_t TESTNET_UPGRADE_HEIGHT_V11 = 30;
 const uint32_t TESTNET_UPGRADE_HEIGHT_V12 = 1000;
 const uint64_t TESTNET_DIFFICULTY_TARGET = DIFFICULTY_TARGET_TESTNET;
 const uint32_t HEATWAVE_TAG_CUTOFF_HEIGHT = UPGRADE_HEIGHT_V11;
+const uint32_t JANUS_BASE_GRACE_BLOCKS = 720; // F8: 0x09 optional for this many blocks after v11
              // upgradekit
              //
 const unsigned UPGRADE_VOTING_THRESHOLD = 90; // percent

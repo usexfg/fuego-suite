@@ -307,9 +307,14 @@ target_link_libraries(IntegrationTestLib PUBLIC
 
 
 # End-to-end HEAT scenarios on a real in-process node with real wallets.
-file(GLOB HeatE2ESources E2E/*.cpp)
-add_executable(heat_e2e_tests ${HeatE2ESources})
-# Wallet, Transfers, P2P and CryptoNoteCore reference each other; link them as one group.
-target_link_libraries(heat_e2e_tests PRIVATE IntegrationTestLib gtest_main "$<LINK_GROUP:RESCAN,Wallet,Transfers,P2P,CryptoNoteCore>")
-add_test(NAME heat_e2e_tests COMMAND heat_e2e_tests)
-set_tests_properties(heat_e2e_tests PROPERTIES TIMEOUT 1800)
+# $<LINK_GROUP> needs CMake 3.24; older CMake skips this suite and says so.
+if(CMAKE_VERSION VERSION_LESS 3.24)
+  message(WARNING "heat_e2e_tests needs CMake 3.24 or newer; not built")
+else()
+  file(GLOB HeatE2ESources E2E/*.cpp)
+  add_executable(heat_e2e_tests ${HeatE2ESources})
+  # Wallet, Transfers, P2P and CryptoNoteCore reference each other; link them as one group.
+  target_link_libraries(heat_e2e_tests PRIVATE IntegrationTestLib gtest_main "$<LINK_GROUP:RESCAN,Wallet,Transfers,P2P,CryptoNoteCore>")
+  add_test(NAME heat_e2e_tests COMMAND heat_e2e_tests)
+  set_tests_properties(heat_e2e_tests PROPERTIES TIMEOUT 1800)
+endif()

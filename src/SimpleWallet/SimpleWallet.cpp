@@ -4312,7 +4312,7 @@ bool simple_wallet::swap(const std::vector<std::string>& args) {
     const uint64_t reserveOut = direction == 0 ? poolRes.reserve_heat : poolRes.reserve_xfg;
     const uint64_t gross = ammGetOutputAmount(amount, reserveIn, reserveOut, 0);
     const uint64_t net = ammSwapNetOutput(amount, reserveIn, reserveOut);
-    outputAmount = quoteSwapOutput(*m_node, direction, amount);
+    outputAmount = quoteSwapOutputAt(poolRes.reserve_xfg, poolRes.reserve_heat, direction, amount);
     // Where the trade leaves the pool: the output and the fee's CD share leave.
     // The split is versioned and comes from the daemon, not from a constant.
     const uint64_t cdFee = (gross - net) * poolRes.hearth_cd_share_pct / 100;
@@ -4323,9 +4323,7 @@ bool simple_wallet::swap(const std::vector<std::string>& args) {
     spotBefore = ammGetSpotPrice(xfgBefore, heatBefore);
     spotAfter = ammGetSpotPrice(xfgAfter, heatAfter);
     if (direction == 0 && poolRes.hearth_twap > 0) {
-      mintAmount = static_cast<uint64_t>(
-          ((static_cast<uint128_t>(amount) * poolRes.hearth_twap) / parameters::COIN) *
-          (10000 - parameters::WALLET_MINT_TWAP_MARGIN_BPS) / 10000);
+      mintAmount = quoteHeatMintAt(poolRes.hearth_twap, amount).heatToMinter;
     }
   } catch (const std::exception& e) {
     fail_msg_writer() << "Failed to query Hearth pool: " << e.what();

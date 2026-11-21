@@ -525,7 +525,7 @@ const size_t CRYPTONOTE_OPTIMIZE_SIZE =
     100; /* proportional to CRYPTONOTE_MAX_TX_SIZE_LIMIT */
 
 const uint64_t CRYPTONOTE_MEMPOOL_TX_LIVETIME =
-    (60 * 60 * 12); /* 1 hour in seconds */
+    (60 * 60 * 12); /* 12 hours in seconds */
 const uint64_t CRYPTONOTE_MEMPOOL_TX_FROM_ALT_BLOCK_LIVETIME =
     (60 * 60 * 12); /* 24 hours in seconds */
 const uint64_t CRYPTONOTE_NUMBER_OF_PERIODS_TO_FORGET_TX_DELETED_FROM_POOL =

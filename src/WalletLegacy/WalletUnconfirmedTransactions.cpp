@@ -44,7 +44,6 @@ bool WalletUnconfirmedTransactions::serialize(ISerializer& s) {
 
   if (s.type() == ISerializer::INPUT) {
     collectUsedOutputs();
-    stampSpentDepositsAsRecordedNow();
   }
 
   return true;
@@ -155,13 +154,12 @@ void WalletUnconfirmedTransactions::addDepositSpendingTransaction(const Hash& tr
   m_spentDepositsRecordedAt[transactionHash] = time(nullptr);
 }
 
-// The saved file does not carry when a deposit spend was recorded; a loaded one
-// gets the full live time from the load.
-void WalletUnconfirmedTransactions::stampSpentDepositsAsRecordedNow() {
-  const time_t now = time(nullptr);
+// The saved file does not carry when a deposit spend was recorded; on load the
+// owner supplies each spending transaction's send time.
+void WalletUnconfirmedTransactions::stampSpentDeposits(const std::function<time_t(TransactionId)>& sentTimeOf) {
   m_spentDepositsRecordedAt.clear();
   for (const auto& kv : m_spentDeposits) {
-    m_spentDepositsRecordedAt[kv.first] = now;
+    m_spentDepositsRecordedAt[kv.first] = sentTimeOf(kv.second.transactionId);
   }
 }
 
@@ -253,6 +251,8 @@ void WalletUnconfirmedTransactions::reset() {
   m_unconfirmedTxs.clear();
   m_usedOutputs.clear();
   m_reservedOutputs.clear();
+  m_createdDeposits.clear();
+  m_spentDeposits.clear();
   m_spentDepositsRecordedAt.clear();
 }
 
@@ -282,10 +282,12 @@ std::vector<TransactionId> WalletUnconfirmedTransactions::deleteOutdatedTransact
   // deposits must return to the wallet like any other expired send.
   for (auto it = m_spentDeposits.begin(); it != m_spentDeposits.end();) {
     const auto recorded = m_spentDepositsRecordedAt.find(it->first);
-    const bool expired = recorded == m_spentDepositsRecordedAt.end() ||
+    const bool spendingTransactionExpired =
+        std::find(deletedTransactions.begin(), deletedTransactions.end(), it->second.transactionId) != deletedTransactions.end();
+    const bool expired = spendingTransactionExpired || recorded == m_spentDepositsRecordedAt.end() ||
                          static_cast<uint64_t>(recorded->second) <= now - m_uncofirmedTransactionsLiveTime;
     if (expired) {
-      if (std::find(deletedTransactions.begin(), deletedTransactions.end(), it->second.transactionId) == deletedTransactions.end()) {
+      if (!spendingTransactionExpired) {
         deletedTransactions.push_back(it->second.transactionId);
       }
       m_spentDepositsRecordedAt.erase(it->first);

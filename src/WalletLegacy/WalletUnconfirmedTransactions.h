@@ -20,6 +20,7 @@
 #include "IWalletLegacy.h"
 #include "ITransfersContainer.h"
 
+#include <functional>
 #include <unordered_map>
 #include <unordered_set>
 #include <time.h>
@@ -100,11 +101,12 @@ public:
   void reset();
 
   std::vector<TransactionId> deleteOutdatedTransactions();
+  void stampSpentDeposits(const std::function<time_t(TransactionId)>& sentTimeOf);
 
 private:
 
   void collectUsedOutputs();
-  void stampSpentDepositsAsRecordedNow();
+
   void deleteUsedOutputs(const std::vector<TransactionOutputId>& usedOutputs);
 
   bool eraseUnconfirmedTransaction(const Crypto::Hash& hash);

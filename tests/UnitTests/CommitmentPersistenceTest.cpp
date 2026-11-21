@@ -143,6 +143,32 @@ TEST_F(CommitmentPersistence, MarkerTermOutputsBecomeSpendable) {
   }
 }
 
+// A view-only wallet records a zero key image for every owner-bound output; the
+// second such output used to collide with the first and fail the sync.
+TEST_F(CommitmentPersistence, ViewOnlyWalletKeepsEveryUnverifiedCommitment) {
+  for (uint8_t seed = 20; seed < 23; ++seed) {
+    auto tx = createTransaction();
+    TransactionOutputCommitment out;
+    out.commitKey = patternKey(seed);
+    out.term = parameters::HEAT_TERM;
+    tx->addOutput(kAmount, out);
+    TransactionOutputInformationIn info{};
+    info.type = TransactionTypes::OutputType::Commitment;
+    info.amount = kAmount;
+    info.globalOutputIndex = seed;
+    info.outputInTransaction = 0;
+    info.transactionPublicKey = tx->getTransactionPublicKey();
+    info.term = parameters::HEAT_TERM;
+    info.commitmentKey = out.commitKey;
+    TransactionBlockInfo block{kHeight, 1000000};
+    ASSERT_TRUE(container.addTransaction(block, *tx, {info}, {}, nullptr));
+  }
+  container.advanceHeight(kHeight + 10);
+  std::vector<TransactionOutputInformation> heat;
+  container.getOutputs(heat, ITransfersContainer::IncludeTypeHeat | ITransfersContainer::IncludeStateUnlocked);
+  EXPECT_EQ(3u, heat.size());
+}
+
 // A commitment input names the output it spends by key image. The container used
 // to index commitment outputs under a descriptor no input could match, so spent
 // HEAT, CDs and LP shares stayed available and a rescanned wallet counted them.
@@ -189,7 +215,7 @@ std::string olderContainerStream(const std::string& current, const Crypto::Publi
   const size_t pos = bytes.find(needle);
   EXPECT_NE(std::string::npos, pos) << "the stream must contain the commit key";
   EXPECT_EQ(std::string::npos, bytes.find(needle, pos + 1)) << "the key must appear exactly once";
-  EXPECT_EQ(3, static_cast<unsigned char>(bytes[0])) << "first byte is the storage version";
+  EXPECT_EQ(4, static_cast<unsigned char>(bytes[0])) << "first byte is the storage version";
   EXPECT_EQ(0, bytes[pos + needle.size()]) << "the Janus flag follows the commit key";
   bytes.erase(pos + needle.size(), 1);
   if (version < 2) {
@@ -199,46 +225,36 @@ std::string olderContainerStream(const std::string& current, const Crypto::Publi
   return bytes;
 }
 
-TEST_F(CommitmentPersistence, Version2CacheStillLoadsWithItsCommitKey) {
+// A cache written before version 4 never marked a spent commitment output spent,
+// so one holding commitment outputs is refused and the wallet rescans.
+TEST_F(CommitmentPersistence, CacheWithCommitmentsFromBeforeVersion4IsRefused) {
   const Crypto::PublicKey commitKey = patternKey(5);
-  auto tx = addCommitmentTransaction(commitKey, patternImage(5));
-  const Crypto::Hash txHash = tx->getTransactionHash();
-
+  addCommitmentTransaction(commitKey, patternImage(5));
   std::stringstream current;
   container.save(current);
-  std::stringstream v2(olderContainerStream(current.str(), commitKey, 2));
-  TransfersContainer restored(currency, kSpendableAge);
-  restored.load(v2);
 
-  TransactionOutputInformation out;
-  ITransfersContainer::TransferState state;
-  ASSERT_TRUE(restored.getTransfer(txHash, 0, out, state));
-  EXPECT_EQ(commitKey, out.commitmentKey);
-  EXPECT_FALSE(out.janusUnverified);
-  EXPECT_EQ(kAmount, out.amount);
+  std::string version3 = current.str();
+  version3[0] = 3;
+  for (const std::string& older : {version3, olderContainerStream(current.str(), commitKey, 2),
+                                   olderContainerStream(current.str(), commitKey, 1)}) {
+    std::stringstream stream(older);
+    TransfersContainer restored(currency, kSpendableAge);
+    EXPECT_THROW(restored.load(stream), std::runtime_error);
+  }
 }
 
-TEST_F(CommitmentPersistence, Version1CacheStillLoadsAndReportsKeyNotRecorded) {
-  const Crypto::PublicKey commitKey = patternKey(2);
-  auto tx = addCommitmentTransaction(commitKey, patternImage(2));
-  const Crypto::Hash txHash = tx->getTransactionHash();
-
+// A cache without commitment outputs (every wallet that never held HEAT, CDs or
+// LP shares) still loads from an older version without a rescan.
+TEST_F(CommitmentPersistence, CacheWithoutCommitmentsFromVersion3StillLoads) {
   std::stringstream current;
   container.save(current);
-  std::stringstream v1(olderContainerStream(current.str(), commitKey, 1));
+  std::string version3 = current.str();
+  version3[0] = 3;
+  std::stringstream stream(version3);
   TransfersContainer restored(currency, kSpendableAge);
-  restored.load(v1);
-
-  TransactionOutputInformation out;
-  ITransfersContainer::TransferState state;
-  ASSERT_TRUE(restored.getTransfer(txHash, 0, out, state));
-  EXPECT_EQ(Crypto::PublicKey{}, out.commitmentKey)
-    << "an unrecorded key must read back as all-zero, not indeterminate bytes";
-  EXPECT_EQ(kAmount, out.amount) << "the rest of a v1 record must be intact";
-  EXPECT_EQ(parameters::HEAT_TERM, out.term);
+  EXPECT_NO_THROW(restored.load(stream));
 }
 
-// Spent outputs go through the same layout and must keep the key too.
 TEST(CommitmentPersistenceRecords, SpentOutputKeepsCommitKey) {
   SpentTransactionOutput spent{};
   spent.type = TransactionTypes::OutputType::Commitment;

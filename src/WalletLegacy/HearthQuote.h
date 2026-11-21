@@ -43,9 +43,11 @@ LpRemovePayout quoteLpRemovePayout(INode& node, uint64_t lpShares);
 // minter's HEAT is quoted WALLET_MINT_TWAP_MARGIN_BPS under the price so a TWAP
 // move before inclusion does not invalidate the mint.
 HeatMintQuote quoteHeatMint(INode& node, uint64_t xfgBurned);
+HeatMintQuote quoteHeatMintAt(uint64_t hearthTwap, uint64_t xfgBurned);
 
 // Hearth swap output on the constant-product curve, net of the taker fee, less
 // WALLET_SWAP_SLIPPAGE_BPS. direction 0 sells XFG for HEAT, 1 sells HEAT for XFG.
 uint64_t quoteSwapOutput(INode& node, uint8_t direction, uint64_t inputAmount);
+uint64_t quoteSwapOutputAt(uint64_t reserveXfg, uint64_t reserveHeat, uint8_t direction, uint64_t inputAmount);
 
 }

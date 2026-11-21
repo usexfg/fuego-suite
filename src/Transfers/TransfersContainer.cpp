@@ -16,6 +16,8 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "TransfersContainer.h"
+
+#include <algorithm>
 #include "CryptoNoteCore/AssetType.h"
 #include "IWalletLegacy.h"
 #include "Common/StdInputStream.h"
@@ -45,9 +47,19 @@ void serialize(TransactionInformation& ti, CryptoNote::ISerializer& s) {
 
 // 2: Commitment outputs also store their published commit key (see
 //    TransactionOutputInformationEx::serialize). Version 1 and 0 caches still load.
-const uint32_t TRANSFERS_CONTAINER_STORAGE_VERSION = 3;
+// 4: Same layout as 3. Caches written before 4 never marked a spent commitment
+//    output spent, so one holding commitment outputs is refused and rescanned.
+const uint32_t TRANSFERS_CONTAINER_STORAGE_VERSION = 4;
+const uint32_t FIRST_VERSION_TRACKING_COMMITMENT_SPENDS = 4;
 
 namespace {
+  template<typename TTransfers>
+  bool holdsCommitmentOutput(const TTransfers& transfers) {
+    return std::any_of(transfers.begin(), transfers.end(), [](const TransactionOutputInformation& transfer) {
+      return transfer.type == TransactionTypes::OutputType::Commitment;
+    });
+  }
+
   template<typename TIterator>
   class TransferIteratorList {
   public:
@@ -144,7 +156,15 @@ SpentOutputDescriptor::SpentOutputDescriptor(const TransactionOutputInformationI
     // A commitment input names its output by key image, exactly as a key input
     // does, so the output is indexed under the same key-image descriptor.
     // Key images are unique per output, so key and commitment outputs never collide.
-    assign(&transactionInfo.keyImage);
+    // A view-only wallet cannot derive an owner-bound key image and records zero;
+    // those outputs are identified by amount and global index instead (no input
+    // can name them: consensus rejects the zero key image).
+    if (transactionInfo.keyImage == Crypto::KeyImage{}) {
+      m_amount = transactionInfo.amount;
+      m_globalOutputIndex = transactionInfo.globalOutputIndex;
+    } else {
+      assign(&transactionInfo.keyImage);
+    }
   } else {
     assert(false);
   }
@@ -179,7 +199,7 @@ bool SpentOutputDescriptor::operator==(const SpentOutputDescriptor& other) const
   } else if (m_type == TransactionTypes::OutputType::Multisignature) {
     return other.m_type == m_type && other.m_amount == m_amount && other.m_globalOutputIndex == m_globalOutputIndex;
   } else if (m_type == TransactionTypes::OutputType::Commitment) {
-    return other.m_type == m_type && *other.m_keyImage == *m_keyImage;
+    return other.m_type == m_type && other.m_amount == m_amount && other.m_globalOutputIndex == m_globalOutputIndex;
   } else {
     assert(false);
     return false;
@@ -195,8 +215,9 @@ size_t SpentOutputDescriptor::hash() const {
     boost::hash_combine(hashValue, m_globalOutputIndex);
     return hashValue;
   } else if (m_type == TransactionTypes::OutputType::Commitment) {
-    static_assert(sizeof(size_t) < sizeof(*m_keyImage), "sizeof(size_t) < sizeof(*m_keyImage)");
-    return *reinterpret_cast<const size_t*>(m_keyImage->data);
+    size_t hashValue = boost::hash_value(m_amount);
+    boost::hash_combine(hashValue, m_globalOutputIndex);
+    return hashValue;
   } else {
     assert(false);
     return 0;
@@ -978,6 +999,12 @@ void TransfersContainer::load(std::istream& in) {
     readSequence<TransferUnlockJob>(std::inserter(transfersUnlockJobs, transfersUnlockJobs.end()), "transfersUnlockJobs", s);
   } else {
     rebuildTransfersUnlockJobs(transfersUnlockJobs, availableTransfers, spentTransfers);
+  }
+
+  if (version < FIRST_VERSION_TRACKING_COMMITMENT_SPENDS &&
+      (holdsCommitmentOutput(unconfirmedTransfers) || holdsCommitmentOutput(availableTransfers) ||
+       holdsCommitmentOutput(spentTransfers))) {
+    throw std::runtime_error("Transfers cache predates commitment spend tracking; rescan required");
   }
 
   m_currentHeight = currentHeight;

@@ -189,7 +189,7 @@ WalletLegacy::WalletLegacy(const CryptoNote::Currency& currency, INode& node, Lo
   m_blockchainSync(node, currency.genesisBlockHash()),
   m_transfersSync(currency, m_loggerGroup, m_blockchainSync, node),
   m_transferDetails(nullptr),
-  m_transactionsCache(m_currency.mempoolTxLiveTime()),
+  m_transactionsCache(2 * m_currency.mempoolTxLiveTime()),
   m_sender(nullptr),
   m_onInitSyncStarter(new SyncStarter(m_blockchainSync)),
   m_pendingBurnAmount(0),

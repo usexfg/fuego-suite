@@ -1783,8 +1783,8 @@ double Currency::getBurnPercentage() const {
 		CryptoNote::AccountPublicAddress ac = boost::value_initialized<CryptoNote::AccountPublicAddress>();
 		BinaryArray extraNonce;
 		if (m_currency.m_testnet) {
-			// Both genesis transactions were generated with the mainnet v10 height
-			// as their extra nonce; the testnet schedule must not change it.
+			// The testnet genesis transaction carries the mainnet v10 height as its
+			// extra nonce; the testnet schedule must not change it.
 			uint32_t nonce = parameters::UPGRADE_HEIGHT_V10;
 			extraNonce.resize(4);
 			memcpy(extraNonce.data(), &nonce, 4);

@@ -437,6 +437,8 @@ protected:
   void addAndSignInputs(ITransaction &transaction, std::vector<InputInfo> &keysInfo,
                         const std::vector<HeatSpend> &heatSpends);
 
+  static void throwIfDecoysDoNotMatch(const std::vector<OutputToTransfer>& selectedTransfers,
+      const std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount>& mixinResult, uint64_t mixIn);
   void requestMixinOuts(const std::vector<OutputToTransfer> &selectedTransfers,
                         uint64_t mixIn,
                         std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount> &mixinResult);

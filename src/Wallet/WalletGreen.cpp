@@ -4887,11 +4887,35 @@ namespace CryptoNote
 
     requestFinished.wait();
 
-    checkIfEnoughMixins(mixinResult, mixIn);
-
     if (mixinError)
     {
       throw std::system_error(mixinError);
+    }
+
+    throwIfDecoysDoNotMatch(selectedTransfers, mixinResult, mixIn);
+    checkIfEnoughMixins(mixinResult, mixIn);
+  }
+
+  // The node answers one decoy set per selected input, in request order, for that
+  // input's amount. prepareInputs indexes the answer by input, so a node that
+  // answers fewer sets, or for other amounts, would be read past its end.
+  void WalletGreen::throwIfDecoysDoNotMatch(
+      const std::vector<OutputToTransfer> &selectedTransfers,
+      const std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount> &mixinResult,
+      uint64_t mixIn)
+  {
+    if (mixIn == 0 && mixinResult.empty())
+    {
+      return;
+    }
+    bool matches = mixinResult.size() == selectedTransfers.size();
+    for (size_t i = 0; matches && i < mixinResult.size(); ++i)
+    {
+      matches = mixinResult[i].amount == selectedTransfers[i].out.amount;
+    }
+    if (!matches)
+    {
+      throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR), "Node answered decoys that do not match the selected inputs");
     }
   }
 

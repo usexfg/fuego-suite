@@ -284,3 +284,80 @@ TEST(WalletCacheExpiry, DroppedDepositSpendReleasesItsDeposit) {
   EXPECT_EQ(WALLET_LEGACY_INVALID_TRANSACTION_ID, cache.getDeposit(depositId).spendingTransactionId);
   EXPECT_EQ(0u, cache.countUnconfirmedSpentDepositsTotalAmount());
 }
+
+// A pending deposit spend expires from the time its transaction was sent, also
+// across a reload. It used to be re-stamped on every load, so a wallet restarted
+// more often than the live time never released the deposit.
+TEST(WalletCacheExpiry, ReloadedDepositSpendExpiresFromItsSendTime) {
+  const uint64_t liveTime = 60 * 60;
+  WalletUserTransactionsCache saved(liveTime);
+  Deposit deposit{};
+  deposit.amount = 1000;
+  deposit.spendingTransactionId = WALLET_LEGACY_INVALID_TRANSACTION_ID;
+  const DepositId depositId = saved.insertDeposit(deposit, 0, Crypto::Hash{});
+  const TransactionId withdraw = saved.addNewTransaction(0, 10, std::string(), {}, 0, {});
+  saved.getTransaction(withdraw).hash.data[0] = 7;
+  saved.getTransaction(withdraw).state = WalletLegacyTransactionState::Active;
+  saved.getTransaction(withdraw).sentTime = static_cast<uint64_t>(time(nullptr)) - 2 * liveTime;
+  saved.getDeposit(depositId).spendingTransactionId = withdraw;
+  saved.addDepositSpendingTransaction(saved.getTransaction(withdraw).hash, UnconfirmedSpentDepositDetails{withdraw, 1000, 10});
+
+  std::stringstream stream;
+  {
+    Common::StdOutputStream output(stream);
+    BinaryOutputStreamSerializer serializer(output);
+    ASSERT_TRUE(saved.serialize(serializer));
+  }
+  WalletUserTransactionsCache loaded(liveTime);
+  {
+    Common::StdInputStream input(stream);
+    BinaryInputStreamSerializer serializer(input);
+    ASSERT_TRUE(loaded.serialize(serializer));
+  }
+  EXPECT_EQ(WalletLegacyTransactionState::Deleted, loaded.getTransaction(withdraw).state);
+  EXPECT_EQ(WALLET_LEGACY_INVALID_TRANSACTION_ID, loaded.getDeposit(depositId).spendingTransactionId);
+  EXPECT_EQ(0u, loaded.countUnconfirmedSpentDepositsTotalAmount());
+}
+
+// A withdraw released after expiry that later confirms marks its deposit spent
+// again when the wallet sees the block.
+TEST(WalletCacheExpiry, ConfirmedOwnWithdrawMarksTheDepositSpent) {
+  Logging::ConsoleLogger logger(Logging::ERROR);
+  Currency currency = CurrencyBuilder(logger).currency();
+  WalletUserTransactionsCache cache;
+  Crypto::Hash depositTx;
+  depositTx.data[0] = 3;
+  Deposit deposit{};
+  deposit.amount = 1000;
+  deposit.spendingTransactionId = WALLET_LEGACY_INVALID_TRANSACTION_ID;
+  const DepositId depositId = cache.insertDeposit(deposit, 0, depositTx);
+  const TransactionId withdraw = cache.addNewTransaction(0, 10, std::string(), {}, 0, {});
+  Crypto::Hash withdrawHash;
+  withdrawHash.data[0] = 4;
+  cache.getTransaction(withdraw).hash = withdrawHash;
+
+  TransactionInformation confirmed{};
+  confirmed.transactionHash = withdrawHash;
+  confirmed.blockHeight = 10;
+  confirmed.totalAmountIn = 1000;
+  TransactionOutputInformation spentDeposit{};
+  spentDeposit.type = TransactionTypes::OutputType::Commitment;
+  spentDeposit.amount = 1000;
+  spentDeposit.transactionHash = depositTx;
+  spentDeposit.outputInTransaction = 0;
+  cache.onTransactionUpdated(confirmed, 0, {}, {spentDeposit}, currency);
+  EXPECT_EQ(withdraw, cache.getDeposit(depositId).spendingTransactionId);
+}
+
+// Reset leaves no pending deposit spend behind to expire against transactions
+// that no longer exist.
+TEST(WalletCacheExpiry, ResetClearsPendingDepositSpends) {
+  WalletUserTransactionsCache cache(0);
+  const TransactionId withdraw = cache.addNewTransaction(0, 10, std::string(), {}, 0, {});
+  Crypto::Hash withdrawHash;
+  withdrawHash.data[0] = 5;
+  cache.addDepositSpendingTransaction(withdrawHash, UnconfirmedSpentDepositDetails{withdraw, 1000, 10});
+  cache.reset();
+  EXPECT_EQ(0u, cache.countUnconfirmedSpentDepositsTotalAmount());
+  EXPECT_TRUE(cache.deleteOutdatedTransactions().empty());
+}

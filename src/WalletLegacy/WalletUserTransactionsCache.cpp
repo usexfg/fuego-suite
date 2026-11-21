@@ -129,6 +129,9 @@ bool WalletUserTransactionsCache::serialize(CryptoNote::ISerializer& s) {
 
   if (s.type() == CryptoNote::ISerializer::INPUT) {
     updateUnconfirmedTransactions();
+    m_unconfirmedTransactions.stampSpentDeposits([this](TransactionId id) {
+      return id < m_transactions.size() ? m_transactions[id].sentTime : time_t(0);
+    });
     deleteOutdatedTransactions();
     restoreTransactionOutputToBankingIndex();
     rebuildPaymentsIndex();
@@ -367,6 +370,10 @@ std::deque<std::unique_ptr<WalletLegacyEvent>> WalletUserTransactionsCache::onTr
     }
 
     auto recordedDepositIds = recordConfirmedDeposits(id, newDepositOutputs, currency, txInfo.blockHeight);
+    // A withdraw released after expiry or a pool drop and then confirmed is
+    // marked spent again here.
+    auto spentDepositIds = processSpentDeposits(id, spentDepositOutputs);
+    recordedDepositIds.insert(recordedDepositIds.end(), spentDepositIds.begin(), spentDepositIds.end());
     if (!recordedDepositIds.empty()) {
       events.push_back(std::unique_ptr<WalletLegacyEvent>(new WalletDepositsUpdatedEvent(std::move(recordedDepositIds))));
     }
@@ -607,7 +614,9 @@ std::vector<TransactionId> WalletUserTransactionsCache::deleteOutdatedTransactio
   auto deletedTransactions = m_unconfirmedTransactions.deleteOutdatedTransactions();
 
   for (auto id: deletedTransactions) {
-    assert(id < m_transactions.size());
+    if (id >= m_transactions.size()) {
+      continue;
+    }
     m_transactions[id].state = WalletLegacyTransactionState::Deleted;
     releaseDepositsSpentBy(id);
   }

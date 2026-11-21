@@ -64,9 +64,20 @@ LpRemovePayout quoteLpRemovePayout(INode& node, uint64_t lpShares) {
   return payout;
 }
 
+// The pool query surfaces a node or connection error that getHearthTwap, which
+// answers 0 on failure, would report as "no TWAP yet".
 HeatMintQuote quoteHeatMint(INode& node, uint64_t xfgBurned) {
+  INode::AmmPoolInfo pool;
+  const std::error_code ec = node.getAmmPoolInfo(pool);
+  if (ec) {
+    throw std::system_error(ec, "Hearth pool unavailable");
+  }
+  return quoteHeatMintAt(node.getHearthTwap(), xfgBurned);
+}
+
+HeatMintQuote quoteHeatMintAt(uint64_t hearthTwap, uint64_t xfgBurned) {
   HeatMintQuote quote;
-  quote.hearthTwap = node.getHearthTwap();
+  quote.hearthTwap = hearthTwap;
   if (quote.hearthTwap == 0) {
     throw std::system_error(make_error_code(error::WRONG_STATE), "No Hearth TWAP yet; HEAT mints open two blocks into v11");
   }
@@ -81,8 +92,12 @@ HeatMintQuote quoteHeatMint(INode& node, uint64_t xfgBurned) {
 
 uint64_t quoteSwapOutput(INode& node, uint8_t direction, uint64_t inputAmount) {
   const INode::AmmPoolInfo pool = currentPool(node);
-  const uint64_t reserveIn = direction == 0 ? pool.reserveXfg : pool.reserveHeat;
-  const uint64_t reserveOut = direction == 0 ? pool.reserveHeat : pool.reserveXfg;
+  return quoteSwapOutputAt(pool.reserveXfg, pool.reserveHeat, direction, inputAmount);
+}
+
+uint64_t quoteSwapOutputAt(uint64_t reserveXfg, uint64_t reserveHeat, uint8_t direction, uint64_t inputAmount) {
+  const uint64_t reserveIn = direction == 0 ? reserveXfg : reserveHeat;
+  const uint64_t reserveOut = direction == 0 ? reserveHeat : reserveXfg;
   return lessSlippage(ammSwapNetOutput(inputAmount, reserveIn, reserveOut));
 }
 

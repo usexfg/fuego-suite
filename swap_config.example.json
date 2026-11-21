@@ -147,6 +147,13 @@
   "op_host": "mainnet.optimism.io",
   "op_port": 443,
   "op_priv_key": "<64_hex_private_key>",
+  //
+  // LINEA — Linea L2 (chain ID 59144)
+  "linea_host": "https://rpc.linea.build",
+  "linea_port": 443,
+  "linea_priv_key": "<64_hex_private_key>",
+  // linea_address: "0x..." after the HashedTimelock deploy
+  // linea_htlc_bin: path to the pre-compiled HashedTimelock bytecode
   // DOGE — Dogecoin (port 22556)
   "doge_host": "127.0.0.1",
   "doge_port": 22556,

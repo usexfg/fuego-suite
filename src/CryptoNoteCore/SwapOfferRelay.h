@@ -277,13 +277,13 @@ public:
                                uint64_t takerPrice, uint64_t takerAmount);
 
   // Highest valid SwapPair index. Must track the last enumerator of
-  // XfgSwap::SwapPair (SwapDaemon/SwapTypes.h), currently DOT = 28. Core does
+  // XfgSwap::SwapPair (SwapDaemon/SwapTypes.h), currently LINEA = 29. Core does
   // not include the swap-daemon headers, so this is kept in sync by hand:
   // raising SwapPair without raising this silently drops every offer for the
   // new pair in validateOffer, since the pair never reaches an order book.
   // Public so callers bound their own pair inputs against this rather than
   // duplicating the literal.
-  static constexpr uint8_t MAX_PAIR_INDEX = 28; // m_orderBooks[29], valid indices 0..28
+  static constexpr uint8_t MAX_PAIR_INDEX = 29; // m_orderBooks[30], valid indices 0..29
 
 private:
   // ── Legacy v1 internals ──

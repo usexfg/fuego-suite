@@ -56,6 +56,7 @@ static const double SEED_LTC_USD = 90.0;
 static const double SEED_KMD_USD = 0.35;
 static const double SEED_MONAD_USD = 1.20;
 static const double SEED_OP_USD = 1.40;
+static const double SEED_LINEA_USD = 4.20;
 static const double SEED_DOT_USD = 6.50;
 
 // Minimum completed swaps before TWAP replaces seed rate
@@ -123,6 +124,7 @@ double PriceOracle::getEffectiveRate(SwapPair pair) const {
     case SwapPair::KMD_SPV: return SEED_KMD_USD / xfgUsd;
     case SwapPair::MONAD: return SEED_MONAD_USD / xfgUsd;
     case SwapPair::OPTIMISM: return SEED_OP_USD / xfgUsd;
+    case SwapPair::LINEA: return SEED_LINEA_USD / xfgUsd;
     case SwapPair::DOT: return SEED_DOT_USD / xfgUsd;
     default:            return 0.0;
   }
@@ -159,6 +161,7 @@ double PriceOracle::getSeedRate(SwapPair pair) {
     case SwapPair::KMD_SPV: return SEED_KMD_USD / SEED_XFG_USD;
     case SwapPair::MONAD: return SEED_MONAD_USD / SEED_XFG_USD;
     case SwapPair::OPTIMISM: return SEED_OP_USD / SEED_XFG_USD;
+    case SwapPair::LINEA: return SEED_LINEA_USD / SEED_XFG_USD;
     case SwapPair::DOT: return SEED_DOT_USD / SEED_XFG_USD;
     default:            return 0.0;
   }
@@ -198,6 +201,7 @@ double PriceOracle::ctrDivisor(SwapPair pair) {
     case SwapPair::KMD_SPV: return 1e8;   // satoshi
     case SwapPair::MONAD: return 1e18;    // wei
     case SwapPair::OPTIMISM: return 1e18; // wei
+    case SwapPair::LINEA: return 1e18; // wei (Linea OP Stack EVM, ETH 18 decimals)
     case SwapPair::DOT: return 1e10;      // planck (1 DOT = 1e10 planck)
     default:            return 1e8;
   }

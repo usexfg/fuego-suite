@@ -103,7 +103,8 @@ enum class SwapPair : uint8_t {
   MONAD = 25,
   OPTIMISM = 26,
   TON = 27,
-  DOT = 28
+  DOT = 28,
+  LINEA = 29
 };
 
 enum class SwapLockType : uint8_t {

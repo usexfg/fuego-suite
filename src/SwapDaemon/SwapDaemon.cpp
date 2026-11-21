@@ -51,6 +51,7 @@
 #include "Bob/BobChainClient.h"
 #include "Monad/MonadChainClient.h"
 #include "Optimism/OptimismChainClient.h"
+#include "Linea/LineaChainClient.h"
 #include "Plasma/PlasmaChainClient.h"
 #include "PulseChain/PulseChainClient.h"
 #include "Unichain/UnichainChainClient.h"
@@ -472,6 +473,16 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
     m_chainRegistry.registerChain(SwapPair::OPTIMISM,
         std::make_unique<OptimismChainClient>(std::move(rpc), chainCfg.opAddress));
     m_logger(Logging::INFO) << "OPTIMISM chain client registered: " << chainCfg.opHost << ":" << chainCfg.opPort;
+  }
+  // LINEA (Linea — OP Stack EVM L2, chain id 59144)
+  if (!chainCfg.lineaHost.empty()) {
+    auto rpc = std::make_unique<EthRpcClient>(chainCfg.lineaHost, chainCfg.lineaPort,
+        chainCfg.lineaPrivKeyHex, chainCfg.lineaAddress, chainCfg.lineaChainId);
+    applyHtlcConfig(*rpc, chainCfg.lineaHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "LINEA");
+    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "LINEA");
+    m_chainRegistry.registerChain(SwapPair::LINEA,
+        std::make_unique<LineaChainClient>(std::move(rpc), chainCfg.lineaAddress));
+    m_logger(Logging::INFO) << "LINEA chain client registered: " << chainCfg.lineaHost << ":" << chainCfg.lineaPort;
   }
   // DOGE
   if (!chainCfg.dogeHost.empty()) {
@@ -4193,7 +4204,7 @@ bool SwapDaemon::handleSwapRequest(const std::string& offerId, uint64_t amount,
 
   CryptoNote::SwapOfferMsg targetOffer;
   bool found = false;
-  for (int pair = 0; pair <= static_cast<int>(SwapPair::DOT); ++pair) {
+  for (int pair = 0; pair <= static_cast<int>(SwapPair::LINEA); ++pair) {
     auto pairOffers = m_swapRelay->getOffers(pair);
     for (const auto& offer : pairOffers) {
       if (offer.offerId == offerId) {

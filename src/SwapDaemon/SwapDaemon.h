@@ -314,6 +314,14 @@ struct ChainClientConfig {
   uint64_t    opChainId    = 10;
   std::string opHtlcBinPath;
 
+  // LINEA (Linea — OP Stack EVM L2, chain id 59144)
+  std::string lineaHost;
+  uint16_t    lineaPort       = 8545;
+  std::string lineaPrivKeyHex;
+  std::string lineaAddress;
+  uint64_t    lineaChainId    = 59144;
+  std::string lineaHtlcBinPath;
+
   // DOT (Polkadot Relay — Substrate, SS58 prefix 0)
   std::string dotHost;
   uint16_t    dotPort       = 9933;

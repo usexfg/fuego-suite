@@ -318,6 +318,14 @@ bool loadChainClientConfig(const std::string& path,
   out.opChainId    = jsonGetUint(json, "op_chain_id", 10);
   out.opHtlcBinPath= jsonGetStr(json, "op_htlc_bin", out.ethHtlcBinPath);
 
+  // LINEA (Linea — OP Stack EVM L2, chain id 59144)
+  out.lineaHost       = jsonGetStr(json, "linea_rpc_host", "");
+  out.lineaPort       = static_cast<uint16_t>(jsonGetUint(json, "linea_rpc_port", 8545));
+  out.lineaPrivKeyHex = jsonGetStr(json, "linea_priv_key");
+  out.lineaAddress    = jsonGetStr(json, "linea_address");
+  out.lineaChainId    = jsonGetUint(json, "linea_chain_id", 59144);
+  out.lineaHtlcBinPath= jsonGetStr(json, "linea_htlc_bin", out.ethHtlcBinPath);
+
   // DOT (Polkadot Relay — Substrate)
   out.dotHost       = jsonGetStr(json, "dot_rpc_host", "");
   out.dotPort       = static_cast<uint16_t>(jsonGetUint(json, "dot_rpc_port", 9933));
@@ -488,6 +496,13 @@ bool loadChainClientConfig(const std::string& path,
   if (!validateHex(out.opPrivKeyHex, 32, "op_priv_key", errorMsg)) return false;
   if (!out.opAddress.empty() && (out.opAddress.size() < 2 || out.opAddress.substr(0, 2) != "0x")) {
     errorMsg = "op_address must start with 0x";
+    return false;
+  }
+
+  // LINEA (EVM)
+  if (!validateHex(out.lineaPrivKeyHex, 32, "linea_priv_key", errorMsg)) return false;
+  if (!out.lineaAddress.empty() && (out.lineaAddress.size() < 2 || out.lineaAddress.substr(0, 2) != "0x")) {
+    errorMsg = "linea_address must start with 0x";
     return false;
   }
 

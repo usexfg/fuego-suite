@@ -8,6 +8,8 @@
 // PURPOSE. See file labeled LICENSE for more details.
 
 #include "AmmPool.h"
+
+#include <algorithm>
 #include "Common/Int128.h"
 #include "CryptoNoteConfig.h"
 #include "../Serialization/SerializationOverloads.h"
@@ -152,6 +154,47 @@ bool ammValidateInvariant(uint64_t reserveAIn, uint64_t reserveBIn,
   // tolerance silently accepted pool-draining regressions on large reserves.
   static const uint64_t MAX_ROUNDING_LOSS = 8;
   return after + MAX_ROUNDING_LOSS >= before;
+}
+
+bool ammApplyPoolMakerFill(AmmPoolState& pool, uint8_t side,
+                           uint64_t xfg, uint64_t heat, uint64_t rebateHeat) {
+  if (side == 1) {
+    if (pool.reserveXfg < xfg || heat > UINT64_MAX - rebateHeat ||
+        pool.reserveHeat > UINT64_MAX - (heat + rebateHeat)) return false;
+    pool.reserveXfg -= xfg;
+    pool.reserveHeat += heat + rebateHeat;
+    return true;
+  }
+  if (rebateHeat > heat || pool.reserveHeat < heat - rebateHeat ||
+      pool.reserveXfg > UINT64_MAX - xfg) return false;
+  pool.reserveHeat -= heat - rebateHeat;
+  pool.reserveXfg += xfg;
+  return true;
+}
+
+void ammRevertPoolMakerFill(AmmPoolState& pool, uint8_t side,
+                            uint64_t xfg, uint64_t heat, uint64_t rebateHeat) {
+  if (side == 1) {
+    pool.reserveXfg += xfg;
+    pool.reserveHeat -= heat + rebateHeat;
+    return;
+  }
+  pool.reserveHeat += heat - rebateHeat;
+  pool.reserveXfg -= xfg;
+}
+
+uint64_t cdCreationFeeXfg(uint64_t heatAmount, uint64_t termBlocks, uint64_t epochBlocks,
+                          uint64_t oraclePrice) {
+  if (heatAmount == 0 || epochBlocks == 0 || oraclePrice == 0) return 0;
+  const uint64_t minEpochs = parameters::CD_MIN_EPOCHS, maxEpochs = parameters::CD_MAX_EPOCHS;
+  const uint64_t epochs = std::min(std::max(termBlocks / epochBlocks, minEpochs), maxEpochs);
+  const uint64_t span = maxEpochs - minEpochs;
+  const uint64_t rateNum = parameters::CD_CREATION_FEE_MIN_BPS * span +
+      (parameters::CD_CREATION_FEE_MAX_BPS - parameters::CD_CREATION_FEE_MIN_BPS) * (epochs - minEpochs);
+  const uint128_t num = (uint128_t)heatAmount * rateNum * parameters::COIN;
+  const uint128_t den = (uint128_t)(FEE_DIVISOR * span) * oraclePrice;
+  const uint128_t fee = (num + den - 1) / den;
+  return fee > UINT64_MAX ? UINT64_MAX : static_cast<uint64_t>(fee);
 }
 
 bool ammValidateDepositRatio(uint64_t amountA, uint64_t amountB,

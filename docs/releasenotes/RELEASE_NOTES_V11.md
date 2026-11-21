@@ -74,7 +74,7 @@ Miner-voted consumer basket, priced in integer cents (power in milli-USD/kWh).
 - The Bonus Vault pays tier-based loyalty bonuses of 2.5× for 72 epochs, 2× for 36 epochs, 1.5× for 18 epochs, and 1.25× for 6 epochs.
 - There are exactly two protocol earnings streams: the Hearth swap fee (1% taker, versioned 30/70 at v11 and 70/30 at v12) and the atomic swap fee (1% + 1% = 2%, split 80/20 at v11+).
 - The 1% mint premium is not revenue. It is a haircut inside the mint burn that funds both AuntPoL legs: the withheld XFG is the XFG leg and the HEAT it buys is the HEAT leg.
-- The 0.1% CD creation fee is not revenue either. It is charged in XFG as an output to `FUEGO_DEV_FUND_ADDRESS` when the CD is created.
+- The CD creation fee is not revenue either. From v12, when CDs open, it is 0.25% (6-epoch CD) to 1% (72-epoch CD) of the HEAT deposited, paid in XFG and credited to the AuntPoL XFG leg; from then the mint premium's XFG is burned and the premium funds only the HEAT leg.
 
 ---
 
@@ -167,7 +167,7 @@ Miner-voted consumer basket, priced in integer cents (power in milli-USD/kWh).
 Major areas since v1.10.02: HEAT + Hearth AMM, FCI (six categories, quarterly gate),
 treasury LP manager, fee-routing rework (1% mint premium funds both AuntPoL legs,
 80/20 atomic swap split, versioned Hearth 30/70 split,
-CD creation fee in XFG to the dev fund), public audit API, R2-1 vault fix, swap TUI
+CD creation fee in XFG to the AuntPoL XFG leg from v12), public audit API, R2-1 vault fix, swap TUI
 dynamic catalog, FCI oracle, MCP server, security audit remediation.
 
 *Previous: v1.10.02 Wildfire (height 1,003,000)*

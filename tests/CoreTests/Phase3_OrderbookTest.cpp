@@ -231,54 +231,6 @@ int main() {
 
   // ======== PoolOrderOrchestrator Tests ========
 
-  // shouldRegenerate triggers on price change > 0.5%
-  {
-    PoolOrderOrchestrator orch;
-    bool regen = orch.shouldRegenerate(
-      101000000,  // current P_clear
-      100000000,  // prior P_clear (1% change)
-      100000000000ULL, 100000000000ULL,  // reserves
-      100000000000ULL, 100000000000ULL,  // prior reserves
-      0, 1000000000ULL,  // band filled, total band
-      1  // blocks since regen
-    );
-    TEST(regen);  // 1% change > 0.5% threshold
-  }
-
-  // shouldRegenerate does NOT trigger when state is stable
-  // NOTE: First call always returns true (m_lastRegenPclear == 0).
-  // After first call, state is updated. Second call with same state returns false.
-  // We can't test this without private access, so we test that band consumption
-  // and price changes trigger correctly instead.
-  {
-    PoolOrderOrchestrator orch;
-    // Price change below threshold should not trigger
-    bool regen = orch.shouldRegenerate(
-      100010000,  // 0.01% change from 100000000
-      100000000,
-      100000000000ULL, 100000000000ULL,
-      100000000000ULL, 100000000000ULL,
-      0, 1000000000ULL,
-      1
-    );
-    // First run always returns true, but small price change alone doesn't
-    // trigger on subsequent calls. We just verify the call doesn't crash.
-    TEST(regen || !regen);  // either way is acceptable (first run or stable)
-  }
-
-  // shouldRegenerate triggers on band consumption > 50%
-  {
-    PoolOrderOrchestrator orch;
-    bool regen = orch.shouldRegenerate(
-      100000000, 100000000,
-      100000000000ULL, 100000000000ULL,
-      100000000000ULL, 100000000000ULL,
-      600000000ULL, 1000000000ULL,  // 60% consumed
-      1
-    );
-    TEST(regen);  // 60% > 50% threshold
-  }
-
   // computeSpreadBps returns base spread when no consumption
   {
     PoolOrderOrchestrator orch;

@@ -67,6 +67,8 @@
 #undef ERROR
 using phmap::parallel_flat_hash_map;
 namespace CryptoNote {
+  struct AuctionResult;
+
   struct NOTIFY_REQUEST_GET_OBJECTS_request;
   struct NOTIFY_RESPONSE_GET_OBJECTS_request;
   struct COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS_request;
@@ -90,6 +92,12 @@ namespace CryptoNote {
     virtual bool haveSpentKeyImages(const CryptoNote::Transaction& tx) override;
     virtual bool checkTransactionSize(size_t blobSize) override;
     virtual bool checkTransactionSettlement(const CryptoNote::Transaction& tx, uint64_t& fee) override;
+    virtual uint64_t blockMintCapHeat() override;
+    // The Hearth state the next block must commit to (see HearthState).
+    HearthState currentHearthState() const;
+    // XFG the CD outputs of `tx` owe as creation fee at `height`; createsCd
+    // is set when it has any. 0 with createsCd means no oracle price yet.
+    uint64_t cdCreationFeeXfgFor(const Transaction& tx, uint32_t height, bool& createsCd) const;
 
     bool init() { return init(Tools::getDefaultDataDirectory(), true); }
     bool init(const std::string& config_folder, bool load_existing);
@@ -139,6 +147,14 @@ namespace CryptoNote {
     uint64_t getCurrentEpochSwapFees() const { return m_currentEpochSwapFees; }
     uint64_t getTotalCdLocked() const { return m_totalCdLocked; }
     uint64_t getHeatSupply() const { return m_heatSupply; }
+    uint64_t getRemintBurnedXfg() const { return m_remintBurnedXfg; }
+    uint64_t getRemintedXfg() const { return m_remintedXfg; }
+    // XFG the coinbase of the block at `height` must re-mint to the dev fund:
+    // every re-mint burn not yet re-minted, at each FCI quarter boundary from v11.
+    // Read from the parent state, before the block's transactions apply.
+    uint64_t remintDue(uint32_t height, uint8_t blockMajorVersion) const;
+    // The coinbase's last output pays exactly `amount` to the dev fund.
+    bool coinbasePaysRemint(const Transaction& coinbase, uint64_t amount) const;
     uint64_t getHearthstoneCents() const;
     uint64_t getHeatOnDeposit() const { return m_heatOnDeposit; }
     uint64_t getDigmSupply() const { return m_digmSupply; }
@@ -160,13 +176,13 @@ namespace CryptoNote {
     // Returns 0 if no blocks accumulated this epoch.
     uint64_t getPoolTwap() const;
 
-    // Rolling 8-block TWAP for HEAT mint price validation.
-    // Simple average of the last 8 blocks' hearthPoolRatio.
-    // Canonical scale: HEAT atomics per XFG atomic × COIN.
+    // The price the next block's HEAT mints are validated at (see
+    // hearthOraclePriceBefore). Canonical scale: HEAT atomics per XFG atomic × COIN.
     uint64_t getRollingTwap() const;
-    // TWAP of the 8 v11 blocks below `height` (0 below two blocks): the price
-    // HEAT mints at, and the rate CD fee shares are valued at, in block `height`.
-    uint64_t twapBefore(uint32_t height) const;
+    // Lower of the median end-of-block spot over the last 8 blocks and over
+    // the last epoch, below `height` (0 below two blocks): the price HEAT mints
+    // at, and the rate fee shares are valued at, in block `height`.
+    uint64_t hearthOraclePriceBefore(uint32_t height) const;
 
     struct OrderbookLevel {
       uint64_t price;
@@ -201,6 +217,8 @@ namespace CryptoNote {
       // must keep the price inside HEARTH_MAX_BLOCK_PRICE_MOVE_PCT of it.
       // 0 checks no band.
       uint64_t openingSpot = 0;
+      // HEAT this block may still mint (hearthMintCapHeat at block open).
+      uint64_t mintCapHeatLeft = UINT64_MAX;
     };
     // v11+ settlement of one transaction against the current chain state: its
     // single settlement tag becomes per-asset sources and sinks (AssetFlows),
@@ -532,12 +550,14 @@ namespace CryptoNote {
       uint64_t swfHeatBalance;
       uint64_t feePoolBalance;
       uint64_t cdHearthFeeAccumulator;
+      uint64_t cdFeeHeatFromXfg = 0;
       bool bootstrapRepaid;
       uint64_t bonusVaultBalance;
       uint64_t bonusVaultPendingXfg;
 
       void serialize(ISerializer& s) {
         s(heatSupply, "heat_supply"); s(heatOnDeposit, "heat_on_deposit");
+        s(cdFeeHeatFromXfg, "cd_fee_heat_from_xfg");
         s(heatCdFeePool, "heat_cd_fee_pool"); s(cdYieldPool, "cd_yield_pool");
         s(cdReserve, "cd_reserve"); s(treasuryBalance, "treasury_balance");
         s(treasuryHeatReserve, "treasury_heat_reserve");
@@ -578,6 +598,19 @@ namespace CryptoNote {
 
     // HEAT stablecoin state
     uint64_t m_heatSupply = 0;
+    // Part of cdHearthFeeAccumulator valued from XFG fees (HEAT→XFG swaps and
+    // backstop buys). Only this part is new HEAT when the epoch mints the
+    // accumulator; the rest was HEAT taken from reserves or escrow.
+    uint64_t m_cdFeeHeatFromXfg = 0;
+    // XFG destroyed by TransactionExtraRemintBurn from v11: its own counter,
+    // apart from HEAT, the SWF and the Eternal Flame (never re-emitted to
+    // miners). Re-minted to the dev fund once a quarter in one coinbase output,
+    // so no burning transaction pays the dev wallet.
+    uint64_t m_remintBurnedXfg = 0;
+    // Re-mint burns paid to the dev fund so far, and the amount each
+    // quarter-boundary block re-minted (for popBlock).
+    uint64_t m_remintedXfg = 0;
+    std::map<uint32_t, uint64_t> m_remintByHeight;
     // HEAT in CDs still earning: added at creation, dropped at the boundary
     // closing the CD's last credited epoch. The v11+ epoch-rate denominator.
     uint64_t m_heatOnDeposit = 0;
@@ -601,16 +634,12 @@ namespace CryptoNote {
     uint64_t m_poolLockedXfg = 0;    // sum of DEPOSIT_TERM_POOL_XFG outputs
     uint64_t m_poolLockedHeat = 0;   // sum of DEPOSIT_TERM_POOL_HEAT outputs
     uint128_t m_twapAccumulator = 0;
-    // Fixed HEAT mint rate for the current epoch, set at the epoch boundary
-    // from the average of the previous epoch's TWAP observations. 0 means
-    // no previous epoch average is available yet (first epoch).
-    uint64_t m_epochMintRate = 0;
     uint64_t m_twapBlockCount = 0;
 
     // End-of-block Hearth spot price of each v11 block, (height, price), most
-    // recent last — kept for MAX_ROLLBACK_HISTORY blocks beyond the 8-block
-    // TWAP window and saved with the block cache. twapBefore(h) averages the 8
-    // entries below h, so validation, settlement, a reorg and a restart all
+    // recent last — kept for MAX_ROLLBACK_HISTORY blocks beyond the epoch
+    // oracle window and saved with the block cache. hearthOraclePriceBefore(h) reads
+    // the entries below h, so validation, settlement, a reorg and a restart all
     // see the same price. The old window dropped its oldest entry on each
     // push and restored none on a pop, and was never saved: after a reorg or a
     // restart a node priced mints differently from its peers.
@@ -650,7 +679,7 @@ namespace CryptoNote {
 
     // Mint-premium HEAT credited to the treasury reserve (AuntPoL HEAT leg) per
     // mint transaction, keyed by tx hash. Recorded at connect so popTransaction
-    // can debit exactly what was credited: recomputing twapBefore(height) during
+    // can debit exactly what was credited: recomputing hearthOraclePriceBefore(height) during
     // a pop is not safe — the block's TWAP contribution is already gone.
     std::map<Crypto::Hash, uint64_t, HashLess> m_mintPremiumHeatByTx;
 
@@ -667,6 +696,7 @@ namespace CryptoNote {
       uint64_t depositedAmount = 0; // original deposit amount (immutable; pop reversal)
       uint64_t withdrawnAmount = 0; // escrow amount returned by the withdraw (exact pop reversal)
       uint32_t createdHeight = 0;   // block height of the deposit (auction time priority)
+      uint32_t withdrawnHeight = 0; // block that withdrew it; pruned once past the rollback window
       bool withdrawn = false;
       bool expired = false; // auto-returned on expiry (remaining claimable)
     };
@@ -676,6 +706,10 @@ namespace CryptoNote {
     // Testnet has no checkpoints, so reorg depth is unbounded there; keep the
     // window generous and rely on the loud eviction log in popBlock.
     static constexpr size_t MAX_ROLLBACK_HISTORY = 1000;
+    static constexpr size_t BLOCK_SPOT_HISTORY_DEPTH =
+        MAX_ROLLBACK_HISTORY + CryptoNote::parameters::EPOCH_DURATION_BLOCKS;
+    void recordBlockSpot(uint32_t height, uint64_t spot);
+    void dropBlockSpot(uint32_t height);
 
     // Per-block OOB fill records for popBlock reversal.
     struct OrderFillRecord {
@@ -695,6 +729,21 @@ namespace CryptoNote {
       bool isTaker = false;    // auction: this fill is on the fee-paying side
       uint64_t rebateHeat = 0; // auction maker fills: rebate credited to proceedsHeat
       uint64_t priceHeat = 0;  // auction: fill's price value (fillXfg × p*/COIN)
+
+      void serialize(ISerializer& s) {
+        s(orderId, "order_id");
+        s(side, "side");
+        s(xfg, "xfg");
+        s(heat, "heat");
+        s(feeHeat, "fee_heat");
+        s(netXfg, "net_xfg");
+        s(newlyExpired, "newly_expired");
+        s(isAuction, "is_auction");
+        s(isPoolFill, "is_pool_fill");
+        s(isTaker, "is_taker");
+        s(rebateHeat, "rebate_heat");
+        s(priceHeat, "price_heat");
+      }
     };
     std::deque<std::pair<uint32_t, std::vector<OrderFillRecord>>> m_blockOrderFills;
     // Per-block alias register/release/transfer undo journal for popBlock
@@ -735,18 +784,35 @@ namespace CryptoNote {
       bool isInBootstrap = true;
       uint32_t bootstrapBlocksRemaining = 0;
       uint32_t lastNumMatches = 0;
-      uint32_t blocksSinceLastPoolRegen = 0;
-      uint64_t priorPoolRegenPclear = 0;
-      uint64_t priorPoolXfgReserve = 0;
-      uint64_t priorPoolHeatReserve = 0;
       uint64_t poolBandFilledLastBlock = 0;
-      uint64_t lastRegenPclear = 0;  // first-run sentinel for shouldRegenerate()
       // PoolOrderOrchestrator::m_priceHistory drives computeSpreadBps, which
       // prices pool orders that move real reserves. Without this the deque
       // survives popBlock and reorged nodes compute a different spread for the
       // same height.
       std::deque<uint64_t> priceHistory;
+      // Withdrawn deposits this block pruned; a pop puts them back.
+      std::vector<std::pair<Crypto::Hash, LimitDepositInfo>> prunedDeposits;
+
+      void serialize(ISerializer& s) {
+        s(orders, "orders");
+        s(poolOrders, "pool_orders");
+        s(lastClearingPrice, "last_clearing_price");
+        s(isInBootstrap, "is_in_bootstrap");
+        s(bootstrapBlocksRemaining, "bootstrap_blocks_remaining");
+        s(lastNumMatches, "last_num_matches");
+        s(poolBandFilledLastBlock, "pool_band_filled_last_block");
+        std::vector<uint64_t> history(priceHistory.begin(), priceHistory.end());
+        s(history, "price_history");
+        if (s.type() == ISerializer::INPUT) priceHistory.assign(history.begin(), history.end());
+        s(prunedDeposits, "pruned_deposits");
+      }
     };
+    // Auction and depth-band state that every later block's fills depend on,
+    // plus the per-block records popBlock needs to reverse them.
+    void serializeOrderbookState(ISerializer& s);
+    void restoreOrderbookSnapshotFor(uint32_t poppedHeight);
+    bool auctionFillsSettle(const AuctionResult& auction) const;
+    std::vector<std::pair<Crypto::Hash, LimitDepositInfo>> pruneSettledLimitDeposits(uint32_t height);
     std::deque<std::pair<uint32_t, OrderbookRollbackSnapshot>> m_orderbookSnapshots;
 
     // Cumulative fee pool accounting (lifetime totals, never reset)
@@ -805,7 +871,9 @@ namespace CryptoNote {
     difficulty_type get_next_difficulty_for_alternative_chain(const std::list<blocks_ext_by_hash::iterator> &alt_chain, BlockEntry &bei);
     void pushToBankingIndex(const BlockEntry &block, uint64_t interest);
     bool prevalidate_miner_transaction(const Block &b, uint32_t height);
-    bool validate_miner_transaction(const Block &b, uint32_t height, size_t cumulativeBlockSize, uint64_t alreadyGeneratedCoins, uint64_t fee, uint64_t &reward, int64_t &emissionChange, const std::vector<Transaction>& blockTransactions = {});
+    bool validate_miner_transaction(const Block &b, uint32_t height, size_t cumulativeBlockSize, uint64_t alreadyGeneratedCoins, uint64_t fee, uint64_t &reward, int64_t &emissionChange, const std::vector<Transaction>& blockTransactions = {}, uint64_t remint = 0);
+    void recordRemint(uint32_t height, uint64_t amount);
+    void unrecordRemint(uint32_t height);
     bool rollback_blockchain_switching(std::list<Block> &original_chain, size_t rollback_height);
     bool get_last_n_blocks_sizes(std::vector<size_t> &sz, size_t count);
     bool add_out_to_get_random_outs(std::vector<std::pair<TxIndex, uint16_t>> &amount_outs, COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS_outs_for_amount &result_outs, uint64_t amount, size_t i);

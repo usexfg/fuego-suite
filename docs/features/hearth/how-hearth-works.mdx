@@ -32,7 +32,8 @@ The original gossiped in-band CLOB (unbacked orders) is **retired**. The live mo
 | `HEARTH_FEE_BPS` | **100** = **1.0%** of trade notional, paid by the taker |
 | `HEARTH_CD_SHARE_PCT_V11` | **30** — 30% of the fee → CD yield at v11 |
 | `HEARTH_CD_SHARE_PCT_V12` | **70** — 70% of the fee → CD yield from v12 |
-| `HEARTH_BACKSTOP_MAX_BPS` | **500** — backstop fills ≤ 5× the block's auction volume |
+| `HEARTH_BACKSTOP_MAX_BPS` | **800** — backstop fills per block ≤ the lower of 8× the block's auction volume and 8% of the pool's XFG reserve |
+| `HEARTH_MINT_MAX_BPS_PER_BLOCK` | **800** — all HEAT mints in one block ≤ 8% of the pool's HEAT reserve at block open |
 
 ```
 gross = user_notional

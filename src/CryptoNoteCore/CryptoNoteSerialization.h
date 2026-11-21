@@ -63,6 +63,7 @@ void serialize(TransactionOutputSwapEscrow& out, ISerializer& serializer);
 
 void serialize(BlockHeader& header, ISerializer& serializer);
 void serialize(Block& block, ISerializer& serializer);
+void serialize(HearthState& state, ISerializer& serializer);
 void serialize(ParentBlockSerializer& pbs, ISerializer& serializer);
 void serialize(TransactionExtraMergeMiningTag& tag, ISerializer& serializer);
 

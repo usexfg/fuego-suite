@@ -758,8 +758,11 @@ void WalletSerializer::loadTransfersSynchronizer(Common::IInputStream& source, C
     m_synchronizer.load(stream);
   } catch (const TransfersCacheNeedsRescan&) {
     // The synchronizer rolled every subscription back to a fresh state, so the
-    // wallet rescans those transfers; cached balances restart from zero with them.
+    // wallet rescans those transfers. Balances restart from zero with them: each
+    // wallet's and the totals loaded earlier, which updates add to.
     resetCachedBalance();
+    m_actualBalance = 0;
+    m_pendingBalance = 0;
   }
 }
 

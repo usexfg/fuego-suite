@@ -384,3 +384,54 @@ TEST(WalletCacheExpiry, ResetClearsPendingDepositSpends) {
   EXPECT_EQ(0u, cache.countUnconfirmedSpentDepositsTotalAmount());
   EXPECT_TRUE(cache.deleteOutdatedTransactions().empty());
 }
+
+// A legacy (multisig) deposit withdraw built by the sender carries an unconfirmed
+// record, so after a reload it expires from when it was sent. Without one it was
+// re-stamped on every load and, in a wallet restarted often, never released.
+TEST_F(WalletInputReservation, LegacyDepositWithdrawExpiresFromItsSendTimeAfterReload) {
+  const uint32_t term = static_cast<uint32_t>(currency.depositMinTerm());
+  auto depositTx = createTransaction();
+  MultisignatureOutput depositOut{{account.getAccountKeys().address.spendPublicKey}, 1, term};
+  depositTx->addOutput(kOutputAmount, depositOut);
+  TransactionOutputInformationIn info{};
+  info.type = TransactionTypes::OutputType::Multisignature;
+  info.amount = kOutputAmount;
+  info.globalOutputIndex = 0;
+  info.outputInTransaction = 0;
+  info.transactionPublicKey = depositTx->getTransactionPublicKey();
+  info.requiredSignatures = 1;
+  info.term = term;
+  const uint32_t depositHeight = kFundingHeight + 20;
+  ASSERT_TRUE(container.addTransaction(TransactionBlockInfo{depositHeight, 1000000}, *depositTx, {info}, {}, nullptr));
+  container.advanceHeight(depositHeight + term + 10);
+
+  const TransactionId creating = cache.addNewTransaction(0, 0, std::string(), {}, 0, {});
+  cache.getTransaction(creating).hash = depositTx->getTransactionHash();
+  Deposit deposit{};
+  deposit.creatingTransactionId = creating;
+  deposit.spendingTransactionId = WALLET_LEGACY_INVALID_TRANSACTION_ID;
+  deposit.amount = kOutputAmount;
+  deposit.term = term;
+  const DepositId depositId = cache.insertDeposit(deposit, 0, depositTx->getTransactionHash());
+
+  TransactionId withdraw = WALLET_LEGACY_INVALID_TRANSACTION_ID;
+  std::deque<std::unique_ptr<WalletLegacyEvent>> events;
+  auto relay = sender.makeWithdrawDepositRequest(withdraw, events, {depositId}, currency.minimumFee());
+  ASSERT_NE(nullptr, relay) << "the withdraw was built and waits for relay";
+
+  std::stringstream stream;
+  {
+    Common::StdOutputStream output(stream);
+    BinaryOutputStreamSerializer serializer(output);
+    ASSERT_TRUE(cache.serialize(serializer));
+  }
+  std::this_thread::sleep_for(std::chrono::seconds(2));
+  WalletUserTransactionsCache loaded(1);
+  {
+    Common::StdInputStream input(stream);
+    BinaryInputStreamSerializer serializer(input);
+    ASSERT_TRUE(loaded.serialize(serializer));
+  }
+  EXPECT_EQ(WalletLegacyTransactionState::Deleted, loaded.getTransaction(withdraw).state);
+  EXPECT_EQ(WALLET_LEGACY_INVALID_TRANSACTION_ID, loaded.getDeposit(depositId).spendingTransactionId);
+}

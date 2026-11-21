@@ -1,3 +1,18 @@
+## master build fix: two extra-field types missing from the variant
+
+**Started**: 2026-11-21
+**Agent**: Claude Code
+**Status**: DONE (Linux GCC build and tests).
+**Scope**: `src/CryptoNoteCore/TransactionExtra.h`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `master` a3f0bd73 (#79) parses tags 0x0D (`TransactionExtraRemintBurn`) and 0x0E (`TransactionExtraCdCreationFee`) into `TransactionExtraField` and reads them back with `boost::get`, but never added either type to the variant, so `master` does not compile (its "Build check" run 44049378089 failed). Both types are now variant members; the tag values collide with no live tag | Claude Code | 2026-11-21 | DONE; full build, ctest 72/73 (pre-existing `commitment_owner_bound_tests`) |
+
+Not covered: #79's push/pop tests for these tags are in `tests/CoreTests`, which ctest does not run.
+
+---
+
 ## funsa F8: a 0x09 Janus base on every key-input transaction
 
 **Started**: 2026-11-17

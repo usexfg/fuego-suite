@@ -996,10 +996,11 @@ void serialize(CryptoNote::ISerializer& s) {
     };
   };
 
-  // v11+ Hearth limit order commands
+  // v11+ `donate`: burns XFG into the SWF burned-XFG ledger (TreasuryFund
+  // asset 0). The coins are destroyed; they do not fund AuntPoL or the pool.
   struct COMMAND_RPC_DONATE {
     struct request {
-      uint64_t amount;      // XFG atomics to burn to the treasury
+      uint64_t amount;      // XFG atomics destroyed
       uint64_t fee;
       uint64_t mixin;
 

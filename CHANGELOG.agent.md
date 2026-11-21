@@ -6776,3 +6776,22 @@ Sign-off table:
 | Build compiles | DONE — full `make -j4` exit 0 (Claude Code, 2026-11-12) |
 | Tests pass | DONE — 2026-11-15 after tasks 19–29: full `make -j4` exit 0; core_tests 351/351, test_orderbook_auction 66/66, test_orderbook 44/44, test_p2p_orderbook 115/115; seedboot e2e 27/27 (3 runs); v11_chain_checks seedboot/activity/C1/C2a/C2b PASS. Earlier: core_tests 351/351, test_orderbook_auction 66/66, test_orderbook 44/44, test_p2p_orderbook 115/115, v11_chain_checks C1/C2a/C2b PASS (2026-11-15, after wallet rebuild; full make exit 0), core_tests 344/344 (2026-11-14), v11_chain_checks C1/C2a/C2b PASS; earlier: core_tests 340/340 (2026-11-13; DIGM gate mutation fails 2 assertions), test_orderbook_auction 66/66, test_orderbook 44/44, test_p2p_orderbook 115/115, test_hearth_amm 31/31; test_orderbook_phase3 / phase5 exit 0 with no assertions printed (Claude Code, 2026-11-12) |
 | All tasks done | DONE (Claude Code, 2026-11-12) |
+
+## Plan: AuntPoL seed by XFG donation (task 15) + `donate` wording fix
+
+**Started**: 2026-11-21
+**Plan**: `docs/plans/v11-aunt-pol-seed-donation.md` (Guardian review included; implementation not started)
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Plan written; Guardian review G1–G8 folded in (price guard, checked arithmetic, shared pairing, single burn record are blocking requirements) | Claude Code (claude-opus-5-5) | 2026-11-21 | DONE |
+| 2 | `donate` wording: wallet RPC `donate` / `donateToTreasury` sends `TreasuryFund` asset 0, which consensus destroys into the SWF burned-XFG ledger. Code comment (`WalletTransactionSender.cpp`), RPC definition and handler comment said it funds the treasury / Treasury LP Manager / "limit order"; corrected. Comments only; no behaviour change. `docs/plans/backlog.md` entry corrected. | Claude Code (claude-opus-5-5) | 2026-11-21 | DONE |
+| 3 | Implementation of the plan | — | — | TODO (awaiting maintainer decisions 1, 2) |
+
+Sign-off table:
+| Gate | Status |
+|------|--------|
+| Build compiles | DONE — task 2 is comment-only; `Wallet` and `Rpc` targets rebuilt (Claude Code, 2026-11-21) |
+| Tests pass | N/A for task 2 (no behaviour change) |
+| All tasks done | TODO (task 3) |
+

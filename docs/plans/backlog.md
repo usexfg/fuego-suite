@@ -7,7 +7,7 @@ Everything below is **deliberately deferred**. Foundations (F0–F4, Phases A–
 - [ ] **Post-only orders** — a deposit flag that never crosses (adds depth without taking). Needs a new tx-extra tag or a v11.1 field (current `TransactionExtraLimitDeposit` format is full).
 - [ ] **Bonus vault payout** — the 11% HEAT accrues (`m_bonusVaultBalance`) with no payout path; loyalty tiers currently multiply from the general CD pool. Wire tier payouts from the vault.
 - [ ] **Quarterly CPI mechanism** — `HEAT_PEG_USD` is a launch constant; see `docs/plans/heat-cpi-peg-quarterly.md` (PEG-Q: BLS + Truflation zkTLS, governance-free, V13).
-- [ ] **Wallet donation command** — consensus supports the `TreasuryFund` burn tag; expose `donate <xfg|heat> <amount>` in wallet/RPC.
+- [ ] **Wallet donation command** — wallet RPC `donate` exists and sends `TreasuryFund` asset 0, which destroys the XFG into the SWF burned-XFG ledger (not AuntPoL). XFG donations to AuntPoL: `docs/plans/v11-aunt-pol-seed-donation.md`.
 - [ ] **Legacy bond retirement** — the pre-2026 bond claim path stays functional until bonds mature, then remove.
 - [ ] **Auto-roll (v13)** — CD auto-roll/compounding, currently `#if 0` with TODO(v13) markers.
 - [ ] **Maker-rebate documentation update in skill** — fuego-heat-and-hearth skill references post-v11 updates (done in this pass).

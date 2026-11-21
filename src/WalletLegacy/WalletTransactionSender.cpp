@@ -430,8 +430,9 @@ namespace CryptoNote
     context->foundMoney = selectTransfersToSend(neededMoney, false, context->dustPolicy.dustThreshold, context->selectedTransfers);
     throwIf(context->foundMoney < neededMoney, error::WRONG_AMOUNT);
 
-    // TreasuryFund tag: asset 0 (XFG) — the burned amount credits the
-    // treasury counter → Treasury LP Manager. No outputs besides change.
+    // TreasuryFund tag, asset 0 (XFG): consensus destroys the amount and
+    // credits it to the SWF burned-XFG ledger and the burn tally. It does not
+    // fund AuntPoL or the pool. No outputs besides change.
     std::vector<uint8_t> extraVec;
     CryptoNote::addTreasuryFundToExtra(extraVec, 0, amount);
     std::string extra(extraVec.begin(), extraVec.end());

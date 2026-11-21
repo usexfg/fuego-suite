@@ -1336,7 +1336,7 @@ bool wallet_rpc_server::on_estimate_cd_yield(const wallet_rpc::COMMAND_RPC_ESTIM
   return true;
 }
 
-// v11+ Hearth limit order wallet RPC handlers
+// `donate`: destroys XFG into the SWF burned-XFG ledger (see COMMAND_RPC_DONATE).
 bool wallet_rpc_server::on_donate(const wallet_rpc::COMMAND_RPC_DONATE::request& req,
                                    wallet_rpc::COMMAND_RPC_DONATE::response& res) {
   try {

@@ -152,6 +152,60 @@ target_link_libraries(subaddress_wallet_tests PRIVATE
 )
 add_test(NAME subaddress_wallet_tests COMMAND subaddress_wallet_tests)
 
+# walletd JSON-RPC subaddress methods through PaymentServiceJsonRpcServer.
+add_executable(walletd_subaddress_rpc_tests
+    UnitTests/WalletdSubaddressRpcTest.cpp
+)
+target_include_directories(walletd_subaddress_rpc_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/external/gtest/include
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_link_libraries(walletd_subaddress_rpc_tests PRIVATE
+    PaymentGate
+    JsonRpcServer
+    Wallet
+    NodeRpcProxy
+    Transfers
+    Rpc
+    P2P
+    CryptoNoteCore
+    Serialization
+    Logging
+    Http
+    Common
+    Crypto
+    System
+    InProcessNode
+    BlockchainExplorer
+    ${Boost_LIBRARIES}
+    gtest
+    gtest_main
+)
+add_test(NAME walletd_subaddress_rpc_tests COMMAND walletd_subaddress_rpc_tests)
+
+# fuego-chainscan per-transaction checks (F1).
+add_executable(chain_scan_findings_tests
+    UnitTests/ChainScanFindingsTest.cpp
+)
+target_include_directories(chain_scan_findings_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/external/gtest/include
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_link_libraries(chain_scan_findings_tests PRIVATE
+    ChainScanFindings
+    CryptoNoteCore
+    Serialization
+    Logging
+    Common
+    Crypto
+    ${Boost_LIBRARIES}
+    gtest
+    gtest_main
+)
+add_test(NAME chain_scan_findings_tests COMMAND chain_scan_findings_tests)
+
 # Persistence of the published commitment key. The signer cannot choose between the
 # owner-bound and legacy derivations without it, and it used to be lost on every
 # wallet save/reload. Also covers loading pre-version-2 caches.

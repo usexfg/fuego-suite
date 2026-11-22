@@ -151,6 +151,35 @@ void GetAddresses::Response::serialize(CryptoNote::ISerializer &serializer)
   serializer(addresses, "addresses");
 }
 
+void SubaddressRpcInfo::serialize(CryptoNote::ISerializer &serializer)
+{
+  serializer(major, "major");
+  serializer(minor, "minor");
+  serializer(address, "address");
+}
+
+void CreateSubaddress::Request::serialize(CryptoNote::ISerializer &serializer)
+{
+  if (!serializer(major, "major") || !serializer(minor, "minor"))
+  {
+    throw RequestSerializationError();
+  }
+}
+
+void CreateSubaddress::Response::serialize(CryptoNote::ISerializer &serializer)
+{
+  serializer(address, "address");
+}
+
+void GetSubaddresses::Request::serialize(CryptoNote::ISerializer &serializer)
+{
+}
+
+void GetSubaddresses::Response::serialize(CryptoNote::ISerializer &serializer)
+{
+  serializer(subaddresses, "subaddresses");
+}
+
 void CreateAddress::Request::serialize(CryptoNote::ISerializer &serializer)
 {
   bool hasSecretKey = serializer(spendSecretKey, "privateSpendKey");

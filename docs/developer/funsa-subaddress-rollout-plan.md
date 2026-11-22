@@ -84,11 +84,11 @@ whichever explorer is deployed:
 
 | # | Work | Why |
 |---|---|---|
-| F1 | Scan mainnet for any historical tx whose extra parses with a well-formed 0x06 or 0x09 field | upgraded nodes reject such a block before v11; one hit means resync breaks |
+| F1 | `fuego-chainscan`: walks a node's blocks over RPC and reports every tx whose extra parses with a 0x06 or 0x09 field, every commitment output, and every block the current subaddress rules would reject | upgraded nodes reject such a block before v11; one hit means resync breaks; a commitment output would be stranded by F5 |
 | F2 | Subaddress kind and index in the key record (section 4.2) | a cache that fails to load turned V2 records into standard ones: Janus off, linkable address shown |
-| F3 | walletd JSON-RPC methods for `createSubAddress` / `listSubAddresses` | WalletGreen has the functions but walletd exposes no method |
+| F3 | walletd JSON-RPC `createSubaddress {major, minor}` → `{address}` and `getSubaddresses` → `{subaddresses: [{major, minor, address}]}`, through `IWallet::createSubAddress` / `getSubAddresses` | WalletGreen had the functions but walletd exposed no method |
 | F4 | Clang, macOS and Windows builds of the branch | only Linux GCC is verified |
-| F5 | `commitment_owner_bound_tests` (5 cases fail on `master` since 33e787a5) | the CI test step now runs `tests/`, so this shows red until fixed |
+| F5 | `commitment_owner_bound_tests`: 33e787a5 removed the legacy commitment form (spendable by the sender and any view-key holder) but kept five tests that asserted it. The tests now assert the refusal; F1 counts commitment outputs on mainnet to confirm no legacy HEAT/CD exists that the removal would strand | the CI test step runs `tests/`, so this showed red |
 | F6 | Not needed: no aliases are registered on mainnet, so none needs moving to a funsa owner. Registration already issues funsa owners | closed 2026-11-17 |
 | F7 | Explain subaddress-to-primary linking in user docs: do not publish the primary address next to subaddresses | the Janus check does not cover it |
 | F8 | Every key-input tx carries 0x09 after the grace window (section 4.1) | approved 2026-11-17; removes the single-key fingerprint at 34 bytes per tx |
@@ -135,6 +135,22 @@ Pre-existing defects fixed on the way, all ChaCha8 keystream reuse:
 `reset()` re-encrypted every record under one IV; the legacy-file conversion encrypted the
 first spend record under the view keys' IV; the v7→v8 migration encrypted every record
 under one IV.
+
+### 4.3 F1: running the mainnet scan
+
+Run against a fully synced mainnet node built from any version:
+
+```
+fuego-chainscan --daemon-address 127.0.0.1:18180
+```
+
+It pages through `/getblocks.bin` from genesis (`--from` / `--to` narrow the range) and prints one
+line per finding, `height=… tx=… finding=0x06|0x09|commitment-output|rejected detail="…"`, then a
+summary. A reorganisation during the scan is detected and the new branch re-inspected.
+Exit status 0 means nothing was found and the gate item "F1 scan result recorded" can be signed;
+1 means findings (any `rejected` line before v11 breaks a resync with this release, and any
+`commitment-output` is a HEAT/CD the F5 removal would strand); 2 means the scan did not finish.
+Record the summary line and the node's height in the changelog.
 
 ## 5. Gate before v11 activation
 

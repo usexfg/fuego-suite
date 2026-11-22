@@ -133,8 +133,8 @@ public:
   // Derived from master spend+view keys; outputs sent to this address appear in wallet balance.
   // Spending from sub-address outputs uses the derived spend secret b_ij = b + m automatically.
   // Do not use index (0,0) — that is the primary address.
-  std::string createSubAddress(uint32_t major, uint32_t minor, uint64_t creationTimestamp = 0);
-  std::vector<std::tuple<uint32_t, uint32_t, std::string>> listSubAddresses() const;
+  virtual std::string createSubAddress(uint32_t major, uint32_t minor) override;
+  virtual std::vector<SubAddressInfo> getSubAddresses() const override;
 
 private:
 

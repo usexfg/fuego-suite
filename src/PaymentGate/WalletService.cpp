@@ -1451,6 +1451,43 @@ namespace PaymentService
     return std::error_code();
   }
 
+  std::error_code WalletService::createSubaddress(uint32_t major, uint32_t minor, std::string &address)
+  {
+    try
+    {
+      System::EventLock lk(readyEvent);
+      address = wallet.createSubAddress(major, minor);
+    }
+    catch (std::system_error &x)
+    {
+      logger(Logging::WARNING, Logging::BRIGHT_YELLOW) << "Error while creating subaddress (" << major << ", " << minor << "): " << x.what();
+      return x.code();
+    }
+
+    logger(Logging::DEBUGGING) << "Created subaddress (" << major << ", " << minor << ") " << address;
+    return std::error_code();
+  }
+
+  std::error_code WalletService::getSubaddresses(std::vector<SubaddressRpcInfo> &subaddresses)
+  {
+    try
+    {
+      System::EventLock lk(readyEvent);
+      subaddresses.clear();
+      for (const CryptoNote::SubAddressInfo &subaddress : wallet.getSubAddresses())
+      {
+        subaddresses.push_back(SubaddressRpcInfo{subaddress.major, subaddress.minor, subaddress.address});
+      }
+    }
+    catch (std::system_error &x)
+    {
+      logger(Logging::WARNING) << "Can't list subaddresses: " << x.what();
+      return x.code();
+    }
+
+    return std::error_code();
+  }
+
   std::error_code WalletService::getAddresses(std::vector<std::string> &addresses)
   {
     try

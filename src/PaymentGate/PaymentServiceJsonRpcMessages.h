@@ -613,6 +613,48 @@ struct GetAddresses
   };
 };
 
+struct SubaddressRpcInfo
+{
+  uint32_t major;
+  uint32_t minor;
+  std::string address;
+
+  void serialize(CryptoNote::ISerializer &serializer);
+};
+
+struct CreateSubaddress
+{
+  struct Request
+  {
+    uint32_t major = 0;
+    uint32_t minor = 0;
+
+    void serialize(CryptoNote::ISerializer &serializer);
+  };
+
+  struct Response
+  {
+    std::string address;
+
+    void serialize(CryptoNote::ISerializer &serializer);
+  };
+};
+
+struct GetSubaddresses
+{
+  struct Request
+  {
+    void serialize(CryptoNote::ISerializer &serializer);
+  };
+
+  struct Response
+  {
+    std::vector<SubaddressRpcInfo> subaddresses;
+
+    void serialize(CryptoNote::ISerializer &serializer);
+  };
+};
+
 struct CreateAddress
 {
   struct Request

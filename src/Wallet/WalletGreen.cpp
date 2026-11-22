@@ -3776,7 +3776,7 @@ namespace CryptoNote
     }
   }
 
-  std::string WalletGreen::createSubAddress(uint32_t major, uint32_t minor, uint64_t creationTimestamp)
+  std::string WalletGreen::createSubAddress(uint32_t major, uint32_t minor)
   {
     throwIfNotInitialized();
     throwIfStopped();
@@ -3801,9 +3801,7 @@ namespace CryptoNote
         spendSec,
         major, minor);
 
-    if (creationTimestamp == 0) {
-      creationTimestamp = static_cast<uint64_t>(time(nullptr));
-    }
+    const uint64_t creationTimestamp = static_cast<uint64_t>(time(nullptr));
 
     // The sub spend secret key (b_ij = b + m) is stored so spending works automatically.
     NewAddressData subaddress{subKeys.spendPublicKey,
@@ -3816,14 +3814,14 @@ namespace CryptoNote
     return doCreateAddress(subaddress);
   }
 
-  std::vector<std::tuple<uint32_t, uint32_t, std::string>> WalletGreen::listSubAddresses() const
+  std::vector<SubAddressInfo> WalletGreen::getSubAddresses() const
   {
     throwIfNotInitialized();
 
-    std::vector<std::tuple<uint32_t, uint32_t, std::string>> result;
+    std::vector<SubAddressInfo> result;
     for (const auto& w : m_walletsContainer.get<RandomAccessIndex>()) {
       if (!w.isSubAddress) continue;
-      result.emplace_back(w.subaddrMajor, w.subaddrMinor, addressStringFor(w));
+      result.push_back(SubAddressInfo{w.subaddrMajor, w.subaddrMinor, addressStringFor(w)});
     }
     return result;
   }
@@ -7007,7 +7005,7 @@ namespace CryptoNote
       }
 
       try {
-        aliasReg.ownerAddress = createSubAddress(major, minor, 0);
+        aliasReg.ownerAddress = createSubAddress(major, minor);
       } catch (const std::system_error& e) {
         return e.code();
       }

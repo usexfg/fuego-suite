@@ -1,3 +1,32 @@
+## funsa F1, F3, F5: chain scan tool, walletd subaddress methods, stale commitment tests
+
+**Started**: 2026-11-22
+**Agent**: Claude Code
+**Status**: DONE (Linux GCC build and tests). F1's mainnet run is not done: no mainnet node is reachable from this session.
+**Plan**: `docs/developer/funsa-subaddress-rollout-plan.md` section 4 (F1, F3, F5) and 4.3 (owner approval 2026-11-22, "f three f five f one").
+**Scope**: `src/ChainScan/{ChainScanFindings,ChainScanner}.{h,cpp}, main.cpp` (new), `src/CMakeLists.txt`, `include/IWallet.h`, `src/Wallet/WalletGreen.{h,cpp}`, `src/PaymentGate/{WalletService,PaymentServiceJsonRpcServer,PaymentServiceJsonRpcMessages}.{h,cpp}`, `tests/UnitTests/{CommitmentOwnerBoundTest,SubaddressWalletTest,WalletdSubaddressRpcTest,ChainScanFindingsTest}.cpp, NullNode.h`, `tests/CMakeLists.txt`, `docs/developer/funsa-subaddress-rollout-plan.md`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | F5: 33e787a5 removed the legacy commitment form (spendable by the sender and any view-key holder) but left five tests asserting it, and signed neither gate. The tests now assert the refusal: legacy and unrecorded keys do not resolve, a view-only wallet records no legacy key image, scanner and signer agree on owner-bound images and both refuse legacy | Claude Code | 2026-11-22 | DONE; 26/26, a fail-open resolver fails five of them |
+| 2 | F3: `IWallet::createSubAddress(major, minor)` and `getSubAddresses()`; walletd JSON-RPC `createSubaddress {major, minor}` → `{address}` and `getSubaddresses` → `{subaddresses: [{major, minor, address}]}`. (0, 0), a duplicate and a missing index are errors | Claude Code | 2026-11-22 | DONE; `walletd_subaddress_rpc_tests` 2/2 through the production JSON-RPC server, WalletService and WalletGreen |
+| 3 | F1: `fuego-chainscan` pages a node's `/getblocks.bin` from genesis and reports each parsed 0x06 / 0x09 field, each commitment output, and each tx the current subaddress rules reject at its block's version and height; re-inspects a branch after a reorganisation; exit 0 / 1 / 2 for clean / findings / incomplete | Claude Code | 2026-11-22 | DONE; `chain_scan_findings_tests` 9/9 (checks, paging, range, reorg); run against a local testnet `fuegod` (1 block, exit 0) and refused a mainnet-genesis scan of that node with exit 2 |
+| 4 | Shared `tests/UnitTests/NullNode.h` replaces a copy in each wallet test | Claude Code | 2026-11-22 | DONE |
+
+**Mutation checks**: a fail-open commitment resolver, swapped subaddress indices in WalletService, and no reorg handling each fail their tests.
+
+**Open items:**
+- F1 is a tool, not a result. Run it against a synced mainnet node (section 4.3) and record the summary line; until then the v11 gate item "F1 scan result recorded" stays open, and F5's claim that no commitment output exists on mainnet is unverified.
+- The 1000-block paging of a real node was exercised only through the in-memory source; the live run had one block.
+
+| Gate | Status | Signed |
+|------|--------|--------|
+| Build compiles | Linux GCC Release with `BUILD_TESTS=ON`: all targets | Claude Code 2026-11-22 |
+| Tests pass | ctest 75/75 | Claude Code 2026-11-22 |
+| All tasks done | DONE; mainnet scan pending | Claude Code 2026-11-22 |
+
+---
+
 ## funsa F2: subaddress kind and index in the wallet key record
 
 **Started**: 2026-11-21

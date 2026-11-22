@@ -74,6 +74,8 @@ PaymentServiceJsonRpcServer::PaymentServiceJsonRpcServer(System::Dispatcher& sys
   handlers.emplace("getViewKey", jsonHandler<GetViewKey::Request, GetViewKey::Response>(std::bind(&PaymentServiceJsonRpcServer::handleGetViewKey, this, std::placeholders::_1, std::placeholders::_2)));
   handlers.emplace("getStatus", jsonHandler<GetStatus::Request, GetStatus::Response>(std::bind(&PaymentServiceJsonRpcServer::handleGetStatus, this, std::placeholders::_1, std::placeholders::_2)));
   handlers.emplace("getAddresses", jsonHandler<GetAddresses::Request, GetAddresses::Response>(std::bind(&PaymentServiceJsonRpcServer::handleGetAddresses, this, std::placeholders::_1, std::placeholders::_2)));
+  handlers.emplace("createSubaddress", jsonHandler<CreateSubaddress::Request, CreateSubaddress::Response>(std::bind(&PaymentServiceJsonRpcServer::handleCreateSubaddress, this, std::placeholders::_1, std::placeholders::_2)));
+  handlers.emplace("getSubaddresses", jsonHandler<GetSubaddresses::Request, GetSubaddresses::Response>(std::bind(&PaymentServiceJsonRpcServer::handleGetSubaddresses, this, std::placeholders::_1, std::placeholders::_2)));
   handlers.emplace("createDeposit", jsonHandler<CreateDeposit::Request, CreateDeposit::Response>(std::bind(&PaymentServiceJsonRpcServer::handleCreateDeposit, this, std::placeholders::_1, std::placeholders::_2)));
   handlers.emplace("giftDeposit", jsonHandler<GiftDeposit::Request, GiftDeposit::Response>(std::bind(&PaymentServiceJsonRpcServer::handleGiftDeposit, this, std::placeholders::_1, std::placeholders::_2)));
   handlers.emplace("withdrawDeposit", jsonHandler<WithdrawDeposit::Request, WithdrawDeposit::Response>(std::bind(&PaymentServiceJsonRpcServer::handleWithdrawDeposit, this, std::placeholders::_1, std::placeholders::_2)));
@@ -308,6 +310,14 @@ std::error_code PaymentServiceJsonRpcServer::handleGetDeposit(const GetDeposit::
   }
 
   return result;
+}
+
+std::error_code PaymentServiceJsonRpcServer::handleCreateSubaddress(const CreateSubaddress::Request& request, CreateSubaddress::Response& response) {
+  return service.createSubaddress(request.major, request.minor, response.address);
+}
+
+std::error_code PaymentServiceJsonRpcServer::handleGetSubaddresses(const GetSubaddresses::Request& request, GetSubaddresses::Response& response) {
+  return service.getSubaddresses(response.subaddresses);
 }
 
 std::error_code PaymentServiceJsonRpcServer::handleGetAddresses(const GetAddresses::Request& request, GetAddresses::Response& response) {

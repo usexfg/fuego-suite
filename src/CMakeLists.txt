@@ -1244,6 +1244,26 @@ set_property(TARGET SimpleWallet PROPERTY OUTPUT_NAME "fire_wallet")
 set_property(TARGET testnet-wallet-cli PROPERTY OUTPUT_NAME "test_wallet")
 set_property(TARGET PaymentGateService PROPERTY OUTPUT_NAME "unified")
 set_property(TARGET Daemon PROPERTY OUTPUT_NAME "fuegod")
+
+# F1: walks a node's chain and reports subaddress extras the current rules
+# refuse, every 0x06 / 0x09 field and every commitment output.
+add_library(ChainScanFindings STATIC ChainScan/ChainScanFindings.cpp ChainScan/ChainScanner.cpp)
+target_link_libraries(ChainScanFindings PUBLIC CryptoNoteCore Serialization Common Crypto)
+add_executable(ChainScan ChainScan/main.cpp)
+target_link_libraries(ChainScan PRIVATE
+    ChainScanFindings
+    Rpc
+    Http
+    CryptoNoteCore
+    Serialization
+    Common
+    Crypto
+    Logging
+    System
+    ${Boost_LIBRARIES}
+    OpenSSL::SSL
+    OpenSSL::Crypto)
+set_property(TARGET ChainScan PROPERTY OUTPUT_NAME "fuego-chainscan")
 set_property(TARGET TestnetDaemon PROPERTY OUTPUT_NAME "testnetd")
 set_property(TARGET Optimizer PROPERTY OUTPUT_NAME "optimizer")
 set_property(TARGET SwapDaemon PROPERTY OUTPUT_NAME "xfg-swapd")

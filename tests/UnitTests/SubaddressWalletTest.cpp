@@ -17,6 +17,7 @@
 
 #include "CryptoNoteCore/Currency.h"
 #include "INode.h"
+#include "NullNode.h"
 #include "Logging/ConsoleLogger.h"
 #include "Common/FileMappedVector.h"
 #include "System/Dispatcher.h"
@@ -30,36 +31,6 @@ using namespace CryptoNote;
 using namespace Crypto;
 
 namespace {
-
-class NullNode : public INode {
-public:
-  bool addObserver(INodeObserver*) override { return true; }
-  bool removeObserver(INodeObserver*) override { return true; }
-  void init(const Callback& cb) override { cb(std::error_code()); }
-  bool shutdown() override { return true; }
-  size_t getPeerCount() const override { return 0; }
-  uint32_t getLastLocalBlockHeight() const override { return 0; }
-  uint32_t getLastKnownBlockHeight() const override { return 0; }
-  uint32_t getLocalBlockCount() const override { return 0; }
-  uint32_t getKnownBlockCount() const override { return 0; }
-  uint64_t getLastLocalBlockTimestamp() const override { return 0; }
-  void relayTransaction(const Transaction&, const Callback& cb) override { cb(std::error_code()); }
-  void getRandomOutsByAmounts(std::vector<uint64_t>&&, uint64_t, std::vector<COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount>&, const Callback& cb) override { cb(std::error_code()); }
-  void getRandomCommitmentOutsForAmount(uint64_t, uint64_t, uint32_t, std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>&, const Callback& cb) override { cb(std::error_code()); }
-  void getNewBlocks(std::vector<Hash>&&, std::vector<block_complete_entry>& blocks, uint32_t& startHeight, const Callback& cb) override { blocks.clear(); startHeight = 0; cb(std::error_code()); }
-  void getTransactionOutsGlobalIndices(const Hash&, std::vector<uint32_t>&, const Callback& cb) override { cb(std::error_code()); }
-  void queryBlocks(std::vector<Hash>&&, uint64_t, std::vector<BlockShortEntry>& blocks, uint32_t& startHeight, const Callback& cb) override { blocks.clear(); startHeight = 0; cb(std::error_code()); }
-  void getPoolSymmetricDifference(std::vector<Hash>&&, Hash, bool& actual, std::vector<std::unique_ptr<ITransactionReader>>&, std::vector<Hash>&, const Callback& cb) override { actual = true; cb(std::error_code()); }
-  void getMultisignatureOutputByGlobalIndex(uint64_t, uint32_t, MultisignatureOutput&, const Callback& cb) override { cb(std::error_code()); }
-  void getTransaction(const Hash&, Transaction&, const Callback& cb) override { cb(std::error_code()); }
-  void getBlocks(const std::vector<uint32_t>&, std::vector<std::vector<BlockDetails>>&, const Callback& cb) override { cb(std::error_code()); }
-  void getBlocks(const std::vector<Hash>&, std::vector<BlockDetails>&, const Callback& cb) override { cb(std::error_code()); }
-  void getBlocks(uint64_t, uint64_t, uint32_t, std::vector<BlockDetails>&, uint32_t&, const Callback& cb) override { cb(std::error_code()); }
-  void getTransactions(const std::vector<Hash>&, std::vector<TransactionDetails>&, const Callback& cb) override { cb(std::error_code()); }
-  void getTransactionsByPaymentId(const Hash&, std::vector<TransactionDetails>&, const Callback& cb) override { cb(std::error_code()); }
-  void getPoolTransactions(uint64_t, uint64_t, uint32_t, std::vector<TransactionDetails>&, uint64_t&, const Callback& cb) override { cb(std::error_code()); }
-  void isSynchronized(bool& s, const Callback& cb) override { s = true; cb(std::error_code()); }
-};
 
 class SubaddressWallet : public ::testing::Test {
 protected:
@@ -90,7 +61,7 @@ protected:
     IWallet& wallet = green;
     wallet.initialize(path, password);
     wallet.createAddress();
-    created.funsa = green.createSubAddress(1, 7, 0);
+    created.funsa = green.createSubAddress(1, 7);
     created.standard = wallet.createAddress();
     wallet.save();
     wallet.shutdown();
@@ -196,13 +167,15 @@ TEST_F(SubaddressWallet, V2RecordPublishesFunsaAndSurvivesReload) {
     IWallet& wallet = green;
     wallet.initialize(path, "password");
     wallet.createAddress();
-    funsa = green.createSubAddress(1, 0, 0);
+    funsa = green.createSubAddress(1, 0);
     EXPECT_EQ(funsa.compare(0, 5, "funsa"), 0);
     ASSERT_EQ(wallet.getAddressCount(), 2u);
     EXPECT_EQ(wallet.getAddress(1), funsa);
-    auto listed = green.listSubAddresses();
+    const auto listed = wallet.getSubAddresses();
     ASSERT_EQ(listed.size(), 1u);
-    EXPECT_EQ(std::get<2>(listed[0]), funsa);
+    EXPECT_EQ(listed[0].major, 1u);
+    EXPECT_EQ(listed[0].minor, 0u);
+    EXPECT_EQ(listed[0].address, funsa);
     wallet.save();
     wallet.shutdown();
   }
@@ -221,7 +194,7 @@ TEST_F(SubaddressWallet, ChangeDestinationMustUseTheSubaddressForm) {
   IWallet& wallet = green;
   wallet.initialize(path, "password");
   wallet.createAddress();
-  const std::string funsa = green.createSubAddress(1, 0, 0);
+  const std::string funsa = green.createSubAddress(1, 0);
 
   AccountPublicAddress published;
   bool isSubaddress = false;

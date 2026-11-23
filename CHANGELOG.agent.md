@@ -1,3 +1,23 @@
+## PaymentGate: harden WalletService::withdrawDeposit
+
+**Started**: 2026-11-23
+**Agent**: Cursor (grok-4.7)
+**Status**: DONE (PaymentGate lib builds on this VM)
+**Scope**: `src/PaymentGate/WalletService.cpp`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Match `createDeposit` sync check, `readyEvent` lock, and exception mapping in `withdrawDeposit` (replaces stale Jules PR #39) | Cursor | 2026-11-23 | DONE |
+| 2 | Build `PaymentGate` target | Cursor | 2026-11-23 | DONE |
+
+| Gate | Status | Signed |
+|------|--------|--------|
+| Build compiles | `PaymentGate` with g++-13 | Cursor 2026-11-23 |
+| Tests pass | Not run | |
+| All tasks done | DONE | Cursor 2026-11-23 |
+
+---
+
 ## WalletLegacy: drop unused transaction-height lookups in deposit balance
 
 **Started**: 2026-11-23

@@ -18,6 +18,26 @@
 
 ---
 
+## WalletLegacy: drop unused transaction-height lookups in deposit balance
+
+**Started**: 2026-11-23
+**Agent**: Cursor (grok-4.7)
+**Status**: IN PROGRESS
+**Scope**: `src/WalletLegacy/WalletLegacy.{h,cpp}`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Remove `getTransactionHeights` and unused `heights` parameter from deposit/investment balance helpers (replaces stale Jules PR #61) | Cursor | 2026-11-23 | DONE |
+| 2 | Build `Wallet` target after submodule init | Cursor | 2026-11-23 | DONE |
+
+| Gate | Status | Signed |
+|------|--------|--------|
+| Build compiles | `Wallet` with g++-13 | Cursor 2026-11-23 |
+| Tests pass | Not run (gtest vendored build Werror on GCC 13) | |
+| All tasks done | DONE | Cursor 2026-11-23 |
+
+---
+
 ## funsa F1, F3, F5: chain scan tool, walletd subaddress methods, stale commitment tests
 
 **Started**: 2026-11-22

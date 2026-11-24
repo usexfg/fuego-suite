@@ -11,13 +11,55 @@
 | 1 | `funsa_vectors` (built with the tests, not run by ctest) prints the golden JSON from fixed keys: V2 subaddress keys and addresses for (0,1) (0,2) (0,7) (1,0) (3,42), per-output tx secrets, the subaddress tx key, the F8 filler, and full single-key, per-output and standard transactions built by `constructTransaction` with the 0x09 rule on. fuego-valise pins this file as `rust-fuego-wallet/test-vectors/funsa_v2_vectors.json` | Claude Code | 2026-11-24 | DONE |
 | 2 | `ValiseBuiltTransactionsPassConsensusAndAreCredited`: three transactions built by fuego-valise's Rust builder (single-key to a subaddress, per-output to a subaddress and the primary address, standard with the F8 filler) pass `validateSubaddressTxExtra` at v11 with 0x09 required, and `TransfersConsumer` credits exactly the expected amount to each of master, sub (0,1) and sub (0,2) | Claude Code | 2026-11-24 | DONE; the other direction (suite transactions credited by Valise) is tested in fuego-valise |
 
+**Note**: `funsa_vectors` output is stable except the ring-signature bytes (random nonces); the transaction prefixes and every key are fixed.
+
 **Mutation checks**: in fuego-valise, a builder that skips the Janus key, a single-key tx carrying r·G as R, and a tx key seeded with the public view key each fail the pinned vectors.
 
 | Gate | Status | Signed |
 |------|--------|--------|
 | Build compiles | Linux GCC Release with `BUILD_TESTS=ON` | Claude Code 2026-11-24 |
-| Tests pass | see commit; ctest -LE manual | Claude Code 2026-11-24 |
+| Tests pass | ctest -LE manual 75/75 after merging master 09beb164 | Claude Code 2026-11-24 |
 | All tasks done | DONE | Claude Code 2026-11-24 |
+
+---
+
+## PaymentGate: harden WalletService::withdrawDeposit
+
+**Started**: 2026-11-23
+**Agent**: Cursor (grok-4.7)
+**Status**: DONE (PaymentGate lib builds on this VM)
+**Scope**: `src/PaymentGate/WalletService.cpp`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Match `createDeposit` sync check, `readyEvent` lock, and exception mapping in `withdrawDeposit` (replaces stale Jules PR #39) | Cursor | 2026-11-23 | DONE |
+| 2 | Build `PaymentGate` target | Cursor | 2026-11-23 | DONE |
+
+| Gate | Status | Signed |
+|------|--------|--------|
+| Build compiles | `PaymentGate` with g++-13 | Cursor 2026-11-23 |
+| Tests pass | Not run | |
+| All tasks done | DONE | Cursor 2026-11-23 |
+
+---
+
+## WalletLegacy: drop unused transaction-height lookups in deposit balance
+
+**Started**: 2026-11-23
+**Agent**: Cursor (grok-4.7)
+**Status**: IN PROGRESS
+**Scope**: `src/WalletLegacy/WalletLegacy.{h,cpp}`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Remove `getTransactionHeights` and unused `heights` parameter from deposit/investment balance helpers (replaces stale Jules PR #61) | Cursor | 2026-11-23 | DONE |
+| 2 | Build `Wallet` target after submodule init | Cursor | 2026-11-23 | DONE |
+
+| Gate | Status | Signed |
+|------|--------|--------|
+| Build compiles | `Wallet` with g++-13 | Cursor 2026-11-23 |
+| Tests pass | Not run (gtest vendored build Werror on GCC 13) | |
+| All tasks done | DONE | Cursor 2026-11-23 |
 
 ---
 

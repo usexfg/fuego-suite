@@ -206,6 +206,23 @@ target_link_libraries(chain_scan_findings_tests PRIVATE
 )
 add_test(NAME chain_scan_findings_tests COMMAND chain_scan_findings_tests)
 
+# Prints funsa V2 golden vectors for other implementations (not a test).
+add_executable(funsa_vectors
+    Tools/FunsaVectors.cpp
+)
+target_include_directories(funsa_vectors PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_link_libraries(funsa_vectors PRIVATE
+    CryptoNoteCore
+    Serialization
+    Logging
+    Common
+    Crypto
+    ${Boost_LIBRARIES}
+)
+
 # Persistence of the published commitment key. The signer cannot choose between the
 # owner-bound and legacy derivations without it, and it used to be lost on every
 # wallet save/reload. Also covers loading pre-version-2 caches.

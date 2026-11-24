@@ -1,3 +1,26 @@
+## funsa golden vectors and the Valise interop test
+
+**Started**: 2026-11-24
+**Agent**: Claude Code
+**Status**: DONE (Linux GCC build and tests).
+**Plan**: `docs/developer/funsa-subaddress-rollout-plan.md` section 0 ("Golden vectors") and section 5 item 3 (cross-implementation test in both directions); owner request 2026-11-23, "proceed with valise and api".
+**Scope**: `tests/Tools/FunsaVectors.cpp` (new), `tests/CMakeLists.txt`, `tests/UnitTests/SubaddressScannerTest.cpp`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `funsa_vectors` (built with the tests, not run by ctest) prints the golden JSON from fixed keys: V2 subaddress keys and addresses for (0,1) (0,2) (0,7) (1,0) (3,42), per-output tx secrets, the subaddress tx key, the F8 filler, and full single-key, per-output and standard transactions built by `constructTransaction` with the 0x09 rule on. fuego-valise pins this file as `rust-fuego-wallet/test-vectors/funsa_v2_vectors.json` | Claude Code | 2026-11-24 | DONE |
+| 2 | `ValiseBuiltTransactionsPassConsensusAndAreCredited`: three transactions built by fuego-valise's Rust builder (single-key to a subaddress, per-output to a subaddress and the primary address, standard with the F8 filler) pass `validateSubaddressTxExtra` at v11 with 0x09 required, and `TransfersConsumer` credits exactly the expected amount to each of master, sub (0,1) and sub (0,2) | Claude Code | 2026-11-24 | DONE; the other direction (suite transactions credited by Valise) is tested in fuego-valise |
+
+**Mutation checks**: in fuego-valise, a builder that skips the Janus key, a single-key tx carrying r·G as R, and a tx key seeded with the public view key each fail the pinned vectors.
+
+| Gate | Status | Signed |
+|------|--------|--------|
+| Build compiles | Linux GCC Release with `BUILD_TESTS=ON` | Claude Code 2026-11-24 |
+| Tests pass | see commit; ctest -LE manual | Claude Code 2026-11-24 |
+| All tasks done | DONE | Claude Code 2026-11-24 |
+
+---
+
 ## funsa F1, F3, F5: chain scan tool, walletd subaddress methods, stale commitment tests
 
 **Started**: 2026-11-22

@@ -25,6 +25,7 @@
 #include "CryptoNoteCore/SubaddressTx.h"
 #include "CryptoNoteCore/SubaddressTxProof.h"
 #include "Common/Base58.h"
+#include "Common/StringTools.h"
 #include "CryptoNoteCore/TransactionApi.h"
 #include "CryptoNoteCore/TransactionExtra.h"
 #include "CryptoNoteCore/TransactionPool.h"
@@ -326,6 +327,69 @@ TEST_F(SubaddressScanner, MiningAndOtherStandardOnlyPathsRefuseFunsa) {
   EXPECT_TRUE(currency.parseAccountAddressString(funsa, parsed, isSubaddress));
   EXPECT_TRUE(isSubaddress);
   EXPECT_TRUE(currency.parseAccountAddressString(currency.accountAddressAsString(miner.master.address), parsed));
+}
+
+// Transactions built by fuego-valise's Rust SDK (rust-fuego-wallet/test-vectors/
+// valise_built_txs.json) for the golden-vector recipient. They must pass this
+// node's consensus rule and be credited by this wallet's scanner exactly as the
+// Rust scanner credits them.
+namespace valise_interop {
+
+const char RECIPIENT_VIEW_SECRET[] = "243d1bb4f6adfeb83a74196e321732fc10111111111111111111111111111101";
+const char RECIPIENT_SPEND_SECRET[] = "487a3668ed5bfd7175e832dc642e64f821222222222222222222222222222202";
+const char SINGLE_KEY_TX[] = "01000102c0843d013bc32fa57262ab9d3bb1fc1f5df882128b086224c609a46e041ce8b1b85e50976002d0d91102073716983126697aa7f00f355dc8703a3cbe3e7331f8d2a7b47cbeb3628100b4e0dc2a02a958e7858325acecd7c7ca2bb6e4f42d17fc66c85d7dd201c93e863012a31dbc43014b1209948c5a0c27eabb4cedd5d18d90b776a6ebedb1671c344ef09b915065200901ca575f5ac30e073cc6854b39343d1050e528cf0ddc75f535e97e29be3820e6563b0e3b16b4f708bcd5e9560460cf649f8dd045168b85666f50a9c49c2605db0ed7378c5fc7784f92eeda779e771c6ad70bc59403f7062ba64e41286ca5eaa10c";
+const char PER_OUTPUT_TX[] = "01000102c0cf24013cfa0b5a797d5ea421966a8f7b31777d9bab19bc07aa892bcc6348d4f099a246fe0390bf050252973a32ed900d15b6d446510e5791ec8b4b7b2f0236f8e9c39a114cfca5205bc09a0c02562c3715b262ff942c3b6a8bd7b67e8ce65f3689c9447089fee5cf7459cafe64e0a71202d44206c1580b2db30709c2a1a8a8cb353c3dd65320d2bb2d6bd6bdd500fece9de50101f9d5b7df3cf94e0c3a368e882295e04e53e86b69da6cf2eb1427f8717e16062b0603321f4195df7a7de1cfd80f2853bcf5ee0dd4b33bec9b6ac7cf458ca9e7617f32fc1326ee4228b62ace7efd22da0e954ca6379dd0824cfe97f5cb3d08824eea2a3305bd35a5bb6cb3ed707d406285cf03a3ffb7a3b43b4f0820d49f8e14effe490903fe4a644c1a74fb3d40df4e711f2d0bda7001b4adaf929003d34fe16093f1f79beb31a6f57892740f755d8ee8cf38d0400b2afc3b283465ab52343c0e47eebe7fca6a159cddcfd60f3f4743349bbdb3bbd1b751fb1a3c452acc8f717e21425efbfc0f153c23c66e3cfaa8ad7c7f8203c432c019a5530e44d60e9d9d2204dfd80d4a6bc73e7a3440a11ccda0bfb055574ea90a82339c3498744b1285ef73b6aa04";
+const char STANDARD_TX[] = "0100010290f41d013d72bb2b810bbcca98c2c72cc66b53e4ab5790fb0105fe8ac903994079be30b94f0280f104028cf38dee98bb3acfec03181bb272a6dd89d0586e4ba2b59d6f0f7e90c911c33d80b51802a8ee194b7eb9762408d307bddb40f2464134c4979c1684d84c18bb1fa7587baf43015e38efa1d5d72440dc5d32bf8070bc3ca0c09a8e44cd41b86794332c4fd2becb0901c015cff11e79f10106b96b30bf5f21f87621a17749c00d660dc94affa4635d747b23f87fe52a269958a75962e6bb08863bdc2923fdae416ca8fe02054b702d0b0ad143c6943350637a7b2b02225535df9d207b789128d369b150ac4a8371930f";
+
+SecretKey secretFromHex(const char* hex) {
+  SecretKey key;
+  EXPECT_TRUE(Common::podFromHex(hex, key));
+  return key;
+}
+
+Wallet recipient() {
+  Wallet w;
+  w.master.viewSecretKey = secretFromHex(RECIPIENT_VIEW_SECRET);
+  w.master.spendSecretKey = secretFromHex(RECIPIENT_SPEND_SECRET);
+  secret_key_to_public_key(w.master.viewSecretKey, w.master.address.viewPublicKey);
+  secret_key_to_public_key(w.master.spendSecretKey, w.master.address.spendPublicKey);
+  w.sub1 = deriveSubAddressKeysV2(w.master.viewSecretKey, w.master.address.spendPublicKey, &w.master.spendSecretKey, 0, 1);
+  w.sub2 = deriveSubAddressKeysV2(w.master.viewSecretKey, w.master.address.spendPublicKey, &w.master.spendSecretKey, 0, 2);
+  return w;
+}
+
+Transaction transactionFromHex(const char* hex) {
+  Transaction tx;
+  EXPECT_TRUE(fromBinaryArray(tx, Common::fromHex(hex)));
+  return tx;
+}
+
+uint64_t creditedAmount(const std::vector<TransactionOutputInformation>& outputs) {
+  uint64_t total = 0;
+  for (const auto& output : outputs) {
+    EXPECT_FALSE(output.janusUnverified);
+    total += output.amount;
+  }
+  return total;
+}
+
+} // namespace valise_interop
+
+TEST_F(SubaddressScanner, ValiseBuiltTransactionsPassConsensusAndAreCredited) {
+  using namespace valise_interop;
+  const Wallet w = recipient();
+  const std::vector<AccountSubscription> subs{masterSubscription(w), v2Subscription(w, w.sub1), v2Subscription(w, w.sub2)};
+  struct Expected { const char* hex; uint64_t master; uint64_t sub1; uint64_t sub2; };
+  for (const Expected& expected : {Expected{SINGLE_KEY_TX, 0, 700000, 0},
+                                   Expected{PER_OUTPUT_TX, 200000, 0, 300000},
+                                   Expected{STANDARD_TX, 400000, 0, 0}}) {
+    const Transaction tx = transactionFromHex(expected.hex);
+    std::string error;
+    EXPECT_TRUE(validateSubaddressTxExtra(tx, BLOCK_MAJOR_VERSION_11, true, &error)) << error;
+    EXPECT_EQ(creditedAmount(credited(w, subs, tx, 0)), expected.master);
+    EXPECT_EQ(creditedAmount(credited(w, subs, tx, 1)), expected.sub1);
+    EXPECT_EQ(creditedAmount(credited(w, subs, tx, 2)), expected.sub2);
+  }
 }
 
 TEST(SubaddressConsensus, AdditionalKeysNeedOneJanusBasePerOutput) {

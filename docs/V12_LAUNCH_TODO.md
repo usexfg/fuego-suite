@@ -85,3 +85,9 @@ The Bonus Vault is the protocol's minimum CD yield for lean epochs. The code alr
 - Testnet `cdActivationHeight()`: DONE 2026-11-18. It returned the v11 height (30) while CD outputs open only in v12 blocks (181 at the time; 1001 since the 2026-11-19 testnet schedule); a v10 block at height 30 can hold a legacy commitment, and a ring whose youngest member sat there passed the legacy floor. `cdActivationHeight()` is now the v12 height on every network (`testCdActivationHeight`).
 - `heat_cd` prints `Usage: heat_deposit`; `fuegod --start-mining` did not start the miner on an isolated testnet (the `start_mining` RPC did). Both in item 0 scope.
 - WalletLegacy LP add and the other WalletLegacy commitment spends: item 0.5.
+
+## FCI at v12 (owner decision 2026-11-25)
+Through v11 the FCI records votes and runs every step except two, both reserved for v12:
+- the quarterly hearthstone re-base (already gated on `BLOCK_MAJOR_VERSION_12` in `FuegoCostIndex.cpp`);
+- DIGM rewards to blocks carrying an FCI vote. Not implemented in any version yet; needs a design (amount, source, gating) before v12.
+

@@ -2313,6 +2313,24 @@ void testLpRemovePaysTheDeclaredAmounts() {
 // The stateless output check judges CD terms by the network's range: testnet
 // CDs are a few blocks long, which the mainnet range refused before consensus
 // ever saw them.
+// The market-sell tag was written as fixed 8-byte values while consensus reads
+// varints, so any writer or re-serialization (the F8 janus seal re-serializes a
+// transaction's extra) produced a tag that parsed to other amounts.
+void testMarketSellAuthRoundTrips() {
+  const uint64_t xfgToSell = 123456789012ULL;
+  const uint64_t minHeatReceive = 987654321ULL;
+  std::vector<uint8_t> extra;
+  TEST(addMarketSellAuthToExtra(extra, xfgToSell, minHeatReceive));
+  std::vector<TransactionExtraField> fields;
+  TEST(parseTransactionExtra(extra, fields));
+  TEST(fields.size() == 1 && fields[0].type() == typeid(TransactionExtraMarketSellAuth));
+  const auto& auth = boost::get<TransactionExtraMarketSellAuth>(fields[0]);
+  TEST(auth.xfgToSell == xfgToSell && auth.minHeatReceive == minHeatReceive);
+  std::vector<uint8_t> rewritten;
+  TEST(writeTransactionExtra(rewritten, fields));
+  TEST(rewritten == extra);
+}
+
 void testOutputCheckUsesTheNetworkTermRange() {
   Logging::LoggerGroup nullLog;
   Currency testnet = CurrencyBuilder(nullLog).testnet(true).currency();
@@ -3173,6 +3191,7 @@ int main() {
   testMarkerTermRingsAfterHeatwave();
   testLpRemovePaysTheDeclaredAmounts();
   testOutputCheckUsesTheNetworkTermRange();
+  testMarketSellAuthRoundTrips();
   testCommitmentOutputsSurviveRestart();
   testBlockPopKeepsEarlierOutputs();
   testCommitmentSpendConnectsOnce();

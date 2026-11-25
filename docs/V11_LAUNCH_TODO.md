@@ -13,7 +13,7 @@ Before: v11 after 30, the 72-block bootstrap ended at 102 and v12 started after 
 - A node started on data written under another schedule rolls back to the last block the current schedule accepts (`Blockchain::firstBlockWithWrongMajorVersion`, `testStoredChainFromAnotherScheduleRollsBack`). If that block is more than 1000 blocks below the tip (the undo history), the node refuses to start and asks for a wipe, because HEAT, Hearth and alias state could not be rolled back that far.
 - Relaunch: every testnet node, the four seeds included, deletes its `testnet_*` blockchain, index, cache and pool files before starting the new binary. Testnet peers come only from command-line options (`SEED_NODES_TESTNET` is not used by the node), so each operator's peers must run the new binary.
 - `testnetd` uses the same `testnet(true)` schedule.
-- Open owner question: the FCI quarterly re-base runs only from v12 (`FuegoCostIndex.cpp`, `blockMajorVersion >= BLOCK_MAJOR_VERSION_12`, since 2026-10-20). Under v11, on any network, votes are tallied and medians updated but the hearthstone is never re-based. `RELEASE_NOTES_V11.md` and `docs/developer/fuego-cost-index.mdx` describe quarterly re-basing without that limit. On mainnet v11 runs from 1,111,111 to 2,666,666.
+- FCI under v11 (owner decision 2026-11-25): votes are recorded and every step runs except the hearthstone re-base and DIGM rewards to FCI-voting blocks, both reserved for v12. The code matches (`FuegoCostIndex.cpp`, re-base gated on `BLOCK_MAJOR_VERSION_12`; no DIGM vote reward exists yet). Docs corrected: `RELEASE_NOTES_V11.md`, `fuego-cost-index.mdx`, `what-is-heat.mdx`, `AGENTS.md`.
 
 ### 2. Live testnet pass at v11 rules, both wallets
 SimpleWallet and walletd, each step mined and checked against node state (`/heat_metrics`, `/amm_pool_info`, `/get_limit_orders`, `/get_public_audit`):
@@ -97,4 +97,16 @@ A new tag, command or RPC method then fails CI until it has a scenario; a remove
 9.4 Release gate. `docs/releasenotes/RELEASE_NOTES_V<n>.md` lists each feature with the scenario that proves it; the gate fails a release whose notes name a feature without one. The readiness verdict is the gate's output, not a written opinion.
 
 Limits: 9.3 sees only features that pass through one of those lists. A behaviour change inside an existing command (for example a new fee split) needs its own scenario assertion. In-process nodes do not exercise P2P over real sockets, real timing, or mainnet history; items 3 and 4 still apply.
+
+### 10. Transaction extra and privacy follow-ups (2026-11-25)
+10.1 Market-sell tag — DONE. `addMarketSellAuthToExtra` wrote fixed 8-byte values while consensus parses varints. No wallet writes the tag (market sells go through the Hearth swap), but the extra re-serializer used the same writer, so any re-serialized sell tag (the F8 janus seal re-serializes) parsed to other amounts. It now writes varints, through the same helper as the limit-deposit tag (`testMarketSellAuthRoundTrips`).
+
+10.2 Deposit secret 0xD5 — leftover COLD code. Its only writer is `migrate_legacy_deposit`, and only `burn_info`/`cd_info` read it; their console commands are commented out, and the tag is not in the extra variant, so it never parses. HEAT CDs, Hearth LP and limit orders do not use it: their outputs carry owner-bound commitment keys derived from the transaction key. Proposed: remove the 0xD5 writer, reader, RPC check and the three dead commands (owner approval needed; nothing on chain depends on them).
+
+10.3 HEAT to a funsa subaddress is recognisable. An XFG payment to one subaddress uses the single-key form (tx key r·D, one janus base, no 0x06), so after F8 it looks like any payment. A HEAT send to a subaddress always uses per-output keys (0x06), which marks it. Fix:
+- `TransactionImpl` gains the single-key mode the `constructTransaction` planner already has (`planSubaddressOutputs`): when every non-change output goes to one subaddress, the tx key becomes r·D and the sender's change derives from its view key.
+- The HEAT pipeline (WalletLegacy `buildHeatTransfer`, WalletGreen HEAT send) derives every output, HEAT and XFG change included, from that plan.
+- The commitment scanner accepts a single-key HEAT output with its Janus check, as the key-output scanner does.
+- Tests: a single-subaddress HEAT send carries no 0x06 and the recipient credits it; a two-subaddress send still uses per-output keys.
+Wallet-crypto change; fuego-guardian review before it ships.
 

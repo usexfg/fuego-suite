@@ -1840,6 +1840,15 @@ namespace CryptoNote
            Crypto::check_signature(authHash, spendPublicKey, proof);
   }
 
+  // Base-128 varint, the encoding Common::writeVarint produces and readVarint reads.
+  static void appendVarint(std::vector<uint8_t>& tx_extra, uint64_t value) {
+    while (value >= 0x80) {
+      tx_extra.push_back(static_cast<uint8_t>(value | 0x80));
+      value >>= 7;
+    }
+    tx_extra.push_back(static_cast<uint8_t>(value));
+  }
+
   bool addMarketBuyAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t xfgWanted, uint64_t maxHeatCost) {
     tx_extra.push_back(TX_EXTRA_MARKET_BUY_AUTH);
     for (int i = 0; i < 8; ++i) {
@@ -1853,16 +1862,12 @@ namespace CryptoNote
     return true;
   }
 
+  // The consensus parser (parseTransactionExtra, TX_EXTRA_MARKET_SELL_AUTH) reads
+  // both fields as base-128 varints.
   bool addMarketSellAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t xfgToSell, uint64_t minHeatReceive) {
     tx_extra.push_back(TX_EXTRA_MARKET_SELL_AUTH);
-    for (int i = 0; i < 8; ++i) {
-      tx_extra.push_back(static_cast<uint8_t>(xfgToSell & 0xFF));
-      xfgToSell >>= 8;
-    }
-    for (int i = 0; i < 8; ++i) {
-      tx_extra.push_back(static_cast<uint8_t>(minHeatReceive & 0xFF));
-      minHeatReceive >>= 8;
-    }
+    appendVarint(tx_extra, xfgToSell);
+    appendVarint(tx_extra, minHeatReceive);
     return true;
   }
 
@@ -1870,17 +1875,10 @@ namespace CryptoNote
     tx_extra.push_back(TX_EXTRA_LIMIT_DEPOSIT);
     tx_extra.push_back(side);
     // Consensus parser (parseTransactionExtra, TX_EXTRA_LIMIT_DEPOSIT) reads
-    // these fields as base-128 varints — mirror Common::writeVarint exactly.
-    auto pushVarint = [&tx_extra](uint64_t v) {
-      while (v >= 0x80) {
-        tx_extra.push_back(static_cast<uint8_t>(v | 0x80));
-        v >>= 7;
-      }
-      tx_extra.push_back(static_cast<uint8_t>(v));
-    };
-    pushVarint(amount);
-    pushVarint(targetPrice);
-    pushVarint(expiration);
+    // these fields as base-128 varints.
+    appendVarint(tx_extra, amount);
+    appendVarint(tx_extra, targetPrice);
+    appendVarint(tx_extra, expiration);
     for (size_t i = 0; i < sizeof(orderId.data); ++i) tx_extra.push_back(orderId.data[i]);
     for (size_t i = 0; i < sizeof(addressHash.data); ++i) tx_extra.push_back(addressHash.data[i]);
     return true;

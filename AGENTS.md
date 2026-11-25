@@ -43,8 +43,8 @@ fuego-suite/
 - Not fiat based, peg targets purchasing power only; adjusts for inflation/CPI
 - Mint by burning XFG at hearth pool price. No launch premium (PI controller removed); from v11 a 1% **mint premium** (`HEAT_MINT_PREMIUM_BPS = 100`) is a haircut inside the burn that mints the AuntPoL HEAT leg
 - Launch ratio: 1 HEAT = 8 XFG (8:1 XFG per HEAT); genesis Hearth seed 8,000 XFG / 1,000 HEAT
-- Hearthstone reference: $1.58 USD at launch (`FCI_HEARTHSTONE_INITIAL_CENTS = 158`), re-based quarterly from the on-chain Fuego Cost Index (see below)
-- Fuego Cost Index (FCI): miners vote a 6-item consumer basket in integer cents (power, gas, rice, milk, bread, eggs) via `TX_EXTRA_MINER_BASKET_VOTE`; trimmed median per category, 3-of-6 fresh-quorum gate per quarter, 5.04% max quarterly move
+- Hearthstone reference: $1.58 USD at launch (`FCI_HEARTHSTONE_INITIAL_CENTS = 158`), re-based quarterly from the on-chain Fuego Cost Index from v12 (see below)
+- Fuego Cost Index (FCI): miners vote a 6-item consumer basket in integer cents (power, gas, rice, milk, bread, eggs) via `TX_EXTRA_MINER_BASKET_VOTE`; trimmed median per category, 3-of-6 fresh-quorum gate per quarter, 5.04% max quarterly move. Under v11 the FCI records miner votes and runs every step (epoch close, trimmed medians, quorum, freshness, the index) but does not change the hearthstone and pays no DIGM rewards to FCI-voting blocks; both are reserved for v12.
 - Certificates of Deposit (CD): V12 activation, epoch-term-locked HEAT earning protocol revenue yield
 - **SWAP FEE ROUTING (v11+)**: 80% CD Yield Pool / 20% Bonus Vault / 0% Treasury. Pre-v11 blocks settled 69/11/20 and reorg replay keeps that split (`SWAP_FEE_*_PRE_V11`).
 - **BONUS VAULT**: 20% of swap fees (v11+) fund the protocol's minimum CD yield in lean epochs: `calculateCdBonus` tops a CD up to `CD_YIELD_FLOOR_RATE` in any epoch whose fee rate fell below it, capped by the vault balance. Flat in term.

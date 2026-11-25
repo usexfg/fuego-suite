@@ -45,6 +45,7 @@
 #include "Common/Util.h"
 #include "Common/DnsTools.h"
 #include "Common/Int128.h"
+#include "CryptoNoteCore/AliasOwnerRule.h"
 #include "CryptoNoteCore/AmmPool.h"
 #include "CryptoNoteCore/CryptoNoteFormatUtils.h"
 #include "CryptoNoteCore/TransactionApi.h"
@@ -3525,6 +3526,11 @@ bool simple_wallet::register_alias(const std::vector<std::string> &args) {
 
   std::string alias = args[0];
 
+  if (!CryptoNote::funsaSubaddressActivated(nextBlockMajorVersion())) {
+    fail_msg_writer() << "Alias registration opens at v11: an alias is owned by a funsa subaddress, which exists from v11.";
+    return true;
+  }
+
   // Validate length
   if (alias.length() != 8) {
     fail_msg_writer() << "Alias must be exactly 8 characters. Got " << alias.length() << ".";
@@ -3601,12 +3607,11 @@ bool simple_wallet::register_alias(const std::vector<std::string> &args) {
     if (m_wallet->getTransaction(i, txInfo)) {
       // Check if transaction is unconfirmed and has alias registration extra
       if (txInfo.blockHeight == WALLET_LEGACY_UNCONFIRMED_TRANSACTION_HEIGHT) {
-        // Check if transaction has alias registration tag (0xEA)
-        if (!txInfo.extra.empty()) {
-          if (txInfo.extra[0] == 0xEA) {  // TX_EXTRA_ALIAS_REGISTRATION
-            hasPendingAlias = true;
-            break;
-          }
+        const std::vector<uint8_t> extra(txInfo.extra.begin(), txInfo.extra.end());
+        CryptoNote::TransactionExtraAliasRegistration pending;
+        if (CryptoNote::getAliasFromExtra(extra, pending)) {
+          hasPendingAlias = true;
+          break;
         }
       }
     }
@@ -3624,15 +3629,12 @@ bool simple_wallet::register_alias(const std::vector<std::string> &args) {
   {
     success_msg_writer() << "Registering alias @" << alias;
     success_msg_writer() << "  Type: Regular [a-z0-9&]";
-    success_msg_writer() << "  Privacy: On confirmation a fresh subaddress will be automatically";
-    success_msg_writer() << "           derived from your master wallet (D_ij = B + m*G, C_ij = A)";
-    success_msg_writer() << "           and used in place of your master address for this";
-    success_msg_writer() << "           registration. Your master address is never exposed on-chain";
-    success_msg_writer() << "           — the alias maps to the one-time subaddress only.";
+    success_msg_writer() << "  Owner: a new funsa subaddress of this wallet (D = B + m*G, C = a*D).";
+    success_msg_writer() << "         The alias resolves to it; it does not show your master address.";
     if (m_currency.isTestnet()) {
-      success_msg_writer() << "  Fee: self-transfer (testnet) to the derived subaddress";
+      success_msg_writer() << "  Fee: self-transfer (testnet) to the owner subaddress";
     } else {
-      success_msg_writer() << "  Fee: 1 XFG sent to Fuego Developer Fund";
+      success_msg_writer() << "  Fee: " << m_currency.formatAmount(CryptoNote::parameters::ALIAS_REGISTRATION_FEE) << " XFG burned with the transaction fee";
     }
   }
   success_msg_writer() << "  Subaddress: will be auto-generated at index [0, next] on confirm";
@@ -3684,19 +3686,15 @@ bool simple_wallet::register_alias(const std::vector<std::string> &args) {
     // Hashing the raw 64-byte key preimage (not the base58 string) prevents
     // precomputed base58 rainbow-table attacks on the on-chain hash.
     {
-      CryptoNote::AccountPublicAddress addr;
-      if (!m_currency.parseAccountAddressString(walletAddress, addr)) {
-        fail_msg_writer() << "Failed to parse wallet address for addressHash computation.";
+      CryptoNote::AccountPublicAddress owner;
+      bool ownerIsSubaddress = false;
+      if (!m_currency.parseAccountAddressString(walletAddress, owner, ownerIsSubaddress) || !ownerIsSubaddress) {
+        fail_msg_writer() << "Derived owner is not a funsa subaddress: " << walletAddress;
         return true;
       }
-      uint8_t preimage[64];
-      memcpy(preimage,      &addr.spendPublicKey, 32);
-      memcpy(preimage + 32, &addr.viewPublicKey,  32);
-      Crypto::cn_fast_hash(preimage, 64, aliasReg.addressHash);
+      aliasReg.addressHash = CryptoNote::aliasOwnerHash(owner);
     }
-    // Empty addresses were intended for privacy, but isValid() currently
-    // requires ownerAddress, so this path fails until private resolution is designed.
-    aliasReg.ownerAddress = "";
+    aliasReg.ownerAddress = walletAddress;
     aliasReg.aliasType = aliasType;
     aliasReg.networkId = m_currency.getFuegoNetworkId();
 
@@ -3714,7 +3712,7 @@ bool simple_wallet::register_alias(const std::vector<std::string> &args) {
 
     // From v11 the mainnet fee is a re-mint burn: it rides in the transaction
     // fee and consensus withholds it, so no output pays the dev wallet.
-    const bool burnsFee = !m_currency.isTestnet() && nextBlockMajorVersion() >= CryptoNote::BLOCK_MAJOR_VERSION_11;
+    const bool burnsFee = !m_currency.isTestnet();
     if (burnsFee) {
       CryptoNote::addRemintBurnToExtra(extra, CryptoNote::parameters::ALIAS_REGISTRATION_FEE);
     }
@@ -3725,18 +3723,10 @@ bool simple_wallet::register_alias(const std::vector<std::string> &args) {
 
     std::vector<CryptoNote::WalletLegacyTransfer> transfers;
 
-    if (m_currency.isTestnet() || burnsFee) {
-      CryptoNote::WalletLegacyTransfer selfTransfer;
-      selfTransfer.address = walletAddress;
-      selfTransfer.amount = m_currency.minimumFee();
-      transfers.push_back(selfTransfer);
-    } else {
-      // Regular alias on mainnet: 1 XFG fee to Fuego Developer Fund
-      CryptoNote::WalletLegacyTransfer devFundTransfer;
-      devFundTransfer.address = CryptoNote::FUEGO_DEV_FUND_ADDRESS;
-      devFundTransfer.amount = CryptoNote::parameters::ALIAS_REGISTRATION_FEE;
-      transfers.push_back(devFundTransfer);
-    }
+    CryptoNote::WalletLegacyTransfer selfTransfer;
+    selfTransfer.address = walletAddress;
+    selfTransfer.amount = m_currency.minimumFee();
+    transfers.push_back(selfTransfer);
 
     std::vector<CryptoNote::TransactionMessage> messages;
     uint64_t fee = m_currency.minimumFee() + (burnsFee ? CryptoNote::parameters::ALIAS_REGISTRATION_FEE : 0);

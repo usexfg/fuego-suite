@@ -45,6 +45,7 @@
 #include "Common/Int128.h"
 #include "CryptoNoteCore/Account.h"
 #include "CryptoNoteCore/AmmPool.h"
+#include "CryptoNoteCore/AliasOwnerRule.h"
 #include "CryptoNoteCore/SubaddressTx.h"
 #include "CryptoNoteCore/Currency.h"
 #include "CryptoNoteCore/CryptoNoteFormatUtils.h"
@@ -3814,6 +3815,25 @@ namespace CryptoNote
     return doCreateAddress(subaddress);
   }
 
+  // An alias owner is a funsa subaddress of this wallet: the one the caller
+  // names, or the next unused minor of major 0, which a restore scans.
+  std::string WalletGreen::aliasOwnerSubAddress(const std::string& requestedOwner)
+  {
+    const std::vector<SubAddressInfo> owned = getSubAddresses();
+    if (!requestedOwner.empty()) {
+      for (const auto& sub : owned) {
+        if (sub.address == requestedOwner) return requestedOwner;
+      }
+      throw std::system_error(make_error_code(error::BAD_ADDRESS),
+                              "Alias owner must be a funsa subaddress of this wallet");
+    }
+    uint32_t nextMinor = 1;
+    for (const auto& sub : owned) {
+      if (sub.major == 0 && sub.minor >= nextMinor) nextMinor = sub.minor + 1;
+    }
+    return createSubAddress(0, nextMinor);
+  }
+
   std::vector<SubAddressInfo> WalletGreen::getSubAddresses() const
   {
     throwIfNotInitialized();
@@ -6960,56 +6980,28 @@ namespace CryptoNote
     throwIfNotInitialized();
     throwIfStopped();
 
-    // Parse owner address for canonical identity.
-    CryptoNote::AccountPublicAddress masterAddr;
-    if (!m_currency.parseAccountAddressString(ownerAddress, masterAddr)) {
+    if (!CryptoNote::funsaSubaddressActivated(nextBlockMajorVersion())) {
+      return make_error_code(std::errc::operation_not_permitted);
+    }
+
+    std::string owner;
+    try {
+      owner = aliasOwnerSubAddress(ownerAddress);
+    } catch (const std::system_error& e) {
+      return e.code();
+    }
+    CryptoNote::AccountPublicAddress ownerKeys;
+    bool ownerIsSubaddress = false;
+    if (!m_currency.parseAccountAddressString(owner, ownerKeys, ownerIsSubaddress) || !ownerIsSubaddress) {
       return make_error_code(std::errc::invalid_argument);
     }
 
-    // Build the 0xEA alias registration extra field.
     CryptoNote::TransactionExtraAliasRegistration aliasReg;
-    aliasReg.version   = 1;
-    aliasReg.alias     = alias;
-    aliasReg.aliasHash = Crypto::cn_fast_hash(alias.data(), alias.size());
-
-    // Canonical addressHash from master keys (not base58 string).
-    // This is the identity that enforces one-alias-per-address at consensus.
-    {
-      uint8_t preimage[64];
-      memcpy(preimage,      &masterAddr.spendPublicKey, 32);
-      memcpy(preimage + 32, &masterAddr.viewPublicKey,  32);
-      Crypto::cn_fast_hash(preimage, 64, aliasReg.addressHash);
-    }
-
-    // Per-tx rotation: derive a fresh sub-address so an observer scanning
-    // blocks cannot link multiple alias registrations by ownerAddress.
-    {
-      const auto& wallets = m_walletsContainer.get<RandomAccessIndex>();
-      if (wallets.empty()) {
-        return make_error_code(std::errc::not_connected);
-      }
-
-      // Pick a random non-zero major index (minor=0).
-      // Each registration gets a unique sub-address; never (0,0).
-      uint32_t major = 0;
-      uint32_t minor = 0;
-      {
-        uint8_t rb[4];
-        Crypto::generate_random_bytes(4, rb);
-        major = 1 + (static_cast<uint32_t>(rb[0])
-                  | (static_cast<uint32_t>(rb[1]) << 8)
-                  | (static_cast<uint32_t>(rb[2]) << 16)
-                  | (static_cast<uint32_t>(rb[3]) << 24));
-        // Failsafe: avoid overflow wrap. Extremely unlikely but safe.
-        if (major == 0) major = 1;
-      }
-
-      try {
-        aliasReg.ownerAddress = createSubAddress(major, minor);
-      } catch (const std::system_error& e) {
-        return e.code();
-      }
-    }
+    aliasReg.version      = 1;
+    aliasReg.alias        = alias;
+    aliasReg.aliasHash    = Crypto::cn_fast_hash(alias.data(), alias.size());
+    aliasReg.addressHash  = CryptoNote::aliasOwnerHash(ownerKeys);
+    aliasReg.ownerAddress = owner;
 
     aliasReg.aliasType = 1;      // Regular user alias [a-z0-9&]
     aliasReg.networkId = m_currency.getFuegoNetworkId();
@@ -7026,38 +7018,17 @@ namespace CryptoNote
     // From v11 the registration fee is a re-mint burn: it rides in the
     // transaction fee and consensus withholds it, so no output pays the dev
     // wallet.
-    const bool burnsFee = !m_currency.isTestnet() && nextBlockMajorVersion() >= CryptoNote::BLOCK_MAJOR_VERSION_11;
+    const bool burnsFee = !m_currency.isTestnet();
     if (burnsFee) {
       CryptoNote::addRemintBurnToExtra(extraVec, CryptoNote::parameters::ALIAS_REGISTRATION_FEE);
     }
     std::string extra(extraVec.begin(), extraVec.end());
 
     TransactionParameters params;
-    if (burnsFee) {
-      WalletOrder selfOutput;
-      selfOutput.address = aliasReg.ownerAddress;
-      selfOutput.amount  = m_currency.minimumFee();
-      params.destinations.push_back(selfOutput);
-    } else if (!m_currency.isTestnet()) {
-      WalletOrder devFundOutput;
-      devFundOutput.address = CryptoNote::FUEGO_DEV_FUND_ADDRESS;
-      uint64_t randomDust = 0;
-      {
-        uint8_t randBytes[8] = {};
-        Crypto::generate_random_bytes(sizeof(randBytes), randBytes);
-        for (int i = 0; i < 8; ++i) {
-          randomDust = (randomDust << 8) | randBytes[i];
-        }
-        randomDust = randomDust % (CryptoNote::parameters::ALIAS_REGISTRATION_FEE_MAX_RANDOM + 1);
-      }
-      devFundOutput.amount  = CryptoNote::parameters::ALIAS_REGISTRATION_FEE + randomDust;
-      params.destinations.push_back(devFundOutput);
-    } else {
-      WalletOrder selfOutput;
-      selfOutput.address = ownerAddress;
-      selfOutput.amount  = m_currency.minimumFee();
-      params.destinations.push_back(selfOutput);
-    }
+    WalletOrder selfOutput;
+    selfOutput.address = aliasReg.ownerAddress;
+    selfOutput.amount  = m_currency.minimumFee();
+    params.destinations.push_back(selfOutput);
     params.fee   = m_currency.minimumFee() + (burnsFee ? CryptoNote::parameters::ALIAS_REGISTRATION_FEE : 0);
     params.mixIn = m_currency.minMixin(CryptoNote::BLOCK_MAJOR_VERSION_10);
     params.extra = extra;

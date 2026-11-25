@@ -37,6 +37,7 @@
 #include "../Serialization/SerializationOverloads.h"
 #include "CryptoNoteTools.h"
 #include "TransactionExtra.h"
+#include "AliasOwnerRule.h"
 #include "SubaddressTx.h"
 #include "../crypto/crypto.h"
 #include "../Common/StringTools.h"
@@ -4144,6 +4145,11 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
         isTransactionValid = false;
         logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
                                    << " has invalid subaddress extra: " << subaddrErr;
+      }
+      std::string aliasErr;
+      if (!validateAliasOwners(transactions[i], block.bl.majorVersion, m_currency, &aliasErr)) {
+        isTransactionValid = false;
+        logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " has an invalid alias owner: " << aliasErr;
       }
     }
 

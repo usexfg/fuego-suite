@@ -30,6 +30,7 @@
 add_executable(alias_index_tests
     UnitTests/AliasIndexPersistenceTest.cpp
     UnitTests/AliasFeeDestinationTest.cpp
+    UnitTests/AliasOwnerRuleTest.cpp
 )
 target_include_directories(alias_index_tests PRIVATE ${CMAKE_SOURCE_DIR}/external/gtest/include)
 target_link_libraries(alias_index_tests PRIVATE

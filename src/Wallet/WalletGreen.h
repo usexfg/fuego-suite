@@ -117,7 +117,9 @@ public:
   // Register an 8-character alias on-chain.  Builds the 0xEA extra, adds the mandatory
   // ALIAS_REGISTRATION_FEE output to the Fuego Developer Fund (mainnet only), and
   // submits the transaction.  On success, txHashOut receives the transaction hash.
+  // ownerAddress: empty for a new funsa subaddress, or one this wallet holds.
   std::error_code registerAlias(const std::string& alias, const std::string& ownerAddress, Crypto::Hash& txHashOut);
+  std::string aliasOwnerSubAddress(const std::string& requestedOwner);
   // Burns `amount` XFG as a re-mint burn (TX_EXTRA_REMINT_BURN, v11+): its own
   // counter, re-minted to the dev fund each quarter in one coinbase output.
   // The only output is the network minimum back to this wallet.

@@ -2951,12 +2951,8 @@ namespace PaymentService
       if (!green) {
         return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
       }
-      std::string addr = ownerAddress;
-      if (addr.empty() && wallet.getAddressCount() > 0) {
-        addr = wallet.getAddress(0);
-      }
       Crypto::Hash txHash{};
-      std::error_code ec = green->registerAlias(alias, addr, txHash);
+      std::error_code ec = green->registerAlias(alias, ownerAddress, txHash);
       if (ec) {
         return ec;
       }

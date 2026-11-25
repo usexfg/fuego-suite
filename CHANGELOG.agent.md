@@ -1,3 +1,34 @@
+## funsa F9: alias owners are funsa subaddresses; explorer review; Valise V10–V13 plan
+
+**Started**: 2026-11-25
+**Agent**: Claude Code
+**Status**: DONE (Linux GCC build and tests). F1 still not run: no mainnet node is reachable from this session.
+**Plan**: `docs/developer/funsa-subaddress-rollout-plan.md` section 4.4 (F9), section 3 (explorer review), section 1 (V10–V13), section 4.3 (F1 status). Owner request 2026-11-25: "FIX all alias registrations to use funsa subs as a network requirement", "add view only wallets to valise in v12", "start the mainnet scan and explorer review".
+**Scope**: `src/CryptoNoteCore/AliasOwnerRule.{h,cpp}` (new), `src/CryptoNoteCore/{Blockchain,Core,TransactionPool}.cpp`, `src/Wallet/WalletGreen.{h,cpp}`, `src/PaymentGate/WalletService.cpp`, `src/SimpleWallet/SimpleWallet.cpp`, `tests/UnitTests/{AliasOwnerRuleTest,SubaddressWalletTest}.cpp`, `tests/CMakeLists.txt`, `docs/developer/funsa-subaddress-rollout-plan.md`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | F9 consensus from v11: a 0xEA registration must name a funsa subaddress of this network as owner, with `addressHash = cn_fast_hash(D ‖ C)` of that owner; a 0xED transfer must move the alias to a funsa subaddress. Applied at mempool admission, block template and block validation. Earlier blocks unchanged | Claude Code | 2026-11-25 | DONE |
+| 2 | WalletGreen: owner is the next unused minor of major 0 (was a random 32-bit major a restore never scans), or a funsa subaddress of this wallet the caller names; `addressHash` from the owner's keys (was the master keys, which let anyone holding the master address find the alias and its funsa owner); refused before v11; the unreachable pre-v11 dev-fund branch removed. walletd no longer substitutes the primary address for an empty owner | Claude Code | 2026-11-25 | DONE |
+| 3 | SimpleWallet: registration could never succeed (standard-only parse of the funsa owner, then `ownerAddress = ""`). Now names the funsa owner with its own key hash, refused before v11, confirmation text states V2 keys and the burned fee. The pending-registration check read `extra[0] == 0xEA`, which is never true (extra starts with the tx key); it now parses the extra | Claude Code | 2026-11-25 | DONE |
+| 4 | Explorer review of usexfg/fuego-explorer and usexfg/xfg-explorer recorded as plan section 3 (X1–X7, E1–E5) | Claude Code | 2026-11-25 | DONE; no explorer code changed |
+| 5 | Plan: Valise V10 (HEAT send to funsa, a V5 gap), V11 (alias registration), V12 (view-only wallets with network v12), V13 (ProofV2) | Claude Code | 2026-11-25 | DONE |
+
+**Mutation checks**: dropping the addressHash binding fails `HashOfThePrimaryKeysIsRefused`; accepting a standard owner fails `StandardOwnerIsRefusedFromV11` and `TransferMustMoveTheAliasToAFunsaOwner`.
+
+**Open items:**
+- No test drives a non-funsa registration through `Core` admission or block validation; the three call sites are checked by reading only.
+- A registrant can still name someone else's funsa address as owner and take its one alias (plan 4.4, consequences).
+- No wallet builds 0xEC release or 0xED transfer.
+
+| Gate | Status | Signed |
+|------|--------|--------|
+| Build compiles | Linux GCC Release with `BUILD_TESTS=ON`: all targets | Claude Code 2026-11-25 |
+| Tests pass | ctest -LE manual 75/75; `alias_index_tests` 17/17, `subaddress_wallet_tests` 14/14 | Claude Code 2026-11-25 |
+| All tasks done | DONE; F1 pending a reachable node | Claude Code 2026-11-25 |
+
+---
+
 ## funsa golden vectors and the Valise interop test
 
 **Started**: 2026-11-24

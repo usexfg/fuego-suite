@@ -48,7 +48,12 @@ address that is not `fire…` with 98 characters.
 | V8 | Dart: send screen accepts `funsa`/`Tsub` (101/99 characters) through the native parser, not by prefix and length; payment-URI scan (`send_screen.dart:84`) accepts those lengths; receive screen shows funsa; transaction list shows the unverified flag | `lib/screens/transactions/send_screen.dart`, `receive_screen.dart`, `lib/models/network_config.dart` | widget tests for both address forms |
 | V9 | Bump the `fuego-suite` submodule to the merged commit (CryptoNight and FFI build from it) | `fuego-suite` submodule | FFI build on each platform the `fuego-ffi` skill lists |
 
-Order: V1 → V3 → V4 (receive works) → V2 → V5 (send works) → V6–V8 → V9.
+| V10 | HEAT send to a funsa recipient: per-output keys for the recipient's commitment output, as `WalletTransactionSender::makeHeatTransferV10Request` does. V1–V9 shipped refusing it, short of V5 | `transaction_builder.rs` (`build_commitment_spend_transaction`), `wallet_service.rs` (`send_heat`) | a Valise HEAT send to a funsa address passes `validateSubaddressTxExtra` and is credited by fuego-suite |
+| V11 | Alias registration (section 4.4): `register_alias` builds the 0xEA field with a funsa owner at (0, next minor) and `addressHash = H(D ‖ C)`; refused before v11. Today `register_alias` always returns "not part of the transaction builder path" | `serialization.rs`, `wallet_service.rs`, Dart `alias_registration_screen.dart` | the registration passes F9 consensus in a suite test |
+| V12 | View-only wallets, released with network v12: open from view secret + spend public key; scan with the main and 0x06 keys; credit V2 outputs flagged unverified (no Janus check without the spend secret); amounts only, no spend detection, since key images need the spend secret; v12 hidden amounts decrypt with the view key | `scanner.rs`, `wallet_service.rs`, Dart wallet import | view-only scan of the golden transactions credits the same amounts as the full wallet and flags every V2 output |
+| V13 | ProofV2 in `get_tx_proof`: one item per output key that paid the address `(tx key index, r_n·X, DLEQ signature)`, as `SubaddressTxProof.cpp` | `transaction_builder.rs`, `wallet_service.rs` | a Valise ProofV2 verifies through daemon `check_tx_proof` |
+
+Order: V1 → V3 → V4 (receive works) → V2 → V5 (send works) → V6–V8 → V9 → V10, V11, V13 → V12 with network v12.
 Risk: V5. A count mismatch makes consensus reject the tx; a wrong derivation loses funds.
 
 ## 2. xfg-api (usexfg/xfg-api @ 1a19fd4)
@@ -69,16 +74,31 @@ aliases can be owned by one after v11. Document that rather than changing it.
 
 ## 3. Explorer
 
-No explorer repository is attached to this session. xfg-api's
-`explorer-integration/README.md` describes moving the explorer onto the gateway. Work for
-whichever explorer is deployed:
+Reviewed 2026-11-25: usexfg/fuego-explorer @ 8f58988 and usexfg/xfg-explorer @ 475b69e.
+Both are the same static site (jQuery pages over daemon JSON-RPC or the gateway's
+`/v1/daemon/*`) with diverged copies of the tools. Neither knows funsa, 0x06 or 0x09.
 
-- Show 0x06 and 0x09 in decoded tx extra, with the per-output key next to each output.
-- Recognise funsa/Tsub in search and address pages; an explorer cannot list a
-  subaddress's payments (it has no view key), so show the address as valid but unscannable.
-- Payment-proof checker: ProofV1 and ProofV2 through A1.
-- Count subaddress-shaped txs per block only as an aggregate; do not label single
-  transactions on the page, as that amplifies the 0x09 fingerprint.
+Defects found, funsa or not:
+
+| # | Defect | Where | Effect |
+|---|---|---|---|
+| X1 | The tx checker reads address keys at fixed offsets for a 2-byte prefix (fuego-explorer, `t = 4` hex) or a 4-byte prefix (xfg-explorer, `s = 8`). `fire` (1753191) is a 3-byte varint | `js/check_txn.js` in both | every mainnet check compares the wrong 32 bytes: owned outputs are never found and a correct view key is reported as not matching |
+| X2 | Address length is hard-coded (98 / 99) and the prefix is never checked | same | funsa (101) is refused; any network's address with a matching checksum is accepted |
+| X3 | fuego-explorer divides amounts by 10^6; XFG has 7 decimals (`coinUnits = 10000000`) | `js/check_txn.js` | owned amounts shown 10× too large |
+| X4 | Mixin is hard-coded to 4 on the tx page; the tooltip says 8–18 | `pages/blockchain_transaction.html` | every tx shows a false ring size |
+| X5 | Amounts are rounded to 6 of 7 decimals | `blockchain_transaction.html` (`getReadableCoins(…, 6)`) | the last digit is dropped |
+| X6 | Outputs render `target.data.key`; a commitment output (HEAT / CD, v11) has `commitKey` | `blockchain_transaction.html` | commitment outputs show `undefined` |
+| X7 | Search accepts heights, 64-hex hashes and payment IDs only | `index.html` | an address cannot be searched |
+
+Work, for whichever explorer is deployed (pick one; maintaining both copies is how X1–X3 diverged):
+
+| # | Work |
+|---|---|
+| E1 | Fix X1–X6. The tx checker decodes the prefix varint, accepts `fire`/`TEST` and funsa/`Tsub` of the selected network, and for a funsa address checks the view key as `C == a·D` (not `a·G`), tries the main key, then each 0x06 key, and reports which matched |
+| E2 | Show 0x06 and 0x09 in decoded tx extra, with the per-output key next to each output |
+| E3 | Address search: validate through gateway A2 and show the kind. An explorer cannot list a subaddress's payments (it has no view key), so show it as valid but unscannable |
+| E4 | Payment-proof checker: ProofV1 and ProofV2 through gateway A1 |
+| E5 | Count subaddress-shaped txs per block only as an aggregate; do not label single transactions, as that amplifies the 0x09 fingerprint. After F8's grace window every key-input tx carries 0x09, so the label means nothing per tx anyway |
 
 ## 4. fuego-suite follow-ups
 
@@ -89,9 +109,10 @@ whichever explorer is deployed:
 | F3 | walletd JSON-RPC `createSubaddress {major, minor}` → `{address}` and `getSubaddresses` → `{subaddresses: [{major, minor, address}]}`, through `IWallet::createSubAddress` / `getSubAddresses` | WalletGreen had the functions but walletd exposed no method |
 | F4 | Clang, macOS and Windows builds of the branch | only Linux GCC is verified |
 | F5 | `commitment_owner_bound_tests`: 33e787a5 removed the legacy commitment form (spendable by the sender and any view-key holder) but kept five tests that asserted it. The tests now assert the refusal; F1 counts commitment outputs on mainnet to confirm no legacy HEAT/CD exists that the removal would strand | the CI test step runs `tests/`, so this showed red |
-| F6 | Not needed: no aliases are registered on mainnet, so none needs moving to a funsa owner. Registration already issues funsa owners | closed 2026-11-17 |
+| F6 | Not needed: no aliases are registered on mainnet, so none needs moving to a funsa owner. Correction 2026-11-25: only WalletGreen issues funsa owners; SimpleWallet's registration always fails and Valise has none. See F9 | closed 2026-11-17 |
 | F7 | Explain subaddress-to-primary linking in user docs: do not publish the primary address next to subaddresses | the Janus check does not cover it |
 | F8 | Every key-input tx carries 0x09 after the grace window (section 4.1) | approved 2026-11-17; removes the single-key fingerprint at 34 bytes per tx |
+| F9 | From v11 every alias owner is a funsa subaddress (section 4.4) | owner request 2026-11-25; an alias on a standard address links the alias to the wallet's primary address forever |
 
 ### 4.1 F8: 0x09 on every key-input transaction
 
@@ -152,6 +173,40 @@ Exit status 0 means nothing was found and the gate item "F1 scan result recorded
 `commitment-output` is a HEAT/CD the F5 removal would strand); 2 means the scan did not finish.
 Record the summary line and the node's height in the changelog.
 
+Status 2026-11-25: not run. The agent container reaches the internet only through an
+HTTPS proxy; the seed nodes' P2P port 10808 and RPC port 18180 refuse its connections,
+and no public HTTPS node RPC exists in any of these repositories. Run it on a machine with
+a synced node.
+
+### 4.4 F9: alias owners are funsa subaddresses
+
+Problem, as of 467b8562:
+- Consensus never parses a registration's `ownerAddress`, and never checks `addressHash`
+  against it. Any string with any hash registers; one-alias-per-address is enforced on a
+  hash the registrant chose.
+- WalletGreen sets `addressHash` from the master keys while the owner is a funsa
+  subaddress. Anyone holding the master address computes the hash, finds the alias, and
+  reads the funsa owner from it: the funsa address is linked to the master wallet.
+- WalletGreen picks the owner at a random 32-bit major index. A wallet restored from seed
+  never scans that index, so payments to the alias are not found.
+- SimpleWallet parses the funsa owner with the standard-only parser (fails), then sets
+  `ownerAddress = ""` (fails `isValid`). Its registration cannot succeed.
+- Valise has no registration.
+
+| Item | Rule |
+|---|---|
+| Consensus, from v11 | a transaction whose extra has a 0xEA registration is invalid unless `ownerAddress` parses as a funsa subaddress of this network and `addressHash == cn_fast_hash(D ‖ C)` of that owner. A 0xED transfer is invalid unless `newOwnerAddress` is a funsa subaddress of this network. Applied at mempool admission, block template and block validation, like `validateSubaddressTxExtra` |
+| Before v11 | unchanged: blocks before v11 are history, and funsa does not exist yet. Wallets refuse to register before v11 rather than create an alias on a standard address |
+| Release, old owner | an alias registered before v11 keeps its standard owner; release and transfer still verify against it, and a transfer moves it to a funsa owner |
+| Wallet owner | the next unused minor index of major 0, the same lookahead a restore scans. Never a random index |
+| Wallet hash | `addressHash` from the owner's own keys, never the master keys |
+| Ownership proof | release and transfer are signed with the owner's spend secret, `b + m` for a funsa owner. No wallet in these repositories builds 0xEC or 0xED today |
+
+Consequences:
+- After v11, any third-party tool that registers aliases on standard addresses has its transactions rejected.
+- A registrant can still put a victim's funsa address in a registration (paying the fee) and so take that address's one alias. The victim's fix is a new subaddress. A registration ownership signature would close this; it is not part of F9.
+- `/get_alias_by_address` with a master address stops finding the alias, by design.
+
 ## 5. Gate before v11 activation
 
 1. fuego-suite branch merged after review, CI green on all platforms (F4, F5).
@@ -161,3 +216,4 @@ Record the summary line and the node's height in the changelog.
 5. Testnet soak: funsa sends between fuego-suite walletd, simplewallet and Valise, including
    HEAT sends, change from a subaddress, view-only wallets, restart and reload, and ProofV2
    checks through the gateway.
+6. F9 merged, with WalletGreen, SimpleWallet and Valise (V11) registering funsa owners.

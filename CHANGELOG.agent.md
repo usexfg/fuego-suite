@@ -1,3 +1,24 @@
+## Valise interop: HEAT send to funsa and alias registration
+
+**Started**: 2026-11-25
+**Agent**: Claude Code
+**Status**: DONE (Linux GCC build and tests).
+**Plan**: `docs/developer/funsa-subaddress-rollout-plan.md` section 1 (V10, V11) and 4.4 (F9): "passes F9 consensus in a suite test", "credited by fuego-suite".
+**Scope**: `tests/UnitTests/SubaddressScannerTest.cpp`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `ValiseBuiltHeatSendToASubaddressIsCredited`: a Valise HEAT send to a funsa subaddress passes `validateSubaddressTxExtra` at v11 and `TransfersConsumer` credits the commitment output to sub (0,3) with the Janus check verified, and not to the master. `getOutputs` never lists HEAT-term commitment outputs under any flag, so the test reads the output with `getTransfer` | Claude Code | 2026-11-25 | DONE |
+| 2 | `ValiseBuiltAliasRegistrationMeetsTheAliasOwnerRule`: a Valise alias registration passes `validateAliasOwners`; its 0xEA field parses with this network's id, owner sub (0,4) and the 1 XFG re-mint burn; the owner is credited its output | Claude Code | 2026-11-25 | DONE |
+
+| Gate | Status | Signed |
+|------|--------|--------|
+| Build compiles | Linux GCC Release with `BUILD_TESTS=ON` | Claude Code 2026-11-25 |
+| Tests pass | ctest -LE manual 75/75; `subaddress_scanner_tests` 31/31 | Claude Code 2026-11-25 |
+| All tasks done | DONE | Claude Code 2026-11-25 |
+
+---
+
 ## funsa F9: alias owners are funsa subaddresses; explorer review; Valise V10–V13 plan
 
 **Started**: 2026-11-25

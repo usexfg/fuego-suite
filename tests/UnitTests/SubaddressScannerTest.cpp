@@ -16,6 +16,8 @@
 
 #include "gtest/gtest.h"
 
+#include "CryptoNoteCore/AliasOwnerRule.h"
+
 #include "CryptoNoteConfig.h"
 #include "CryptoNoteCore/Account.h"
 #include "CryptoNoteCore/CryptoNoteBasicImpl.h"
@@ -150,6 +152,26 @@ protected:
     std::vector<TransactionOutputInformation> outs;
     handles[subscriptionIndex]->getContainer().getOutputs(outs, ITransfersContainer::IncludeAll);
     return outs;
+  }
+
+  // HEAT (term HEAT_TERM) is not listed by getOutputs, so read the output directly.
+  uint64_t heatOutputCredited(const Wallet& w, const std::vector<AccountSubscription>& subs,
+                              const Transaction& tx, size_t subscriptionIndex, uint32_t outputIndex) {
+    TransfersConsumer consumer(currency, node, logger, w.master.viewSecretKey);
+    std::vector<ITransfersSubscription*> handles;
+    for (const auto& s : subs) {
+      handles.push_back(&consumer.addSubscription(s));
+    }
+    auto reader = createTransactionPrefix(tx);
+    EXPECT_FALSE(consumer.addUnconfirmedTransaction(*reader));
+    TransactionOutputInformation output;
+    ITransfersContainer::TransferState state;
+    if (!handles[subscriptionIndex]->getContainer().getTransfer(getObjectHash(tx), outputIndex, output, state)) {
+      return 0;
+    }
+    EXPECT_EQ(output.type, TransactionTypes::OutputType::Commitment);
+    EXPECT_FALSE(output.janusUnverified);
+    return output.amount;
   }
 
   Transaction janusProbe(const Wallet& victim, bool withJanusList, bool viaAdditionalKey) {
@@ -340,6 +362,8 @@ const char RECIPIENT_SPEND_SECRET[] = "487a3668ed5bfd7175e832dc642e64f8212222222
 const char SINGLE_KEY_TX[] = "01000102c0843d013bc32fa57262ab9d3bb1fc1f5df882128b086224c609a46e041ce8b1b85e50976002d0d91102073716983126697aa7f00f355dc8703a3cbe3e7331f8d2a7b47cbeb3628100b4e0dc2a02a958e7858325acecd7c7ca2bb6e4f42d17fc66c85d7dd201c93e863012a31dbc43014b1209948c5a0c27eabb4cedd5d18d90b776a6ebedb1671c344ef09b915065200901ca575f5ac30e073cc6854b39343d1050e528cf0ddc75f535e97e29be3820e6563b0e3b16b4f708bcd5e9560460cf649f8dd045168b85666f50a9c49c2605db0ed7378c5fc7784f92eeda779e771c6ad70bc59403f7062ba64e41286ca5eaa10c";
 const char PER_OUTPUT_TX[] = "01000102c0cf24013cfa0b5a797d5ea421966a8f7b31777d9bab19bc07aa892bcc6348d4f099a246fe0390bf050252973a32ed900d15b6d446510e5791ec8b4b7b2f0236f8e9c39a114cfca5205bc09a0c02562c3715b262ff942c3b6a8bd7b67e8ce65f3689c9447089fee5cf7459cafe64e0a71202d44206c1580b2db30709c2a1a8a8cb353c3dd65320d2bb2d6bd6bdd500fece9de50101f9d5b7df3cf94e0c3a368e882295e04e53e86b69da6cf2eb1427f8717e16062b0603321f4195df7a7de1cfd80f2853bcf5ee0dd4b33bec9b6ac7cf458ca9e7617f32fc1326ee4228b62ace7efd22da0e954ca6379dd0824cfe97f5cb3d08824eea2a3305bd35a5bb6cb3ed707d406285cf03a3ffb7a3b43b4f0820d49f8e14effe490903fe4a644c1a74fb3d40df4e711f2d0bda7001b4adaf929003d34fe16093f1f79beb31a6f57892740f755d8ee8cf38d0400b2afc3b283465ab52343c0e47eebe7fca6a159cddcfd60f3f4743349bbdb3bbd1b751fb1a3c452acc8f717e21425efbfc0f153c23c66e3cfaa8ad7c7f8203c432c019a5530e44d60e9d9d2204dfd80d4a6bc73e7a3440a11ccda0bfb055574ea90a82339c3498744b1285ef73b6aa04";
 const char STANDARD_TX[] = "0100010290f41d013d72bb2b810bbcca98c2c72cc66b53e4ab5790fb0105fe8ac903994079be30b94f0280f104028cf38dee98bb3acfec03181bb272a6dd89d0586e4ba2b59d6f0f7e90c911c33d80b51802a8ee194b7eb9762408d307bddb40f2464134c4979c1684d84c18bb1fa7587baf43015e38efa1d5d72440dc5d32bf8070bc3ca0c09a8e44cd41b86794332c4fd2becb0901c015cff11e79f10106b96b30bf5f21f87621a17749c00d660dc94affa4635d747b23f87fe52a269958a75962e6bb08863bdc2923fdae416ca8fe02054b702d0b0ad143c6943350637a7b2b02225535df9d207b789128d369b150ac4a8371930f";
+const char HEAT_TO_SUBADDRESS_TX[] = "0200010490e9ee02013e28d172ee1814f053d31587f236c08ba4d75144ebe8bd5471c25f66f053dfc86a0002c096b102045176b4c77b7483cb1cd651653f10e09af97950151c94f7e33d98bb0bd08a8e9fffffffff0f000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c0843d04965d073dd190d6eacd2e908a424bbdcc8e9f56c7fd493bee18e87ab45f8a387cffffffff0f000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a501010418642a9e6ddf9a5e68af9421795552e0ebc4b1bdc079483b1bc3f545b6ee6d0602647b3cd1a9dd18e72f7856135e1c9f1facf823cb0675a8e49ad8422e6e022823026cd6f275a03f887dd070a16375e20b7457e023114ee4c19d777d6222d3ae1609024274a314af846f5ae60ce134170f52728b108f8bdd642c48bc2c740733df70b786e7d16dd7d4e861a1e22a58fa682e05f0bb42d78214c7cc7b7f93691cbed046e978b9f369b0943c0b2a0e7059d4df13a170f0e9b0de38d4c4839c01550910018b6109ee54424116fa63c7dbf023ee1cf66c6389e9e13a97dd26074e1e16980f";
+const char ALIAS_REGISTRATION_TX[] = "01000102a0c0e6040140856d26770aba83380312e3b4ae88be9b19915683a3be5c1eeb39b03b06a530dc02c03e02be8637c22dfdfdefa524dd8d5fa97f41e9e3495ab9214557973ade8f135dedfad08603021b903500393635b0b43deaef168681f32f1abac7661d3b478815d5d18d9146f78a0201483236a979a539537b4d35688155bdf6f57e8d183233f02da901c7b3beae491b0901410bf4fc111cb703e294f560dae0326e49c6cd35d51252715bced2abf2f228ddeabb010108666972656e6f64655e2d15989ccd9aac9ea90c3a32db495d1e05772351e859d999cfac08a8b03b0f8cccb9a17c3728bbffc9ea4b6d43616a55d16890ba03195acbc9d7c9edf0dae06566756e736131323579794d68437732344b31425832466347444d397976486f6a32594c6f784442647a59797136774544713573707a344844616f385368594e75506d504a507463706678644c58676b4452593374516672374c5a727439505457667037334601e4e088dcf99cd39698010d8096980000000000f45a19258ba62875c09a34b2344ce6c378eb61c894f12bb87cf5c76046698a061fe4b63e9f75a93b11f888fa24b25e0c21e6dc7562cfb7e6341f42ad549a0c00";
 
 SecretKey secretFromHex(const char* hex) {
   SecretKey key;
@@ -390,6 +414,47 @@ TEST_F(SubaddressScanner, ValiseBuiltTransactionsPassConsensusAndAreCredited) {
     EXPECT_EQ(creditedAmount(credited(w, subs, tx, 1)), expected.sub1);
     EXPECT_EQ(creditedAmount(credited(w, subs, tx, 2)), expected.sub2);
   }
+}
+
+// A HEAT send from Valise to a funsa subaddress keys each commitment output
+// with its own tx key, as WalletTransactionSender's HEAT send does.
+TEST_F(SubaddressScanner, ValiseBuiltHeatSendToASubaddressIsCredited) {
+  using namespace valise_interop;
+  const Wallet w = recipient();
+  const SubAddressKeys sub3 = deriveSubAddressKeysV2(w.master.viewSecretKey, w.master.address.spendPublicKey, &w.master.spendSecretKey, 0, 3);
+  const Transaction tx = transactionFromHex(HEAT_TO_SUBADDRESS_TX);
+  std::string error;
+  EXPECT_TRUE(validateSubaddressTxExtra(tx, BLOCK_MAJOR_VERSION_11, true, &error)) << error;
+  EXPECT_FALSE(heatOutputCredited(w, {masterSubscription(w)}, tx, 0, 0));
+  EXPECT_EQ(heatOutputCredited(w, {masterSubscription(w), v2Subscription(w, sub3)}, tx, 1, 0), 5000000u);
+}
+
+// An alias registration built by Valise (F9): funsa owner, addressHash of the
+// owner's keys, this network's id, the fee as a re-mint burn.
+TEST_F(SubaddressScanner, ValiseBuiltAliasRegistrationMeetsTheAliasOwnerRule) {
+  using namespace valise_interop;
+  const Wallet w = recipient();
+  const SubAddressKeys sub4 = deriveSubAddressKeysV2(w.master.viewSecretKey, w.master.address.spendPublicKey, &w.master.spendSecretKey, 0, 4);
+  const Transaction tx = transactionFromHex(ALIAS_REGISTRATION_TX);
+  std::string error;
+  EXPECT_TRUE(validateSubaddressTxExtra(tx, BLOCK_MAJOR_VERSION_11, true, &error)) << error;
+  EXPECT_TRUE(validateAliasOwners(tx, BLOCK_MAJOR_VERSION_11, currency, &error)) << error;
+
+  TransactionExtraAliasRegistration registration;
+  ASSERT_TRUE(getAliasFromExtra(tx.extra, registration));
+  EXPECT_EQ(registration.alias, "firenode");
+  EXPECT_EQ(registration.aliasType, 1);
+  EXPECT_EQ(registration.networkId, currency.getFuegoNetworkId());
+  EXPECT_EQ(registration.ownerAddress, currency.subAddressAsString({sub4.spendPublicKey, sub4.viewPublicKey}));
+
+  std::vector<TransactionExtraField> fields;
+  ASSERT_TRUE(parseTransactionExtra(tx.extra, fields));
+  uint64_t burned = 0;
+  for (const auto& field : fields) {
+    if (field.type() == typeid(TransactionExtraRemintBurn)) burned = boost::get<TransactionExtraRemintBurn>(field).amountXfg;
+  }
+  EXPECT_EQ(burned, parameters::ALIAS_REGISTRATION_FEE);
+  EXPECT_EQ(creditedAmount(credited(w, {masterSubscription(w), v2Subscription(w, sub4)}, tx, 1)), 8000u);
 }
 
 TEST(SubaddressConsensus, AdditionalKeysNeedOneJanusBasePerOutput) {

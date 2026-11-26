@@ -46,6 +46,7 @@
 #include "Common/Util.h"
 #include "Common/DnsTools.h"
 #include "Common/Int128.h"
+#include "CryptoNoteCore/AliasOwnerRule.h"
 #include "CryptoNoteCore/AmmPool.h"
 #include "CryptoNoteCore/CryptoNoteFormatUtils.h"
 #include "CryptoNoteCore/TransactionApi.h"
@@ -3668,6 +3669,11 @@ bool simple_wallet::register_alias(const std::vector<std::string> &args) {
 
   std::string alias = args[0];
 
+  if (!CryptoNote::funsaSubaddressActivated(nextBlockMajorVersion())) {
+    fail_msg_writer() << "Alias registration opens at v11: an alias is owned by a funsa subaddress, which exists from v11.";
+    return true;
+  }
+
   // Validate length
   if (alias.length() != 8) {
     fail_msg_writer() << "Alias must be exactly 8 characters. Got " << alias.length() << ".";
@@ -3735,13 +3741,10 @@ bool simple_wallet::register_alias(const std::vector<std::string> &args) {
   {
     success_msg_writer() << "Registering alias @" << alias;
     success_msg_writer() << "  Type: Regular [a-z0-9&]";
-    success_msg_writer() << "  Privacy: On confirmation a fresh subaddress will be automatically";
-    success_msg_writer() << "           derived from your master wallet (D_ij = B + m*G, C_ij = A)";
-    success_msg_writer() << "           and used in place of your master address for this";
-    success_msg_writer() << "           registration. Your master address is never exposed on-chain";
-    success_msg_writer() << "           — the alias maps to the one-time subaddress only.";
+    success_msg_writer() << "  Owner: a new funsa subaddress of this wallet (D = B + m*G, C = a*D).";
+    success_msg_writer() << "         The alias resolves to it; it does not show your master address.";
     if (m_currency.isTestnet()) {
-      success_msg_writer() << "  Fee: self-transfer (testnet) to the derived subaddress";
+      success_msg_writer() << "  Fee: self-transfer (testnet) to the owner subaddress";
     } else {
       success_msg_writer() << "  Fee: " << m_currency.formatAmount(CryptoNote::parameters::ALIAS_REGISTRATION_FEE)
                            << " XFG re-mint burn (re-minted to the dev fund at the FCI quarter) + "

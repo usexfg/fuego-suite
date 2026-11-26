@@ -41,6 +41,12 @@ enum class WalletTransactionState : uint8_t
   DELETED
 };
 
+struct SubAddressInfo {
+  uint32_t major;
+  uint32_t minor;
+  std::string address;
+};
+
 enum class WalletSaveLevel : uint8_t {
   SAVE_KEYS_ONLY,
   SAVE_KEYS_AND_TRANSACTIONS,
@@ -242,6 +248,9 @@ public:
   // True when this wallet holds a funsa subaddress output of the transaction that was
   // credited without its Janus check (a view-only wallet cannot run it).
   virtual bool hasUnverifiedSubaddressOutputs(const Crypto::Hash &transactionHash) const = 0;
+  // funsa V2 subaddress (major, minor) of the primary address; (0, 0) is the primary itself.
+  virtual std::string createSubAddress(uint32_t major, uint32_t minor) = 0;
+  virtual std::vector<SubAddressInfo> getSubAddresses() const = 0;
   virtual size_t getTransactionTransferCount(size_t transactionIndex) const = 0;
   virtual WalletTransfer getTransactionTransfer(size_t transactionIndex, size_t transferIndex) const = 0;
 

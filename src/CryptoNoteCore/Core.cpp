@@ -35,6 +35,7 @@
 #include "CryptoNoteStatInfo.h"
 #include "Miner.h"
 #include "TransactionExtra.h"
+#include "AliasOwnerRule.h"
 #include "SubaddressTx.h"
 #include "IBlock.h"
 #include "Currency.h"
@@ -423,6 +424,11 @@ bool core::check_tx_semantic(const Transaction& tx, bool keeped_by_block, uint32
   const uint8_t extraMajorVersion = m_currency.blockMajorVersionAtHeight(height);
   if (!validateSubaddressTxExtra(tx, extraMajorVersion, m_currency.janusBaseRequiredAtHeight(height), &subaddrErr)) {
     logger(ERROR) << "tx subaddress extra rejected for tx id= " << getObjectHash(tx) << ": " << subaddrErr;
+    return false;
+  }
+  std::string aliasErr;
+  if (!validateAliasOwners(tx, extraMajorVersion, m_currency, &aliasErr)) {
+    logger(ERROR) << "tx alias owner rejected for tx id= " << getObjectHash(tx) << ": " << aliasErr;
     return false;
   }
 

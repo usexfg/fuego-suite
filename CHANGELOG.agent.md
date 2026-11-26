@@ -1,3 +1,207 @@
+## Merge master into PR #83 (claude/modest-ride-oevh0b)
+
+**Started**: 2026-11-26
+**Agent**: Claude Code (claude-opus-5-5)
+**Status**: IN PROGRESS. Conflicts resolved; build and tests not run in this session (no Boost in the container); CI on PR #83 is the build gate.
+**Scope**: `src/CryptoNoteCore/Blockchain.cpp`, `src/Wallet/WalletGreen.{h,cpp}`, `src/PaymentGate/WalletService.cpp`, `src/SimpleWallet/SimpleWallet.cpp`, `tests/CMakeLists.txt`, `tests/UnitTests/{CommitmentOwnerBoundTest.cpp,NullNode.h,SubaddressWalletTest.cpp}`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Alias registration in walletd and the console: keep PR #83's planner path (`planAliasRegistration`, `nextAliasSubaddress`, owners at `ALIAS_SUBADDRESS_MAJOR`); drop master's inline builder and `aliasOwnerSubAddress`. Consensus keeps both rules: master's F9 `validateAliasOwners` and PR #83's 10.6 claim checks | Claude Code | 2026-11-26 | DONE |
+| 2 | `Blockchain.cpp`: drop the file-local `aliasOwnerHash`, which duplicated `CryptoNote::aliasOwnerHash` from `AliasOwnerRule.h` (same preimage; two declarations in `CryptoNote` would make every call ambiguous) | Claude Code | 2026-11-26 | DONE |
+| 3 | `WalletGreen::load`: keep PR #83's `transfersNeedRescan` and master's `recordAddressKindsFromCache()` | Claude Code | 2026-11-26 | DONE |
+| 4 | Tests: `tests/CMakeLists.txt` holds both sides' targets (23 executables, 22 tests); `NullNode.h` takes PR #83's 4-argument `getRandomCommitmentOutsForAmount`; `CommitmentOwnerBoundTest.cpp` keeps PR #83's equivalent fixes of the stale legacy-form tests; `SubaddressWalletTest.cpp` drops the two tests of the removed `aliasOwnerSubAddress`, and the pre-v11 refusal test passes an owned address and expects `invalid_argument` | Claude Code | 2026-11-26 | DONE |
+| 5 | fuego-guardian review of the merge result | Claude Code | 2026-11-26 | TODO |
+| 6 | CI green on PR #83 | Claude Code | 2026-11-26 | TODO |
+
+Open decision: F9 (`docs/developer/funsa-subaddress-rollout-plan.md` 4.4) puts wallet alias owners at the next unused minor of major 0, which a restore scans and Valise uses; PR #83 puts them at major 1, which a restore does not recreate (`docs/V11_LAUNCH_TODO.md` 10.7). Consensus accepts both.
+
+| Gate | Status | Signed |
+|------|--------|--------|
+| Build compiles | NOT RUN locally; CI | |
+| Tests pass | NOT RUN locally; CI | |
+| All tasks done | NO (tasks 5, 6) | |
+
+---
+
+## Valise interop: HEAT send to funsa and alias registration
+
+**Started**: 2026-11-25
+**Agent**: Claude Code
+**Status**: DONE (Linux GCC build and tests).
+**Plan**: `docs/developer/funsa-subaddress-rollout-plan.md` section 1 (V10, V11) and 4.4 (F9): "passes F9 consensus in a suite test", "credited by fuego-suite".
+**Scope**: `tests/UnitTests/SubaddressScannerTest.cpp`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `ValiseBuiltHeatSendToASubaddressIsCredited`: a Valise HEAT send to a funsa subaddress passes `validateSubaddressTxExtra` at v11 and `TransfersConsumer` credits the commitment output to sub (0,3) with the Janus check verified, and not to the master. `getOutputs` never lists HEAT-term commitment outputs under any flag, so the test reads the output with `getTransfer` | Claude Code | 2026-11-25 | DONE |
+| 2 | `ValiseBuiltAliasRegistrationMeetsTheAliasOwnerRule`: a Valise alias registration passes `validateAliasOwners`; its 0xEA field parses with this network's id, owner sub (0,4) and the 1 XFG re-mint burn; the owner is credited its output | Claude Code | 2026-11-25 | DONE |
+
+| Gate | Status | Signed |
+|------|--------|--------|
+| Build compiles | Linux GCC Release with `BUILD_TESTS=ON` | Claude Code 2026-11-25 |
+| Tests pass | ctest -LE manual 75/75; `subaddress_scanner_tests` 31/31 | Claude Code 2026-11-25 |
+| All tasks done | DONE | Claude Code 2026-11-25 |
+
+---
+
+## funsa F9: alias owners are funsa subaddresses; explorer review; Valise V10–V13 plan
+
+**Started**: 2026-11-25
+**Agent**: Claude Code
+**Status**: DONE (Linux GCC build and tests). F1 still not run: no mainnet node is reachable from this session.
+**Plan**: `docs/developer/funsa-subaddress-rollout-plan.md` section 4.4 (F9), section 3 (explorer review), section 1 (V10–V13), section 4.3 (F1 status). Owner request 2026-11-25: "FIX all alias registrations to use funsa subs as a network requirement", "add view only wallets to valise in v12", "start the mainnet scan and explorer review".
+**Scope**: `src/CryptoNoteCore/AliasOwnerRule.{h,cpp}` (new), `src/CryptoNoteCore/{Blockchain,Core,TransactionPool}.cpp`, `src/Wallet/WalletGreen.{h,cpp}`, `src/PaymentGate/WalletService.cpp`, `src/SimpleWallet/SimpleWallet.cpp`, `tests/UnitTests/{AliasOwnerRuleTest,SubaddressWalletTest}.cpp`, `tests/CMakeLists.txt`, `docs/developer/funsa-subaddress-rollout-plan.md`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | F9 consensus from v11: a 0xEA registration must name a funsa subaddress of this network as owner, with `addressHash = cn_fast_hash(D ‖ C)` of that owner; a 0xED transfer must move the alias to a funsa subaddress. Applied at mempool admission, block template and block validation. Earlier blocks unchanged | Claude Code | 2026-11-25 | DONE |
+| 2 | WalletGreen: owner is the next unused minor of major 0 (was a random 32-bit major a restore never scans), or a funsa subaddress of this wallet the caller names; `addressHash` from the owner's keys (was the master keys, which let anyone holding the master address find the alias and its funsa owner); refused before v11; the unreachable pre-v11 dev-fund branch removed. walletd no longer substitutes the primary address for an empty owner | Claude Code | 2026-11-25 | DONE |
+| 3 | SimpleWallet: registration could never succeed (standard-only parse of the funsa owner, then `ownerAddress = ""`). Now names the funsa owner with its own key hash, refused before v11, confirmation text states V2 keys and the burned fee. The pending-registration check read `extra[0] == 0xEA`, which is never true (extra starts with the tx key); it now parses the extra | Claude Code | 2026-11-25 | DONE |
+| 4 | Explorer review of usexfg/fuego-explorer and usexfg/xfg-explorer recorded as plan section 3 (X1–X7, E1–E5) | Claude Code | 2026-11-25 | DONE; no explorer code changed |
+| 5 | Plan: Valise V10 (HEAT send to funsa, a V5 gap), V11 (alias registration), V12 (view-only wallets with network v12), V13 (ProofV2) | Claude Code | 2026-11-25 | DONE |
+
+**Mutation checks**: dropping the addressHash binding fails `HashOfThePrimaryKeysIsRefused`; accepting a standard owner fails `StandardOwnerIsRefusedFromV11` and `TransferMustMoveTheAliasToAFunsaOwner`.
+
+**Open items:**
+- No test drives a non-funsa registration through `Core` admission or block validation; the three call sites are checked by reading only.
+- A registrant can still name someone else's funsa address as owner and take its one alias (plan 4.4, consequences).
+- No wallet builds 0xEC release or 0xED transfer.
+
+| Gate | Status | Signed |
+|------|--------|--------|
+| Build compiles | Linux GCC Release with `BUILD_TESTS=ON`: all targets | Claude Code 2026-11-25 |
+| Tests pass | ctest -LE manual 75/75; `alias_index_tests` 17/17, `subaddress_wallet_tests` 14/14 | Claude Code 2026-11-25 |
+| All tasks done | DONE; F1 pending a reachable node | Claude Code 2026-11-25 |
+
+---
+
+## funsa golden vectors and the Valise interop test
+
+**Started**: 2026-11-24
+**Agent**: Claude Code
+**Status**: DONE (Linux GCC build and tests).
+**Plan**: `docs/developer/funsa-subaddress-rollout-plan.md` section 0 ("Golden vectors") and section 5 item 3 (cross-implementation test in both directions); owner request 2026-11-23, "proceed with valise and api".
+**Scope**: `tests/Tools/FunsaVectors.cpp` (new), `tests/CMakeLists.txt`, `tests/UnitTests/SubaddressScannerTest.cpp`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `funsa_vectors` (built with the tests, not run by ctest) prints the golden JSON from fixed keys: V2 subaddress keys and addresses for (0,1) (0,2) (0,7) (1,0) (3,42), per-output tx secrets, the subaddress tx key, the F8 filler, and full single-key, per-output and standard transactions built by `constructTransaction` with the 0x09 rule on. fuego-valise pins this file as `rust-fuego-wallet/test-vectors/funsa_v2_vectors.json` | Claude Code | 2026-11-24 | DONE |
+| 2 | `ValiseBuiltTransactionsPassConsensusAndAreCredited`: three transactions built by fuego-valise's Rust builder (single-key to a subaddress, per-output to a subaddress and the primary address, standard with the F8 filler) pass `validateSubaddressTxExtra` at v11 with 0x09 required, and `TransfersConsumer` credits exactly the expected amount to each of master, sub (0,1) and sub (0,2) | Claude Code | 2026-11-24 | DONE; the other direction (suite transactions credited by Valise) is tested in fuego-valise |
+
+**Note**: `funsa_vectors` output is stable except the ring-signature bytes (random nonces); the transaction prefixes and every key are fixed.
+
+**Mutation checks**: in fuego-valise, a builder that skips the Janus key, a single-key tx carrying r·G as R, and a tx key seeded with the public view key each fail the pinned vectors.
+
+| Gate | Status | Signed |
+|------|--------|--------|
+| Build compiles | Linux GCC Release with `BUILD_TESTS=ON` | Claude Code 2026-11-24 |
+| Tests pass | ctest -LE manual 75/75 after merging master 09beb164 | Claude Code 2026-11-24 |
+| All tasks done | DONE | Claude Code 2026-11-24 |
+
+---
+
+## PaymentGate: harden WalletService::withdrawDeposit
+
+**Started**: 2026-11-23
+**Agent**: Cursor (grok-4.7)
+**Status**: DONE (PaymentGate lib builds on this VM)
+**Scope**: `src/PaymentGate/WalletService.cpp`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Match `createDeposit` sync check, `readyEvent` lock, and exception mapping in `withdrawDeposit` (replaces stale Jules PR #39) | Cursor | 2026-11-23 | DONE |
+| 2 | Build `PaymentGate` target | Cursor | 2026-11-23 | DONE |
+
+| Gate | Status | Signed |
+|------|--------|--------|
+| Build compiles | `PaymentGate` with g++-13 | Cursor 2026-11-23 |
+| Tests pass | Not run | |
+| All tasks done | DONE | Cursor 2026-11-23 |
+
+---
+
+## WalletLegacy: drop unused transaction-height lookups in deposit balance
+
+**Started**: 2026-11-23
+**Agent**: Cursor (grok-4.7)
+**Status**: IN PROGRESS
+**Scope**: `src/WalletLegacy/WalletLegacy.{h,cpp}`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Remove `getTransactionHeights` and unused `heights` parameter from deposit/investment balance helpers (replaces stale Jules PR #61) | Cursor | 2026-11-23 | DONE |
+| 2 | Build `Wallet` target after submodule init | Cursor | 2026-11-23 | DONE |
+
+| Gate | Status | Signed |
+|------|--------|--------|
+| Build compiles | `Wallet` with g++-13 | Cursor 2026-11-23 |
+| Tests pass | Not run (gtest vendored build Werror on GCC 13) | |
+| All tasks done | DONE | Cursor 2026-11-23 |
+
+---
+
+## funsa F1, F3, F5: chain scan tool, walletd subaddress methods, stale commitment tests
+
+**Started**: 2026-11-22
+**Agent**: Claude Code
+**Status**: DONE (Linux GCC build and tests). F1's mainnet run is not done: no mainnet node is reachable from this session.
+**Plan**: `docs/developer/funsa-subaddress-rollout-plan.md` section 4 (F1, F3, F5) and 4.3 (owner approval 2026-11-22, "f three f five f one").
+**Scope**: `src/ChainScan/{ChainScanFindings,ChainScanner}.{h,cpp}, main.cpp` (new), `src/CMakeLists.txt`, `include/IWallet.h`, `src/Wallet/WalletGreen.{h,cpp}`, `src/PaymentGate/{WalletService,PaymentServiceJsonRpcServer,PaymentServiceJsonRpcMessages}.{h,cpp}`, `tests/UnitTests/{CommitmentOwnerBoundTest,SubaddressWalletTest,WalletdSubaddressRpcTest,ChainScanFindingsTest}.cpp, NullNode.h`, `tests/CMakeLists.txt`, `docs/developer/funsa-subaddress-rollout-plan.md`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | F5: 33e787a5 removed the legacy commitment form (spendable by the sender and any view-key holder) but left five tests asserting it, and signed neither gate. The tests now assert the refusal: legacy and unrecorded keys do not resolve, a view-only wallet records no legacy key image, scanner and signer agree on owner-bound images and both refuse legacy | Claude Code | 2026-11-22 | DONE; 26/26, a fail-open resolver fails five of them |
+| 2 | F3: `IWallet::createSubAddress(major, minor)` and `getSubAddresses()`; walletd JSON-RPC `createSubaddress {major, minor}` → `{address}` and `getSubaddresses` → `{subaddresses: [{major, minor, address}]}`. (0, 0), a duplicate and a missing index are errors | Claude Code | 2026-11-22 | DONE; `walletd_subaddress_rpc_tests` 2/2 through the production JSON-RPC server, WalletService and WalletGreen |
+| 3 | F1: `fuego-chainscan` pages a node's `/getblocks.bin` from genesis and reports each parsed 0x06 / 0x09 field, each commitment output, and each tx the current subaddress rules reject at its block's version and height; re-inspects a branch after a reorganisation; exit 0 / 1 / 2 for clean / findings / incomplete | Claude Code | 2026-11-22 | DONE; `chain_scan_findings_tests` 9/9 (checks, paging, range, reorg); run against a local testnet `fuegod` (1 block, exit 0) and refused a mainnet-genesis scan of that node with exit 2 |
+| 4 | Shared `tests/UnitTests/NullNode.h` replaces a copy in each wallet test | Claude Code | 2026-11-22 | DONE |
+
+**Mutation checks**: a fail-open commitment resolver, swapped subaddress indices in WalletService, and no reorg handling each fail their tests.
+
+**Open items:**
+- F1 is a tool, not a result. Run it against a synced mainnet node (section 4.3) and record the summary line; until then the v11 gate item "F1 scan result recorded" stays open, and F5's claim that no commitment output exists on mainnet is unverified.
+- The 1000-block paging of a real node was exercised only through the in-memory source; the live run had one block.
+
+| Gate | Status | Signed |
+|------|--------|--------|
+| Build compiles | Linux GCC Release with `BUILD_TESTS=ON`: all targets | Claude Code 2026-11-22 |
+| Tests pass | ctest 75/75 | Claude Code 2026-11-22 |
+| All tasks done | DONE; mainnet scan pending | Claude Code 2026-11-22 |
+
+---
+
+## funsa F2: subaddress kind and index in the wallet key record
+
+**Started**: 2026-11-21
+**Agent**: Claude Code
+**Status**: DONE (Linux GCC build and tests).
+**Plan**: `docs/developer/funsa-subaddress-rollout-plan.md` section 4.2 (owner approval 2026-11-21, "yes f two").
+**Scope**: `src/Wallet/{WalletRecordCrypto.{h,cpp} (new),WalletGreen.{h,cpp},WalletIndices.h,WalletSerializationV2.{h,cpp}}`, `tests/UnitTests/SubaddressWalletTest.cpp`, `docs/developer/funsa-subaddress-rollout-plan.md`
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `WalletRecordCrypto`: one module seals and opens the view-key record and the address records (ChaCha8 + HMAC-SHA256, unchanged algorithm and MAC key); plaintext buffers wiped | Claude Code | 2026-11-21 | DONE |
+| 2 | Wallet file version 10: each address record also holds its kind (standard, V2 subaddress, not yet recorded) and (major, minor). The record wins over the cache; a V2 record must derive from the wallet's view key and primary spend key, or loading fails | Claude Code | 2026-11-21 | DONE |
+| 3 | v8/v9 files are rewritten as v10 on load (original kept as `<file>.v<N>.backup`, cache and IV counter carried over). Non-primary records start unrecorded; the first cache that loads fills them after the derivation check and they are written back. Without a cache they load as standard, as before | Claude Code | 2026-11-21 | DONE |
+| 4 | Pre-existing ChaCha8 keystream reuse fixed: `reset()` re-encrypted every record under one IV; the legacy-file conversion gave the first spend record the view keys' IV; the v7→v8 migration gave every record one IV. Sealing now always takes the next IV and advances it | Claude Code | 2026-11-21 | DONE |
+| 5 | Pre-existing since 4ab50eb9 (2026-05-14): `shutdown()` wipes the password, after which `reset()` and the address import that rescans reloaded with an empty password, so both always failed with an integrity error. `shutdownAndReload` keeps its own copy, wiped after use | Claude Code | 2026-11-21 | DONE |
+| 6 | Tests (`subaddress_wallet_tests`, 8 new, 11/11): keys-only save, lost cache, corrupted cache, v9 upgrade then cache loss, v9 without cache, record with another index refused, `reset()` of a password-protected wallet, distinct IVs for every record and the cache | Claude Code | 2026-11-21 | DONE |
+
+**Mutation checks**: storing every record as standard, never recording from the cache, skipping the derivation check, not advancing the IV, and reloading with the wiped password each fail their tests; restoring the code passes.
+
+**Consequences:**
+- Binaries before this change refuse a v10 file ("Unsupported wallet version") instead of loading V2 records as standard ones. Upgrading a wallet is one-way except through the backup file.
+- A v8/v9 wallet whose cache never loads keeps its subaddresses as standard records until a cache load succeeds; nothing can recover the index without it.
+- Records sealed under a reused IV before this change stay as they are until rewritten; `reset()` or the v10 upgrade rewrites every record.
+
+| Gate | Status | Signed |
+|------|--------|--------|
+| Build compiles | Linux GCC Release with `BUILD_TESTS=ON`: all targets | Claude Code 2026-11-21 |
+| Tests pass | ctest 72/73; the failure is `commitment_owner_bound_tests`, present on `master` since 33e787a5 | Claude Code 2026-11-21 |
+| All tasks done | DONE | Claude Code 2026-11-21 |
+
+---
+
 ## DeXFG: legacy cooperative escrow spend
 
 **Started**: 2026-11-21

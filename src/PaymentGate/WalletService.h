@@ -95,6 +95,8 @@ std::error_code getViewKey(std::string &viewSecretKey);
                                   uint32_t blockCount, const std::string &paymentId, std::vector<TransactionsInBlockRpcInfo> &transactionHashes);
   std::error_code getTransaction(const std::string &transactionHash, TransactionRpcInfo &transaction);
   std::error_code getAddresses(std::vector<std::string> &addresses);
+  std::error_code createSubaddress(uint32_t major, uint32_t minor, std::string &address);
+  std::error_code getSubaddresses(std::vector<SubaddressRpcInfo> &subaddresses);
   std::error_code sendTransaction(const SendTransaction::Request &request, std::string &transactionHash, std::string &transactionSecretKey);
   std::error_code createDelayedTransaction(const CreateDelayedTransaction::Request &request, std::string &transactionHash);
   std::error_code createIntegratedAddress(const CreateIntegrated::Request &request, std::string &integrated_address);

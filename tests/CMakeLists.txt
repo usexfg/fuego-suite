@@ -30,6 +30,7 @@
 add_executable(alias_index_tests
     UnitTests/AliasIndexPersistenceTest.cpp
     UnitTests/AliasFeeDestinationTest.cpp
+    UnitTests/AliasOwnerRuleTest.cpp
 )
 target_include_directories(alias_index_tests PRIVATE ${CMAKE_SOURCE_DIR}/external/gtest/include)
 target_link_libraries(alias_index_tests PRIVATE
@@ -248,6 +249,78 @@ target_link_libraries(pool_alias_eviction_tests PRIVATE
     gtest_main
 )
 add_test(NAME pool_alias_eviction_tests COMMAND pool_alias_eviction_tests)
+
+# walletd JSON-RPC subaddress methods through PaymentServiceJsonRpcServer.
+add_executable(walletd_subaddress_rpc_tests
+    UnitTests/WalletdSubaddressRpcTest.cpp
+)
+target_include_directories(walletd_subaddress_rpc_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/external/gtest/include
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_link_libraries(walletd_subaddress_rpc_tests PRIVATE
+    PaymentGate
+    JsonRpcServer
+    Wallet
+    NodeRpcProxy
+    Transfers
+    Rpc
+    P2P
+    CryptoNoteCore
+    Serialization
+    Logging
+    Http
+    Common
+    Crypto
+    System
+    InProcessNode
+    BlockchainExplorer
+    ${Boost_LIBRARIES}
+    gtest
+    gtest_main
+)
+add_test(NAME walletd_subaddress_rpc_tests COMMAND walletd_subaddress_rpc_tests)
+
+# fuego-chainscan per-transaction checks (F1).
+add_executable(chain_scan_findings_tests
+    UnitTests/ChainScanFindingsTest.cpp
+)
+target_include_directories(chain_scan_findings_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/external/gtest/include
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_link_libraries(chain_scan_findings_tests PRIVATE
+    ChainScanFindings
+    CryptoNoteCore
+    Serialization
+    Logging
+    Common
+    Crypto
+    ${Boost_LIBRARIES}
+    gtest
+    gtest_main
+)
+add_test(NAME chain_scan_findings_tests COMMAND chain_scan_findings_tests)
+
+# Prints funsa V2 golden vectors for other implementations (not a test).
+add_executable(funsa_vectors
+    Tools/FunsaVectors.cpp
+)
+target_include_directories(funsa_vectors PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_link_libraries(funsa_vectors PRIVATE
+    CryptoNoteCore
+    Serialization
+    Logging
+    Common
+    Crypto
+    ${Boost_LIBRARIES}
+)
+
 
 # Persistence of the published commitment key. The signer cannot choose between the
 # owner-bound and legacy derivations without it, and it used to be lost on every

@@ -99,6 +99,8 @@ private:
   std::error_code handleWithdrawDeposit(const WithdrawDeposit::Request &request, WithdrawDeposit::Response &response);
   std::error_code handleGetDeposit(const GetDeposit::Request& request, GetDeposit::Response& response);
   std::error_code handleGetAddresses(const GetAddresses::Request& request, GetAddresses::Response& response);
+  std::error_code handleCreateSubaddress(const CreateSubaddress::Request& request, CreateSubaddress::Response& response);
+  std::error_code handleGetSubaddresses(const GetSubaddresses::Request& request, GetSubaddresses::Response& response);
   std::error_code handleGetMessagesFromExtra(const GetMessagesFromExtra::Request& request, GetMessagesFromExtra::Response& response);
   std::error_code handleEstimateFusion(const EstimateFusion::Request& request, EstimateFusion::Response& response);
   std::error_code handleSendFusionTransaction(const SendFusionTransaction::Request& request, SendFusionTransaction::Response& response);

@@ -33,6 +33,7 @@
 
 #include "../Common/FileMappedVector.h"
 #include "../crypto/chacha8.h"
+#include "WalletRecordCrypto.h"
 
 namespace CryptoNote
 {
@@ -55,16 +56,11 @@ namespace CryptoNote
         uint32_t subaddrMinor = 0;
         bool isSubAddress = false;
         uint8_t subaddrVersion = 0;
+        // False only for a record upgraded from a file before version 10 whose
+        // kind the cache has not confirmed yet.
+        bool addressKindRecorded = true;
     };
 
-#pragma pack(push, 1)
-struct EncryptedWalletRecord {
-  Crypto::chacha8_iv iv;
-  // Secret key, public key and creation timestamp
-  uint8_t data[sizeof(Crypto::PublicKey) + sizeof(Crypto::SecretKey) + sizeof(uint64_t)];
-  uint8_t tag[32]; // Added for HMAC-SHA256 integrity check
-};
-#pragma pack(pop)
 
     struct RandomAccessIndex
     {
@@ -149,7 +145,7 @@ struct EncryptedWalletRecord {
                                                    boost::multi_index::member<CryptoNote::WalletTransaction, uint32_t, &CryptoNote::WalletTransaction::blockHeight>>>>
         WalletTransactions;
 
-    typedef Common::FileMappedVector<EncryptedWalletRecord> ContainerStorage;
+    typedef Common::FileMappedVector<EncryptedAddressRecord> ContainerStorage;
     typedef std::pair<size_t, CryptoNote::WalletTransfer> TransactionTransferPair;
     typedef std::vector<TransactionTransferPair> WalletTransfers;
 

@@ -1,3 +1,10 @@
+// Copyright (c) 2017-2026 Fuego Developers
+//
+// This file is part of Fuego.
+//
+// An INode with no chain: every query succeeds with empty results, so a wallet
+// can be created, saved, loaded and asked for addresses without a daemon.
+
 #pragma once
 
 #include <memory>

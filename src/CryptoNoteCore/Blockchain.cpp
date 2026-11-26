@@ -37,6 +37,7 @@
 #include "../Serialization/SerializationOverloads.h"
 #include "CryptoNoteTools.h"
 #include "TransactionExtra.h"
+#include "AliasOwnerRule.h"
 #include "SubaddressTx.h"
 #include "../crypto/crypto.h"
 #include "../Common/StringTools.h"
@@ -192,16 +193,6 @@ bool parseAliasOwnerAddress(const CryptoNote::Currency& currency, const std::str
     return false;
   }
   return !isSubaddress || CryptoNote::funsaSubaddressActivated(blockMajorVersion);
-}
-
-// Aliases record their owner as cn_fast_hash(spendKey || viewKey).
-Crypto::Hash aliasOwnerHash(const CryptoNote::AccountPublicAddress& owner) {
-  uint8_t preimage[64];
-  memcpy(preimage, &owner.spendPublicKey, 32);
-  memcpy(preimage + 32, &owner.viewPublicKey, 32);
-  Crypto::Hash hash;
-  Crypto::cn_fast_hash(preimage, sizeof(preimage), hash);
-  return hash;
 }
 
 // The owner signs cn_fast_hash(alias || ownerHash || [newOwnerHash] || operation).
@@ -4261,6 +4252,11 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
         isTransactionValid = false;
         logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
                                    << " has invalid subaddress extra: " << subaddrErr;
+      }
+      std::string aliasErr;
+      if (!validateAliasOwners(transactions[i], block.bl.majorVersion, m_currency, &aliasErr)) {
+        isTransactionValid = false;
+        logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " has an invalid alias owner: " << aliasErr;
       }
     }
 

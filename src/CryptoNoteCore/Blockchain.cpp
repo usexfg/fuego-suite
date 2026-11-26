@@ -8864,6 +8864,9 @@ bool CryptoNote::Blockchain::aliasTagsCannotApply(const Transaction& tx) {
   if (!parseTransactionExtra(tx.extra, fields)) {
     return false;
   }
+  if (!validateAliasOwners(tx, majorVersion, m_currency, nullptr)) {
+    return true;
+  }
   SettlementScratch scratch;
   std::string unused;
   return !aliasTagsApply(fields, majorVersion, scratch, unused);

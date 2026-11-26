@@ -1192,6 +1192,9 @@ public:
   static uint64_t ammReserveXfg(const Blockchain& chain) { return chain.m_ammPool.reserveXfg; }
   static uint64_t ammReserveHeat(const Blockchain& chain) { return chain.m_ammPool.reserveHeat; }
   static size_t coinbaseUnlockWindow(const Blockchain& chain) { return chain.m_currency.minedMoneyUnlockWindow(); }
+  static bool unusableRingMemberFromV11(const Blockchain& chain, const CommitmentOutputRef& ref) {
+    return chain.isUnspendableAfterHeatwave(ref);
+  }
   // Block validation must judge its transactions by the block's OWN version.
   // checkCommitmentSpendInput used to derive it from getBlockMajorVersionForHeight(H+1),
   // which during a block's validation is the NEXT height's rules.
@@ -3205,6 +3208,57 @@ bool mineUpTo(TestChain& t, const AccountPublicAddress& miner, uint32_t nextHeig
 // A testnet node upgraded across a schedule change without wiping its data holds
 // blocks of the wrong version. On start it rolls back to the last block the
 // current schedule accepts, instead of building on a chain no peer accepts.
+// From v11 a coinbase pays only key outputs: a commitment output would be HEAT,
+// CD principal or LP shares with nothing burned behind it.
+void testCoinbaseMintsOnlyKeyOutputsFromV11() {
+  TestChain t("coinbase_outputs");
+  TEST(t.ok);
+  auto coinbaseWithOutput = [&](uint8_t majorVersion, const TransactionOutput& out) {
+    const uint32_t h = 1;
+    Block b{};
+    b.majorVersion = majorVersion;
+    b.minorVersion = BLOCK_MINOR_VERSION_1;
+    b.timestamp = 1;
+    b.baseTransaction.version = TRANSACTION_VERSION_2;
+    b.baseTransaction.inputs.push_back(BaseInput{h});
+    b.baseTransaction.unlockTime = h + VaultCoreTestAccess::coinbaseUnlockWindow(t.chain);
+    b.baseTransaction.outputs.push_back(out);
+    return b;
+  };
+  auto keyedCommitmentOut = [](uint32_t term) {
+    TransactionOutput out = commitmentOut(50 * parameters::COIN, term);
+    Crypto::SecretKey unused;
+    Crypto::generate_keys(boost::get<TransactionOutputCommitment>(out.target).commitKey, unused);
+    return out;
+  };
+
+  TEST(VaultCoreTestAccess::prevalidateCoinbase(
+      t.chain, coinbaseWithOutput(BLOCK_MAJOR_VERSION_11, keyOut(50 * parameters::COIN)), 1));
+  TEST(!VaultCoreTestAccess::prevalidateCoinbase(
+      t.chain, coinbaseWithOutput(BLOCK_MAJOR_VERSION_11, keyedCommitmentOut(parameters::HEAT_TERM)), 1));
+  TEST(!VaultCoreTestAccess::prevalidateCoinbase(
+      t.chain, coinbaseWithOutput(BLOCK_MAJOR_VERSION_11, keyedCommitmentOut(parameters::DEPOSIT_MIN_TERM)), 1));
+  TEST(!VaultCoreTestAccess::prevalidateCoinbase(
+      t.chain, coinbaseWithOutput(BLOCK_MAJOR_VERSION_11, keyedCommitmentOut(parameters::DEPOSIT_TERM_LP)), 1));
+  // Pre-v11 replay keeps its original rule.
+  TEST(VaultCoreTestAccess::prevalidateCoinbase(
+      t.chain, coinbaseWithOutput(BLOCK_MAJOR_VERSION_10, keyedCommitmentOut(parameters::HEAT_TERM)), 1));
+}
+
+// From v11 a commitment a coinbase created is neither a valid ring member nor a
+// decoy the node serves, so one minted before the coinbase rule cannot be spent.
+void testCoinbaseCommitmentIsNoRingMemberFromV11() {
+  TestChain t("coinbase_ring_member");
+  TEST(t.ok);
+  CommitmentOutputRef coinbaseMinted{};
+  coinbaseMinted.term = parameters::DEPOSIT_TERM_LP;
+  coinbaseMinted.transactionIndex = TxIndex{1, 0};
+  CommitmentOutputRef regular = coinbaseMinted;
+  regular.transactionIndex.transaction = 1;
+  TEST(VaultCoreTestAccess::unusableRingMemberFromV11(t.chain, coinbaseMinted));
+  TEST(!VaultCoreTestAccess::unusableRingMemberFromV11(t.chain, regular));
+}
+
 // From v11 a pending registration whose owner is not a funsa subaddress bound to
 // its owner hash (F9) can never confirm, so pool cleanup drops it; the same
 // registration owned by a funsa subaddress stays.
@@ -3409,6 +3463,8 @@ int main() {
   testTestnetRunsV11PastTheBootstrap();
   testStoredChainFromAnotherScheduleRollsBack();
   testPoolDropsRegistrationFailingTheOwnerRule();
+  testCoinbaseMintsOnlyKeyOutputsFromV11();
+  testCoinbaseCommitmentIsNoRingMemberFromV11();
   testBankingIndexTallyAndReversal();
   testBankingIndexSerializationRoundtrip();
   testFiftyFiftySplitDust();

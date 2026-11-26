@@ -36,12 +36,9 @@ struct WalletSendPlan {
 };
 
 // An alias is exactly 8 characters of [a-z0-9&].
-// Alias owners are the subaddresses (ALIAS_SUBADDRESS_MAJOR, 1..), apart from the
-// payment subaddresses under major 0. A restored wallet does not recreate them
-// by itself; they can be found by recreating (ALIAS_SUBADDRESS_MAJOR, 1..) and
-// matching the node's alias list. The console refuses to hand them out as
-// payment subaddresses.
-const uint32_t ALIAS_SUBADDRESS_MAJOR = 1;
+// Alias owners are the next unused subaddresses (0, 1..), the range a restored
+// wallet scans and Valise uses (docs/developer/funsa-subaddress-rollout-plan.md 4.4).
+const uint32_t ALIAS_SUBADDRESS_MAJOR = 0;
 const uint32_t MAX_ALIAS_SUBADDRESS_MINOR = 1024;
 
 bool isValidAliasName(const std::string& alias);

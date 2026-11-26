@@ -144,9 +144,8 @@ TEST(PaymentSubaddressIndex, NoArgumentsTakesTheNextMinorUnderMajorZero) {
   EXPECT_EQ(5u, index.minor);
 }
 
-TEST(PaymentSubaddressIndex, RefusesTheAliasMajorThePrimaryAndBadArguments) {
+TEST(PaymentSubaddressIndex, RefusesThePrimaryAndBadArguments) {
   SubaddressIndex index;
-  EXPECT_NE("", choosePaymentSubaddressIndex({std::to_string(ALIAS_SUBADDRESS_MAJOR), "3"}, {}, index));
   EXPECT_NE("", choosePaymentSubaddressIndex({"0", "0"}, {}, index));
   EXPECT_NE("", choosePaymentSubaddressIndex({"2"}, {}, index));
   EXPECT_NE("", choosePaymentSubaddressIndex({"-1", "2"}, {}, index));

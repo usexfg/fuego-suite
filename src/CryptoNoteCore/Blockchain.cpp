@@ -1826,6 +1826,22 @@ double calc_poisson_ln(double lam, uint64_t k)
   return logx;
 }
 
+std::vector<Crypto::Hash> CryptoNote::Blockchain::alternativeChainIds(const std::list<blocks_ext_by_hash::iterator>& altChain) {
+  std::vector<Crypto::Hash> ids;
+  ids.reserve(altChain.size());
+  for (const auto& entry : altChain) ids.push_back(entry->first);
+  return ids;
+}
+
+// m_alternative_chains is a flat hash map: an insert may resize it and move
+// every element, so iterators taken before an insert are re-found by key.
+std::list<CryptoNote::Blockchain::blocks_ext_by_hash::iterator>
+CryptoNote::Blockchain::findAlternativeChainEntries(const std::vector<Crypto::Hash>& ids) {
+  std::list<blocks_ext_by_hash::iterator> entries;
+  for (const auto& id : ids) entries.push_back(m_alternative_chains.find(id));
+  return entries;
+}
+
 bool CryptoNote::Blockchain::switch_to_alternative_blockchain(std::list<blocks_ext_by_hash::iterator>& alt_chain, bool discard_disconnected_chain) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
 
@@ -1957,6 +1973,19 @@ bool CryptoNote::Blockchain::switch_to_alternative_blockchain(std::list<blocks_e
     }
   }
 
+  // The switched-in blocks leave the alternative map before the old chain
+  // enters it: inserting can resize the flat map and invalidate alt_chain.
+  std::vector<Crypto::Hash> blocksFromCommonRoot;
+  blocksFromCommonRoot.reserve(alt_chain.size() + 1);
+  blocksFromCommonRoot.push_back(alt_chain.front()->second.bl.previousBlockHash);
+
+  //removing all_chain entries from alternative chain
+  for (auto ch_ent : alt_chain) {
+    blocksFromCommonRoot.push_back(get_block_hash(ch_ent->second.bl));
+    m_orthanBlocksIndex.remove(ch_ent->second.bl);
+    m_alternative_chains.erase(ch_ent);
+  }
+
   if (!discard_disconnected_chain) {
     //pushing old chain as alternative chain
     for (auto& old_ch_ent : disconnected_chain) {
@@ -1967,17 +1996,6 @@ bool CryptoNote::Blockchain::switch_to_alternative_blockchain(std::list<blocks_e
         break;
       }
     }
-  }
-
-  std::vector<Crypto::Hash> blocksFromCommonRoot;
-  blocksFromCommonRoot.reserve(alt_chain.size() + 1);
-  blocksFromCommonRoot.push_back(alt_chain.front()->second.bl.previousBlockHash);
-
-  //removing all_chain entries from alternative chain
-  for (auto ch_ent : alt_chain) {
-    blocksFromCommonRoot.push_back(get_block_hash(ch_ent->second.bl));
-    m_orthanBlocksIndex.remove(ch_ent->second.bl);
-    m_alternative_chains.erase(ch_ent);
   }
 
   sendMessage(BlockchainMessage(ChainSwitchMessage(std::move(blocksFromCommonRoot))));
@@ -2041,6 +2059,12 @@ difficulty_type CryptoNote::Blockchain::get_next_difficulty_for_alternative_chai
   return m_currency.nextDifficulty(static_cast<uint32_t>(m_blocks.size()), BlockMajorVersion, timestamps, cumulative_difficulties);
 }
 
+static bool paysOnlyKeyOutputs(const CryptoNote::Transaction& tx) {
+  return std::all_of(tx.outputs.begin(), tx.outputs.end(), [](const CryptoNote::TransactionOutput& out) {
+    return out.target.type() == typeid(CryptoNote::KeyOutput);
+  });
+}
+
 bool CryptoNote::Blockchain::prevalidate_miner_transaction(const Block& b, uint32_t height) {
 
   if (!(b.baseTransaction.inputs.size() == 1)) {
@@ -2083,6 +2107,12 @@ bool CryptoNote::Blockchain::prevalidate_miner_transaction(const Block& b, uint3
   // Reject all v11 settlement tags here so a miner cannot create treasury,
   // pool, or orderbook state without a spendable input backing it.
   if (b.majorVersion >= BLOCK_MAJOR_VERSION_11) {
+    // The coinbase skips check_tx_outputs and validateSettlement, so any other
+    // output type would be HEAT, CD principal or LP shares with nothing burned.
+    if (!paysOnlyKeyOutputs(b.baseTransaction)) {
+      logger(INFO, BRIGHT_RED) << "coinbase transaction pays a non-key output";
+      return false;
+    }
     std::vector<TransactionExtraField> extraFields;
     if (!parseTransactionExtra(b.baseTransaction.extra, extraFields)) {
       logger(INFO, BRIGHT_RED) << "coinbase transaction has malformed extra";
@@ -2382,12 +2412,14 @@ bool CryptoNote::Blockchain::handle_alternative_block(const Block& b, const Cryp
     if (!(i_dres == m_alternative_chains.end())) { logger(ERROR, BRIGHT_RED) << "insertion of new alternative block returned as it already exists"; return false; }
 #endif
 
+    const std::vector<Crypto::Hash> altChainIds = alternativeChainIds(alt_chain);
     auto i_res = m_alternative_chains.insert(blocks_ext_by_hash::value_type(id, bei));
     if (!(i_res.second)) { logger(ERROR, BRIGHT_RED) << "insertion of new alternative block returned as it already exists"; return false; }
 
     m_orthanBlocksIndex.add(bei.bl);
 
-    alt_chain.push_back(i_res.first);
+    alt_chain = findAlternativeChainEntries(altChainIds);
+    alt_chain.push_back(m_alternative_chains.find(id));
 
     if (is_a_checkpoint) {
       //do reorganize!
@@ -3117,7 +3149,8 @@ bool CryptoNote::Blockchain::isUnspendableAfterHeatwave(const CommitmentOutputRe
   const bool preHeatwaveBurn = ref.term == parameters::HEAT_TERM &&
       getBlockMajorVersionForHeight(ref.transactionIndex.block) < BLOCK_MAJOR_VERSION_11;
   const bool disabledDigm = ref.term == parameters::DIGM_TERM;
-  return preHeatwaveBurn || disabledDigm;
+  const bool mintedByCoinbase = ref.transactionIndex.transaction == 0;
+  return preHeatwaveBurn || disabledDigm || mintedByCoinbase;
 }
 
 bool CryptoNote::Blockchain::isTimeLockedRingMember(const CommitmentOutputRef& ref, uint8_t blockMajorVersion) {
@@ -3214,7 +3247,7 @@ bool CryptoNote::Blockchain::checkCommitmentSpendInput(const TransactionInputCom
     }
 
     if (validatingBlockVersion >= BLOCK_MAJOR_VERSION_11 && isUnspendableAfterHeatwave(ref)) {
-      logger(INFO) << "CommitmentSpend: ring member at index " << absIdx << " is a pre-v11 burn or a DIGM output";
+      logger(INFO) << "CommitmentSpend: ring member at index " << absIdx << " is a pre-v11 burn, a DIGM output or minted by a coinbase";
       return false;
     }
 
@@ -3510,7 +3543,7 @@ bool CryptoNote::Blockchain::checkCommitmentTransferInput(
     }
 
     if (transferBlockVersion >= BLOCK_MAJOR_VERSION_11 && isUnspendableAfterHeatwave(ref)) {
-      logger(INFO) << "CommitmentTransfer: ring member at index " << absIdx << " is a pre-v11 burn or a DIGM output";
+      logger(INFO) << "CommitmentTransfer: ring member at index " << absIdx << " is a pre-v11 burn, a DIGM output or minted by a coinbase";
       return false;
     }
 
@@ -6397,6 +6430,13 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
   if (!m_blockSwapFeeContributions.empty()) {
     uint64_t contribution = m_blockSwapFeeContributions.back();
     m_blockSwapFeeContributions.pop_back();
+    // processBlockEpochWork pushes one epoch-distribution entry per block, so one
+    // is popped for every block; only a boundary block's entry carries a share.
+    std::pair<uint64_t, uint64_t> epochDistribution{0, 0};
+    if (!m_blockEpochDistributions.empty()) {
+      epochDistribution = m_blockEpochDistributions.back();
+      m_blockEpochDistributions.pop_back();
+    }
 
     uint64_t epochDuration = m_currency.isTestnet()
         ? CryptoNote::parameters::TESTNET_EPOCH_DURATION_BLOCKS
@@ -6411,12 +6451,8 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
       // Reverse treasury distribution. treasuryShare is routed to
       // m_treasuryLpPendingXfg, not m_treasuryBalance — reverse the right counter.
       // m_totalTreasuryAccrued is never incremented anywhere; do not decrement it.
-      if (!m_blockEpochDistributions.empty()) {
-        auto dist = m_blockEpochDistributions.back();
-        m_blockEpochDistributions.pop_back();
-        if (dist.first > 0 && m_treasuryLpPendingXfg >= dist.first) {
-          m_treasuryLpPendingXfg -= dist.first;
-        }
+      if (epochDistribution.first > 0 && m_treasuryLpPendingXfg >= epochDistribution.first) {
+        m_treasuryLpPendingXfg -= epochDistribution.first;
       }
     } else {
       // Non-boundary block: simply subtract the fee delta that was added.

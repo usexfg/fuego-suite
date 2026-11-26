@@ -212,10 +212,6 @@ std::string choosePaymentSubaddressIndex(const std::vector<std::string>& args,
       }
     }
   }
-  if (index.major == ALIAS_SUBADDRESS_MAJOR) {
-    return "Major index " + std::to_string(ALIAS_SUBADDRESS_MAJOR) +
-           " holds alias owners; use another major for payment subaddresses.";
-  }
   if (index.major == 0 && index.minor == 0) {
     return "Index (0,0) is the primary address. Use minor >= 1.";
   }

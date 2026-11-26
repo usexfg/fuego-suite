@@ -3205,6 +3205,31 @@ bool mineUpTo(TestChain& t, const AccountPublicAddress& miner, uint32_t nextHeig
 // A testnet node upgraded across a schedule change without wiping its data holds
 // blocks of the wrong version. On start it rolls back to the last block the
 // current schedule accepts, instead of building on a chain no peer accepts.
+// From v11 a pending registration whose owner is not a funsa subaddress bound to
+// its owner hash (F9) can never confirm, so pool cleanup drops it; the same
+// registration owned by a funsa subaddress stays.
+void testPoolDropsRegistrationFailingTheOwnerRule() {
+  const uint64_t C = parameters::COIN;
+  TestChain t("alias_owner_rule_pool", true);
+  TEST(t.ok);
+  TEST(mineUpTo(t, newMinerAddress(), parameters::TESTNET_UPGRADE_HEIGHT_V11 + 2));
+  TEST(t.chain.getBlockMajorVersionForHeight(t.chain.getCurrentBlockchainHeight()) >= BLOCK_MAJOR_VERSION_11);
+
+  AccountBase owner;
+  owner.generate();
+  const AccountPublicAddress& ownerKeys = owner.getAccountKeys().address;
+  const std::string standardOwner = t.currency.accountAddressAsString(ownerKeys);
+  const std::string funsaOwner = t.currency.subAddressAsString(ownerKeys);
+
+  const Transaction standardOwned =
+      settlementTx({2 * C}, {keyOut(C / 2)}, aliasRegistrationExtra(aliasRegistration("stdowner", standardOwner, owner)));
+  TEST(t.chain.aliasTagsCannotApply(standardOwned));
+
+  const Transaction funsaOwned =
+      settlementTx({2 * C}, {keyOut(C / 2)}, aliasRegistrationExtra(aliasRegistration("funsaown", funsaOwner, owner)));
+  TEST(!t.chain.aliasTagsCannotApply(funsaOwned));
+}
+
 void testStoredChainFromAnotherScheduleRollsBack() {
   const uint32_t oldV12Height = parameters::TESTNET_UPGRADE_HEIGHT_V11 + 5;
   std::filesystem::path dir;
@@ -3383,6 +3408,7 @@ int main() {
   testCdActivationHeight();
   testTestnetRunsV11PastTheBootstrap();
   testStoredChainFromAnotherScheduleRollsBack();
+  testPoolDropsRegistrationFailingTheOwnerRule();
   testBankingIndexTallyAndReversal();
   testBankingIndexSerializationRoundtrip();
   testFiftyFiftySplitDust();

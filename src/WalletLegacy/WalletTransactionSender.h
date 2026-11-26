@@ -213,6 +213,10 @@ private:
   std::shared_ptr<SendTransactionContext> newCommitmentSpendContext(uint64_t mixIn);
   std::vector<DepositId> selectSpendableDeposits(uint32_t term, uint64_t needed);
   bool depositTransferAvailable(DepositId depositId);
+  bool findOwnedTransfer(const Crypto::Hash& transactionHash, uint32_t outputInTransaction,
+                         TransactionOutputInformation& transfer, ITransfersContainer::TransferState& state);
+  const Crypto::SecretKey& spendSecretKeyOf(const TransactionOutputInformation& transfer) const;
+  const AccountKeys& keysSpending(const TransactionSourceEntry& source) const;
   void attachCommitmentInputs(SendTransactionContext& context, const std::vector<DepositId>& depositIds,
                               bool capDecoysAtDepositHeight);
   void selectXfg(SendTransactionContext& context, uint64_t needed);

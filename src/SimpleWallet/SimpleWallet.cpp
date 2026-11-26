@@ -65,6 +65,7 @@
 #include "WalletLegacy/WalletLegacy.h"
 #include "Wallet/LegacyKeysImporter.h"
 #include "WalletLegacy/HearthQuote.h"
+#include "WalletLegacy/WalletOperations.h"
 #include "WalletLegacy/WalletHelper.h"
 #include "SwapDaemon/AdaptorSwap.h"
 #include "Mnemonics/electrum-words.cpp"
@@ -2946,19 +2947,8 @@ bool simple_wallet::walletIsViewOnly() {
 }
 
 std::vector<Crypto::Hash> simple_wallet::limitOrdersToTryWithdrawing(uint32_t nextHeight) {
-  std::vector<CryptoNote::WalletOrderTransaction> history;
-  for (TransactionId id = 0; id < m_wallet->getTransactionCount(); ++id) {
-    WalletLegacyTransaction transaction;
-    if (!m_wallet->getTransaction(id, transaction)) {
-      continue;
-    }
-    history.push_back({transaction.extra, transaction.blockHeight != WALLET_LEGACY_UNCONFIRMED_TRANSACTION_HEIGHT,
-                       transaction.state == WalletLegacyTransactionState::Cancelled ||
-                           transaction.state == WalletLegacyTransactionState::Failed ||
-                           transaction.state == WalletLegacyTransactionState::Deleted});
-  }
   std::vector<Crypto::Hash> ordersToTry;
-  for (const Crypto::Hash& orderId : CryptoNote::limitOrdersDueForWithdraw(history, nextHeight)) {
+  for (const Crypto::Hash& orderId : CryptoNote::limitOrdersDueForWithdraw(CryptoNote::walletOrderHistory(*m_wallet), nextHeight)) {
     const std::string orderIdHex = Common::podToHex(orderId);
     const auto retry = m_limitOrderWithdrawRetryHeight.find(orderIdHex);
     const bool waitingToRetry = retry != m_limitOrderWithdrawRetryHeight.end() && retry->second > nextHeight;
@@ -3606,25 +3596,17 @@ bool simple_wallet::dev_donate(const std::vector<std::string> &args) {
     fail_msg_writer() << "Re-mint burns activate at block " << m_currency.upgradeHeight(CryptoNote::BLOCK_MAJOR_VERSION_11) + 1;
     return false;
   }
-  const uint64_t fee = m_currency.minimumFee() + amount;
-  if (m_wallet->actualBalance() < fee + m_currency.minimumFee()) {
-    fail_msg_writer() << "Insufficient balance: need " << m_currency.formatAmount(fee + m_currency.minimumFee()) << " XFG";
+  CryptoNote::WalletSendPlan donation = CryptoNote::planDevDonation(m_currency, m_wallet->getAddress(), amount);
+  if (m_wallet->actualBalance() < donation.fee + m_currency.minimumFee()) {
+    fail_msg_writer() << "Insufficient balance: need " << m_currency.formatAmount(donation.fee + m_currency.minimumFee()) << " XFG";
     return false;
   }
-  std::vector<uint8_t> extra;
-  CryptoNote::addRemintBurnToExtra(extra, amount);
-  const std::string extraString(extra.begin(), extra.end());
 
   CryptoNote::WalletHelper::SendCompleteResultObserver sent;
   WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
-  std::vector<CryptoNote::WalletLegacyTransfer> transfers;
-  CryptoNote::WalletLegacyTransfer selfTransfer;
-  selfTransfer.address = m_wallet->getAddress();
-  selfTransfer.amount = m_currency.minimumFee();
-  transfers.push_back(selfTransfer);
   std::vector<CryptoNote::TransactionMessage> messages;
   Crypto::SecretKey transactionSK;
-  CryptoNote::TransactionId tx = m_wallet->sendTransaction(transactionSK, transfers, fee, extraString,
+  CryptoNote::TransactionId tx = m_wallet->sendTransaction(transactionSK, donation.transfers, donation.fee, donation.extra,
                                                            CryptoNote::parameters::MIN_TX_MIXIN_SIZE, 0, messages, 0);
   if (tx == WALLET_INVALID_TRANSACTION_ID) {
     fail_msg_writer() << "Dev donation transaction failed";
@@ -3677,7 +3659,6 @@ bool simple_wallet::register_alias(const std::vector<std::string> &args) {
     }
   }
 
-  uint8_t aliasType = 1;  // Regular user alias
 
   // Check if alias is already taken
   try {
@@ -3747,6 +3728,11 @@ bool simple_wallet::register_alias(const std::vector<std::string> &args) {
     return true;
   }
 
+  if (!CryptoNote::funsaSubaddressActivated(nextBlockMajorVersion())) {
+    fail_msg_writer() << "Aliases map to a funsa subaddress, valid from block " << m_currency.upgradeHeight(CryptoNote::BLOCK_MAJOR_VERSION_11) + 1;
+    return true;
+  }
+
   // Show confirmation summary — describe privacy-preserving subaddress flow
   success_msg_writer() << "";
   {
@@ -3760,7 +3746,10 @@ bool simple_wallet::register_alias(const std::vector<std::string> &args) {
     if (m_currency.isTestnet()) {
       success_msg_writer() << "  Fee: self-transfer (testnet) to the derived subaddress";
     } else {
-      success_msg_writer() << "  Fee: 1 XFG sent to Fuego Developer Fund";
+      success_msg_writer() << "  Fee: " << m_currency.formatAmount(CryptoNote::parameters::ALIAS_REGISTRATION_FEE)
+                           << " XFG re-mint burn (re-minted to the dev fund at the FCI quarter) + "
+                           << m_currency.formatAmount(m_currency.minimumFee()) << " XFG network fee";
+      success_msg_writer() << "  The burn is kept even if another registration takes @" << alias << " first.";
     }
   }
   success_msg_writer() << "  Subaddress: will be auto-generated at index [0, next] on confirm";
@@ -3803,77 +3792,24 @@ bool simple_wallet::register_alias(const std::vector<std::string> &args) {
   }
 
   try {
-    // Build the 0xEA alias registration extra — uses derived subaddress, not master
-    CryptoNote::TransactionExtraAliasRegistration aliasReg;
-    aliasReg.version = 1;
-    aliasReg.alias = alias;
-    aliasReg.aliasHash = Crypto::cn_fast_hash(alias.data(), alias.size());
-    // v2 addressHash: cn_fast_hash(spendKey||viewKey) — rainbow-table resistant.
-    // Hashing the raw 64-byte key preimage (not the base58 string) prevents
-    // precomputed base58 rainbow-table attacks on the on-chain hash.
-    {
-      CryptoNote::AccountPublicAddress addr;
-      if (!m_currency.parseAccountAddressString(walletAddress, addr)) {
-        fail_msg_writer() << "Failed to parse wallet address for addressHash computation.";
-        return true;
-      }
-      uint8_t preimage[64];
-      memcpy(preimage,      &addr.spendPublicKey, 32);
-      memcpy(preimage + 32, &addr.viewPublicKey,  32);
-      Crypto::cn_fast_hash(preimage, 64, aliasReg.addressHash);
-    }
-    // Empty addresses were intended for privacy, but isValid() currently
-    // requires ownerAddress, so this path fails until private resolution is designed.
-    aliasReg.ownerAddress = "";
-    aliasReg.aliasType = aliasType;
-    aliasReg.networkId = m_currency.getFuegoNetworkId();
-
-    if (!aliasReg.isValid()) {
-      fail_msg_writer() << "Invalid alias registration data.";
+    CryptoNote::WalletSendPlan registration;
+    try {
+      registration = CryptoNote::planAliasRegistration(m_currency, alias, walletAddress, nextBlockMajorVersion());
+    } catch (const std::invalid_argument& e) {
+      fail_msg_writer() << "Invalid alias registration: " << e.what();
       return true;
     }
-
-    // Serialize alias registration into transaction extra
-    std::vector<uint8_t> extra;
-    if (!CryptoNote::addAliasToExtra(extra, aliasReg)) {
-      fail_msg_writer() << "Failed to build alias transaction extra.";
-      return true;
-    }
-
-    // From v11 the mainnet fee is a re-mint burn: it rides in the transaction
-    // fee and consensus withholds it, so no output pays the dev wallet.
-    const bool burnsFee = !m_currency.isTestnet() && nextBlockMajorVersion() >= CryptoNote::BLOCK_MAJOR_VERSION_11;
-    if (burnsFee) {
-      CryptoNote::addRemintBurnToExtra(extra, CryptoNote::parameters::ALIAS_REGISTRATION_FEE);
-    }
-    std::string extraString(extra.begin(), extra.end());
 
     CryptoNote::WalletHelper::SendCompleteResultObserver sent;
     WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
-
-    std::vector<CryptoNote::WalletLegacyTransfer> transfers;
-
-    if (m_currency.isTestnet() || burnsFee) {
-      CryptoNote::WalletLegacyTransfer selfTransfer;
-      selfTransfer.address = walletAddress;
-      selfTransfer.amount = m_currency.minimumFee();
-      transfers.push_back(selfTransfer);
-    } else {
-      // Regular alias on mainnet: 1 XFG fee to Fuego Developer Fund
-      CryptoNote::WalletLegacyTransfer devFundTransfer;
-      devFundTransfer.address = CryptoNote::FUEGO_DEV_FUND_ADDRESS;
-      devFundTransfer.amount = CryptoNote::parameters::ALIAS_REGISTRATION_FEE;
-      transfers.push_back(devFundTransfer);
-    }
-
     std::vector<CryptoNote::TransactionMessage> messages;
-    uint64_t fee = m_currency.minimumFee() + (burnsFee ? CryptoNote::parameters::ALIAS_REGISTRATION_FEE : 0);
     uint64_t mixIn = 0;
     uint64_t unlockTimestamp = 0;
     uint64_t ttl = 0;
     Crypto::SecretKey transactionSK;
 
-    CryptoNote::TransactionId tx = m_wallet->sendTransaction(transactionSK, transfers, fee, extraString, mixIn, unlockTimestamp, messages, ttl);
+    CryptoNote::TransactionId tx = m_wallet->sendTransaction(transactionSK, registration.transfers, registration.fee,
+                                                             registration.extra, mixIn, unlockTimestamp, messages, ttl);
 
     if (tx == WALLET_LEGACY_INVALID_TRANSACTION_ID) {
       fail_msg_writer() << "Failed to create alias registration transaction.";

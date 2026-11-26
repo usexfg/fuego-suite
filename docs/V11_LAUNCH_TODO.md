@@ -110,3 +110,11 @@ Limits: 9.3 sees only features that pass through one of those lists. A behaviour
 - Tests: a single-subaddress HEAT send carries no 0x06 and the recipient credits it; a two-subaddress send still uses per-output keys.
 Wallet-crypto change; fuego-guardian review before it ships.
 
+10.4 HEAT received on a funsa subaddress — DONE (functional, not the 10.3 privacy fix). WalletLegacy left it out of the HEAT balance and could not spend it: the sender looked up commitment outputs only in the main container and signed them with the master spend key. Every HEAT operation also signed XFG inputs taken from a subaddress with the master keys, so the node rejected it whenever the wallet picked a subaddress output. Both fixed; e2e `FunsaSubaddressReceivesAndSpendsXfgAndHeat`, `FunsaHeldXfgPaysForMintSwapAndOrders`.
+
+10.5 Wallet defects found by the 2026-11-25 e2e scenarios — DONE. `register_alias` always failed (empty owner address). `WalletLegacy::sendTransaction` replaced every fee with the minimum, so `dev_donate` and a mainnet alias fee never carried their re-mint burn. Order withdraw and treasury donation used a fixed maximum ring with no testnet bootstrap size.
+
+10.6 Alias front-running — OWNER DECISION (consensus). A registration whose alias is already taken stays valid and its re-mint burn is kept, so anyone watching the mempool can take an alias first and the original registrant loses 1 XFG. Options: reject such a transaction in the pool and in blocks, or burn only when registration succeeds. The console now warns before confirming.
+
+10.7 `/get_alias_by_address` never matches (from `master`): it hashes the address string, registration stores `cn_fast_hash(spend||view)`. The console's "address already has an alias" check is therefore dead and sends the master address to the daemon. Fix: hash the parsed keys in `AliasIndex::getAliasByAddress`; drop the console check (each alias gets a fresh subaddress).
+

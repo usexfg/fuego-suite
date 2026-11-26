@@ -1732,6 +1732,26 @@ uint64_t core::getPoolTwap() const {
   return m_blockchain.getPoolTwap();
 }
 
+std::error_code core::getLimitOrders(std::vector<ICore::LimitOrderEntry>& orders) {
+  orders.clear();
+  m_blockchain.visitLimitDeposits([&orders](const Crypto::Hash& orderId, const auto& order) {
+    ICore::LimitOrderEntry entry;
+    entry.orderId = orderId;
+    entry.addressHash = order.addressHash;
+    entry.side = order.side;
+    entry.amount = order.amount;
+    entry.proceedsXfg = order.proceedsXfg;
+    entry.proceedsHeat = order.proceedsHeat;
+    entry.targetPrice = order.targetPrice;
+    entry.expiration = order.expiration;
+    entry.withdrawn = order.withdrawn;
+    entry.expired = order.expired;
+    orders.push_back(entry);
+    return true;
+  });
+  return {};
+}
+
 std::error_code core::getAmmPoolInfo(ICore::AmmPoolInfo& info) {
   const auto& pool = m_blockchain.getAmmPool();
   info.reserveXfg = pool.reserveXfg;

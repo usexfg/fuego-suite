@@ -36,6 +36,7 @@
 #include "Logging/ConsoleLogger.h"
 #include "WalletLegacy/HearthQuote.h"
 #include "WalletLegacy/WalletLegacy.h"
+#include "WalletLegacy/WalletOperations.h"
 
 using namespace CryptoNote;
 
@@ -328,6 +329,65 @@ protected:
     return pool().totalLpShares - nodeCore().get_blockchain_storage().getProtocolLpShares();
   }
 
+  // The order a limit-order transaction placed, read from the wallet's own record.
+  Crypto::Hash placedOrderId(ScenarioWallet& owner, TransactionId placement) {
+    WalletLegacyTransaction placed;
+    EXPECT_TRUE(owner.wallet.getTransaction(placement, placed));
+    std::vector<TransactionExtraField> fields;
+    parseTransactionExtra(std::vector<uint8_t>(placed.extra.begin(), placed.extra.end()), fields);
+    for (const auto& field : fields) {
+      if (field.type() == typeid(TransactionExtraLimitDeposit)) {
+        return boost::get<TransactionExtraLimitDeposit>(field).orderId;
+      }
+    }
+    ADD_FAILURE() << "the placement carries no limit deposit";
+    return Crypto::Hash{};
+  }
+
+  ICore::LimitOrderEntry nodeOrder(const Crypto::Hash& orderId) {
+    std::vector<ICore::LimitOrderEntry> orders;
+    EXPECT_FALSE(nodeCore().getLimitOrders(orders));
+    for (const auto& order : orders) {
+      if (order.orderId == orderId) {
+        return order;
+      }
+    }
+    ADD_FAILURE() << "the node does not list the order";
+    return ICore::LimitOrderEntry{};
+  }
+
+  // HEAT per XFG × COIN at the pool, scaled by percent and rounded to the order tick.
+  uint64_t poolPriceTimes(uint64_t percent) {
+    const ICore::AmmPoolInfo info = pool();
+    const uint64_t price = static_cast<uint64_t>(
+        (static_cast<uint128_t>(info.reserveHeat) * parameters::COIN * percent) / (static_cast<uint128_t>(info.reserveXfg) * 100));
+    const uint64_t tick = parameters::ORDER_PRICE_TICK;
+    return std::max<uint64_t>(tick, (price / tick) * tick);
+  }
+
+  uint32_t auctionHeight() const {
+    return currency.upgradeHeight(BLOCK_MAJOR_VERSION_11) + currency.bootstrapBlocks() + 2;
+  }
+
+  void send(ScenarioWallet& sender, const WalletSendPlan& plan) {
+    Crypto::SecretKey transactionSecret;
+    std::vector<WalletLegacyTransfer> transfers = plan.transfers;
+    expectSent(sender, sender.wallet.sendTransaction(transactionSecret, transfers, plan.fee, plan.extra, 0));
+  }
+
+  // What the console's auto-withdraw does each sync: withdraw every order the
+  // wallet's history shows as ended and not yet claimed.
+  size_t autoWithdrawEndedOrders(ScenarioWallet& owner) {
+    const auto due = limitOrdersDueForWithdraw(walletOrderHistory(owner.wallet), nodeHeight() + 1);
+    for (const auto& orderId : due) {
+      expectSent(owner, owner.wallet.cancelOrderV13(orderId, currency.minimumFee(), 0, false));
+    }
+    return due.size();
+  }
+
+  uint64_t xfgOf(ScenarioWallet& w) { return w.wallet.actualBalance() + w.wallet.pendingBalance(); }
+  uint64_t heatOf(ScenarioWallet& w) { return w.wallet.actualHeatBalance() + w.wallet.pendingHeatBalance(); }
+
   std::string minerAddress;
 
   uint32_t firstMintHeight() const {
@@ -488,5 +548,221 @@ TEST_F(HeatWalletScenario, ResetWalletRescansToTheSameBalances) {
   EXPECT_EQ(transactions, holder.wallet.getTransactionCount());
   EXPECT_EQ(heat, heatNow());
   EXPECT_EQ(xfg, xfgNow());
+}
+
+// Buy HEAT on Hearth: the buyer receives the quoted HEAT and pays the XFG in and the fee.
+TEST_F(HeatWalletScenario, BoughtHeatArrivesFromThePool) {
+  ScenarioWallet& buyer = fundedActor(kActorFunding);
+  const uint64_t xfgBefore = xfgOf(buyer);
+  const uint64_t spent = 50 * parameters::COIN;
+  const uint64_t heatOut = quoteSwapOutput(*inode, 0, spent);
+  ASSERT_GT(heatOut, 0u);
+  expectSent(buyer, buyer.wallet.ammSwapV10(0, spent, heatOut, heatOut, currency.minimumFee(), 0));
+  confirm();
+  EXPECT_EQ(heatOut, heatOf(buyer));
+  EXPECT_EQ(xfgBefore - spent - currency.minimumFee(), xfgOf(buyer));
+}
+
+// funsa: XFG and HEAT sent to a V2 subaddress are credited to the wallet that derived
+// it, and that wallet can spend them.
+TEST_F(HeatWalletScenario, FunsaSubaddressReceivesAndSpendsXfgAndHeat) {
+  ScenarioWallet& sender = fundedActor(kActorFunding);
+  ScenarioWallet& recipient = addWallet();
+  const std::string funsa = recipient.wallet.registerSubAddress(0, 1);
+  ASSERT_EQ(0, funsa.compare(0, 4, "Tsub")) << "testnet V2 subaddress prefix";
+  AccountPublicAddress funsaAddress;
+  bool isSubaddress = false;
+  ASSERT_TRUE(currency.parseAccountAddressString(funsa, funsaAddress, isSubaddress));
+  ASSERT_TRUE(isSubaddress);
+  const uint64_t minted = mintFor(sender, kMintBurnXfg);
+
+  const uint64_t xfgSent = 20 * parameters::COIN;
+  Crypto::SecretKey transactionSecret;
+  WalletLegacyTransfer toFunsa{funsa, static_cast<int64_t>(xfgSent)};
+  expectSent(sender, sender.wallet.sendTransaction(transactionSecret, toFunsa, currency.minimumFee(), "", 0));
+  const uint64_t heatSent = minted / 4;
+  expectSent(sender, sender.wallet.sendHeatV10(funsaAddress, heatSent, currency.minimumFee(), 0, true));
+  confirm();
+
+  EXPECT_EQ(xfgSent, xfgOf(recipient));
+  ASSERT_EQ(heatSent, heatOf(recipient));
+
+  const uint64_t heatReturned = heatSent / 2;
+  const uint64_t senderHeatBefore = heatOf(sender);
+  AccountPublicAddress senderAddress;
+  ASSERT_TRUE(currency.parseAccountAddressString(sender.wallet.getAddress(), senderAddress, isSubaddress));
+  expectSent(recipient, recipient.wallet.sendHeatV10(senderAddress, heatReturned, currency.minimumFee(), 0, false));
+  confirm();
+  EXPECT_EQ(senderHeatBefore + heatReturned, heatOf(sender));
+  EXPECT_EQ(heatSent - heatReturned, heatOf(recipient));
+  EXPECT_EQ(xfgSent - currency.minimumFee(), xfgOf(recipient));
+}
+
+// Each holder's only XFG sits on a funsa subaddress, so the mint, swap, order
+// placement and order withdraw below can only be paid from subaddress outputs,
+// which must be signed with that subaddress's key.
+TEST_F(HeatWalletScenario, FunsaHeldXfgPaysForMintSwapAndOrders) {
+  ScenarioWallet& funder = fundedActor(kActorFunding);
+  ScenarioWallet& minter = addWallet();
+  ScenarioWallet& swapper = addWallet();
+  ScenarioWallet& orderer = addWallet();
+  const uint64_t orderEscrow = 10 * parameters::COIN;
+  const uint64_t swapSpent = 50 * parameters::COIN;
+  auto fundFunsa = [&](ScenarioWallet& holder, uint64_t amount) {
+    Crypto::SecretKey transactionSecret;
+    WalletLegacyTransfer toFunsa{holder.wallet.registerSubAddress(0, 1), static_cast<int64_t>(amount)};
+    expectSent(funder, funder.wallet.sendTransaction(transactionSecret, toFunsa, currency.minimumFee(), "", 0));
+    confirm();
+    ASSERT_EQ(amount, xfgOf(holder));
+  };
+  fundFunsa(minter, kMintBurnXfg + currency.minimumFee());
+  fundFunsa(swapper, swapSpent + currency.minimumFee());
+  fundFunsa(orderer, orderEscrow + currency.minimumFee());
+
+  const uint64_t minted = mintFor(minter, kMintBurnXfg);
+  EXPECT_EQ(minted, heatOf(minter));
+  EXPECT_EQ(0u, xfgOf(minter));
+
+  const uint64_t heatOut = quoteSwapOutput(*inode, 0, swapSpent);
+  expectSent(swapper, swapper.wallet.ammSwapV10(0, swapSpent, heatOut, heatOut, currency.minimumFee(), 0));
+  confirm();
+  EXPECT_EQ(heatOut, heatOf(swapper));
+
+  ASSERT_TRUE(mineTo(minerAddress, auctionHeight()));
+  ASSERT_TRUE(syncAll());
+  const TransactionId placement =
+      orderer.wallet.placeOrderV13(1, orderEscrow, poolPriceTimes(1000), nodeHeight() + 200, currency.minimumFee(), 0);
+  expectSent(orderer, placement);
+  confirm();
+  EXPECT_EQ(0u, xfgOf(orderer));
+  const Crypto::Hash orderId = placedOrderId(orderer, placement);
+  fundFunsa(orderer, parameters::COIN);
+  expectSent(orderer, orderer.wallet.cancelOrderV13(orderId, currency.minimumFee(), 0, false));
+  confirm();
+  EXPECT_TRUE(nodeOrder(orderId).withdrawn);
+  EXPECT_EQ(orderEscrow + parameters::COIN - currency.minimumFee(), xfgOf(orderer));
+}
+
+// dev_donate: the donation is burned (withheld from the miner) and re-minted to the
+// dev fund by the coinbase at the next FCI quarter boundary.
+TEST_F(HeatWalletScenario, DevDonationIsBurnedAndRemintedAtTheQuarter) {
+  ScenarioWallet& donor = fundedActor(kActorFunding);
+  const uint64_t amount = 25 * parameters::COIN;
+  const auto before = nodeCore().getHeatMetrics();
+  const uint64_t xfgBefore = xfgOf(donor);
+  send(donor, planDevDonation(currency, donor.wallet.getAddress(), amount));
+  confirm();
+  EXPECT_EQ(before.remintBurnedXfg + amount, nodeCore().getHeatMetrics().remintBurnedXfg);
+  EXPECT_EQ(xfgBefore - amount - currency.minimumFee(), xfgOf(donor));
+
+  const uint32_t quarterBlocks = parameters::FCI_EPOCHS_PER_QUARTER * static_cast<uint32_t>(parameters::TESTNET_EPOCH_DURATION_BLOCKS);
+  ASSERT_TRUE(mineTo(minerAddress, (nodeHeight() / quarterBlocks + 1) * quarterBlocks + 2));
+  const auto after = nodeCore().getHeatMetrics();
+  EXPECT_EQ(after.remintBurnedXfg, after.remintedXfg) << "the quarter coinbase re-mints every burned XFG";
+}
+
+// Alias registration: the alias resolves to the subaddress derived for it, never to
+// the wallet's master address.
+TEST_F(HeatWalletScenario, RegisteredAliasResolvesToItsSubaddress) {
+  ScenarioWallet& holder = fundedActor(kActorFunding);
+  const std::string aliasAddress = holder.wallet.registerSubAddress(0, 1);
+  const std::string alias = "firenode";
+  ASSERT_FALSE(nodeCore().aliasExists(alias));
+  send(holder, planAliasRegistration(currency, alias, aliasAddress, BLOCK_MAJOR_VERSION_11));
+  confirm();
+
+  const auto entry = nodeCore().getAliasByName(alias);
+  ASSERT_TRUE(entry.has_value());
+  EXPECT_EQ(aliasAddress, entry->ownerAddress);
+  EXPECT_NE(holder.wallet.getAddress(), entry->ownerAddress);
+  EXPECT_THROW(planAliasRegistration(currency, "Firenode", aliasAddress, BLOCK_MAJOR_VERSION_11), std::invalid_argument);
+}
+
+// SELL_XFG limit order priced under the pool fills in the call auction or the
+// backstop; withdrawing pays the HEAT proceeds and returns any unfilled XFG.
+TEST_F(HeatWalletScenario, SellXfgOrderFillsAndWithdrawPaysTheProceeds) {
+  ScenarioWallet& seller = fundedActor(kActorFunding);
+  ASSERT_TRUE(mineTo(minerAddress, auctionHeight()));
+  ASSERT_TRUE(syncAll());
+  const uint64_t escrow = 10 * parameters::COIN;
+  const TransactionId placement = seller.wallet.placeOrderV13(1, escrow, poolPriceTimes(90), nodeHeight() + 200, currency.minimumFee(), 0);
+  expectSent(seller, placement);
+  confirm();
+  const Crypto::Hash orderId = placedOrderId(seller, placement);
+  const ICore::LimitOrderEntry filled = nodeOrder(orderId);
+  ASSERT_GT(filled.proceedsHeat, 0u) << "the order filled against the pool";
+
+  const uint64_t xfgBefore = xfgOf(seller);
+  const uint64_t heatBefore = heatOf(seller);
+  expectSent(seller, seller.wallet.cancelOrderV13(orderId, currency.minimumFee(), 0, false));
+  confirm();
+  EXPECT_TRUE(nodeOrder(orderId).withdrawn);
+  EXPECT_EQ(heatBefore + filled.proceedsHeat, heatOf(seller));
+  EXPECT_EQ(xfgBefore + filled.amount + filled.proceedsXfg - currency.minimumFee(), xfgOf(seller));
+}
+
+// BUY_XFG limit order (HEAT escrow) priced over the pool fills; withdrawing pays
+// the XFG proceeds and returns any unfilled HEAT.
+TEST_F(HeatWalletScenario, BuyXfgOrderFillsAndWithdrawPaysTheProceeds) {
+  ScenarioWallet& buyer = fundedActor(kActorFunding);
+  const uint64_t minted = mintFor(buyer, kMintBurnXfg);
+  ASSERT_TRUE(mineTo(minerAddress, auctionHeight()));
+  ASSERT_TRUE(syncAll());
+  const uint64_t escrow = minted / 2;
+  const TransactionId placement = buyer.wallet.placeOrderV13(0, escrow, poolPriceTimes(110), nodeHeight() + 200, currency.minimumFee(), 0);
+  expectSent(buyer, placement);
+  confirm();
+  const Crypto::Hash orderId = placedOrderId(buyer, placement);
+  const ICore::LimitOrderEntry filled = nodeOrder(orderId);
+  ASSERT_GT(filled.proceedsXfg, 0u) << "the order filled against the pool";
+  EXPECT_EQ(minted - escrow, heatOf(buyer));
+
+  const uint64_t xfgBefore = xfgOf(buyer);
+  expectSent(buyer, buyer.wallet.cancelOrderV13(orderId, currency.minimumFee(), 0, false));
+  confirm();
+  EXPECT_TRUE(nodeOrder(orderId).withdrawn);
+  EXPECT_EQ(minted - escrow + filled.amount + filled.proceedsHeat, heatOf(buyer));
+  EXPECT_EQ(xfgBefore + filled.proceedsXfg - currency.minimumFee(), xfgOf(buyer));
+}
+
+// A stopped order no longer fills; the auto-withdraw finds it and returns its escrow.
+TEST_F(HeatWalletScenario, StoppedOrderIsAutoWithdrawn) {
+  ScenarioWallet& owner = fundedActor(kActorFunding);
+  ASSERT_TRUE(mineTo(minerAddress, auctionHeight()));
+  ASSERT_TRUE(syncAll());
+  const uint64_t escrow = 10 * parameters::COIN;
+  const uint64_t xfgBefore = xfgOf(owner);
+  const TransactionId placement = owner.wallet.placeOrderV13(1, escrow, poolPriceTimes(1000), nodeHeight() + 200, currency.minimumFee(), 0);
+  expectSent(owner, placement);
+  confirm();
+  const Crypto::Hash orderId = placedOrderId(owner, placement);
+  EXPECT_EQ(0u, nodeOrder(orderId).proceedsHeat) << "priced far over the pool, it does not fill";
+
+  expectSent(owner, owner.wallet.cancelOrderV13(orderId, currency.minimumFee(), 0, true));
+  confirm();
+  EXPECT_EQ(1u, autoWithdrawEndedOrders(owner));
+  confirm();
+  EXPECT_TRUE(nodeOrder(orderId).withdrawn);
+  EXPECT_EQ(xfgBefore - 3 * currency.minimumFee(), xfgOf(owner));
+  EXPECT_EQ(0u, autoWithdrawEndedOrders(owner)) << "a withdrawn order is not withdrawn again";
+}
+
+// An order that expires is found by the auto-withdraw, which returns its escrow.
+TEST_F(HeatWalletScenario, ExpiredOrderIsAutoWithdrawn) {
+  ScenarioWallet& owner = fundedActor(kActorFunding);
+  ASSERT_TRUE(mineTo(minerAddress, auctionHeight()));
+  ASSERT_TRUE(syncAll());
+  const uint64_t escrow = 10 * parameters::COIN;
+  const uint64_t xfgBefore = xfgOf(owner);
+  const TransactionId placement = owner.wallet.placeOrderV13(1, escrow, poolPriceTimes(1000), nodeHeight() + 6, currency.minimumFee(), 0);
+  expectSent(owner, placement);
+  confirm();
+  const Crypto::Hash orderId = placedOrderId(owner, placement);
+  ASSERT_TRUE(mineBlocks(minerAddress, 8));
+  ASSERT_TRUE(syncAll());
+  EXPECT_EQ(1u, autoWithdrawEndedOrders(owner));
+  confirm();
+  EXPECT_TRUE(nodeOrder(orderId).withdrawn);
+  EXPECT_EQ(xfgBefore - 2 * currency.minimumFee(), xfgOf(owner));
 }
 

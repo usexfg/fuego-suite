@@ -427,6 +427,7 @@ namespace CryptoNote
     std::shared_ptr<SendTransactionContext> context = std::make_shared<SendTransactionContext>();
     context->dustPolicy.dustThreshold = m_currency.defaultDustThreshold();
     context->mixIn = mixIn == 0 ? m_currency.maxMixin() : mixIn;
+    context->dynamicRingSize = m_currency.isTestnet();
 
     uint64_t neededMoney = getSumWithOverflowCheck(amount, fee);
     context->foundMoney = selectTransfersToSend(neededMoney, false, context->dustPolicy.dustThreshold, context->selectedTransfers);
@@ -917,10 +918,7 @@ namespace CryptoNote
       for (size_t i = 0; i < inputs.size(); ++i)
       {
         KeyPair ephKey;
-        const AccountKeys &keys = (i < sources.size() && sources[i].hasCustomKeys)
-                                      ? sources[i].customKeys
-                                      : m_keys;
-        transaction->addInput(keys, inputs[i], ephKey);
+        transaction->addInput(keysSpending(sources[i]), inputs[i], ephKey);
         ephKeys.push_back(std::move(ephKey));
       }
       for (size_t i = 0; i < inputs.size(); ++i)
@@ -1402,7 +1400,7 @@ namespace CryptoNote
       {
         TransactionOutputInformation transfer;
         ITransfersContainer::TransferState state;
-        throwIf(m_transferDetails.getTransfer(transactionHash, outputInTransaction, transfer, state) == false, error::DEPOSIT_DOESNOT_EXIST);
+        throwIf(!findOwnedTransfer(transactionHash, outputInTransaction, transfer, state), error::DEPOSIT_DOESNOT_EXIST);
         throwIf(state != ITransfersContainer::TransferState::TransferAvailable, error::DEPOSIT_LOCKED);
         selectedTransfers.push_back(std::move(transfer));
       }
@@ -1545,7 +1543,7 @@ namespace CryptoNote
       std::vector<KeyPair> ephKeys;
       for (size_t i = 0; i < inputs.size(); ++i) {
         KeyPair ephKey;
-        transaction->addInput(m_keys, inputs[i], ephKey);
+        transaction->addInput(keysSpending(sources[i]), inputs[i], ephKey);
         ephKeys.push_back(std::move(ephKey));
       }
       for (size_t i = 0; i < inputs.size(); ++i)
@@ -1738,8 +1736,37 @@ namespace CryptoNote
     TransactionOutputInformation transfer;
     ITransfersContainer::TransferState state;
     return m_transactionsCache.getDepositInTransactionInfo(depositId, transactionHash, outputInTransaction) &&
-           m_transferDetails.getTransfer(transactionHash, outputInTransaction, transfer, state) &&
+           findOwnedTransfer(transactionHash, outputInTransaction, transfer, state) &&
            state == ITransfersContainer::TransferState::TransferAvailable;
+  }
+
+  const AccountKeys &WalletTransactionSender::keysSpending(const TransactionSourceEntry &source) const
+  {
+    return source.hasCustomKeys ? source.customKeys : m_keys;
+  }
+
+  // Outputs paid to a registered subaddress live in that subaddress's container
+  // and are signed with its spend key, which is recorded here on first lookup.
+  bool WalletTransactionSender::findOwnedTransfer(const Hash &transactionHash, uint32_t outputInTransaction,
+                                                  TransactionOutputInformation &transfer,
+                                                  ITransfersContainer::TransferState &state)
+  {
+    if (m_transferDetails.getTransfer(transactionHash, outputInTransaction, transfer, state)) {
+      return true;
+    }
+    for (const auto &source : m_subAddressSources) {
+      if (source.container->getTransfer(transactionHash, outputInTransaction, transfer, state)) {
+        m_subAddressOutputKeys[makeSubAddrOutputKey(transactionHash, outputInTransaction)] = source.keys;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  const Crypto::SecretKey &WalletTransactionSender::spendSecretKeyOf(const TransactionOutputInformation &transfer) const
+  {
+    const auto subaddressKeys = m_subAddressOutputKeys.find(makeSubAddrOutputKey(transfer.transactionHash, transfer.outputInTransaction));
+    return subaddressKeys == m_subAddressOutputKeys.end() ? m_keys.spendSecretKey : subaddressKeys->second.spendSecretKey;
   }
 
   void WalletTransactionSender::attachCommitmentInputs(SendTransactionContext &context,
@@ -2116,10 +2143,10 @@ namespace CryptoNote
   {
     std::vector<TransactionSourceEntry> sources;
     prepareKeyInputs(context.selectedTransfers, context.outs, sources, context.mixIn);
-    const std::vector<TransactionTypes::InputKeyInfo> keyInputs = convertSources(std::move(sources));
+    const std::vector<TransactionTypes::InputKeyInfo> keyInputs = convertSources(std::vector<TransactionSourceEntry>(sources));
     signingKeys.keyInputs.resize(keyInputs.size());
     for (size_t i = 0; i < keyInputs.size(); ++i) {
-      transaction.addInput(m_keys, keyInputs[i], signingKeys.keyInputs[i]);
+      transaction.addInput(keysSpending(sources[i]), keyInputs[i], signingKeys.keyInputs[i]);
     }
     for (size_t k = 0; k < context.commitmentTransfers.size(); ++k) {
       const uint64_t claimedInterest = k < context.claimedInterest.size() ? context.claimedInterest[k] : 0;
@@ -2176,7 +2203,7 @@ namespace CryptoNote
     PreparedCommitmentSpend spend;
     Crypto::KeyDerivation derivation;
     Crypto::generate_key_derivation(transfer.transactionPublicKey, m_keys.viewSecretKey, derivation);
-    resolveCommitmentSpendKey(derivation, transfer.outputInTransaction, transfer.commitmentKey, m_keys.spendSecretKey,
+    resolveCommitmentSpendKey(derivation, transfer.outputInTransaction, transfer.commitmentKey, spendSecretKeyOf(transfer),
                               spend.keys, spend.input.keyImage);
     wipeKeyDerivation(derivation);
 
@@ -2292,7 +2319,7 @@ namespace CryptoNote
       std::vector<KeyPair> ephKeys;
       for (size_t i = 0; i < inputs.size(); ++i) {
         KeyPair ephKey;
-        transaction->addInput(m_keys, inputs[i], ephKey);
+        transaction->addInput(keysSpending(sources[i]), inputs[i], ephKey);
         ephKeys.push_back(std::move(ephKey));
       }
       for (size_t i = 0; i < inputs.size(); ++i)
@@ -2348,6 +2375,7 @@ namespace CryptoNote
     std::shared_ptr<SendTransactionContext> context = std::make_shared<SendTransactionContext>();
     context->dustPolicy.dustThreshold = m_currency.defaultDustThreshold();
     context->mixIn = mixIn == 0 ? m_currency.maxMixin() : mixIn;
+    context->dynamicRingSize = m_currency.isTestnet();
 
     context->isV11LimitWithdraw = true;
     context->v11WithdrawStopOnly = stopOnly;
@@ -2491,7 +2519,7 @@ namespace CryptoNote
       std::vector<KeyPair> ephKeys;
       for (size_t i = 0; i < inputs.size(); ++i) {
         KeyPair ephKey;
-        transaction->addInput(m_keys, inputs[i], ephKey);
+        transaction->addInput(keysSpending(sources[i]), inputs[i], ephKey);
         ephKeys.push_back(std::move(ephKey));
       }
       for (size_t i = 0; i < inputs.size(); ++i)

@@ -3187,34 +3187,29 @@ bool RpcServer::on_get_fuego_price(const COMMAND_RPC_GET_FUEGO_PRICE::request& /
 
 bool RpcServer::on_get_limit_orders(const COMMAND_RPC_GET_LIMIT_ORDERS::request& req,
                                     COMMAND_RPC_GET_LIMIT_ORDERS::response& res) {
-  const auto& deposits = m_core.get_blockchain_storage().getLimitDeposits();
-  uint32_t count = 0;
   uint32_t skipped = 0;
-  for (const auto& kv : deposits) {
-    bool is_withdrawn = kv.second.withdrawn || kv.second.expired;
-    if (req.active_only && is_withdrawn) {
-      continue;
+  m_core.get_blockchain_storage().visitLimitDeposits([&](const Crypto::Hash& orderId, const auto& order) {
+    const bool isWithdrawn = order.withdrawn || order.expired;
+    if (req.active_only && isWithdrawn) {
+      return true;
     }
-    if (req.offset > 0 && skipped < req.offset) {
+    if (skipped < req.offset) {
       ++skipped;
-      continue;
+      return true;
     }
     COMMAND_RPC_GET_LIMIT_ORDERS::LimitOrderInfo info;
-    info.order_id = Common::podToHex(kv.first);
-    info.address_hash = Common::podToHex(kv.second.addressHash);
-    info.side = kv.second.side;
-    info.amount = kv.second.amount;
-    info.proceeds_xfg = kv.second.proceedsXfg;
-    info.proceeds_heat = kv.second.proceedsHeat;
-    info.target_price = kv.second.targetPrice;
-    info.expiration = kv.second.expiration;
-    info.withdrawn = is_withdrawn;
+    info.order_id = Common::podToHex(orderId);
+    info.address_hash = Common::podToHex(order.addressHash);
+    info.side = order.side;
+    info.amount = order.amount;
+    info.proceeds_xfg = order.proceedsXfg;
+    info.proceeds_heat = order.proceedsHeat;
+    info.target_price = order.targetPrice;
+    info.expiration = order.expiration;
+    info.withdrawn = isWithdrawn;
     res.orders.push_back(std::move(info));
-    ++count;
-    if (req.limit > 0 && count >= req.limit) {
-      break;
-    }
-  }
+    return req.limit == 0 || res.orders.size() < req.limit;
+  });
   res.status = CORE_RPC_STATUS_OK;
   return true;
 }

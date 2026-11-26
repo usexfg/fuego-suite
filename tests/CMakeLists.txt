@@ -177,6 +177,31 @@ target_link_libraries(wallet_input_reservation_tests PRIVATE
 )
 add_test(NAME wallet_input_reservation_tests COMMAND wallet_input_reservation_tests)
 
+# What the console wallet's alias and dev-donation commands send, on the mainnet
+# schedule (testnet aliases pay no fee, so the e2e scenarios cannot cover it).
+add_executable(wallet_operations_tests
+    UnitTests/WalletOperationsTest.cpp
+)
+target_include_directories(wallet_operations_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/external/gtest/include
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_link_libraries(wallet_operations_tests PRIVATE
+    Wallet
+    Transfers
+    CryptoNoteCore
+    Serialization
+    Logging
+    Common
+    Crypto
+    System
+    ${Boost_LIBRARIES}
+    gtest
+    gtest_main
+)
+add_test(NAME wallet_operations_tests COMMAND wallet_operations_tests)
+
 # Persistence of the published commitment key. The signer cannot choose between the
 # owner-bound and legacy derivations without it, and it used to be lost on every
 # wallet save/reload. Also covers loading pre-version-2 caches.

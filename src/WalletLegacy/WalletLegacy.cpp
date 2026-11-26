@@ -638,7 +638,7 @@ TransactionId WalletLegacy::sendTransaction(Crypto::SecretKey& transactionSK,
   /* ensure that it is not a self-destructive message, which will have a TTL > 0 */
   if (ttl == 0)
   {
-    fee = m_currency.minimumFee();
+    fee = std::max(fee, m_currency.minimumFee());
   }
 
   /* This is the logic that determins if it is an optimization transaction */
@@ -1620,9 +1620,12 @@ std::string WalletLegacy::registerSubAddress(uint32_t major, uint32_t minor, uin
   }
 
   // Idempotent: if already registered, return cached address string.
-  for (const auto& sa : m_subAddresses) {
-    if (sa.major == major && sa.minor == minor) {
-      return publishedSubAddressString(sa.keys.address.spendPublicKey, sa.publishedViewPublicKey, sa.version);
+  {
+    std::unique_lock<std::mutex> lock(m_cacheMutex);
+    for (const auto& sa : m_subAddresses) {
+      if (sa.major == major && sa.minor == minor) {
+        return publishedSubAddressString(sa.keys.address.spendPublicKey, sa.publishedViewPublicKey, sa.version);
+      }
     }
   }
 
@@ -1670,11 +1673,12 @@ std::string WalletLegacy::registerSubAddress(uint32_t major, uint32_t minor, uin
     entry.container = container;
     entry.version   = version;
     entry.publishedViewPublicKey = subKeys.viewPublicKey;
-    m_subAddresses.push_back(entry);
-
-    // Update the sender with the new sub-address data.
-    if (m_sender) {
-      m_sender->addSubAddress(subAccountKeys, *container);
+    {
+      std::unique_lock<std::mutex> lock(m_cacheMutex);
+      m_subAddresses.push_back(entry);
+      if (m_sender) {
+        m_sender->addSubAddress(subAccountKeys, *container);
+      }
     }
 
     m_blockchainSync.start(); //XXX: start can throw. what to do in this case?
@@ -1765,11 +1769,23 @@ uint64_t WalletLegacy::calculatePendingInvestmentBalance() {
   return calculateInvestmentsAmount(transfers, m_currency, heights);
 }
 
+std::vector<TransactionOutputInformation> WalletLegacy::heatOutputsInEveryContainer(uint32_t stateFlags) {
+  const uint32_t flags = ITransfersContainer::IncludeTypeHeat | stateFlags;
+  std::vector<TransactionOutputInformation> outputs;
+  m_transferDetails->getOutputs(outputs, flags);
+  for (const auto& sa : m_subAddresses) {
+    if (sa.container) {
+      std::vector<TransactionOutputInformation> subaddressOutputs;
+      sa.container->getOutputs(subaddressOutputs, flags);
+      outputs.insert(outputs.end(), subaddressOutputs.begin(), subaddressOutputs.end());
+    }
+  }
+  return outputs;
+}
+
 uint64_t WalletLegacy::calculateActualHeatBalance() {
-  std::vector<TransactionOutputInformation> transfers;
-  m_transferDetails->getOutputs(transfers, ITransfersContainer::IncludeTypeHeat | ITransfersContainer::IncludeStateUnlocked);
   uint64_t spendable = 0;
-  for (const auto& transfer : transfers) {
+  for (const auto& transfer : heatOutputsInEveryContainer(ITransfersContainer::IncludeStateUnlocked)) {
     if (m_transactionsCache.isUnspentDepositRecord(transfer.transactionHash, transfer.outputInTransaction)) {
       spendable += transfer.amount;
     }
@@ -1778,11 +1794,8 @@ uint64_t WalletLegacy::calculateActualHeatBalance() {
 }
 
 uint64_t WalletLegacy::calculatePendingHeatBalance() {
-  std::vector<TransactionOutputInformation> transfers;
-  m_transferDetails->getOutputs(transfers, ITransfersContainer::IncludeTypeHeat
-                                | ITransfersContainer::IncludeStateLocked
-                                | ITransfersContainer::IncludeStateSoftLocked);
-  return calculateHeatAmount(transfers);
+  return calculateHeatAmount(heatOutputsInEveryContainer(ITransfersContainer::IncludeStateLocked |
+                                                         ITransfersContainer::IncludeStateSoftLocked));
 }
 
 uint64_t WalletLegacy::calculateActualBalance() {

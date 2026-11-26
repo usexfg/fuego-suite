@@ -91,6 +91,7 @@ public:
   virtual std::error_code getAmmPoolReserves(AmmPoolReserves& out) override;
   virtual uint64_t getHearthTwap() override;
   virtual std::error_code getAmmPoolInfo(AmmPoolInfo& info) override;
+  virtual std::error_code getLimitDeposits(std::vector<LimitDepositRpcEntry>& deposits) override;
 
 private:
   virtual void peerCountUpdated(size_t count) override;

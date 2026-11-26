@@ -168,6 +168,24 @@ public:
     uint64_t spotPrice = 0;
     uint64_t totalLpShares = 0;
   };
+  // A limit order as the node holds it (TransactionExtraLimitDeposit plus fills).
+  struct LimitOrderEntry {
+    Crypto::Hash orderId;
+    Crypto::Hash addressHash;
+    uint8_t side = 0;
+    uint64_t amount = 0;
+    uint64_t proceedsXfg = 0;
+    uint64_t proceedsHeat = 0;
+    uint64_t targetPrice = 0;
+    uint32_t expiration = 0;
+    bool withdrawn = false;
+    bool expired = false;
+  };
+  virtual std::error_code getLimitOrders(std::vector<LimitOrderEntry>& orders) {
+    orders.clear();
+    return std::make_error_code(std::errc::not_supported);
+  }
+
   virtual std::error_code getAmmPoolInfo(AmmPoolInfo& info) {
     return std::make_error_code(std::errc::not_supported);
   }

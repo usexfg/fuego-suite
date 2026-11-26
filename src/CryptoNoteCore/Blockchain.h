@@ -21,6 +21,7 @@
 #include "Common/Int128.h"
 
 #include <atomic>
+#include <functional>
 #include <cstring>
 #include <deque>
 #include <set>
@@ -767,6 +768,17 @@ namespace CryptoNote {
 
   public:
     const std::map<Crypto::Hash, LimitDepositInfo, HashLess>& getLimitDeposits() const { return m_limitDeposits; }
+    // A copy taken under the blockchain lock, for readers on other threads (RPC,
+    // in-process wallets) while blocks are being added.
+    // Visits orders in id order under the chain lock until the visitor returns false.
+    void visitLimitDeposits(const std::function<bool(const Crypto::Hash&, const LimitDepositInfo&)>& visitor) {
+      std::lock_guard<decltype(m_blockchain_lock)> lock(m_blockchain_lock);
+      for (const auto& order : m_limitDeposits) {
+        if (!visitor(order.first, order.second)) {
+          return;
+        }
+      }
+    }
   private:
     // Track auto-returned deposits for block rollback
 

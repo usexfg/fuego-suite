@@ -1158,6 +1158,33 @@ uint64_t InProcessNode::getHearthTwap() {
   return core.getHearthTwap();
 }
 
+// The same list /get_limit_orders serves, so a wallet on an in-process node finds
+// its orders as one on fuegod does (withdraw, stop, auto-withdraw).
+std::error_code InProcessNode::getLimitDeposits(std::vector<LimitDepositRpcEntry>& deposits) {
+  std::vector<ICore::LimitOrderEntry> orders;
+  const std::error_code ec = core.getLimitOrders(orders);
+  if (ec) {
+    return ec;
+  }
+  deposits.clear();
+  deposits.reserve(orders.size());
+  for (const auto& order : orders) {
+    LimitDepositRpcEntry entry;
+    entry.order_id = Common::podToHex(order.orderId);
+    entry.address_hash = Common::podToHex(order.addressHash);
+    entry.side = order.side;
+    entry.amount = order.amount;
+    entry.proceeds_xfg = order.proceedsXfg;
+    entry.proceeds_heat = order.proceedsHeat;
+    entry.target_price = order.targetPrice;
+    entry.expiration = order.expiration;
+    entry.withdrawn = order.withdrawn || order.expired;
+    entry.expired = order.expired;
+    deposits.push_back(std::move(entry));
+  }
+  return {};
+}
+
 std::error_code InProcessNode::getAmmPoolInfo(AmmPoolInfo& info) {
   ICore::AmmPoolInfo coreInfo;
   auto ec = core.getAmmPoolInfo(coreInfo);

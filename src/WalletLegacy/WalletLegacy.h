@@ -181,6 +181,7 @@ public:
   std::unique_ptr<WalletLegacyEvent> getPendingBalanceChangedEvent();
   uint64_t calculateActualDepositBalance();
   uint64_t calculateActualInvestmentBalance();
+  std::vector<TransactionOutputInformation> heatOutputsInEveryContainer(uint32_t stateFlags);
   uint64_t calculateActualHeatBalance();
   uint64_t calculatePendingDepositBalance();
   uint64_t calculatePendingInvestmentBalance();

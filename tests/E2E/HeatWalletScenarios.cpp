@@ -656,6 +656,168 @@ private:
   static const int kGreenSyncAttempts = 1200;
 };
 
+// walletd funded by a console wallet: each walletd scenario starts here.
+class WalletdScenario : public HeatWalletScenario {
+protected:
+  std::unique_ptr<GreenScenarioWallet> fundedWalletd(uint64_t xfg) {
+    ScenarioWallet& funder = fundedActor(kActorFunding);
+    std::unique_ptr<GreenScenarioWallet> green(
+        new GreenScenarioWallet(currency, *inode, logger, dataDir + "/walletd.wallet"));
+    Crypto::SecretKey transactionSecret;
+    WalletLegacyTransfer funding{green->address, static_cast<int64_t>(xfg)};
+    expectSent(funder, funder.wallet.sendTransaction(transactionSecret, funding, currency.minimumFee(), "", 0));
+    confirmWith(*green);
+    EXPECT_EQ(xfg, green->xfg());
+    return green;
+  }
+
+  void confirmWith(GreenScenarioWallet& green) {
+    confirm();
+    ASSERT_TRUE(green.waitSyncedTo(nodeHeight()));
+  }
+
+  Crypto::Hash hashOf(const std::string& hex) {
+    Crypto::Hash hash;
+    EXPECT_TRUE(Common::podFromHex(hex, hash));
+    return hash;
+  }
+
+  Crypto::Hash placedOrderId(const std::string& placementHash) {
+    Transaction placement;
+    EXPECT_TRUE(nodeCore().getTransaction(hashOf(placementHash), placement, true));
+    std::vector<TransactionExtraField> fields;
+    parseTransactionExtra(placement.extra, fields);
+    for (const auto& field : fields) {
+      if (field.type() == typeid(TransactionExtraLimitDeposit)) {
+        return boost::get<TransactionExtraLimitDeposit>(field).orderId;
+      }
+    }
+    ADD_FAILURE() << "the placement carries no limit deposit";
+    return Crypto::Hash{};
+  }
+
+  // What walletd's auto-withdraw does after each sync (WalletService).
+  size_t autoWithdrawEndedOrders(GreenScenarioWallet& green) {
+    const auto due = limitOrdersDueForWithdraw(walletOrderHistory(green.api), nodeHeight() + 1);
+    for (const auto& orderId : due) {
+      std::string withdrawal;
+      green.wallet.cancelLimitOrderV13(orderId, currency.minimumFee(), 0, withdrawal, false);
+    }
+    return due.size();
+  }
+};
+
+// walletd buys HEAT on Hearth and sells it back; each side pays exactly the
+// curve's quote, and walletd's XFG balance never counts HEAT.
+TEST_F(WalletdScenario, BuysAndSellsHeatAtTheQuote) {
+  const uint64_t funding = 300 * parameters::COIN;
+  auto green = fundedWalletd(funding);
+  const uint64_t spent = 50 * parameters::COIN;
+  const uint64_t heatOut = quoteSwapOutput(*inode, 0, spent);
+  ASSERT_GT(heatOut, 0u);
+  std::string buy;
+  green->wallet.ammSwapV10(0, spent, heatOut, heatOut, currency.minimumFee(), 0, buy);
+  confirmWith(*green);
+  EXPECT_EQ(heatOut, green->heat());
+  EXPECT_EQ(funding - spent - currency.minimumFee(), green->xfg());
+
+  const uint64_t heatSold = heatOut / 2;
+  const uint64_t xfgOut = quoteSwapOutput(*inode, 1, heatSold);
+  ASSERT_GT(xfgOut, 0u);
+  std::string sell;
+  green->wallet.ammSwapV10(1, heatSold, xfgOut, xfgOut, currency.minimumFee(), 0, sell);
+  confirmWith(*green);
+  EXPECT_EQ(heatOut - heatSold, green->heat());
+  EXPECT_EQ(funding - spent - currency.minimumFee() + xfgOut - currency.minimumFee(), green->xfg());
+}
+
+// walletd SELL_XFG order priced under the pool fills; withdrawing pays the HEAT
+// proceeds and any unfilled XFG. An order priced over the pool is stopped and
+// found by walletd's auto-withdraw, which returns its escrow.
+TEST_F(WalletdScenario, LimitOrdersFillStopAndWithdraw) {
+  auto green = fundedWalletd(300 * parameters::COIN);
+  ASSERT_TRUE(mineTo(minerAddress, auctionHeight()));
+  ASSERT_TRUE(green->waitSyncedTo(nodeHeight()));
+  const uint64_t escrow = 10 * parameters::COIN;
+
+  std::string filledPlacement;
+  green->wallet.placeLimitOrderV13(1, escrow, poolPriceTimes(90), nodeHeight() + 200, currency.minimumFee(), 0,
+                                   filledPlacement);
+  confirmWith(*green);
+  const Crypto::Hash filledId = placedOrderId(filledPlacement);
+  const ICore::LimitOrderEntry filled = nodeOrder(filledId);
+  ASSERT_GT(filled.proceedsHeat, 0u) << "the order filled against the pool";
+  const uint64_t xfgBefore = green->xfg();
+  const uint64_t heatBefore = green->heat();
+  std::string withdrawal;
+  green->wallet.cancelLimitOrderV13(filledId, currency.minimumFee(), 0, withdrawal, false);
+  confirmWith(*green);
+  EXPECT_TRUE(nodeOrder(filledId).withdrawn);
+  EXPECT_EQ(heatBefore + filled.proceedsHeat, green->heat());
+  EXPECT_EQ(xfgBefore + filled.amount + filled.proceedsXfg - currency.minimumFee(), green->xfg());
+
+  std::string restingPlacement;
+  green->wallet.placeLimitOrderV13(1, escrow, poolPriceTimes(1000), nodeHeight() + 200, currency.minimumFee(), 0,
+                                   restingPlacement);
+  confirmWith(*green);
+  const Crypto::Hash restingId = placedOrderId(restingPlacement);
+  EXPECT_EQ(0u, nodeOrder(restingId).proceedsHeat);
+  const uint64_t xfgWhileResting = green->xfg();
+  std::string stop;
+  green->wallet.cancelLimitOrderV13(restingId, currency.minimumFee(), 0, stop, true);
+  confirmWith(*green);
+  EXPECT_EQ(1u, autoWithdrawEndedOrders(*green));
+  confirmWith(*green);
+  EXPECT_TRUE(nodeOrder(restingId).withdrawn);
+  EXPECT_EQ(xfgWhileResting + escrow - 2 * currency.minimumFee(), green->xfg());
+  EXPECT_EQ(0u, autoWithdrawEndedOrders(*green)) << "a withdrawn order is not withdrawn again";
+}
+
+// walletd dev_donate: the donation is burned and counted for the quarter re-mint.
+TEST_F(WalletdScenario, DevDonationIsBurned) {
+  const uint64_t funding = 100 * parameters::COIN;
+  auto green = fundedWalletd(funding);
+  const uint64_t amount = 25 * parameters::COIN;
+  const uint64_t burnedBefore = nodeCore().getHeatMetrics().remintBurnedXfg;
+  Crypto::Hash donation;
+  const std::error_code donated = green->wallet.devDonate(amount, donation);
+  ASSERT_FALSE(donated) << donated.message();
+  confirmWith(*green);
+  EXPECT_EQ(burnedBefore + amount, nodeCore().getHeatMetrics().remintBurnedXfg);
+  EXPECT_EQ(funding - amount - currency.minimumFee(), green->xfg());
+}
+
+// walletd receives XFG and HEAT on a funsa subaddress and spends that HEAT.
+TEST_F(WalletdScenario, FunsaSubaddressReceivesAndSpendsXfgAndHeat) {
+  ScenarioWallet& sender = fundedActor(kActorFunding);
+  const uint64_t minted = mintFor(sender, kMintBurnXfg);
+  GreenScenarioWallet green(currency, *inode, logger, dataDir + "/walletd-funsa.wallet");
+  const std::string funsa = green.wallet.createSubAddress(0, 1);
+  AccountPublicAddress funsaAddress;
+  bool isSubaddress = false;
+  ASSERT_TRUE(currency.parseAccountAddressString(funsa, funsaAddress, isSubaddress));
+  ASSERT_TRUE(isSubaddress);
+
+  const uint64_t xfgSent = 20 * parameters::COIN;
+  Crypto::SecretKey transactionSecret;
+  WalletLegacyTransfer toFunsa{funsa, static_cast<int64_t>(xfgSent)};
+  expectSent(sender, sender.wallet.sendTransaction(transactionSecret, toFunsa, currency.minimumFee(), "", 0));
+  const uint64_t heatSent = minted / 4;
+  expectSent(sender, sender.wallet.sendHeatV10(funsaAddress, heatSent, currency.minimumFee(), 0, true));
+  confirmWith(green);
+  ASSERT_EQ(xfgSent, green.xfg());
+  ASSERT_EQ(heatSent, green.heat());
+
+  const uint64_t heatReturned = heatSent / 2;
+  const uint64_t senderHeatBefore = heatOf(sender);
+  std::string returned;
+  green.wallet.sendHeatV10(sender.wallet.getAddress(), heatReturned, currency.minimumFee(), 0, returned);
+  confirmWith(green);
+  EXPECT_EQ(senderHeatBefore + heatReturned, heatOf(sender));
+  EXPECT_EQ(heatSent - heatReturned, green.heat());
+  EXPECT_EQ(xfgSent - currency.minimumFee(), green.xfg());
+}
+
 // walletd: HEAT sent to one funsa subaddress takes the single-key form and the
 // recipient is credited; the sender keeps its HEAT change.
 TEST_F(HeatWalletScenario, WalletdHeatToFunsaReadsLikeAnyPayment) {

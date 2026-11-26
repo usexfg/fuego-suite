@@ -74,6 +74,7 @@
 #include "Common/StringTools.h"
 #include "Common/PathTools.h"
 #include "CryptoNoteProtocol/CryptoNoteProtocolHandler.h"
+#include "WalletLegacy/WalletOperations.h"
 
 using namespace CryptoNote;
 
@@ -2906,14 +2907,7 @@ namespace PaymentService
 
   std::vector<Crypto::Hash> WalletService::limitOrdersToTryWithdrawing(uint32_t nextHeight)
   {
-    std::vector<CryptoNote::WalletOrderTransaction> history;
-    for (size_t i = 0; i < wallet.getTransactionCount(); ++i) {
-      const CryptoNote::WalletTransaction transaction = wallet.getTransaction(i);
-      history.push_back({transaction.extra, transaction.blockHeight != CryptoNote::WALLET_UNCONFIRMED_TRANSACTION_HEIGHT,
-                         transaction.state == CryptoNote::WalletTransactionState::FAILED ||
-                             transaction.state == CryptoNote::WalletTransactionState::CANCELLED ||
-                             transaction.state == CryptoNote::WalletTransactionState::DELETED});
-    }
+    const std::vector<CryptoNote::WalletOrderTransaction> history = CryptoNote::walletOrderHistory(wallet);
     std::vector<Crypto::Hash> ordersToTry;
     for (const Crypto::Hash &orderId : CryptoNote::limitOrdersDueForWithdraw(history, nextHeight)) {
       const std::string orderIdHex = Common::podToHex(orderId);

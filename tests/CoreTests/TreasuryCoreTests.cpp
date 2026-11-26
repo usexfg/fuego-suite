@@ -1273,6 +1273,12 @@ public:
     block.transactions[1].tx = tx;
     return block;
   }
+  static bool orderbookInBootstrapAfter(Blockchain& chain, uint32_t height) {
+    Block block;
+    block.majorVersion = BLOCK_MAJOR_VERSION_11;
+    chain.processOrderbookForBlock(block, {}, height);
+    return chain.isOrderbookInBootstrap();
+  }
   static bool pushTx(Blockchain& chain, Blockchain::BlockEntry& block) {
     return chain.pushTransaction(block, getObjectHash(block.transactions[1].tx), TxIndex{block.height, 1});
   }
@@ -2712,6 +2718,35 @@ TransactionExtraAliasRegistration registrationOwnedBy(const std::string& alias, 
   return registration;
 }
 
+// The first bootstrapBlocks() v11 blocks (testnet 72, mainnet 144) clear at the
+// pool ratio and the call auction starts at the next block, whatever chain ran
+// before in the process. The first v11 block is upgradeHeight + 1. The live
+// count used the mainnet length on testnet and carried over between chains.
+void testOrderbookBootstrapEndsAtTheNetworksHeight() {
+  for (const bool testnet : {true, false}) {
+    TestChain t(testnet ? "bootstrap_testnet" : "bootstrap_mainnet", testnet);
+    TEST(t.ok);
+    TEST(t.chain.isOrderbookInBootstrap());
+    TEST(t.currency.bootstrapBlocks() == (testnet ? TESTNET_BOOTSTRAP_BLOCKS : BOOTSTRAP_BLOCKS));
+    const uint32_t firstV11Block = t.currency.upgradeHeight(BLOCK_MAJOR_VERSION_11) + 1;
+    TEST(t.currency.blockMajorVersionAtHeight(firstV11Block) == BLOCK_MAJOR_VERSION_11);
+    TEST(t.currency.blockMajorVersionAtHeight(firstV11Block - 1) < BLOCK_MAJOR_VERSION_11);
+    uint32_t bootstrapBlocksSeen = 0;
+    uint32_t height = firstV11Block;
+    while (VaultCoreTestAccess::orderbookInBootstrapAfter(t.chain, height)) {
+      ++bootstrapBlocksSeen;
+      TEST(t.chain.orderbookBootstrapBlocksRemaining() == t.currency.bootstrapBlocks() - bootstrapBlocksSeen);
+      ++height;
+    }
+    TEST(t.chain.orderbookBootstrapBlocksRemaining() == 0);
+    TEST(bootstrapBlocksSeen == t.currency.bootstrapBlocks());
+    TEST(height == firstV11Block + t.currency.bootstrapBlocks());
+  }
+  TestChain fresh("bootstrap_fresh", true);
+  TEST(fresh.ok);
+  TEST(fresh.chain.isOrderbookInBootstrap());
+}
+
 // Owner decision 2026-11-12: the re-mint burn (TX_EXTRA_REMINT_BURN) is its
 // own burn type with its own counter, apart from HEAT, the SWF and the Eternal
 // Flame. Any transaction may burn; an alias registration pays its fee with one,
@@ -3398,6 +3433,7 @@ int main() {
   testAuntPolCdCreationFeePushPop();
   testAuntPolMintPremiumPushPop();
   testAliasBurnTotalPushPop();
+  testOrderbookBootstrapEndsAtTheNetworksHeight();
   testAliasBurnOnlyWhenRegistrationSucceeds();
   testAliasBurnsRemintedQuarterly();
   fprintf(stderr, "=== Treasury/Core Tests ===\nPassed: %d / %d\n", tests_passed, tests_run);

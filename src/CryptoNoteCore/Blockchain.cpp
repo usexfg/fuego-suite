@@ -768,6 +768,7 @@ private:
   m_vaultKeys = deriveVaultKeys(m_currency.genesisBlockHash());
   m_vault.setSpendKey(m_vaultKeys.spendKey);
   seedHearthPool();
+  resetOrderbookState();
 } // upgradekit
 
 // The Hearth pool starts from a fixed seed, not from any transaction, so the
@@ -801,6 +802,24 @@ namespace {
   uint64_t g_poolBandFilledLastBlock = 0;
 
 } // namespace
+
+// The first v11 block is upgradeHeight + 1; its first bootstrapBlocks() blocks
+// clear at the pool ratio and the call auction runs from the block after.
+uint32_t CryptoNote::Blockchain::callAuctionStartHeight() const {
+  return m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11) + 1 + m_currency.bootstrapBlocks();
+}
+
+// The order book's process-wide state starts as for a fresh sync whenever a
+// chain starts from scratch, so it never carries over from another chain.
+void CryptoNote::Blockchain::resetOrderbookState() {
+  g_orderbookMempool.clear();
+  g_poolOrchestrator = PoolOrderOrchestrator();
+  g_orderbookLastClearingPrice = 0;
+  g_orderbookLastNumMatches = 0;
+  g_orderbookIsInBootstrap = true;
+  g_orderbookBootstrapBlocksRemaining = m_currency.bootstrapBlocks();
+  g_poolBandFilledLastBlock = 0;
+}
 
 // A withdrawn deposit only answers "is this orderId taken" and a pop of its
 // withdraw. Past the rollback window no pop can reach it, so it leaves the set
@@ -1420,14 +1439,7 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
     m_limitDeposits.clear();
     rebuildLimitOrderIndex();
 
-    // Orderbook globals: same initial values as a fresh sync.
-    g_orderbookMempool.clear();
-    g_poolOrchestrator = PoolOrderOrchestrator();
-    g_orderbookLastClearingPrice = 0;
-    g_orderbookLastNumMatches = 0;
-    g_orderbookIsInBootstrap = true;
-    g_orderbookBootstrapBlocksRemaining = BOOTSTRAP_BLOCKS;
-    g_poolBandFilledLastBlock = 0;
+    resetOrderbookState();
 
     // Pass 1: block metadata indices + commitment index from tx extras.
     // Transaction/output/spent-key indices are NOT built here — pass 2 runs
@@ -4525,6 +4537,10 @@ bool CryptoNote::Blockchain::isOrderbookInBootstrap() const {
   return g_orderbookIsInBootstrap;
 }
 
+uint32_t CryptoNote::Blockchain::orderbookBootstrapBlocksRemaining() const {
+  return g_orderbookBootstrapBlocksRemaining;
+}
+
 uint64_t CryptoNote::Blockchain::getHearthSpotPrice() const {
   uint64_t pclearAvg = g_poolOrchestrator.getAveragePrice();
   if (pclearAvg > 0) return pclearAvg;
@@ -4668,19 +4684,16 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
       m_orderbookSnapshots.pop_front();
   }
 
-  // Bootstrap: first BOOTSTRAP_BLOCKS use HEARTH pool ratio as P_clear
-  if (g_orderbookIsInBootstrap) {
-    if (g_orderbookBootstrapBlocksRemaining > 0) {
-      g_orderbookBootstrapBlocksRemaining--;
-      if (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0) {
-        uint64_t spotPrice;
-        // V11+: canonical order price scale (HEAT/XFG × COIN).
-        spotPrice = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
-        g_orderbookLastClearingPrice = spotPrice;
-      }
-    } else {
-      g_orderbookIsInBootstrap = false;
-    }
+  // Bootstrap: the first bootstrapBlocks() v11 blocks (from upgradeHeight + 1,
+  // the first v11 block) clear at the Hearth pool ratio; the call auction runs
+  // from the block after. A function of height, so every node agrees however it
+  // reached this block. Remaining counts the bootstrap blocks after this one.
+  const uint32_t auctionStart = callAuctionStartHeight();
+  g_orderbookIsInBootstrap = height < auctionStart;
+  g_orderbookBootstrapBlocksRemaining = g_orderbookIsInBootstrap ? auctionStart - height - 1 : 0;
+  if (g_orderbookIsInBootstrap && !m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0) {
+    // V11+: canonical order price scale (HEAT/XFG × COIN).
+    g_orderbookLastClearingPrice = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
   }
 
   // Expire stale orders from mempool
@@ -5037,9 +5050,9 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
 
 void CryptoNote::Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
   g_orderbookMempool.clear();
-  g_orderbookIsInBootstrap = (height < m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11) + m_currency.bootstrapBlocks());
-  g_orderbookBootstrapBlocksRemaining = g_orderbookIsInBootstrap ?
-    (m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11) + m_currency.bootstrapBlocks() - height) : 0;
+  const uint32_t auctionStart = callAuctionStartHeight();
+  g_orderbookIsInBootstrap = height < auctionStart;
+  g_orderbookBootstrapBlocksRemaining = g_orderbookIsInBootstrap ? auctionStart - height - 1 : 0;
 
   if (g_orderbookIsInBootstrap && g_orderbookBootstrapBlocksRemaining == 0) {
     g_orderbookIsInBootstrap = false;

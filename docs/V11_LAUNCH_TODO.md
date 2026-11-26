@@ -54,10 +54,10 @@ Why it was missed: every HEAT test exercised one layer with handcrafted input. C
 | 0.1 post-v11 HEAT rings rejected | `testHeatRingsAfterHeatwave` | covered |
 | 0.2 node decoys not ring-valid | `testNodeDecoysAreRingValid` | covered |
 | 0.3 container dropped HEAT | `HeatIsListedOnlyUnderTheHeatType` | covered |
-| 0.3 WalletGreen available balance counted CDs and HEAT | none | gap: walletd scenario |
+| 0.3 WalletGreen available balance counted CDs and HEAT | `WalletdScenario.BuysAndSellsHeatAtTheQuote` (HEAT part; CDs are v12) | covered |
 | 0.3 WalletLegacy reserve proof counted HEAT | none | gap |
 | 0.4 WalletLegacy HEAT records (own and external) | `heat_e2e_tests` mint, send, reopen | covered |
-| 0.4 WalletGreen deposit index unique per (tx, output) | none | gap: walletd scenario |
+| 0.4 WalletGreen deposit index unique per (tx, output) | `WalletdScenario.BuysAndSellsHeatAtTheQuote`, `WalletdHeatToFunsaReadsLikeAnyPayment` (several HEAT outputs per transaction) | covered |
 | 0.5 WalletLegacy send HEAT, sell, LP add/remove | `heat_e2e_tests` | covered |
 | 0.5 WalletLegacy CD open, HEAT-escrow order, CD withdraw | none (testnet run only) | gap: CD and order scenarios |
 | 0.5 signing keys wiped | none | gap: not observable from outside; review only |
@@ -65,13 +65,13 @@ Why it was missed: every HEAT test exercised one layer with handcrafted input. C
 | 0.6 DIGM in a HEAT ring | `testMarkerTermRingsAfterHeatwave` | covered |
 | 0.6 LP remove pays declared amounts | `testLpRemovePaysTheDeclaredAmounts`, `heat_e2e_tests` LP | covered |
 | 0.6 LP add declared wrong shares | `heat_e2e_tests` LP | covered |
-| 0.6 sell proceeds to a commitment | `heat_e2e_tests` sell (WalletLegacy) | WalletGreen gap |
+| 0.6 sell proceeds to a commitment | `heat_e2e_tests` sell (both wallets) | covered |
 | 0.6 CD withdraw paid XFG | none | gap: CD scenario |
 | 0.7 `popTransactions` cleared indexes | `testBlockPopKeepsEarlierOutputs` | covered |
 | 0.7 commitment spend could not connect | `testCommitmentSpendConnectsOnce` | covered |
 | 0.7 output check used mainnet term range | `testOutputCheckUsesTheNetworkTermRange` | covered |
 | 0.7 v11 payouts hit the aggregate amount check | `heat_e2e_tests` LP remove | covered |
-| 0.7 `get_limit_orders` uninitialised fields | none | gap: reading an uninitialised field is undefined behaviour, so only a sanitizer (MSan) or an order scenario can catch it |
+| 0.7 `get_limit_orders` uninitialised fields | none: the scenarios read orders through `ICore::getLimitOrders`, not the RPC | gap: needs an RPC-level test or a sanitizer (MSan) run |
 | 0.7 WalletLegacy reload lost hashes and deposit data | `heat_e2e_tests` reopen | covered |
 | 0.7 failed send kept deposits spent | `FailedSendReleasesItsInputs`, `UnbuiltSendReleasesItsDeposit` | covered |
 | 0.7 `reset` kept stale deposit records | `heat_e2e_tests` reset | covered |
@@ -84,7 +84,10 @@ Why it was missed: every HEAT test exercised one layer with handcrafted input. C
 - Found by the rescan scenario and fixed: the transfers container never marked a spent commitment output (HEAT, CD, LP shares) as spent. Outputs were indexed under a `Commitment` spend descriptor and inputs looked them up under a `Key` one, which never compare equal; CD transfer inputs fell into an assert. A wallet's balance was right only from its own send bookkeeping, so a rescan, a restore from keys or another wallet on the same keys counted spent HEAT as spendable and would try to spend it. Both wallets use this container. Transfers caches written before the fix (storage version below 4) that hold commitment outputs are refused on load, so those wallets rescan once on their own (`CommitmentSpendMarksTheOutputSpent`, `CommitmentTransferMarksTheOutputSpent`, `ResetWalletRescansToTheSameBalances`).
 - Fixed 2026-11-21: against an in-process node, WalletLegacy's synchronizer reported progress at the tip in a tight loop and never reported sync completed. `InProcessNode::getLastKnownBlockHeight` returned the observed height minus one, which wrapped to the largest height with no peers; it now falls back to the node's own tip. NodeRpcProxy reads the daemon's height and is not affected.
 - The in-process test node set no testnet flag on its P2P config, so it dialled mainnet seeds under the mainnet network id; fixed.
-- To do: buy HEAT, limit orders (both sides, auction fill, backstop, stop, withdraw, auto-withdraw), CD open and claim (needs a currency with an earlier v12), alias, `dev_donate`, funsa send and receive, walletd (WalletGreen) for each, and two-node propagation, reorg and resync.
+- DONE 2026-11-25/26: buy HEAT, limit orders (both sides, fill, stop, withdraw, expiry, auto-withdraw), alias (both wallets, racing registrations, by-address lookup), `dev_donate`, funsa send and receive including private HEAT sends, funsa-held XFG paying every HEAT operation; walletd: mint, buy and sell, HEAT to funsa, funsa receive and spend, limit orders with auto-withdraw, `dev_donate`, alias. 22 scenarios; each also passes run alone.
+- Found 2026-11-26: the order scenarios passed only after earlier tests in the same process. The order book's bootstrap was a process-wide counter started at the mainnet length (144) on every network, so testnet's call auction began 144 blocks after v11, not the documented 72, and a second chain in one process inherited the first chain's order-book state. Bootstrap is now a function of height and the network's `bootstrapBlocks()`: the first `bootstrapBlocks()` v11 blocks (from upgradeHeight + 1) clear at the pool ratio, as the counter did on mainnet, and every chain resets the order-book state (`testOrderbookBootstrapEndsAtTheNetworksHeight`). Testnet consensus: covered by the testnet reset.
+- Not in walletd: Hearth LP add and remove (no WalletGreen implementation).
+- To do: CD open and claim (v12 testing), two-node propagation, reorg and resync.
 
 9.3 Inventory gate for features added later. A test reads the feature lists the code already keeps and fails when an entry has no end-to-end scenario, or a scenario names an entry that no longer exists:
 - transaction extra tags (`TX_EXTRA_*`),

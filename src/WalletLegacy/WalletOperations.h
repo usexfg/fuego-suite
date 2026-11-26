@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "CryptoNoteCore/TransactionExtra.h"
+#include "IWallet.h"
 #include "IWalletLegacy.h"
 
 namespace CryptoNote {
@@ -60,6 +61,7 @@ WalletSendPlan planDevDonation(const Currency& currency, const std::string& ownA
 // The wallet's own transactions as limitOrdersDueForWithdraw reads them: which
 // orders were placed, stopped or withdrawn, and whether those withdraws settled.
 std::vector<WalletOrderTransaction> walletOrderHistory(IWalletLegacy& wallet);
+std::vector<WalletOrderTransaction> walletOrderHistory(IWallet& wallet);
 
 struct SubaddressIndex {
   uint32_t major = 0;

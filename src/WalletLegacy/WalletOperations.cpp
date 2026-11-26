@@ -121,6 +121,19 @@ std::vector<WalletOrderTransaction> walletOrderHistory(IWalletLegacy& wallet) {
   return history;
 }
 
+std::vector<WalletOrderTransaction> walletOrderHistory(IWallet& wallet) {
+  std::vector<WalletOrderTransaction> history;
+  for (size_t id = 0; id < wallet.getTransactionCount(); ++id) {
+    const WalletTransaction transaction = wallet.getTransaction(id);
+    const bool settled = transaction.blockHeight != WALLET_UNCONFIRMED_TRANSACTION_HEIGHT;
+    const bool failed = transaction.state == WalletTransactionState::FAILED ||
+                        transaction.state == WalletTransactionState::CANCELLED ||
+                        transaction.state == WalletTransactionState::DELETED;
+    history.push_back({transaction.extra, settled, failed});
+  }
+  return history;
+}
+
 WalletSendPlan planDevDonation(const Currency& currency, const std::string& ownAddress, uint64_t amount) {
   if (amount == 0 || amount > parameters::MONEY_SUPPLY) {
     throw std::invalid_argument("dev donation amount must be positive and within the money supply");

@@ -171,6 +171,7 @@ namespace CryptoNote {
     // Orderbook (v11+) — reads from block finalization state
     uint64_t getOrderbookClearingPrice() const;
     bool isOrderbookInBootstrap() const;
+    uint32_t orderbookBootstrapBlocksRemaining() const;
 
     // Hearth spot price: 30-block P_clear average, fallback to pool ratio
     uint64_t getHearthSpotPrice() const;
@@ -955,6 +956,8 @@ namespace CryptoNote {
     void rebuildFciState(uint32_t blockCount);
     void rollbackFciBlock(uint32_t poppedHeight);
     void seedHearthPool();
+    void resetOrderbookState();
+    uint32_t callAuctionStartHeight() const;
     void accumulateTwap(const Block& block, uint32_t height);
     void popTransaction(const Transaction &transaction, const Crypto::Hash &transactionHash,
                         uint32_t height, uint8_t majorVersion);

@@ -8,6 +8,7 @@
 //  - ammGetSpotPrice: canonical HEAT/XFG × COIN scale.
 //  - TreasuryFund tx-extra tag: writer/reader roundtrip.
 
+#include "CryptoNoteCore/Account.h"
 #include "CryptoNoteCore/BankingIndex.h"
 #include "CryptoNoteCore/AmmPool.h"
 #include "CryptoNoteCore/CryptoNoteFormatUtils.h"
@@ -1283,6 +1284,16 @@ public:
     chain.recordRemint(height, amount);
   }
   static void unrecordRemint(Blockchain& chain, uint32_t height) { chain.unrecordRemint(height); }
+  static bool indexAlias(Blockchain& chain, const TransactionExtraAliasRegistration& registration) {
+    AliasEntry entry;
+    entry.alias = registration.alias;
+    entry.ownerAddress = registration.ownerAddress;
+    entry.aliasHash = registration.aliasHash;
+    entry.addressHash = registration.addressHash;
+    entry.aliasType = registration.aliasType;
+    return chain.m_aliasIndex.registerAlias(entry);
+  }
+  static bool unindexAlias(Blockchain& chain, const std::string& alias) { return chain.m_aliasIndex.removeAlias(alias); }
   static bool validateCoinbase(Blockchain& chain, const Block& b, uint32_t height, uint64_t alreadyGenerated,
                                uint64_t remint) {
     uint64_t reward = 0;
@@ -1484,6 +1495,21 @@ void testCoinbaseRejectsEverySettlementTag() {
   std::vector<uint8_t> aliasExtra;
   TEST(addAliasToExtra(aliasExtra, coinbaseAlias));
   TEST(!VaultCoreTestAccess::prevalidateCoinbase(t.chain, coinbaseWith(aliasExtra), 1));
+  // Nor may it release or transfer one: it is applied first in its block, ahead
+  // of registrations settlement already admitted.
+  TransactionExtraAliasTransfer coinbaseTransfer;
+  coinbaseTransfer.alias = "minerals";
+  coinbaseTransfer.oldOwnerAddress = "miner-owner";
+  coinbaseTransfer.newOwnerAddress = "victim-owner";
+  std::vector<uint8_t> transferExtra;
+  TEST(addAliasTransferToExtra(transferExtra, coinbaseTransfer));
+  TEST(!VaultCoreTestAccess::prevalidateCoinbase(t.chain, coinbaseWith(transferExtra), 1));
+  TransactionExtraAliasRelease coinbaseRelease;
+  coinbaseRelease.alias = "minerals";
+  coinbaseRelease.ownerAddress = "miner-owner";
+  std::vector<uint8_t> releaseExtra;
+  TEST(addAliasReleaseToExtra(releaseExtra, coinbaseRelease));
+  TEST(!VaultCoreTestAccess::prevalidateCoinbase(t.chain, coinbaseWith(releaseExtra), 1));
   std::vector<uint8_t> coinbaseBurn;
   TEST(addRemintBurnToExtra(coinbaseBurn, parameters::COIN));
   TEST(!VaultCoreTestAccess::prevalidateCoinbase(t.chain, coinbaseWith(coinbaseBurn), 1));
@@ -2657,6 +2683,35 @@ void testHearthStateCommittedByProofOfWork() {
   TEST(decoded.hearthState == block.hearthState && get_block_hash(decoded) == id);
 }
 
+Crypto::Hash aliasOwnerKeyHash(const AccountBase& owner) {
+  const AccountPublicAddress& address = owner.getAccountKeys().address;
+  uint8_t preimage[64];
+  memcpy(preimage, &address.spendPublicKey, 32);
+  memcpy(preimage + 32, &address.viewPublicKey, 32);
+  return Crypto::cn_fast_hash(preimage, sizeof(preimage));
+}
+
+// A registration owned by a real account, one per owner name, so its owner
+// hash is the hash of its owner address as consensus requires from v11.
+TransactionExtraAliasRegistration registrationOwnedBy(const std::string& alias, const std::string& ownerName,
+                                                      uint8_t aliasType) {
+  static std::map<std::string, AccountBase> owners;
+  static Logging::LoggerGroup quiet;
+  static const Currency mainnet = CurrencyBuilder(quiet).currency();
+  auto owner = owners.find(ownerName);
+  if (owner == owners.end()) {
+    owner = owners.emplace(ownerName, AccountBase()).first;
+    owner->second.generate();
+  }
+  TransactionExtraAliasRegistration registration;
+  registration.alias = alias;
+  registration.aliasHash = Crypto::cn_fast_hash(alias.data(), alias.size());
+  registration.ownerAddress = mainnet.accountAddressAsString(owner->second.getAccountKeys().address);
+  registration.addressHash = aliasOwnerKeyHash(owner->second);
+  registration.aliasType = aliasType;
+  return registration;
+}
+
 // Owner decision 2026-11-12: the re-mint burn (TX_EXTRA_REMINT_BURN) is its
 // own burn type with its own counter, apart from HEAT, the SWF and the Eternal
 // Flame. Any transaction may burn; an alias registration pays its fee with one,
@@ -2669,11 +2724,7 @@ void testAliasRegistrationFeeBurned() {
   auto settle = [&](bool withAlias, uint8_t aliasType, uint64_t burn, uint64_t xfgIn, uint64_t& fee, std::string& err) {
     std::vector<uint8_t> extra;
     if (withAlias) {
-      TransactionExtraAliasRegistration reg;
-      reg.alias = "abcdefgh";
-      reg.ownerAddress = "owner-address";
-      reg.aliasType = aliasType;
-      addAliasToExtra(extra, reg);
+      addAliasToExtra(extra, registrationOwnedBy("abcdefgh", "owner-address", aliasType));
     }
     if (burn > 0) addRemintBurnToExtra(extra, burn);
     Blockchain::SettlementScratch scratch;
@@ -2688,7 +2739,8 @@ void testAliasRegistrationFeeBurned() {
   TEST(!settle(true, 1, 0, 2 * C, fee, err) && err.find("registration fee") != std::string::npos);
   TEST(!settle(true, 1, C / 2, 2 * C, fee, err) && err.find("registration fee") != std::string::npos);
   TEST(!settle(true, 1, C, C + C / 4, fee, err) && err.find("does not cover") != std::string::npos);
-  TEST(settle(true, 0, 0, 2 * C, fee, err) && fee == C + C / 2);
+  // A type-0 (reserved) registration never registers, so it may not settle.
+  TEST(!settle(true, 0, 0, 2 * C, fee, err) && err.find("not a regular alias") != std::string::npos);
   // The burn is a type of its own: a transaction with no alias may burn too,
   // so the counter does not count aliases.
   TEST(settle(false, 0, C, 2 * C, fee, err) && fee == C / 2);
@@ -2825,6 +2877,151 @@ void testAliasBurnTotalPushPop() {
   VaultCoreTestAccess::popTx(t.chain, burnBlock);
   VaultCoreTestAccess::popTx(t.chain, aliasBlock);
   TEST(t.chain.getRemintBurnedXfg() == 0);
+}
+
+// Owner decision 2026-11-26: a registration's re-mint burn is kept only when the
+// alias registers. From v11 a registration that would fail (alias taken or
+// reserved, owner already holding an alias, another network, or a second claim
+// on the same alias or owner in the block) makes its transaction invalid.
+TransactionExtraAliasRegistration aliasRegistration(const std::string& alias, const std::string& owner) {
+  return registrationOwnedBy(alias, owner, 1);
+}
+
+TransactionExtraAliasRegistration aliasRegistration(const std::string& alias, const std::string& owner,
+                                                    const AccountBase& ownerAccount) {
+  TransactionExtraAliasRegistration registration = aliasRegistration(alias, "unused");
+  registration.ownerAddress = owner;
+  registration.addressHash = aliasOwnerKeyHash(ownerAccount);
+  return registration;
+}
+
+TransactionExtraAliasRegistration ownedAlias(const std::string& alias, const std::string& owner, const AccountBase& ownerAccount) {
+  return aliasRegistration(alias, owner, ownerAccount);
+}
+
+TransactionExtraAliasRelease signedAliasRelease(const std::string& alias, const AccountBase& owner,
+                                                const std::string& ownerAddress) {
+  TransactionExtraAliasRelease release;
+  release.alias = alias;
+  release.aliasHash = Crypto::cn_fast_hash(alias.data(), alias.size());
+  release.ownerAddress = ownerAddress;
+  const Crypto::Hash ownerHash = aliasOwnerKeyHash(owner);
+  uint8_t preimage[8 + 32 + 1];
+  memcpy(preimage, alias.data(), 8);
+  memcpy(preimage + 8, &ownerHash, 32);
+  preimage[40] = 0x00;
+  const Crypto::Hash challenge = Crypto::cn_fast_hash(preimage, sizeof(preimage));
+  Crypto::generate_signature(challenge, owner.getAccountKeys().address.spendPublicKey,
+                             owner.getAccountKeys().spendSecretKey, release.proof);
+  return release;
+}
+
+TransactionExtraAliasTransfer signedAliasTransfer(const std::string& alias, const AccountBase& oldOwner,
+                                                  const std::string& oldOwnerAddress, const AccountBase& newOwner,
+                                                  const std::string& newOwnerAddress) {
+  TransactionExtraAliasTransfer transfer;
+  transfer.alias = alias;
+  transfer.aliasHash = Crypto::cn_fast_hash(alias.data(), alias.size());
+  transfer.oldOwnerAddress = oldOwnerAddress;
+  transfer.newOwnerAddress = newOwnerAddress;
+  transfer.newAddressHash = aliasOwnerKeyHash(newOwner);
+  const Crypto::Hash oldOwnerHash = aliasOwnerKeyHash(oldOwner);
+  uint8_t preimage[8 + 32 + 32 + 1];
+  memcpy(preimage, alias.data(), 8);
+  memcpy(preimage + 8, &oldOwnerHash, 32);
+  memcpy(preimage + 40, &transfer.newAddressHash, 32);
+  preimage[72] = 0x01;
+  const Crypto::Hash challenge = Crypto::cn_fast_hash(preimage, sizeof(preimage));
+  Crypto::generate_signature(challenge, oldOwner.getAccountKeys().address.spendPublicKey,
+                             oldOwner.getAccountKeys().spendSecretKey, transfer.proof);
+  return transfer;
+}
+
+std::vector<uint8_t> aliasRegistrationExtra(const TransactionExtraAliasRegistration& registration) {
+  std::vector<uint8_t> extra;
+  addAliasToExtra(extra, registration);
+  addRemintBurnToExtra(extra, parameters::ALIAS_REGISTRATION_FEE);
+  return extra;
+}
+
+void testAliasBurnOnlyWhenRegistrationSucceeds() {
+  TestChain t("alias_burn_on_success");
+  TEST(t.ok);
+  const uint64_t C = parameters::COIN;
+  auto settles = [&](Blockchain::SettlementScratch& scratch, const std::vector<uint8_t>& extra, std::string& err) {
+    AssetFlows flows;
+    uint64_t fee = 0;
+    return t.chain.validateSettlement(settlementTx({2 * C}, {keyOut(C / 2)}, extra), 100, scratch, flows, fee, err);
+  };
+  std::string err;
+  TEST(VaultCoreTestAccess::indexAlias(t.chain, aliasRegistration("firenode", "owner-one")));
+
+  Blockchain::SettlementScratch scratch;
+  TEST(!settles(scratch, aliasRegistrationExtra(aliasRegistration("firenode", "owner-two")), err) && err.find("taken") != std::string::npos);
+  TEST(!settles(scratch, aliasRegistrationExtra(aliasRegistration("FIRENODE", "owner-two")), err) && err.find("taken") != std::string::npos);
+  TEST(!settles(scratch, aliasRegistrationExtra(aliasRegistration("newalias", "owner-one")), err) && err.find("already has an alias") != std::string::npos);
+  TEST(!settles(scratch, aliasRegistrationExtra(aliasRegistration("fuegodev", "owner-two")), err) && err.find("reserved") != std::string::npos);
+  auto foreign = aliasRegistration("newalias", "owner-two");
+  foreign.networkId = t.currency.getFuegoNetworkId() + 1;
+  TEST(!settles(scratch, aliasRegistrationExtra(foreign), err) && err.find("another network") != std::string::npos);
+  auto squatting = aliasRegistration("squatter", "owner-five");
+  squatting.addressHash = aliasRegistration("squatter", "owner-six").addressHash;
+  TEST(!settles(scratch, aliasRegistrationExtra(squatting), err) && err.find("owner hash") != std::string::npos);
+  auto unparseable = aliasRegistration("squatter", "owner-five");
+  unparseable.ownerAddress = "not-an-address";
+  TEST(!settles(scratch, aliasRegistrationExtra(unparseable), err) && err.find("owner hash") != std::string::npos);
+
+  TEST(settles(scratch, aliasRegistrationExtra(aliasRegistration("newalias", "owner-two")), err));
+  TEST(!settles(scratch, aliasRegistrationExtra(aliasRegistration("newalias", "owner-three")), err) && err.find("claimed twice") != std::string::npos);
+  TEST(!settles(scratch, aliasRegistrationExtra(aliasRegistration("another1", "owner-two")), err) && err.find("claimed twice") != std::string::npos);
+
+  // A transfer applies only with the owner's proof; one that cannot apply is
+  // invalid and claims nothing.
+  AccountBase oldOwner;
+  AccountBase newOwner;
+  oldOwner.generate();
+  newOwner.generate();
+  const std::string oldOwnerAddress = t.currency.accountAddressAsString(oldOwner.getAccountKeys().address);
+  const std::string newOwnerAddress = t.currency.accountAddressAsString(newOwner.getAccountKeys().address);
+  TEST(VaultCoreTestAccess::indexAlias(t.chain, ownedAlias("transfr1", oldOwnerAddress, oldOwner)));
+  TransactionExtraAliasTransfer transfer = signedAliasTransfer("transfr1", oldOwner, oldOwnerAddress, newOwner, newOwnerAddress);
+  TransactionExtraAliasTransfer unsigned_ = transfer;
+  unsigned_.proof = Crypto::Signature();
+  std::vector<uint8_t> transferExtra;
+  std::vector<uint8_t> unsignedExtra;
+  TEST(addAliasTransferToExtra(transferExtra, transfer));
+  TEST(addAliasTransferToExtra(unsignedExtra, unsigned_));
+
+  Blockchain::SettlementScratch transferBlock;
+  TEST(!settles(transferBlock, unsignedExtra, err) && err.find("invalid ownership proof") != std::string::npos);
+  TEST(settles(transferBlock, aliasRegistrationExtra(aliasRegistration("another1", newOwnerAddress, newOwner)), err));
+  Blockchain::SettlementScratch secondBlock;
+  TEST(settles(secondBlock, transferExtra, err));
+  TEST(!settles(secondBlock, transferExtra, err) && err.find("claimed twice") != std::string::npos);
+  TEST(!settles(secondBlock, aliasRegistrationExtra(aliasRegistration("another1", newOwnerAddress, newOwner)), err) &&
+       err.find("claimed twice") != std::string::npos);
+
+  const TransactionExtraAliasRelease release = signedAliasRelease("transfr1", oldOwner, oldOwnerAddress);
+  TransactionExtraAliasRelease forgedRelease = release;
+  forgedRelease.proof = Crypto::Signature();
+  std::vector<uint8_t> releaseExtra;
+  std::vector<uint8_t> forgedReleaseExtra;
+  TEST(addAliasReleaseToExtra(releaseExtra, release));
+  TEST(addAliasReleaseToExtra(forgedReleaseExtra, forgedRelease));
+  Blockchain::SettlementScratch releaseBlock;
+  TEST(!settles(releaseBlock, forgedReleaseExtra, err) && err.find("invalid ownership proof") != std::string::npos);
+  TEST(settles(releaseBlock, releaseExtra, err));
+  TEST(!settles(releaseBlock, transferExtra, err) && err.find("claimed twice") != std::string::npos);
+
+  // Before v11 (and on a chain still loading at node start) the pool never drops
+  // a transaction for its alias tags: pending v11 registrations survive a restart.
+  Transaction taken = settlementTx({2 * C}, {keyOut(C / 2)}, aliasRegistrationExtra(aliasRegistration("firenode", "owner-two")));
+  TEST(!t.chain.aliasTagsCannotApply(taken));
+
+  TEST(VaultCoreTestAccess::unindexAlias(t.chain, "firenode"));
+  Blockchain::SettlementScratch afterPop;
+  TEST(settles(afterPop, aliasRegistrationExtra(aliasRegistration("firenode", "owner-two")), err));
+  TEST(settles(afterPop, aliasRegistrationExtra(aliasRegistration("another1", "owner-one")), err));
 }
 
 // Owner decision 2026-11-12: re-mint burns are re-minted to the dev fund once a
@@ -3201,6 +3398,7 @@ int main() {
   testAuntPolCdCreationFeePushPop();
   testAuntPolMintPremiumPushPop();
   testAliasBurnTotalPushPop();
+  testAliasBurnOnlyWhenRegistrationSucceeds();
   testAliasBurnsRemintedQuarterly();
   fprintf(stderr, "=== Treasury/Core Tests ===\nPassed: %d / %d\n", tests_passed, tests_run);
   return tests_passed == tests_run ? 0 : 1;

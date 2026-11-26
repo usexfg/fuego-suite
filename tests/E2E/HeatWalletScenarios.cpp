@@ -37,6 +37,9 @@
 #include "WalletLegacy/HearthQuote.h"
 #include "WalletLegacy/WalletLegacy.h"
 #include "WalletLegacy/WalletOperations.h"
+#include "Wallet/WalletGreen.h"
+#include "System/Dispatcher.h"
+#include "System/Timer.h"
 
 using namespace CryptoNote;
 
@@ -276,6 +279,24 @@ protected:
     ASSERT_TRUE(nodeCore().getTransaction(sent.hash, tx, true));
     std::string error;
     EXPECT_TRUE(validateSubaddressTxExtra(tx, BLOCK_MAJOR_VERSION_11, true, &error)) << error;
+  }
+
+  // A payment to one subaddress takes the single-key form, as an XFG payment
+  // does: no per-output keys (0x06) and one janus base, so after F8 it looks
+  // like any other transaction.
+  void expectReadsLikeAnyPayment(ScenarioWallet& sender, TransactionId transactionId) {
+    WalletLegacyTransaction sent;
+    ASSERT_TRUE(sender.wallet.getTransaction(transactionId, sent));
+    expectReadsLikeAnyPayment(sent.hash);
+  }
+
+  void expectReadsLikeAnyPayment(const Crypto::Hash& transactionHash) {
+    Transaction tx;
+    ASSERT_TRUE(nodeCore().getTransaction(transactionHash, tx, true));
+    const SubaddressTxKeys keys = readSubaddressTxKeys(tx.extra);
+    EXPECT_TRUE(keys.additionalPubKeys.empty()) << "no per-output tx keys";
+    ASSERT_EQ(1u, keys.janusBases.size());
+    EXPECT_NE(getTransactionPublicKeyFromExtra(tx.extra), keys.janusBases.front());
   }
 
   void confirm() {
@@ -581,7 +602,9 @@ TEST_F(HeatWalletScenario, FunsaSubaddressReceivesAndSpendsXfgAndHeat) {
   WalletLegacyTransfer toFunsa{funsa, static_cast<int64_t>(xfgSent)};
   expectSent(sender, sender.wallet.sendTransaction(transactionSecret, toFunsa, currency.minimumFee(), "", 0));
   const uint64_t heatSent = minted / 4;
-  expectSent(sender, sender.wallet.sendHeatV10(funsaAddress, heatSent, currency.minimumFee(), 0, true));
+  const TransactionId heatSend = sender.wallet.sendHeatV10(funsaAddress, heatSent, currency.minimumFee(), 0, true);
+  expectSent(sender, heatSend);
+  expectReadsLikeAnyPayment(sender, heatSend);
   confirm();
 
   EXPECT_EQ(xfgSent, xfgOf(recipient));
@@ -596,6 +619,103 @@ TEST_F(HeatWalletScenario, FunsaSubaddressReceivesAndSpendsXfgAndHeat) {
   EXPECT_EQ(senderHeatBefore + heatReturned, heatOf(sender));
   EXPECT_EQ(heatSent - heatReturned, heatOf(recipient));
   EXPECT_EQ(xfgSent - currency.minimumFee(), xfgOf(recipient));
+}
+
+// walletd (WalletGreen) on the scenario node. It runs on this thread's
+// dispatcher, so waiting for it sleeps on that dispatcher.
+class GreenScenarioWallet {
+public:
+  GreenScenarioWallet(const Currency& currency, INode& node, Logging::ILogger& logger, const std::string& path)
+      : timer(dispatcher), wallet(dispatcher, currency, node, logger), api(wallet) {
+    api.initialize(path, "pass");
+    address = api.createAddress();
+  }
+  ~GreenScenarioWallet() { api.shutdown(); }
+
+  bool waitSyncedTo(uint32_t blockCount) {
+    for (int attempt = 0; attempt < kGreenSyncAttempts; ++attempt) {
+      if (api.getBlockCount() >= blockCount) {
+        return true;
+      }
+      timer.sleep(std::chrono::milliseconds(50));
+    }
+    return false;
+  }
+
+  uint64_t xfg() const { return api.getActualBalance() + api.getPendingBalance(); }
+  uint64_t heat() const { return api.getUnlockedHeatBalance() + api.getLockedHeatBalance(); }
+
+  System::Dispatcher dispatcher;
+  System::Timer timer;
+  WalletGreen wallet;
+  IWallet& api;
+  std::string address;
+
+private:
+  static const int kGreenSyncAttempts = 1200;
+};
+
+// walletd: HEAT sent to one funsa subaddress takes the single-key form and the
+// recipient is credited; the sender keeps its HEAT change.
+TEST_F(HeatWalletScenario, WalletdHeatToFunsaReadsLikeAnyPayment) {
+  ScenarioWallet& funder = fundedActor(kActorFunding);
+  GreenScenarioWallet green(currency, *inode, logger, dataDir + "/green.wallet");
+  const uint64_t greenFunding = 300 * parameters::COIN;
+  Crypto::SecretKey transactionSecret;
+  WalletLegacyTransfer funding{green.address, static_cast<int64_t>(greenFunding)};
+  expectSent(funder, funder.wallet.sendTransaction(transactionSecret, funding, currency.minimumFee(), "", 0));
+  confirm();
+  ASSERT_TRUE(green.waitSyncedTo(nodeHeight()));
+  ASSERT_EQ(greenFunding, green.xfg());
+
+  const uint64_t burned = 200 * parameters::COIN;
+  const HeatMintQuote quote = quoteHeatMint(*inode, burned);
+  std::string mintHash;
+  green.wallet.mintHeatV10(burned, quote.heatToMinter, currency.minimumFee(), 0, mintHash);
+  confirm();
+  ASSERT_TRUE(green.waitSyncedTo(nodeHeight()));
+  ASSERT_EQ(quote.heatToMinter, green.heat());
+
+  ScenarioWallet& recipient = addWallet();
+  const std::string funsa = recipient.wallet.registerSubAddress(0, 1);
+  ASSERT_TRUE(syncAll());
+  const uint64_t heatSent = quote.heatToMinter / 3;
+  std::string sendHash;
+  green.wallet.sendHeatV10(funsa, heatSent, currency.minimumFee(), 0, sendHash);
+  Crypto::Hash sendId;
+  ASSERT_TRUE(Common::podFromHex(sendHash, sendId));
+  expectReadsLikeAnyPayment(sendId);
+  confirm();
+  ASSERT_TRUE(green.waitSyncedTo(nodeHeight()));
+  EXPECT_EQ(heatSent, heatOf(recipient));
+  EXPECT_EQ(quote.heatToMinter - heatSent, green.heat());
+}
+
+// walletd alias registration: the alias is owned by a fresh subaddress whose key
+// hash is the registration's owner hash, so it confirms and resolves by address.
+TEST_F(HeatWalletScenario, WalletdAliasIsOwnedByAFreshSubaddress) {
+  ScenarioWallet& funder = fundedActor(kActorFunding);
+  GreenScenarioWallet green(currency, *inode, logger, dataDir + "/green-alias.wallet");
+  Crypto::SecretKey transactionSecret;
+  WalletLegacyTransfer funding{green.address, static_cast<int64_t>(50 * parameters::COIN)};
+  expectSent(funder, funder.wallet.sendTransaction(transactionSecret, funding, currency.minimumFee(), "", 0));
+  confirm();
+  ASSERT_TRUE(green.waitSyncedTo(nodeHeight()));
+
+  const std::string alias = "greenali";
+  Crypto::Hash registration;
+  const std::error_code registered = green.wallet.registerAlias(alias, green.address, registration);
+  ASSERT_FALSE(registered) << registered.message();
+  Transaction pooled;
+  ASSERT_TRUE(nodeCore().getTransaction(registration, pooled, true)) << "the node admitted the registration";
+  confirm();
+
+  const auto entry = nodeCore().getAliasByName(alias);
+  ASSERT_TRUE(entry.has_value());
+  EXPECT_NE(green.address, entry->ownerAddress);
+  const auto byAddress = nodeCore().getAliasByAddress(entry->ownerAddress);
+  ASSERT_TRUE(byAddress.has_value());
+  EXPECT_EQ(alias, byAddress->alias);
 }
 
 // Each holder's only XFG sits on a funsa subaddress, so the mint, swap, order
@@ -668,14 +788,61 @@ TEST_F(HeatWalletScenario, RegisteredAliasResolvesToItsSubaddress) {
   const std::string aliasAddress = holder.wallet.registerSubAddress(0, 1);
   const std::string alias = "firenode";
   ASSERT_FALSE(nodeCore().aliasExists(alias));
+  EXPECT_FALSE(hasPendingAliasRegistration(holder.wallet));
   send(holder, planAliasRegistration(currency, alias, aliasAddress, BLOCK_MAJOR_VERSION_11));
+  EXPECT_TRUE(hasPendingAliasRegistration(holder.wallet));
   confirm();
+  EXPECT_FALSE(hasPendingAliasRegistration(holder.wallet));
 
   const auto entry = nodeCore().getAliasByName(alias);
   ASSERT_TRUE(entry.has_value());
   EXPECT_EQ(aliasAddress, entry->ownerAddress);
   EXPECT_NE(holder.wallet.getAddress(), entry->ownerAddress);
+  const auto byAddress = nodeCore().getAliasByAddress(aliasAddress);
+  ASSERT_TRUE(byAddress.has_value()) << "the funsa owner finds its alias";
+  EXPECT_EQ(alias, byAddress->alias);
+  EXPECT_FALSE(nodeCore().getAliasByAddress(holder.wallet.getAddress()).has_value());
   EXPECT_THROW(planAliasRegistration(currency, "Firenode", aliasAddress, BLOCK_MAJOR_VERSION_11), std::invalid_argument);
+}
+
+// Two registrations of one alias wait in the pool together: the block takes one,
+// and only that registration's burn is kept. The other never confirms.
+TEST_F(HeatWalletScenario, RacingAliasRegistrationsBurnOnlyForTheWinner) {
+  ScenarioWallet& first = fundedActor(kActorFunding);
+  ScenarioWallet& second = addWallet();
+  Crypto::SecretKey transactionSecret;
+  WalletLegacyTransfer funding{second.wallet.getAddress(), static_cast<int64_t>(100 * parameters::COIN)};
+  expectSent(first, first.wallet.sendTransaction(transactionSecret, funding, currency.minimumFee(), "", 0));
+  confirm();
+
+  const std::string alias = "racealia";
+  auto registrationWithBurn = [&](ScenarioWallet& holder) {
+    WalletSendPlan plan = planAliasRegistration(currency, alias, holder.wallet.registerSubAddress(0, 1), BLOCK_MAJOR_VERSION_11);
+    std::vector<uint8_t> extra(plan.extra.begin(), plan.extra.end());
+    addRemintBurnToExtra(extra, parameters::ALIAS_REGISTRATION_FEE);
+    plan.extra.assign(extra.begin(), extra.end());
+    plan.fee += parameters::ALIAS_REGISTRATION_FEE;
+    return plan;
+  };
+  const uint64_t burnedBefore = nodeCore().getHeatMetrics().remintBurnedXfg;
+  const WalletSendPlan firstPlan = registrationWithBurn(first);
+  const WalletSendPlan secondPlan = registrationWithBurn(second);
+  send(first, firstPlan);
+  send(second, secondPlan);
+  confirm();
+
+  const auto entry = nodeCore().getAliasByName(alias);
+  ASSERT_TRUE(entry.has_value());
+  const bool firstWon = entry->ownerAddress == firstPlan.transfers[0].address;
+  EXPECT_TRUE(firstWon || entry->ownerAddress == secondPlan.transfers[0].address);
+  EXPECT_EQ(burnedBefore + parameters::ALIAS_REGISTRATION_FEE, nodeCore().getHeatMetrics().remintBurnedXfg);
+
+  ScenarioWallet& loser = firstWon ? second : first;
+  WalletLegacyTransaction lost;
+  ASSERT_TRUE(loser.wallet.getTransaction(loser.wallet.getTransactionCount() - 1, lost));
+  EXPECT_EQ(WALLET_LEGACY_UNCONFIRMED_TRANSACTION_HEIGHT, lost.blockHeight);
+  Transaction unused;
+  EXPECT_FALSE(nodeCore().getTransaction(lost.hash, unused, false)) << "the losing registration is not in the chain";
 }
 
 // SELL_XFG limit order priced under the pool fills in the call auction or the

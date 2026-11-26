@@ -89,6 +89,8 @@ namespace CryptoNote
 
     // @ Alias system commands
     bool register_alias(const std::vector<std::string> &args);
+    std::map<std::string, std::string> aliasesByOwnerAddress();
+    std::string addressKeysHex(const std::string& address) const;
     bool dev_donate(const std::vector<std::string> &args);
     uint8_t nextBlockMajorVersion() const;
     bool lookup_alias(const std::vector<std::string> &args);

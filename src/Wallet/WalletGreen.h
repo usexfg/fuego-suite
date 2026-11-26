@@ -118,6 +118,7 @@ public:
   // ALIAS_REGISTRATION_FEE output to the Fuego Developer Fund (mainnet only), and
   // submits the transaction.  On success, txHashOut receives the transaction hash.
   std::error_code registerAlias(const std::string& alias, const std::string& ownerAddress, Crypto::Hash& txHashOut);
+  static uint32_t randomAliasSubaddressMajor();
   // Burns `amount` XFG as a re-mint burn (TX_EXTRA_REMINT_BURN, v11+): its own
   // counter, re-minted to the dev fund each quarter in one coinbase output.
   // The only output is the network minimum back to this wallet.
@@ -240,14 +241,14 @@ protected:
   // output in this wallet routes through here so none can silently fall back to
   // the sender/view-key-spendable legacy derivation.
   Crypto::PublicKey deriveSelfCommitmentKey(const ITransaction& transaction, size_t outputIndex);
-  // Same, but for an output owned by a third party. `recipientViewPublicKey`
-  // drives the ECDH (delivery) and `recipientSpendPublicKey` binds ownership,
-  // so the recipient can spend the output but the sender cannot.
-  Crypto::PublicKey deriveRecipientCommitmentKey(
+  // Same, for an output to `to`. The transaction supplies the ECDH derivation, so
+  // the key follows its tx key form; `to`'s spend key binds ownership, so the
+  // recipient can spend the output but the sender cannot.
+  Crypto::PublicKey deriveCommitmentKeyFor(
     const ITransaction& transaction,
     size_t outputIndex,
-    const Crypto::PublicKey& recipientViewPublicKey,
-    const Crypto::PublicKey& recipientSpendPublicKey);
+    const AccountPublicAddress& to,
+    bool toSubaddress);
   // Recovers the scalar and key image needed to sign a CommitmentSpend for an
   // existing deposit. Owner-bound outputs require the recipient spend secret;
   // legacy outputs fall back to the original ECDH-derived scalar so pre-v11
@@ -439,7 +440,7 @@ protected:
 
   static void throwIfDecoysDoNotMatch(const std::vector<OutputToTransfer>& selectedTransfers,
       const std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount>& mixinResult, uint64_t mixIn);
-  void requestMixinOuts(const std::vector<OutputToTransfer> &selectedTransfers,
+  uint64_t requestMixinOuts(const std::vector<OutputToTransfer> &selectedTransfers,
                         uint64_t mixIn,
                         std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount> &mixinResult);
 

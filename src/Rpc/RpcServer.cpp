@@ -2571,9 +2571,10 @@ bool RpcServer::on_get_all_aliases(const COMMAND_RPC_GET_ALL_ALIASES::request& /
     res.total = static_cast<uint32_t>(res.aliases.size());
     res.status = CORE_RPC_STATUS_OK;
     return true;
-  } catch (const std::exception& e) {
+  } catch (const std::exception&) {
+    res.aliases.clear();
     res.total = 0;
-    res.status = CORE_RPC_STATUS_OK;
+    res.status = "Failed to read aliases";
     return true;
   }
 }

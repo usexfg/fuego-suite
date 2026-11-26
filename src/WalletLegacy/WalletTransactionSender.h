@@ -163,14 +163,10 @@ std::shared_ptr<WalletRequest> makeSendFusionRequest(TransactionId& transactionI
                                                      uint64_t fee, const std::string& extra = "", uint64_t mixIn = 0, uint64_t unlockTimestamp = 0);
 
 private:
-  // Single creation entry point for commitment outputs, mirroring
-  // deriveSelfCommitmentKey / deriveRecipientCommitmentKey in WalletGreen.
+  // Single creation entry point for commitment outputs, mirroring WalletGreen.
   Crypto::PublicKey deriveSelfCommitmentKey(const ITransaction& tx, size_t outputIndex);
-  Crypto::PublicKey deriveRecipientCommitmentKey(const ITransaction& tx, size_t outputIndex,
-                                                  const AccountPublicAddress& recipient);
-  Crypto::PublicKey deriveCommitmentOutputKeyFor(const ITransaction& tx, size_t outputIndex,
-                                                  const Crypto::PublicKey& recipientViewPublicKey,
-                                                  const Crypto::PublicKey& recipientSpendPublicKey);
+  Crypto::PublicKey deriveCommitmentKeyFor(const ITransaction& tx, size_t outputIndex,
+                                           const AccountPublicAddress& to, bool toSubaddress);
   // Signing side: owner-bound first, legacy fallback for pre-v11 outputs,
   // rejection if neither reproduces the published key.
   void resolveCommitmentSpendKey(const Crypto::KeyDerivation& ecdh, size_t outputIndex,

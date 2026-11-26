@@ -91,6 +91,7 @@ namespace po = boost::program_options;
 #define EXTENDED_LOGS_FILE "wallet_details.log"
 #undef ERROR
 
+const uint32_t MAX_ALIAS_SUBADDRESS_ATTEMPTS = 16;
 const command_line::arg_descriptor<std::string> arg_wallet_file = { "wallet-file", "Use wallet <arg>", "" };
 const command_line::arg_descriptor<std::string> arg_generate_new_wallet = { "generate-new-wallet", "Generate new wallet and save it to <arg>", "" };
 const command_line::arg_descriptor<std::string> arg_daemon_address = { "daemon-address", "Use daemon instance at <host>:<port>", "" };
@@ -3625,6 +3626,38 @@ bool simple_wallet::dev_donate(const std::vector<std::string> &args) {
   return true;
 }
 
+// Every registered alias keyed by its owner's keys, fetched in one request so
+// the daemon never learns which candidate subaddresses belong to this wallet.
+// Throws when the daemon cannot answer, so a registration never proceeds on a guess.
+std::map<std::string, std::string> simple_wallet::aliasesByOwnerAddress() {
+  HttpClient httpClient(m_dispatcher, m_daemon_host, m_daemon_port);
+  COMMAND_RPC_GET_ALL_ALIASES::request request;
+  COMMAND_RPC_GET_ALL_ALIASES::response response;
+  invokeJsonCommand(httpClient, "/get_all_aliases", request, response);
+  if (response.status != CORE_RPC_STATUS_OK) {
+    throw std::runtime_error("daemon could not list aliases: " + response.status);
+  }
+  std::map<std::string, std::string> owners;
+  for (const auto& entry : response.aliases) {
+    const std::string ownerKeys = addressKeysHex(entry.address);
+    if (!ownerKeys.empty()) {
+      owners[ownerKeys] = entry.alias;
+    }
+  }
+  return owners;
+}
+
+// An address compared by its keys, not its text: spend key hex then view key hex,
+// or empty when the address does not parse.
+std::string simple_wallet::addressKeysHex(const std::string& address) const {
+  CryptoNote::AccountPublicAddress keys;
+  bool isSubaddress = false;
+  if (!m_currency.parseAccountAddressString(address, keys, isSubaddress)) {
+    return {};
+  }
+  return Common::podToHex(keys.spendPublicKey) + Common::podToHex(keys.viewPublicKey);
+}
+
 bool simple_wallet::register_alias(const std::vector<std::string> &args) {
   if (args.size() != 1) {
     fail_msg_writer() << "Usage: register_alias <alias>";
@@ -3680,46 +3713,10 @@ bool simple_wallet::register_alias(const std::vector<std::string> &args) {
     return true;
   }
 
-  // Check if address already has an alias
-  try {
-    HttpClient httpClient(m_dispatcher, m_daemon_host, m_daemon_port);
-    COMMAND_RPC_GET_ALIAS_BY_ADDRESS::request addrReq;
-    COMMAND_RPC_GET_ALIAS_BY_ADDRESS::response addrRes;
-    addrReq.address = m_wallet->getAddress();
-    invokeJsonCommand(httpClient, "/get_alias_by_address", addrReq, addrRes);
-
-    if (addrRes.found) {
-      fail_msg_writer() << "Your address already has alias @" << addrRes.alias;
-      fail_msg_writer() << "Each address can only have one alias.";
-      return true;
-    }
-  } catch (const ConnectException&) {
-    printConnectionError();
-    return true;
-  } catch (const std::exception& e) {
-    fail_msg_writer() << "Failed to check address alias: " << e.what();
-    return true;
-  }
 
   // Check for pending alias registration in unconfirmed transactions
   // This prevents registering multiple aliases before the first one confirms
-  bool hasPendingAlias = false;
-  size_t txCount = m_wallet->getTransactionCount();
-  for (size_t i = 0; i < txCount; ++i) {
-    CryptoNote::WalletLegacyTransaction txInfo;
-    if (m_wallet->getTransaction(i, txInfo)) {
-      // Check if transaction is unconfirmed and has alias registration extra
-      if (txInfo.blockHeight == WALLET_LEGACY_UNCONFIRMED_TRANSACTION_HEIGHT) {
-        // Check if transaction has alias registration tag (0xEA)
-        if (!txInfo.extra.empty()) {
-          if (txInfo.extra[0] == 0xEA) {  // TX_EXTRA_ALIAS_REGISTRATION
-            hasPendingAlias = true;
-            break;
-          }
-        }
-      }
-    }
-  }
+  const bool hasPendingAlias = CryptoNote::hasPendingAliasRegistration(*m_wallet);
 
   if (hasPendingAlias) {
     fail_msg_writer() << "You already have a pending alias registration.";
@@ -3749,7 +3746,7 @@ bool simple_wallet::register_alias(const std::vector<std::string> &args) {
       success_msg_writer() << "  Fee: " << m_currency.formatAmount(CryptoNote::parameters::ALIAS_REGISTRATION_FEE)
                            << " XFG re-mint burn (re-minted to the dev fund at the FCI quarter) + "
                            << m_currency.formatAmount(m_currency.minimumFee()) << " XFG network fee";
-      success_msg_writer() << "  The burn is kept even if another registration takes @" << alias << " first.";
+      success_msg_writer() << "  If another registration takes @" << alias << " first, this one does not confirm and burns nothing.";
     }
   }
   success_msg_writer() << "  Subaddress: will be auto-generated at index [0, next] on confirm";
@@ -3776,13 +3773,27 @@ bool simple_wallet::register_alias(const std::vector<std::string> &args) {
         aliasMinor = std::max(aliasMinor, std::get<1>(e) + 1);
       }
     }
-    walletAddress = m_wallet->registerSubAddress(aliasMajor, aliasMinor);
-    if (walletAddress.empty() || walletAddress.size() < 10) {
-      fail_msg_writer() << "Derived subaddress is invalid — aborting alias registration.";
+    const std::map<std::string, std::string> aliasOwners = aliasesByOwnerAddress();
+    const uint32_t lastMinorTried = aliasMinor + MAX_ALIAS_SUBADDRESS_ATTEMPTS;
+    for (; aliasMinor < lastMinorTried; ++aliasMinor) {
+      walletAddress = m_wallet->registerSubAddress(aliasMajor, aliasMinor);
+      if (walletAddress.empty() || walletAddress.size() < 10) {
+        fail_msg_writer() << "Derived subaddress is invalid — aborting alias registration.";
+        return true;
+      }
+      m_subAddresses.emplace_back(aliasMajor, aliasMinor, walletAddress);
+      saveSubAddresses();
+      const auto held = aliasOwners.find(addressKeysHex(walletAddress));
+      if (held == aliasOwners.end()) {
+        break;
+      }
+      success_msg_writer() << "Subaddress [" << aliasMajor << "," << aliasMinor << "] already holds @" << held->second
+                           << " (restored wallet); deriving the next one.";
+    }
+    if (aliasMinor == lastMinorTried) {
+      fail_msg_writer() << "No free subaddress found for an alias in " << MAX_ALIAS_SUBADDRESS_ATTEMPTS << " attempts.";
       return true;
     }
-    m_subAddresses.emplace_back(aliasMajor, aliasMinor, walletAddress);
-    saveSubAddresses();
     success_msg_writer() << "Derived fresh subaddress [" << aliasMajor << "," << aliasMinor << "] for alias @" << alias << ":";
     success_msg_writer() << "  " << walletAddress;
     success_msg_writer() << "  Master address is not used on-chain.";

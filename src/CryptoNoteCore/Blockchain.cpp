@@ -194,6 +194,33 @@ bool parseAliasOwnerAddress(const CryptoNote::Currency& currency, const std::str
   return !isSubaddress || CryptoNote::funsaSubaddressActivated(blockMajorVersion);
 }
 
+// Aliases record their owner as cn_fast_hash(spendKey || viewKey).
+Crypto::Hash aliasOwnerHash(const CryptoNote::AccountPublicAddress& owner) {
+  uint8_t preimage[64];
+  memcpy(preimage, &owner.spendPublicKey, 32);
+  memcpy(preimage + 32, &owner.viewPublicKey, 32);
+  Crypto::Hash hash;
+  Crypto::cn_fast_hash(preimage, sizeof(preimage), hash);
+  return hash;
+}
+
+// The owner signs cn_fast_hash(alias || ownerHash || [newOwnerHash] || operation).
+Crypto::Hash aliasOwnershipChallenge(const std::string& alias, const Crypto::Hash& ownerHash,
+                                     const Crypto::Hash* newOwnerHash, uint8_t operation) {
+  std::vector<uint8_t> preimage(alias.begin(), alias.begin() + 8);
+  preimage.insert(preimage.end(), ownerHash.data, ownerHash.data + sizeof(ownerHash.data));
+  if (newOwnerHash) {
+    preimage.insert(preimage.end(), newOwnerHash->data, newOwnerHash->data + sizeof(newOwnerHash->data));
+  }
+  preimage.push_back(operation);
+  Crypto::Hash challenge;
+  Crypto::cn_fast_hash(preimage.data(), preimage.size(), challenge);
+  return challenge;
+}
+
+const uint8_t ALIAS_RELEASE_OPERATION = 0x00;
+const uint8_t ALIAS_TRANSFER_OPERATION = 0x01;
+
 // XFG a block's transaction burns into the banking index: a 0x08 tag's
 // amount (historical), or from v11 a HEAT mint's declared burn, which
 // validateSettlement holds to the XFG the transaction destroys. Every burn is
@@ -1017,21 +1044,22 @@ std::optional<AliasEntry> CryptoNote::Blockchain::getAliasByName(const std::stri
   return m_aliasIndex.getAliasByName(alias);
 }
 
+// Registrations store cn_fast_hash(spendKey || viewKey) of the owner, a funsa
+// subaddress from v11 or a standard address before it, so a lookup hashes the
+// same parsed keys.
 std::optional<AliasEntry> CryptoNote::Blockchain::getAliasByAddress(const std::string& address) const {
-  std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
-  // v2 addressHash scheme: cn_fast_hash(spendKey||viewKey) instead of cn_fast_hash(base58).
-  // Parse the address to extract raw key bytes for consistent hash computation.
-  CryptoNote::AccountPublicAddress addr;
-  if (m_currency.parseAccountAddressString(address, addr)) {
-    uint8_t preimage[64];
-    memcpy(preimage,      &addr.spendPublicKey, 32);
-    memcpy(preimage + 32, &addr.viewPublicKey,  32);
-    Crypto::Hash addrHash;
-    Crypto::cn_fast_hash(preimage, 64, addrHash);
-    return m_aliasIndex.getAliasByAddressHash(addrHash);
+  CryptoNote::AccountPublicAddress owner;
+  bool ownerIsSubaddress = false;
+  if (!m_currency.parseAccountAddressString(address, owner, ownerIsSubaddress)) {
+    return std::nullopt;
   }
-  // Fallback for unparseable addresses (should not occur in practice).
-  return m_aliasIndex.getAliasByAddress(address);
+  uint8_t preimage[64];
+  memcpy(preimage, &owner.spendPublicKey, 32);
+  memcpy(preimage + 32, &owner.viewPublicKey, 32);
+  Crypto::Hash ownerHash;
+  Crypto::cn_fast_hash(preimage, sizeof(preimage), ownerHash);
+  std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
+  return m_aliasIndex.getAliasByAddressHash(ownerHash);
 }
 
 std::vector<AliasEntry> CryptoNote::Blockchain::getAllAliases() const {
@@ -2078,10 +2106,13 @@ bool CryptoNote::Blockchain::prevalidate_miner_transaction(const Block& b, uint3
         logger(INFO, BRIGHT_RED) << "coinbase transaction carries a v11 settlement tag";
         return false;
       }
-      // The coinbase skips settlement, so it would register an alias without
-      // burning the fee.
-      if (field.type() == typeid(TransactionExtraAliasRegistration)) {
-        logger(INFO, BRIGHT_RED) << "coinbase transaction carries an alias registration";
+      // The coinbase skips settlement and is applied first in its block, so an
+      // alias tag there would register without burning the fee, or release or
+      // transfer an alias ahead of registrations settlement already admitted.
+      if (field.type() == typeid(TransactionExtraAliasRegistration) ||
+          field.type() == typeid(TransactionExtraAliasRelease) ||
+          field.type() == typeid(TransactionExtraAliasTransfer)) {
+        logger(INFO, BRIGHT_RED) << "coinbase transaction carries an alias tag";
         return false;
       }
     }
@@ -5354,105 +5385,37 @@ void CryptoNote::Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
           // Check for @ Alias Release (0xEC)
           else if (field.type() == typeid(TransactionExtraAliasRelease)) {
             const auto& aliasRel = boost::get<TransactionExtraAliasRelease>(field);
-            if (!aliasRel.isValid()) {
-              logger(WARNING) << "@ Alias release rejected in block " << block.height << ": invalid data";
+            const std::string rejection = aliasReleaseRejection(aliasRel, block.bl.majorVersion);
+            const auto existingEntry = m_aliasIndex.getAliasByName(aliasRel.alias);
+            if (!rejection.empty()) {
+              logger(WARNING) << "@ Alias release rejected in block " << block.height << ": " << rejection;
+            } else if (removeAlias(aliasRel.alias)) {
+              AliasUndoOp undo;
+              undo.opType = 1;  // release -> undo restores the prior entry
+              undo.alias = aliasRel.alias;
+              undo.priorEntry = *existingEntry;
+              aliasUndoOps.push_back(undo);
+              logger(INFO) << "@ Alias released in block " << block.height << ": @" << aliasRel.alias;
             } else {
-              AccountPublicAddress ownerAddr;
-              if (!parseAliasOwnerAddress(m_currency, aliasRel.ownerAddress, block.bl.majorVersion, ownerAddr)) {
-                logger(WARNING) << "@ Alias release rejected: cannot parse owner address for @" << aliasRel.alias;
-              } else {
-                uint8_t preimage[64];
-                memcpy(preimage,      &ownerAddr.spendPublicKey, 32);
-                memcpy(preimage + 32, &ownerAddr.viewPublicKey,  32);
-                Crypto::Hash addrHash;
-                Crypto::cn_fast_hash(preimage, 64, addrHash);
-                auto existingEntry = m_aliasIndex.getAliasByName(aliasRel.alias);
-                if (!existingEntry.has_value()) {
-                  logger(WARNING) << "@ Alias release rejected: alias @" << aliasRel.alias << " not found";
-                } else if (memcmp(&existingEntry->addressHash, &addrHash, sizeof(Crypto::Hash)) != 0) {
-                  logger(WARNING) << "@ Alias release rejected: ownership mismatch for @" << aliasRel.alias;
-                } else {
-                  uint8_t cp[8 + 32 + 1];
-                  memcpy(cp,     aliasRel.alias.data(), 8);
-                  memcpy(cp + 8, &addrHash,             32);
-                  cp[40] = 0x00;
-                  Crypto::Hash challenge;
-                  Crypto::cn_fast_hash(cp, sizeof(cp), challenge);
-                  if (!Crypto::check_signature(challenge, ownerAddr.spendPublicKey, aliasRel.proof)) {
-                    logger(WARNING) << "@ Alias release rejected: invalid ownership proof for @" << aliasRel.alias;
-                  } else if (removeAlias(aliasRel.alias)) {
-                    AliasUndoOp undo;
-                    undo.opType = 1;  // release -> undo restores the prior entry
-                    undo.alias = aliasRel.alias;
-                    undo.priorEntry = *existingEntry;
-                    aliasUndoOps.push_back(undo);
-                    logger(INFO) << "@ Alias released in block " << block.height << ": @" << aliasRel.alias;
-                  } else {
-                    logger(WARNING) << "@ Alias release failed for @" << aliasRel.alias;
-                  }
-                }
-              }
+              logger(WARNING) << "@ Alias release failed for @" << aliasRel.alias;
             }
           }
           // Check for @ Alias Transfer (0xED)
           else if (field.type() == typeid(TransactionExtraAliasTransfer)) {
             const auto& aliasXfer = boost::get<TransactionExtraAliasTransfer>(field);
-            if (!aliasXfer.isValid()) {
-              logger(WARNING) << "@ Alias transfer rejected in block " << block.height << ": invalid data";
+            const std::string rejection = aliasTransferRejection(aliasXfer, block.bl.majorVersion);
+            const auto existingEntry = m_aliasIndex.getAliasByName(aliasXfer.alias);
+            if (!rejection.empty()) {
+              logger(WARNING) << "@ Alias transfer rejected in block " << block.height << ": " << rejection;
+            } else if (replaceAliasOwnership(aliasXfer.alias, aliasXfer.newAddressHash, aliasXfer.newOwnerAddress)) {
+              AliasUndoOp undo;
+              undo.opType = 2;  // transfer -> undo restores prior owner
+              undo.alias = aliasXfer.alias;
+              undo.priorEntry = *existingEntry;
+              aliasUndoOps.push_back(undo);
+              logger(INFO) << "@ Alias transferred in block " << block.height << ": @" << aliasXfer.alias;
             } else {
-              AccountPublicAddress oldOwnerAddr;
-              if (!parseAliasOwnerAddress(m_currency, aliasXfer.oldOwnerAddress, block.bl.majorVersion, oldOwnerAddr)) {
-                logger(WARNING) << "@ Alias transfer rejected: cannot parse old owner address";
-              } else {
-                uint8_t oldprev[64];
-                memcpy(oldprev,      &oldOwnerAddr.spendPublicKey, 32);
-                memcpy(oldprev + 32, &oldOwnerAddr.viewPublicKey,  32);
-                Crypto::Hash oldAddrHash;
-                Crypto::cn_fast_hash(oldprev, 64, oldAddrHash);
-                auto existingEntry = m_aliasIndex.getAliasByName(aliasXfer.alias);
-                if (!existingEntry.has_value()) {
-                  logger(WARNING) << "@ Alias transfer rejected: alias @" << aliasXfer.alias << " not found";
-                } else if (memcmp(&existingEntry->addressHash, &oldAddrHash, sizeof(Crypto::Hash)) != 0) {
-                  logger(WARNING) << "@ Alias transfer rejected: ownership mismatch for @" << aliasXfer.alias;
-                } else {
-                  uint8_t cp[8 + 32 + 32 + 1];
-                  memcpy(cp,      aliasXfer.alias.data(), 8);
-                  memcpy(cp + 8,  &oldAddrHash,           32);
-                  memcpy(cp + 40, &aliasXfer.newAddressHash, 32);
-                  cp[72] = 0x01;
-                  Crypto::Hash challenge;
-                  Crypto::cn_fast_hash(cp, sizeof(cp), challenge);
-                  if (!Crypto::check_signature(challenge, oldOwnerAddr.spendPublicKey, aliasXfer.proof)) {
-                    logger(WARNING) << "@ Alias transfer rejected: invalid ownership proof for @" << aliasXfer.alias;
-                  } else {
-                    AccountPublicAddress newOwnerAddr;
-                    if (!parseAliasOwnerAddress(m_currency, aliasXfer.newOwnerAddress, block.bl.majorVersion, newOwnerAddr)) {
-                      logger(WARNING) << "@ Alias transfer rejected: cannot parse new owner address";
-                    } else {
-                      uint8_t newprev[64];
-                      memcpy(newprev,      &newOwnerAddr.spendPublicKey, 32);
-                      memcpy(newprev + 32, &newOwnerAddr.viewPublicKey,  32);
-                      Crypto::Hash newAddrHash;
-                      Crypto::cn_fast_hash(newprev, 64, newAddrHash);
-                      if (aliasXfer.newAddressHash != newAddrHash) {
-                        logger(WARNING) << "@ Alias transfer rejected: signed destination hash does not match address for @"
-                                        << aliasXfer.alias;
-                      } else if (replaceAliasOwnership(aliasXfer.alias, newAddrHash,
-                                                aliasXfer.newOwnerAddress)) {
-                        AliasUndoOp undo;
-                        undo.opType = 2;  // transfer -> undo restores prior owner
-                        undo.alias = aliasXfer.alias;
-                        undo.priorEntry = *existingEntry;
-                        aliasUndoOps.push_back(undo);
-                        logger(INFO) << "@ Alias transferred in block " << block.height
-                                     << ": @" << aliasXfer.alias;
-                      } else {
-                        logger(WARNING) << "@ Alias transfer failed for @" << aliasXfer.alias;
-                      }
-                    }
-                  }
-                }
-              }
+              logger(WARNING) << "@ Alias transfer failed for @" << aliasXfer.alias;
             }
           }
         }
@@ -8493,6 +8456,10 @@ bool CryptoNote::Blockchain::validateSettlement(const Transaction& tx, uint32_t 
     }
   }
 
+  if (!aliasTagsApply(fields, m_currency.blockMajorVersionAtHeight(height), scratch, error)) {
+    return false;
+  }
+
   // Re-mint burn: withheld from the miner, counted in its own total. Alias
   // registrations pay their fee with one.
   {
@@ -8745,6 +8712,152 @@ bool CryptoNote::Blockchain::validateSettlement(const Transaction& tx, uint32_t 
     }
   }
   return true;
+}
+
+std::string CryptoNote::Blockchain::aliasReleaseRejection(const TransactionExtraAliasRelease& release,
+                                                         uint8_t blockMajorVersion) const {
+  AccountPublicAddress owner;
+  if (!release.isValid() || release.alias.size() != 8) {
+    return "invalid data";
+  }
+  if (!parseAliasOwnerAddress(m_currency, release.ownerAddress, blockMajorVersion, owner)) {
+    return "cannot parse owner address for @" + release.alias;
+  }
+  const Crypto::Hash ownerHash = aliasOwnerHash(owner);
+  const auto entry = m_aliasIndex.getAliasByName(release.alias);
+  if (!entry.has_value()) {
+    return "alias @" + release.alias + " not found";
+  }
+  if (entry->addressHash != ownerHash) {
+    return "ownership mismatch for @" + release.alias;
+  }
+  const Crypto::Hash challenge = aliasOwnershipChallenge(release.alias, ownerHash, nullptr, ALIAS_RELEASE_OPERATION);
+  if (!Crypto::check_signature(challenge, owner.spendPublicKey, release.proof)) {
+    return "invalid ownership proof for @" + release.alias;
+  }
+  return {};
+}
+
+std::string CryptoNote::Blockchain::aliasTransferRejection(const TransactionExtraAliasTransfer& transfer,
+                                                          uint8_t blockMajorVersion) const {
+  AccountPublicAddress oldOwner;
+  AccountPublicAddress newOwner;
+  if (!transfer.isValid() || transfer.alias.size() != 8) {
+    return "invalid data";
+  }
+  if (!parseAliasOwnerAddress(m_currency, transfer.oldOwnerAddress, blockMajorVersion, oldOwner)) {
+    return "cannot parse old owner address";
+  }
+  const Crypto::Hash oldOwnerHash = aliasOwnerHash(oldOwner);
+  const auto entry = m_aliasIndex.getAliasByName(transfer.alias);
+  if (!entry.has_value()) {
+    return "alias @" + transfer.alias + " not found";
+  }
+  if (entry->addressHash != oldOwnerHash) {
+    return "ownership mismatch for @" + transfer.alias;
+  }
+  const Crypto::Hash challenge =
+      aliasOwnershipChallenge(transfer.alias, oldOwnerHash, &transfer.newAddressHash, ALIAS_TRANSFER_OPERATION);
+  if (!Crypto::check_signature(challenge, oldOwner.spendPublicKey, transfer.proof)) {
+    return "invalid ownership proof for @" + transfer.alias;
+  }
+  if (!parseAliasOwnerAddress(m_currency, transfer.newOwnerAddress, blockMajorVersion, newOwner)) {
+    return "cannot parse new owner address";
+  }
+  if (transfer.newAddressHash != aliasOwnerHash(newOwner)) {
+    return "signed destination hash does not match address for @" + transfer.alias;
+  }
+  if (m_aliasIndex.addressHasAliasByHash(transfer.newAddressHash)) {
+    return "new owner of @" + transfer.alias + " already has an alias";
+  }
+  return {};
+}
+
+bool CryptoNote::Blockchain::aliasTagsApply(const std::vector<TransactionExtraField>& fields, uint8_t blockMajorVersion,
+                                            SettlementScratch& scratch, std::string& error) const {
+  for (const auto& field : fields) {
+    if (field.type() == typeid(TransactionExtraAliasRelease)) {
+      const auto& release = boost::get<TransactionExtraAliasRelease>(field);
+      const std::string rejection = aliasReleaseRejection(release, blockMajorVersion);
+      if (!rejection.empty()) {
+        error = "alias release: " + rejection;
+        return false;
+      }
+      if (!scratch.aliasNames.insert(AliasIndex::canonicalName(release.alias)).second) {
+        error = "alias: @" + release.alias + " claimed twice in this block";
+        return false;
+      }
+      continue;
+    }
+    if (field.type() == typeid(TransactionExtraAliasTransfer)) {
+      const auto& transfer = boost::get<TransactionExtraAliasTransfer>(field);
+      const std::string rejection = aliasTransferRejection(transfer, blockMajorVersion);
+      if (!rejection.empty()) {
+        error = "alias transfer: " + rejection;
+        return false;
+      }
+      if (!scratch.aliasNames.insert(AliasIndex::canonicalName(transfer.alias)).second ||
+          !scratch.aliasAddressHashes.insert(transfer.newAddressHash).second) {
+        error = "alias: @" + transfer.alias + " or its new owner claimed twice in this block";
+        return false;
+      }
+      continue;
+    }
+    if (field.type() != typeid(TransactionExtraAliasRegistration)) {
+      continue;
+    }
+    const auto& registration = boost::get<TransactionExtraAliasRegistration>(field);
+    if (!registration.isValid()) {
+      error = "alias registration: invalid data";
+      return false;
+    }
+    if (registration.networkId != 0 && !m_currency.validateNetworkId(registration.networkId)) {
+      error = "alias registration: built for another network";
+      return false;
+    }
+    AccountPublicAddress owner;
+    if (!parseAliasOwnerAddress(m_currency, registration.ownerAddress, blockMajorVersion, owner) ||
+        aliasOwnerHash(owner) != registration.addressHash) {
+      error = "alias registration: owner hash is not the hash of the owner address";
+      return false;
+    }
+    AliasEntry entry;
+    entry.alias = registration.alias;
+    entry.ownerAddress = registration.ownerAddress;
+    entry.aliasHash = registration.aliasHash;
+    entry.addressHash = registration.addressHash;
+    entry.aliasType = registration.aliasType;
+    const std::string rejection = m_aliasIndex.registrationRejection(entry);
+    if (!rejection.empty()) {
+      error = "alias registration: @" + registration.alias + " " + rejection;
+      return false;
+    }
+    if (!scratch.aliasNames.insert(AliasIndex::canonicalName(registration.alias)).second ||
+        !scratch.aliasAddressHashes.insert(registration.addressHash).second) {
+      error = "alias registration: @" + registration.alias + " or its owner is claimed twice in this block";
+      return false;
+    }
+  }
+  return true;
+}
+
+bool CryptoNote::Blockchain::aliasTagsCannotApply(const Transaction& tx) {
+  std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
+  if (m_blocks.empty()) {
+    return false;
+  }
+  const uint32_t height = static_cast<uint32_t>(m_blocks.size());
+  const uint8_t majorVersion = getBlockMajorVersionForHeight(height);
+  if (majorVersion < BLOCK_MAJOR_VERSION_11) {
+    return false;
+  }
+  std::vector<TransactionExtraField> fields;
+  if (!parseTransactionExtra(tx.extra, fields)) {
+    return false;
+  }
+  SettlementScratch scratch;
+  std::string unused;
+  return !aliasTagsApply(fields, majorVersion, scratch, unused);
 }
 
 bool CryptoNote::Blockchain::checkTransactionSettlement(const Transaction& tx, uint64_t& fee) {

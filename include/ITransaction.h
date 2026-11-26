@@ -130,6 +130,13 @@ public:
   virtual void setTransactionSecretKey(const Crypto::SecretKey& key) = 0;
   // F8: before the first signature, add the filler 0x09 key if the tx has none.
   virtual void requireJanusBase() = 0;
+  // Every output pays one funsa subaddress or change to a standard address under
+  // the sender's view key: the tx key becomes r·D, r·G is the one janus base, and
+  // change derives from the sender's view key, so the transaction carries no
+  // per-output keys and reads like any payment. Call before the first output.
+  virtual void sendToOneSubaddress(const AccountPublicAddress& subaddress, const AccountKeys& sender) = 0;
+  // The ECDH derivation an output to `to` takes under this transaction's tx key form.
+  virtual Crypto::KeyDerivation outputDerivation(const AccountPublicAddress& to, bool toSubaddress) const = 0;
 
   // signing
   virtual void signInputKey(size_t input, const TransactionTypes::InputKeyInfo& info, const KeyPair& ephKeys) = 0;

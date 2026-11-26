@@ -81,6 +81,14 @@ TEST_F(MainnetWalletOperations, AliasFromV11BurnsTheRegistrationFee) {
   ASSERT_NE(nullptr, registration);
   EXPECT_EQ("firenode", registration->alias);
   EXPECT_EQ(subaddress, registration->ownerAddress);
+  AccountPublicAddress owner;
+  bool ownerIsSubaddress = false;
+  ASSERT_TRUE(currency.parseAccountAddressString(subaddress, owner, ownerIsSubaddress));
+  uint8_t preimage[64];
+  memcpy(preimage, &owner.spendPublicKey, 32);
+  memcpy(preimage + 32, &owner.viewPublicKey, 32);
+  EXPECT_EQ(Crypto::cn_fast_hash(preimage, sizeof(preimage)), registration->addressHash)
+      << "the owner hash is the published subaddress's key hash";
 }
 
 TEST_F(MainnetWalletOperations, AliasBeforeV11RefusesASubaddressOwner) {

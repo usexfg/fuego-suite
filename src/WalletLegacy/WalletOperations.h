@@ -52,4 +52,7 @@ WalletSendPlan planDevDonation(const Currency& currency, const std::string& ownA
 // orders were placed, stopped or withdrawn, and whether those withdraws settled.
 std::vector<WalletOrderTransaction> walletOrderHistory(IWalletLegacy& wallet);
 
+// An alias registration this wallet sent that has not confirmed or failed yet.
+bool hasPendingAliasRegistration(IWalletLegacy& wallet);
+
 }

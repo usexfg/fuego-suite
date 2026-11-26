@@ -202,6 +202,53 @@ target_link_libraries(wallet_operations_tests PRIVATE
 )
 add_test(NAME wallet_operations_tests COMMAND wallet_operations_tests)
 
+# A transaction paying one funsa subaddress takes the single-key form (tx key
+# r·D, one janus base, change from the sender's view key) and refuses any other
+# destination.
+add_executable(single_subaddress_transaction_tests
+    UnitTests/SingleSubaddressTransactionTest.cpp
+)
+target_include_directories(single_subaddress_transaction_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/external/gtest/include
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_link_libraries(single_subaddress_transaction_tests PRIVATE
+    CryptoNoteCore
+    Serialization
+    Logging
+    Common
+    Crypto
+    System
+    ${Boost_LIBRARIES}
+    gtest
+    gtest_main
+)
+add_test(NAME single_subaddress_transaction_tests COMMAND single_subaddress_transaction_tests)
+
+# The pool drops a transaction whose alias tag lost its alias or owner to a
+# confirmed claim, instead of holding its inputs until it ages out.
+add_executable(pool_alias_eviction_tests
+    UnitTests/PoolAliasEvictionTest.cpp
+)
+target_include_directories(pool_alias_eviction_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/external/gtest/include
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_link_libraries(pool_alias_eviction_tests PRIVATE
+    CryptoNoteCore
+    Serialization
+    Logging
+    Common
+    Crypto
+    System
+    ${Boost_LIBRARIES}
+    gtest
+    gtest_main
+)
+add_test(NAME pool_alias_eviction_tests COMMAND pool_alias_eviction_tests)
+
 # Persistence of the published commitment key. The signer cannot choose between the
 # owner-bound and legacy derivations without it, and it used to be lost on every
 # wallet save/reload. Also covers loading pre-version-2 caches.

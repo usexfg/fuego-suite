@@ -140,6 +140,21 @@ Miner-voted consumer basket, priced in integer cents (power in milli-USD/kWh).
 
 - Dandelion++ stem-fluff transaction relay (continued from v10).
 - Alias registration privacy (per-tx sub-address rotation, ring mixin).
+- HEAT sent to one funsa subaddress takes the single-key form XFG payments use
+  (tx key r·D, one janus base, no per-output keys), so it reads like any other
+  transaction. Both wallets (console and walletd). HEAT amounts stay public
+  in v11, so the payment output is identifiable by its amount.
+
+## Aliases
+
+- From v11 an alias registration that would not register (alias taken or
+  reserved, owner already holding an alias, built for another network, or a
+  second claim on the same alias or owner in one block) makes its transaction
+  invalid. The 1 XFG re-mint burn is therefore kept only for an alias the
+  registrant gets; losing a race for an alias costs nothing. Alias releases
+  and transfers that would not apply are invalid too, the coinbase may carry
+  no alias tag, and a registration's owner hash must match its owner address.
+- `/get_alias_by_address` finds aliases owned by funsa subaddresses.
 
 ---
 

@@ -812,35 +812,22 @@ namespace CryptoNote
   Crypto::PublicKey WalletTransactionSender::deriveSelfCommitmentKey(
       const ITransaction& tx,
       size_t outputIndex) {
-    return deriveCommitmentOutputKeyFor(tx, outputIndex, m_keys.address.viewPublicKey,
-                                        m_keys.address.spendPublicKey);
+    return deriveCommitmentKeyFor(tx, outputIndex, m_keys.address, false);
   }
 
-  Crypto::PublicKey WalletTransactionSender::deriveRecipientCommitmentKey(
+  // The derivation comes from the transaction, so a commitment output follows
+  // its tx key form: the main key, or the single-subaddress form.
+  Crypto::PublicKey WalletTransactionSender::deriveCommitmentKeyFor(
       const ITransaction& tx,
       size_t outputIndex,
-      const AccountPublicAddress& recipient) {
-    return deriveCommitmentOutputKeyFor(tx, outputIndex, recipient.viewPublicKey,
-                                        recipient.spendPublicKey);
-  }
-
-  Crypto::PublicKey WalletTransactionSender::deriveCommitmentOutputKeyFor(
-      const ITransaction& tx,
-      size_t outputIndex,
-      const Crypto::PublicKey& recipientViewPublicKey,
-      const Crypto::PublicKey& recipientSpendPublicKey) {
-    const uint32_t commitOutputIndex = static_cast<uint32_t>(outputIndex);
-    Crypto::SecretKey txSecretKey;
-    if (!tx.getTransactionSecretKey(txSecretKey)) {
-      throw std::runtime_error("commitment output: could not retrieve tx secret key");
-    }
-    Crypto::KeyDerivation ecdh;
-    if (!Crypto::generate_key_derivation(recipientViewPublicKey, txSecretKey, ecdh)) {
-      throw std::runtime_error("commitment output: ECDH key derivation failed");
-    }
+      const AccountPublicAddress& to,
+      bool toSubaddress) {
+    Crypto::KeyDerivation ecdh = tx.outputDerivation(to, toSubaddress);
     Crypto::PublicKey commitKey;
-    if (!CryptoNote::deriveCommitmentOutputKey(ecdh, commitOutputIndex,
-                                              recipientSpendPublicKey, commitKey)) {
+    const bool derived = CryptoNote::deriveCommitmentOutputKey(ecdh, static_cast<uint32_t>(outputIndex),
+                                                               to.spendPublicKey, commitKey);
+    wipeKeyDerivation(ecdh);
+    if (!derived) {
       throw std::runtime_error("commitment output: owner-bound key derivation failed");
     }
     return commitKey;
@@ -1909,51 +1896,16 @@ namespace CryptoNote
     const AccountPublicAddress &recipient = context.v10HeatRecipient;
     const uint64_t amount = context.v10HeatTransferAmount;
     const bool recipientIsSubaddress = context.v10HeatRecipientIsSubaddress;
-    const uint32_t recipientIndex = static_cast<uint32_t>(transaction.getOutputCount());
-    Crypto::SecretKey txSecret;
-    if (!transaction.getTransactionSecretKey(txSecret)) {
-      throw std::runtime_error("HEAT send: missing tx secret key");
-    }
-    SubaddressTxKeys outputTxKeys;
-    Crypto::KeyDerivation recipientDerivation;
     if (recipientIsSubaddress) {
-      OutputTxKey recipientKey;
-      if (!deriveOutputTxKey(txSecret, recipientIndex, recipient, true, recipientKey)) {
-        wipeSecretKey(txSecret);
-        throw std::runtime_error("HEAT send: subaddress tx key derivation failed");
-      }
-      recipientDerivation = recipientKey.derivation;
-      outputTxKeys.additionalPubKeys.push_back(recipientKey.txPublicKey);
-      outputTxKeys.janusBases.push_back(recipientKey.janusBase);
-    } else if (!Crypto::generate_key_derivation(recipient.viewPublicKey, txSecret, recipientDerivation)) {
-      wipeSecretKey(txSecret);
-      throw std::runtime_error("HEAT send: ECDH derivation failed");
+      transaction.sendToOneSubaddress(recipient, m_keys);
     }
-    wipeSecretKey(txSecret);
     CryptoNote::TransactionOutputCommitment recipientOutput;
-    const bool keyDerived = CryptoNote::deriveCommitmentOutputKey(
-        recipientDerivation, recipientIndex, recipient.spendPublicKey, recipientOutput.commitKey);
-    wipeKeyDerivation(recipientDerivation);
-    if (!keyDerived) {
-      throw std::runtime_error("HEAT send: commitment key derivation failed");
-    }
+    recipientOutput.commitKey = deriveCommitmentKeyFor(transaction, transaction.getOutputCount(), recipient, recipientIsSubaddress);
     recipientOutput.term = parameters::HEAT_TERM;
     transaction.addOutput(amount, recipientOutput);
 
-    const size_t firstOwnOutput = transaction.getOutputCount();
     addOwnHeatOutputs(transaction, commitmentInputTotal(context) - amount);
     addOwnXfgOutputs(transaction, context.foundMoney - context.xfgSpentOnFees, context);
-    if (recipientIsSubaddress) {
-      for (size_t output = firstOwnOutput; output < transaction.getOutputCount(); ++output) {
-        outputTxKeys.additionalPubKeys.push_back(transaction.getTransactionPublicKey());
-        outputTxKeys.janusBases.push_back(unlinkableJanusFiller());
-      }
-      std::vector<uint8_t> keysExtra;
-      if (!encodeSubaddressTxKeys(outputTxKeys, keysExtra)) {
-        throw std::runtime_error("HEAT send: subaddress tx keys extra failed");
-      }
-      transaction.appendExtra(CryptoNote::BinaryArray(keysExtra.begin(), keysExtra.end()));
-    }
 
     std::vector<uint8_t> sendAuth;
     uint64_t heatAmountLE = amount;

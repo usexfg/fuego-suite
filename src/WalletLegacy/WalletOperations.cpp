@@ -131,4 +131,24 @@ WalletSendPlan planDevDonation(const Currency& currency, const std::string& ownA
   return plan;
 }
 
+bool hasPendingAliasRegistration(IWalletLegacy& wallet) {
+  for (TransactionId id = 0; id < wallet.getTransactionCount(); ++id) {
+    WalletLegacyTransaction transaction;
+    if (!wallet.getTransaction(id, transaction) ||
+        transaction.blockHeight != WALLET_LEGACY_UNCONFIRMED_TRANSACTION_HEIGHT ||
+        (transaction.state != WalletLegacyTransactionState::Active &&
+         transaction.state != WalletLegacyTransactionState::Sending)) {
+      continue;
+    }
+    std::vector<TransactionExtraField> fields;
+    parseTransactionExtra(std::vector<uint8_t>(transaction.extra.begin(), transaction.extra.end()), fields);
+    for (const auto& field : fields) {
+      if (field.type() == typeid(TransactionExtraAliasRegistration)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 }

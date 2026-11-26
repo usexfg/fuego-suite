@@ -59,6 +59,7 @@
 #include "MessageQueue.h"
 #include "BlockchainMessages.h"
 #include "IntrusiveLinkedList.h"
+#include "TransactionExtra.h"
 
 #include "../Logging/LoggerRef.h"
 
@@ -93,6 +94,7 @@ namespace CryptoNote {
     virtual bool haveSpentKeyImages(const CryptoNote::Transaction& tx) override;
     virtual bool checkTransactionSize(size_t blobSize) override;
     virtual bool checkTransactionSettlement(const CryptoNote::Transaction& tx, uint64_t& fee) override;
+    virtual bool aliasTagsCannotApply(const CryptoNote::Transaction& tx) override;
     virtual uint64_t blockMintCapHeat() override;
     // The Hearth state the next block must commit to (see HearthState).
     HearthState currentHearthState() const;
@@ -214,6 +216,10 @@ namespace CryptoNote {
       };
       std::set<Crypto::Hash, HashLess> limitDepositIds;
       std::set<Crypto::Hash, HashLess> limitWithdrawIds;
+      // Alias names and owner address hashes claimed by earlier transactions
+      // of this block (registrations and transfers).
+      std::set<std::string> aliasNames;
+      std::set<Crypto::Hash, HashLess> aliasAddressHashes;
       // Pool spot price when the block opened (HEAT per XFG × COIN); swaps
       // must keep the price inside HEARTH_MAX_BLOCK_PRICE_MOVE_PCT of it.
       // 0 checks no band.
@@ -230,6 +236,15 @@ namespace CryptoNote {
     // block template all go through here.
     bool validateSettlement(const Transaction& tx, uint32_t height, SettlementScratch& scratch,
                             AssetFlows& flows, uint64_t& xfgFee, std::string& error) const;
+    // v11+: every alias registration, release and transfer in the transaction
+    // must apply when the block is applied (against the index and against earlier
+    // claims in the block), so a registration's re-mint burn is never kept for an
+    // alias it did not get and no tag that cannot apply claims a name or owner.
+    bool aliasTagsApply(const std::vector<TransactionExtraField>& fields, uint8_t blockMajorVersion,
+                        SettlementScratch& scratch, std::string& error) const;
+    // Empty when the tag applies to the current alias index, else why it does not.
+    std::string aliasReleaseRejection(const TransactionExtraAliasRelease& release, uint8_t blockMajorVersion) const;
+    std::string aliasTransferRejection(const TransactionExtraAliasTransfer& transfer, uint8_t blockMajorVersion) const;
     uint64_t getCdYieldPool() const { return m_cdYieldPool; }
     uint64_t getTreasuryLpYield() const { return m_treasuryLpYield; }
     uint64_t getBootstrapRepaymentVault() const { return m_bootstrapRepaymentVault; }

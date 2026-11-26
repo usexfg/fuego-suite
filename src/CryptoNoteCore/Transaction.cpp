@@ -24,6 +24,7 @@
 #include "CryptoNoteConfig.h"
 #include "Currency.h"
 #include "SubaddressTx.h"
+#include "TransactionExtra.h"
 #include "crypto/subaddress.h"
 
 #include <boost/optional.hpp>
@@ -129,6 +130,9 @@ namespace CryptoNote {
     virtual bool getTransactionSecretKey(SecretKey& key) const override;
     virtual void setTransactionSecretKey(const SecretKey& key) override;
     virtual void requireJanusBase() override;
+    ~TransactionImpl() override;
+    virtual void sendToOneSubaddress(const AccountPublicAddress& subaddress, const AccountKeys& sender) override;
+    virtual KeyDerivation outputDerivation(const AccountPublicAddress& to, bool toSubaddress) const override;
 
   private:
 
@@ -154,6 +158,13 @@ namespace CryptoNote {
       bool toSubaddress;
     };
 
+    struct SingleSubaddressKeys {
+      AccountPublicAddress subaddress;
+      PublicKey senderViewPublicKey;
+      KeyDerivation recipientDerivation;
+      KeyDerivation changeDerivation;
+    };
+
     void recordUnaddressedOutput();
     void switchToPerOutputTxKeys();
     PublicKey keyOutputWithOwnTxKey(size_t outputIndex, const AccountPublicAddress& to, bool toSubaddress);
@@ -168,6 +179,7 @@ namespace CryptoNote {
     bool perOutputTxKeys = false;
     bool janusBaseRequired = false;
     SubaddressTxKeys outputTxKeys;
+    boost::optional<SingleSubaddressKeys> singleSubaddress;
   };
 
 
@@ -225,6 +237,16 @@ namespace CryptoNote {
   TransactionImpl::TransactionImpl(const CryptoNote::Transaction& tx) : transaction(tx) {
     extra.parse(transaction.extra);
     outputDestinations.resize(transaction.outputs.size());
+  }
+
+  TransactionImpl::~TransactionImpl() {
+    if (secretKey) {
+      wipeSecretKey(*secretKey);
+    }
+    if (singleSubaddress) {
+      wipeKeyDerivation(singleSubaddress->recipientDerivation);
+      wipeKeyDerivation(singleSubaddress->changeDerivation);
+    }
   }
 
   void TransactionImpl::invalidateHash() {
@@ -359,8 +381,77 @@ namespace CryptoNote {
     return transaction.inputs.size() - 1;
   }
 
+  void TransactionImpl::sendToOneSubaddress(const AccountPublicAddress& subaddress, const AccountKeys& sender) {
+    checkIfSigning();
+    if (!transaction.outputs.empty() || perOutputTxKeys || singleSubaddress) {
+      throw std::logic_error("The single-subaddress tx key form is chosen before the first output");
+    }
+    SubaddressOutputPlan plan;
+    plan.singleSubaddressTx = true;
+    plan.txKeys.janusBases.resize(1);
+    SingleSubaddressKeys keys{subaddress, sender.address.viewPublicKey, {}, {}};
+    auto wipeKeys = [&keys]() {
+      wipeKeyDerivation(keys.recipientDerivation);
+      wipeKeyDerivation(keys.changeDerivation);
+    };
+    try {
+      std::vector<uint8_t> rewritten = transaction.extra;
+      if (!extra.getPublicKey(plan.txKeys.janusBases[0]) ||
+          !subaddressTxPubKey(txSecretKey(), subaddress.spendPublicKey, plan.mainTxPubKey) ||
+          !generate_key_derivation(subaddress.viewPublicKey, txSecretKey(), keys.recipientDerivation) ||
+          !generate_key_derivation(plan.mainTxPubKey, sender.viewSecretKey, keys.changeDerivation) ||
+          !applySubaddressTxExtra(rewritten, plan)) {
+        throw std::runtime_error("Single-subaddress tx key form could not be written");
+      }
+      singleSubaddress = keys;
+      transaction.extra = rewritten;
+      extra.parse(transaction.extra);
+    } catch (...) {
+      wipeKeys();
+      throw;
+    }
+    wipeKeys();
+    invalidateHash();
+  }
+
+  KeyDerivation TransactionImpl::outputDerivation(const AccountPublicAddress& to, bool toSubaddress) const {
+    if (singleSubaddress) {
+      if (toSubaddress && to.spendPublicKey == singleSubaddress->subaddress.spendPublicKey &&
+          to.viewPublicKey == singleSubaddress->subaddress.viewPublicKey) {
+        return singleSubaddress->recipientDerivation;
+      }
+      if (!toSubaddress && to.viewPublicKey == singleSubaddress->senderViewPublicKey) {
+        return singleSubaddress->changeDerivation;
+      }
+      throw std::logic_error("A single-subaddress transaction pays only that subaddress and the sender's change");
+    }
+    if (toSubaddress) {
+      throw std::logic_error("An output to a subaddress takes a per-output key or the single-subaddress form");
+    }
+    KeyDerivation derivation;
+    if (!generate_key_derivation(to.viewPublicKey, txSecretKey(), derivation)) {
+      throw std::runtime_error("Output key derivation failed");
+    }
+    return derivation;
+  }
+
   size_t TransactionImpl::addOutput(uint64_t amount, const AccountPublicAddress& to, bool isSubaddress) {
     checkIfSigning();
+
+    if (singleSubaddress) {
+      const size_t outputIndex = transaction.outputs.size();
+      KeyOutput outKey;
+      KeyDerivation derivation = outputDerivation(to, isSubaddress);
+      const bool derived = derive_public_key(derivation, outputIndex, to.spendPublicKey, outKey.key);
+      wipeKeyDerivation(derivation);
+      if (!derived) {
+        throw std::runtime_error("Output key derivation failed");
+      }
+      outputDestinations.push_back(AddressedOutput{to, isSubaddress});
+      transaction.outputs.emplace_back(TransactionOutput{amount, outKey});
+      invalidateHash();
+      return outputIndex;
+    }
 
     if (isSubaddress && !perOutputTxKeys) {
       switchToPerOutputTxKeys();

@@ -16,6 +16,7 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "WalletGreen.h"
+#include "WalletLegacy/WalletOperations.h"
 
 #include <algorithm>
 #include <array>
@@ -138,22 +139,6 @@ namespace
   {
     bool isSubaddress = false;
     parseAddressString(string, currency, address, isSubaddress);
-  }
-
-  void publishPerOutputTxKeys(CryptoNote::ITransaction &transaction, CryptoNote::SubaddressTxKeys keys)
-  {
-    const Crypto::PublicKey mainTxPublicKey = transaction.getTransactionPublicKey();
-    while (keys.additionalPubKeys.size() < transaction.getOutputCount())
-    {
-      keys.additionalPubKeys.push_back(mainTxPublicKey);
-      keys.janusBases.push_back(CryptoNote::unlinkableJanusFiller());
-    }
-    std::vector<uint8_t> encoded;
-    if (!CryptoNote::encodeSubaddressTxKeys(keys, encoded))
-    {
-      throw std::system_error(make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR), "subaddress tx keys extra failed");
-    }
-    transaction.appendExtra(CryptoNote::BinaryArray(encoded.begin(), encoded.end()));
   }
 
   uint64_t countNeededMoney(
@@ -1496,7 +1481,7 @@ namespace CryptoNote
       }
     }
     std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount> mixinResult;
-    requestMixinOuts(selectedTransfers, mixin, mixinResult);
+    mixin = requestMixinOuts(selectedTransfers, mixin, mixinResult);
     prepareInputs(selectedTransfers, mixinResult, mixin, keysInfo);
   }
 
@@ -1629,7 +1614,7 @@ namespace CryptoNote
     // XFG inputs with KeyInput ring signatures (dynamax probe mixin)
     typedef CryptoNote::COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount outs_for_amount;
     std::vector<outs_for_amount> mixinResult;
-    requestMixinOuts(selectedTransfers, mixin, mixinResult);
+    mixin = requestMixinOuts(selectedTransfers, mixin, mixinResult);
 
     std::vector<InputInfo> keysInfo;
     prepareInputs(selectedTransfers, mixinResult, mixin, keysInfo);
@@ -1747,7 +1732,7 @@ namespace CryptoNote
 
     typedef CryptoNote::COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount outs_for_amount;
     std::vector<outs_for_amount> mixinResult;
-    requestMixinOuts(selectedTransfers, mixin, mixinResult);
+    mixin = requestMixinOuts(selectedTransfers, mixin, mixinResult);
     std::vector<InputInfo> keysInfo;
     prepareInputs(selectedTransfers, mixinResult, mixin, keysInfo);
     for (auto &input : keysInfo) {
@@ -1884,7 +1869,7 @@ namespace CryptoNote
     transaction->appendExtra(CryptoNote::BinaryArray(extra.begin(), extra.end()));
     typedef CryptoNote::COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount outs_for_amount;
     std::vector<outs_for_amount> mixinResult;
-    requestMixinOuts(selectedTransfers, mixin, mixinResult);
+    mixin = requestMixinOuts(selectedTransfers, mixin, mixinResult);
     std::vector<InputInfo> keysInfo;
     prepareInputs(selectedTransfers, mixinResult, mixin, keysInfo);
     for (auto &input : keysInfo) {
@@ -2186,34 +2171,20 @@ namespace CryptoNote
     std::unique_ptr<ITransaction> transaction = createOutgoingTransaction(m_currency, m_node.getLastKnownBlockHeight());
     uint64_t changeAmount = (totalHeat > amount) ? (totalHeat - amount) : 0;
 
-    Crypto::SecretKey txSecret;
-    if (!transaction->getTransactionSecretKey(txSecret)) {
-      throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR),
-                              "HEAT send: missing tx secret key");
-    }
-
-    const size_t rcptIdx = static_cast<size_t>(transaction->getOutputCount());
-    SubaddressTxKeys outputTxKeys;
-    Crypto::KeyDerivation rcptEcdh;
     if (recipientIsSubaddress) {
-      OutputTxKey rcptKey;
-      if (!deriveOutputTxKey(txSecret, rcptIdx, recipientAddr, true, rcptKey)) {
-        throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR),
-                                "HEAT send: subaddress tx key derivation failed");
+      AccountKeys sender;
+      sender.address = AccountPublicAddress{m_walletsContainer.get<RandomAccessIndex>().front().spendPublicKey, m_viewPublicKey};
+      sender.viewSecretKey = m_viewSecretKey;
+      try {
+        transaction->sendToOneSubaddress(recipientAddr, sender);
+      } catch (...) {
+        CryptoNote::wipeSecretKey(sender.viewSecretKey);
+        throw;
       }
-      rcptEcdh = rcptKey.derivation;
-      outputTxKeys.additionalPubKeys.push_back(rcptKey.txPublicKey);
-      outputTxKeys.janusBases.push_back(rcptKey.janusBase);
-    } else if (!Crypto::generate_key_derivation(recipientAddr.viewPublicKey, txSecret, rcptEcdh)) {
-      throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR),
-                              "HEAT send: ECDH derivation failed");
+      CryptoNote::wipeSecretKey(sender.viewSecretKey);
     }
     CryptoNote::TransactionOutputCommitment rcptOut;
-    if (!CryptoNote::deriveCommitmentOutputKey(
-          rcptEcdh, rcptIdx, recipientAddr.spendPublicKey, rcptOut.commitKey)) {
-      throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR),
-                              "HEAT send: commitment key derivation failed");
-    }
+    rcptOut.commitKey = deriveCommitmentKeyFor(*transaction, transaction->getOutputCount(), recipientAddr, recipientIsSubaddress);
     rcptOut.term = parameters::HEAT_TERM;
     transaction->addOutput(amount, rcptOut);
 
@@ -2238,9 +2209,6 @@ namespace CryptoNote
     // before any is signed.
     std::vector<InputInfo> keysInfo;
     prepareXfgInputs(*transaction, fee, mixin, keysInfo);
-    if (recipientIsSubaddress) {
-      publishPerOutputTxKeys(*transaction, outputTxKeys);
-    }
     addAndSignInputs(*transaction, keysInfo, prepareHeatSpends(selectedDepositIds, mixin));
 
     transactionHash = Common::podToHex(transaction->getTransactionHash());
@@ -3997,7 +3965,7 @@ namespace CryptoNote
 
     if (mixIn != 0)
     {
-      requestMixinOuts(selectedTransfers, mixIn, mixinResult);
+      mixIn = requestMixinOuts(selectedTransfers, mixIn, mixinResult);
     }
 
     std::vector<InputInfo> keysInfo;
@@ -4868,7 +4836,9 @@ namespace CryptoNote
     return keys;
   }
 
-  void WalletGreen::requestMixinOuts(
+  // Returns the ring size the inputs take: the requested one, or on testnet,
+  // whose output pool is small, the fewest decoys the node had for any input.
+  uint64_t WalletGreen::requestMixinOuts(
       const std::vector<OutputToTransfer> &selectedTransfers,
       uint64_t mixIn,
       std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount> &mixinResult)
@@ -4898,7 +4868,13 @@ namespace CryptoNote
     }
 
     throwIfDecoysDoNotMatch(selectedTransfers, mixinResult, mixIn);
+    if (m_currency.isTestnet()) {
+      for (const auto &decoys : mixinResult) {
+        mixIn = std::min<uint64_t>(mixIn, decoys.outs.size());
+      }
+    }
     checkIfEnoughMixins(mixinResult, mixIn);
+    return mixIn;
   }
 
   // The node answers one decoy set per selected input, in request order, for that
@@ -5961,54 +5937,23 @@ namespace CryptoNote
       throw std::system_error(make_error_code(error::WRONG_PARAMETERS),
                               "cannot derive a commitment output without an address");
     }
-
-    Crypto::SecretKey txSecretKey;
-    if (!transaction.getTransactionSecretKey(txSecretKey))
-    {
-      throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR),
-                              "commitment output: could not retrieve tx secret key");
-    }
-
-    Crypto::KeyDerivation ecdh;
-    if (!Crypto::generate_key_derivation(m_viewPublicKey, txSecretKey, ecdh))
-    {
-      throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR),
-                              "commitment output: ECDH derivation failed");
-    }
-
-    Crypto::PublicKey commitKey;
-    if (!CryptoNote::deriveCommitmentOutputKey(
-          ecdh, outputIndex, wallets.front().spendPublicKey, commitKey))
-    {
-      throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR),
-                              "commitment output: owner-bound key derivation failed");
-    }
-    return commitKey;
+    return deriveCommitmentKeyFor(transaction, outputIndex,
+                                  AccountPublicAddress{wallets.front().spendPublicKey, m_viewPublicKey}, false);
   }
 
-  Crypto::PublicKey WalletGreen::deriveRecipientCommitmentKey(
+  // The derivation comes from the transaction, so a commitment output follows
+  // its tx key form: the main key, or the single-subaddress form.
+  Crypto::PublicKey WalletGreen::deriveCommitmentKeyFor(
       const ITransaction& transaction,
       size_t outputIndex,
-      const Crypto::PublicKey& recipientViewPublicKey,
-      const Crypto::PublicKey& recipientSpendPublicKey)
+      const AccountPublicAddress& to,
+      bool toSubaddress)
   {
-    Crypto::SecretKey txSecretKey;
-    if (!transaction.getTransactionSecretKey(txSecretKey))
-    {
-      throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR),
-                              "commitment output: could not retrieve tx secret key");
-    }
-
-    Crypto::KeyDerivation ecdh;
-    if (!Crypto::generate_key_derivation(recipientViewPublicKey, txSecretKey, ecdh))
-    {
-      throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR),
-                              "commitment output: ECDH derivation failed");
-    }
-
+    Crypto::KeyDerivation ecdh = transaction.outputDerivation(to, toSubaddress);
     Crypto::PublicKey commitKey;
-    if (!CryptoNote::deriveCommitmentOutputKey(
-          ecdh, outputIndex, recipientSpendPublicKey, commitKey))
+    const bool derived = CryptoNote::deriveCommitmentOutputKey(ecdh, outputIndex, to.spendPublicKey, commitKey);
+    CryptoNote::wipeKeyDerivation(ecdh);
+    if (!derived)
     {
       throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR),
                               "commitment output: owner-bound key derivation failed");
@@ -6110,7 +6055,7 @@ namespace CryptoNote
     std::vector<outs_for_amount> mixinResult;
     if (mixin != 0)
     {
-      requestMixinOuts(fusionInputs, mixin, mixinResult);
+      mixin = requestMixinOuts(fusionInputs, mixin, mixinResult);
     }
 
     std::vector<InputInfo> keysInfo;
@@ -6873,113 +6818,57 @@ namespace CryptoNote
     return {};
   }
 
+  // A random non-zero major index, so each alias gets its own subaddress.
+  uint32_t WalletGreen::randomAliasSubaddressMajor() {
+    uint32_t major = 0;
+    Crypto::generate_random_bytes(sizeof(major), reinterpret_cast<uint8_t*>(&major));
+    return major == 0 ? 1 : major;
+  }
+
   std::error_code WalletGreen::registerAlias(const std::string& alias,
                                               const std::string& ownerAddress,
                                               Crypto::Hash& txHashOut) {
     throwIfNotInitialized();
     throwIfStopped();
 
-    // Parse owner address for canonical identity.
-    CryptoNote::AccountPublicAddress masterAddr;
-    if (!m_currency.parseAccountAddressString(ownerAddress, masterAddr)) {
+    CryptoNote::AccountPublicAddress callerAddress;
+    if (!m_currency.parseAccountAddressString(ownerAddress, callerAddress)) {
       return make_error_code(std::errc::invalid_argument);
     }
-
-    // Build the 0xEA alias registration extra field.
-    CryptoNote::TransactionExtraAliasRegistration aliasReg;
-    aliasReg.version   = 1;
-    aliasReg.alias     = alias;
-    aliasReg.aliasHash = Crypto::cn_fast_hash(alias.data(), alias.size());
-
-    // Canonical addressHash from master keys (not base58 string).
-    // This is the identity that enforces one-alias-per-address at consensus.
-    {
-      uint8_t preimage[64];
-      memcpy(preimage,      &masterAddr.spendPublicKey, 32);
-      memcpy(preimage + 32, &masterAddr.viewPublicKey,  32);
-      Crypto::cn_fast_hash(preimage, 64, aliasReg.addressHash);
-    }
-
-    // Per-tx rotation: derive a fresh sub-address so an observer scanning
-    // blocks cannot link multiple alias registrations by ownerAddress.
-    {
-      const auto& wallets = m_walletsContainer.get<RandomAccessIndex>();
-      if (wallets.empty()) {
-        return make_error_code(std::errc::not_connected);
-      }
-
-      // Pick a random non-zero major index (minor=0).
-      // Each registration gets a unique sub-address; never (0,0).
-      uint32_t major = 0;
-      uint32_t minor = 0;
-      {
-        uint8_t rb[4];
-        Crypto::generate_random_bytes(4, rb);
-        major = 1 + (static_cast<uint32_t>(rb[0])
-                  | (static_cast<uint32_t>(rb[1]) << 8)
-                  | (static_cast<uint32_t>(rb[2]) << 16)
-                  | (static_cast<uint32_t>(rb[3]) << 24));
-        // Failsafe: avoid overflow wrap. Extremely unlikely but safe.
-        if (major == 0) major = 1;
-      }
-
-      try {
-        aliasReg.ownerAddress = createSubAddress(major, minor, 0);
-      } catch (const std::system_error& e) {
-        return e.code();
-      }
-    }
-
-    aliasReg.aliasType = 1;      // Regular user alias [a-z0-9&]
-    aliasReg.networkId = m_currency.getFuegoNetworkId();
-
-    if (!aliasReg.isValid()) {
+    if (!CryptoNote::isValidAliasName(alias) || !CryptoNote::funsaSubaddressActivated(nextBlockMajorVersion())) {
       return make_error_code(std::errc::invalid_argument);
     }
+    if (m_walletsContainer.get<RandomAccessIndex>().empty()) {
+      return make_error_code(std::errc::not_connected);
+    }
 
-    std::vector<uint8_t> extraVec;
-    if (!CryptoNote::addAliasToExtra(extraVec, aliasReg)) {
+    // The alias is owned by a fresh subaddress, so an observer cannot link this
+    // wallet's registrations, and its owner hash is that subaddress's key hash.
+    std::string aliasOwner;
+    try {
+      aliasOwner = createSubAddress(randomAliasSubaddressMajor(), 0, 0);
+    } catch (const std::system_error& e) {
+      return e.code();
+    }
+
+    CryptoNote::WalletSendPlan plan;
+    try {
+      plan = CryptoNote::planAliasRegistration(m_currency, alias, aliasOwner, nextBlockMajorVersion());
+    } catch (const std::invalid_argument&) {
       return make_error_code(std::errc::invalid_argument);
     }
-
-    // From v11 the registration fee is a re-mint burn: it rides in the
-    // transaction fee and consensus withholds it, so no output pays the dev
-    // wallet.
-    const bool burnsFee = !m_currency.isTestnet() && nextBlockMajorVersion() >= CryptoNote::BLOCK_MAJOR_VERSION_11;
-    if (burnsFee) {
-      CryptoNote::addRemintBurnToExtra(extraVec, CryptoNote::parameters::ALIAS_REGISTRATION_FEE);
-    }
-    std::string extra(extraVec.begin(), extraVec.end());
 
     TransactionParameters params;
-    if (burnsFee) {
-      WalletOrder selfOutput;
-      selfOutput.address = aliasReg.ownerAddress;
-      selfOutput.amount  = m_currency.minimumFee();
-      params.destinations.push_back(selfOutput);
-    } else if (!m_currency.isTestnet()) {
-      WalletOrder devFundOutput;
-      devFundOutput.address = CryptoNote::FUEGO_DEV_FUND_ADDRESS;
-      uint64_t randomDust = 0;
-      {
-        uint8_t randBytes[8] = {};
-        Crypto::generate_random_bytes(sizeof(randBytes), randBytes);
-        for (int i = 0; i < 8; ++i) {
-          randomDust = (randomDust << 8) | randBytes[i];
-        }
-        randomDust = randomDust % (CryptoNote::parameters::ALIAS_REGISTRATION_FEE_MAX_RANDOM + 1);
-      }
-      devFundOutput.amount  = CryptoNote::parameters::ALIAS_REGISTRATION_FEE + randomDust;
-      params.destinations.push_back(devFundOutput);
-    } else {
-      WalletOrder selfOutput;
-      selfOutput.address = ownerAddress;
-      selfOutput.amount  = m_currency.minimumFee();
-      params.destinations.push_back(selfOutput);
+    for (const auto& transfer : plan.transfers) {
+      WalletOrder order;
+      order.address = transfer.address;
+      order.amount = static_cast<uint64_t>(transfer.amount);
+      params.destinations.push_back(order);
     }
-    params.fee   = m_currency.minimumFee() + (burnsFee ? CryptoNote::parameters::ALIAS_REGISTRATION_FEE : 0);
+    params.fee   = plan.fee;
     params.mixIn = m_currency.minMixin(CryptoNote::BLOCK_MAJOR_VERSION_10);
-    params.extra = extra;
+    params.extra = plan.extra;
+    params.changeDestination = ownerAddress;
 
     Crypto::SecretKey txSK;
     size_t txIdx;

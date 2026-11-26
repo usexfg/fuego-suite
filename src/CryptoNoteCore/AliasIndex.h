@@ -45,8 +45,10 @@ public:
   AliasIndex();
   ~AliasIndex();
 
-  // Registration
+  // Registration: registerAlias stores the entry exactly when registrationRejection
+  // is empty; otherwise that names why it does not register.
   bool registerAlias(const AliasEntry& entry);
+  std::string registrationRejection(const AliasEntry& entry) const;
 
   // Release (void/delete) an alias — removes from index
   // Caller must have verified ownership before calling this.
@@ -61,11 +63,7 @@ public:
 
   // Queries
   bool aliasExists(const std::string& alias) const;
-  // Legacy string-address overloads (hash address as base58 string — v1 scheme).
-  // Prefer the Hash overloads below for new code (v2 scheme: hash spend+view bytes).
-  bool addressHasAlias(const std::string& address) const;
-  std::optional<AliasEntry> getAliasByAddress(const std::string& address) const;
-  // v2 hash-based overloads: caller computes cn_fast_hash(spendKey||viewKey).
+  // Owner lookups: caller computes cn_fast_hash(spendKey||viewKey) of the parsed address.
   bool addressHasAliasByHash(const Crypto::Hash& addrHash) const;
   std::optional<AliasEntry> getAliasByAddressHash(const Crypto::Hash& addrHash) const;
   std::optional<AliasEntry> getAliasByName(const std::string& alias) const;
@@ -83,8 +81,13 @@ public:
 
   // Validation helpers (static, usable by callers before registration)
   static bool isValidRegularAlias(const std::string& alias);
+  // Lowercase form every alias is stored and looked up under.
+  static std::string canonicalName(const std::string& alias);
 
 private:
+  static AliasEntry canonicalEntry(const AliasEntry& entry);
+  std::string rejectionOf(const AliasEntry& canonical) const;
+
   mutable std::mutex m_mutex;
 
   // Alias storage

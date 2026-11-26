@@ -12,6 +12,7 @@
 | 3 | `WalletGreen::load`: keep PR #83's `transfersNeedRescan` and master's `recordAddressKindsFromCache()` | Claude Code | 2026-11-26 | DONE |
 | 4 | Tests: `tests/CMakeLists.txt` holds both sides' targets (23 executables, 22 tests); `NullNode.h` takes PR #83's 4-argument `getRandomCommitmentOutsForAmount`; `CommitmentOwnerBoundTest.cpp` keeps PR #83's equivalent fixes of the stale legacy-form tests; `SubaddressWalletTest.cpp` drops the two tests of the removed `aliasOwnerSubAddress`, and the pre-v11 refusal test passes an owned address and expects `invalid_argument` | Claude Code | 2026-11-26 | DONE |
 | 5 | fuego-guardian review of the merge result | Claude Code | 2026-11-26 | TODO |
+| 5a | Windows CI: every target linking `SwapDaemonLib` failed with unresolved `__imp_WaitOnAddress`, `__imp_WakeByAddressAll`, `__imp_WakeByAddressSingle` from the Rust `fuego_cross_curve_dleq.lib` (Rust std's futex mutex; Windows import library `Synchronization.lib`). Same failure on master `aa9f2eb0` and PR #83 `ce05c008`. `src/CMakeLists.txt` adds `synchronization` to the WIN32 link list | Claude Code | 2026-11-26 | DONE (CI to confirm) |
 | 6 | CI green on PR #83 | Claude Code | 2026-11-26 | TODO |
 
 Open decision: F9 (`docs/developer/funsa-subaddress-rollout-plan.md` 4.4) puts wallet alias owners at the next unused minor of major 0, which a restore scans and Valise uses; PR #83 puts them at major 1, which a restore does not recreate (`docs/V11_LAUNCH_TODO.md` 10.7). Consensus accepts both.

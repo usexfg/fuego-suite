@@ -3764,8 +3764,6 @@ namespace CryptoNote
     return doCreateAddress(subaddress);
   }
 
-  // An alias owner is a funsa subaddress of this wallet: the one the caller
-  // names, or the next unused minor of major 0, which a restore scans.
   std::vector<SubAddressInfo> WalletGreen::getSubAddresses() const
   {
     throwIfNotInitialized();
@@ -6989,7 +6987,7 @@ namespace CryptoNote
     // The owner subaddress joins the container only for a registration that is
     // sent; a send that fails leaves the container as it was.
     try {
-      if (createSubAddress(CryptoNote::ALIAS_SUBADDRESS_MAJOR, aliasMinor, 0) != aliasOwner) {
+      if (createSubAddress(CryptoNote::ALIAS_SUBADDRESS_MAJOR, aliasMinor) != aliasOwner) {
         forgetUnusedAliasSubaddress(aliasOwner);
         return make_error_code(error::INTERNAL_WALLET_ERROR);
       }

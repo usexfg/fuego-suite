@@ -1732,6 +1732,14 @@ uint64_t core::getPoolTwap() const {
   return m_blockchain.getPoolTwap();
 }
 
+std::error_code core::getRegisteredAliases(std::vector<ICore::RegisteredAlias>& aliases) {
+  aliases.clear();
+  for (const auto& entry : m_blockchain.getAllAliases()) {
+    aliases.push_back({entry.alias, entry.ownerAddress});
+  }
+  return {};
+}
+
 std::error_code core::getLimitOrders(std::vector<ICore::LimitOrderEntry>& orders) {
   orders.clear();
   m_blockchain.visitLimitDeposits([&orders](const Crypto::Hash& orderId, const auto& order) {

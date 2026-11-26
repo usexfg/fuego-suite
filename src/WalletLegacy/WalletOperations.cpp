@@ -15,6 +15,9 @@
 #include "WalletLegacy/WalletOperations.h"
 
 #include <algorithm>
+#include <cctype>
+#include <climits>
+#include <cstdint>
 #include <cstring>
 #include <stdexcept>
 
@@ -135,7 +138,7 @@ bool hasPendingAliasRegistration(IWalletLegacy& wallet) {
   for (TransactionId id = 0; id < wallet.getTransactionCount(); ++id) {
     WalletLegacyTransaction transaction;
     if (!wallet.getTransaction(id, transaction) ||
-        transaction.blockHeight != WALLET_LEGACY_UNCONFIRMED_TRANSACTION_HEIGHT ||
+        transaction.blockHeight != WALLET_LEGACY_UNCONFIRMED_TRANSACTION_HEIGHT || transaction.totalAmount >= 0 ||
         (transaction.state != WalletLegacyTransactionState::Active &&
          transaction.state != WalletLegacyTransactionState::Sending)) {
       continue;
@@ -149,6 +152,61 @@ bool hasPendingAliasRegistration(IWalletLegacy& wallet) {
     }
   }
   return false;
+}
+
+namespace {
+
+bool parseIndex(const std::string& text, uint32_t& value) {
+  if (text.empty() || !std::all_of(text.begin(), text.end(), [](unsigned char c) { return std::isdigit(c) != 0; })) {
+    return false;
+  }
+  try {
+    const unsigned long long parsed = std::stoull(text);
+    if (parsed > UINT32_MAX) {
+      return false;
+    }
+    value = static_cast<uint32_t>(parsed);
+    return true;
+  } catch (const std::exception&) {
+    return false;
+  }
+}
+
+}
+
+std::string choosePaymentSubaddressIndex(const std::vector<std::string>& args,
+                                         const std::vector<std::pair<uint32_t, uint32_t>>& existing,
+                                         SubaddressIndex& index) {
+  index = SubaddressIndex{};
+  if (args.size() == 1) {
+    return "Usage: gen_new_sub [major] [minor]  (provide both or neither)";
+  }
+  if (args.size() > 2) {
+    return "Usage: gen_new_sub [major] [minor]  (at most two indexes)";
+  }
+  if (args.size() == 2) {
+    if (!parseIndex(args[0], index.major) || !parseIndex(args[1], index.minor)) {
+      return "Usage: gen_new_sub [major] [minor]";
+    }
+  } else {
+    index.minor = 1;
+    for (const auto& used : existing) {
+      if (used.first == 0 && used.second >= index.minor) {
+        if (used.second == UINT32_MAX) {
+          return "No unused minor index left under major 0.";
+        }
+        index.minor = used.second + 1;
+      }
+    }
+  }
+  if (index.major == ALIAS_SUBADDRESS_MAJOR) {
+    return "Major index " + std::to_string(ALIAS_SUBADDRESS_MAJOR) +
+           " holds alias owners; use another major for payment subaddresses.";
+  }
+  if (index.major == 0 && index.minor == 0) {
+    return "Index (0,0) is the primary address. Use minor >= 1.";
+  }
+  return {};
 }
 
 }

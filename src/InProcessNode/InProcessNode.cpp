@@ -1185,6 +1185,16 @@ std::error_code InProcessNode::getLimitDeposits(std::vector<LimitDepositRpcEntry
   return {};
 }
 
+std::error_code InProcessNode::getRegisteredAliases(std::vector<RegisteredAlias>& aliases) {
+  std::vector<ICore::RegisteredAlias> registered;
+  const std::error_code ec = core.getRegisteredAliases(registered);
+  aliases.clear();
+  for (const auto& entry : registered) {
+    aliases.push_back({entry.alias, entry.ownerAddress});
+  }
+  return ec;
+}
+
 std::error_code InProcessNode::getAmmPoolInfo(AmmPoolInfo& info) {
   ICore::AmmPoolInfo coreInfo;
   auto ec = core.getAmmPoolInfo(coreInfo);

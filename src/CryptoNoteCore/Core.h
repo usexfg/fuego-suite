@@ -234,6 +234,7 @@ namespace CryptoNote {
     virtual uint64_t getHearthTwap() override;
     virtual std::error_code getAmmPoolInfo(ICore::AmmPoolInfo& info) override;
     virtual std::error_code getLimitOrders(std::vector<ICore::LimitOrderEntry>& orders) override;
+    virtual std::error_code getRegisteredAliases(std::vector<ICore::RegisteredAlias>& aliases) override;
 
     // HEAT stablecoin / Hearth AMM metrics (v11+)
     struct HeatMetrics {

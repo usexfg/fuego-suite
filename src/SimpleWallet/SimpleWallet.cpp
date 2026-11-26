@@ -3749,7 +3749,7 @@ bool simple_wallet::register_alias(const std::vector<std::string> &args) {
       success_msg_writer() << "  If another registration takes @" << alias << " first, this one does not confirm and burns nothing.";
     }
   }
-  success_msg_writer() << "  Subaddress: will be auto-generated at index [0, next] on confirm";
+  success_msg_writer() << "  Subaddress: will be auto-generated at index [" << CryptoNote::ALIAS_SUBADDRESS_MAJOR << ", next] on confirm";
   success_msg_writer() << "";
   success_msg_writer() << "Confirm? (1) OK  (2) No ";
 
@@ -3764,17 +3764,22 @@ bool simple_wallet::register_alias(const std::vector<std::string> &args) {
   // Auto-derive fresh subaddress for this alias — master is never exposed on-chain.
   // Unlinkability: alias → one-time subaddress (D_ij, C_ij); master keys stay private.
   std::string walletAddress;
-  uint32_t aliasMajor = 0;
+  const uint32_t aliasMajor = CryptoNote::ALIAS_SUBADDRESS_MAJOR;
   uint32_t aliasMinor = 0;
   try {
     aliasMinor = 1;
     for (const auto& e : m_subAddresses) {
-      if (std::get<0>(e) == 0) {
+      if (std::get<0>(e) == aliasMajor) {
         aliasMinor = std::max(aliasMinor, std::get<1>(e) + 1);
       }
     }
     const std::map<std::string, std::string> aliasOwners = aliasesByOwnerAddress();
-    const uint32_t lastMinorTried = aliasMinor + MAX_ALIAS_SUBADDRESS_ATTEMPTS;
+    if (aliasMinor > CryptoNote::MAX_ALIAS_SUBADDRESS_MINOR) {
+      fail_msg_writer() << "No free alias subaddress index left under major " << aliasMajor << ".";
+      return true;
+    }
+    const uint32_t lastMinorTried =
+        std::min<uint32_t>(aliasMinor + MAX_ALIAS_SUBADDRESS_ATTEMPTS, CryptoNote::MAX_ALIAS_SUBADDRESS_MINOR + 1);
     for (; aliasMinor < lastMinorTried; ++aliasMinor) {
       walletAddress = m_wallet->registerSubAddress(aliasMajor, aliasMinor);
       if (walletAddress.empty() || walletAddress.size() < 10) {
@@ -3920,6 +3925,10 @@ bool simple_wallet::list_aliases(const std::vector<std::string> &args) {
     COMMAND_RPC_GET_ALL_ALIASES::request req;
     COMMAND_RPC_GET_ALL_ALIASES::response res;
     invokeJsonCommand(httpClient, "/get_all_aliases", req, res);
+    if (res.status != CORE_RPC_STATUS_OK) {
+      fail_msg_writer() << "Daemon could not list aliases: " << res.status;
+      return true;
+    }
 
     if (res.aliases.empty()) {
       success_msg_writer() << "No aliases registered on the network yet.";
@@ -3991,35 +4000,18 @@ void simple_wallet::saveSubAddresses() const {
 
 //----------------------------------------------------------------------------------------------------
 bool simple_wallet::gen_new_sub(const std::vector<std::string>& args) {
-  // Determine index.
-  uint32_t major = 0;
-  uint32_t minor = 0;
-
-  if (args.size() >= 2) {
-    try {
-      major = static_cast<uint32_t>(std::stoul(args[0]));
-      minor = static_cast<uint32_t>(std::stoul(args[1]));
-    } catch (...) {
-      fail_msg_writer() << "Usage: gen_new_sub [major] [minor]";
-      return true;
-    }
-  } else if (args.size() == 1) {
-    fail_msg_writer() << "Usage: gen_new_sub [major] [minor]  (provide both or neither)";
-    return true;
-  } else {
-    // Auto-increment: major=0, minor = next unused
-    minor = 1;
-    for (const auto& e : m_subAddresses) {
-      if (std::get<0>(e) == 0) {
-        minor = std::max(minor, std::get<1>(e) + 1);
-      }
-    }
+  std::vector<std::pair<uint32_t, uint32_t>> existing;
+  for (const auto& e : m_subAddresses) {
+    existing.emplace_back(std::get<0>(e), std::get<1>(e));
   }
-
-  if (major == 0 && minor == 0) {
-    fail_msg_writer() << "Index (0,0) is the primary address. Use minor >= 1.";
+  CryptoNote::SubaddressIndex index;
+  const std::string refusal = CryptoNote::choosePaymentSubaddressIndex(args, existing, index);
+  if (!refusal.empty()) {
+    fail_msg_writer() << refusal;
     return true;
   }
+  const uint32_t major = index.major;
+  const uint32_t minor = index.minor;
 
   // Check for duplicate.
   for (const auto& e : m_subAddresses) {

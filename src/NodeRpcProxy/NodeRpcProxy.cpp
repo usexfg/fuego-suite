@@ -912,6 +912,18 @@ std::error_code NodeRpcProxy::getLimitDeposits(std::vector<INode::LimitDepositRp
   return {};
 }
 
+std::error_code NodeRpcProxy::getRegisteredAliases(std::vector<RegisteredAlias>& aliases) {
+  COMMAND_RPC_GET_ALL_ALIASES::request req;
+  COMMAND_RPC_GET_ALL_ALIASES::response res;
+  std::error_code ec = jsonCommand("/get_all_aliases", req, res);
+  if (ec) return ec;
+  aliases.clear();
+  for (const auto& entry : res.aliases) {
+    aliases.push_back({entry.alias, entry.address});
+  }
+  return {};
+}
+
 // Explicit template instantiation for orderbook CLI query
 template std::error_code NodeRpcProxy::jsonCommand<COMMAND_RPC_GET_ORDERBOOK_STATE::request, COMMAND_RPC_GET_ORDERBOOK_STATE::response>(
   const std::string& url, const COMMAND_RPC_GET_ORDERBOOK_STATE::request& req, COMMAND_RPC_GET_ORDERBOOK_STATE::response& res);

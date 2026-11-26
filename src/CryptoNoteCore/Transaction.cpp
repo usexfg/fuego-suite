@@ -403,9 +403,13 @@ namespace CryptoNote {
           !applySubaddressTxExtra(rewritten, plan)) {
         throw std::runtime_error("Single-subaddress tx key form could not be written");
       }
+      TransactionExtra rewrittenExtra;
+      if (!rewrittenExtra.parse(rewritten)) {
+        throw std::runtime_error("Single-subaddress tx extra does not parse");
+      }
+      transaction.extra.swap(rewritten);
+      extra = std::move(rewrittenExtra);
       singleSubaddress = keys;
-      transaction.extra = rewritten;
-      extra.parse(transaction.extra);
     } catch (...) {
       wipeKeys();
       throw;

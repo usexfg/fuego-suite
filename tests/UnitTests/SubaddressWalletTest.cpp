@@ -76,6 +76,31 @@ TEST_F(SubaddressWallet, SecondStandardAddressSurvivesReload) {
   reloaded.shutdown();
 }
 
+// Deleting an address removes its own stored keys, not another address's.
+TEST_F(SubaddressWallet, DeletingAMiddleAddressKeepsTheOthersKeys) {
+  std::string first;
+  std::string last;
+  {
+    WalletGreen green(dispatcher, currency, node, logger);
+    IWallet& wallet = green;
+    wallet.initialize(path, "password");
+    first = wallet.createAddress();
+    const std::string middle = wallet.createAddress();
+    last = wallet.createAddress();
+    wallet.deleteAddress(middle);
+    ASSERT_EQ(wallet.getAddressCount(), 2u);
+    wallet.save();
+    wallet.shutdown();
+  }
+  WalletGreen green(dispatcher, currency, node, logger);
+  IWallet& reloaded = green;
+  reloaded.load(path, "password");
+  ASSERT_EQ(reloaded.getAddressCount(), 2u);
+  EXPECT_EQ(reloaded.getAddress(0), first);
+  EXPECT_EQ(reloaded.getAddress(1), last);
+  reloaded.shutdown();
+}
+
 TEST_F(SubaddressWallet, V2RecordPublishesFunsaAndSurvivesReload) {
   std::string funsa;
   {

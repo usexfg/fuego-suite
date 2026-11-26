@@ -3732,10 +3732,10 @@ namespace CryptoNote
     std::vector<size_t> updatedTransactions = deleteTransfersForAddress(recordAddress, deletedTransactions);
     deleteFromUncommitedTransactions(deletedTransactions);
 
-    m_walletsContainer.get<KeysIndex>().erase(it);
-
-    auto addressIndex = std::distance(
+    // The position is read before the erase: the iterator is invalid after it.
+    const auto addressIndex = std::distance(
         m_walletsContainer.get<RandomAccessIndex>().begin(), m_walletsContainer.project<RandomAccessIndex>(it));
+    m_walletsContainer.get<KeysIndex>().erase(it);
 
     m_containerStorage.erase(std::next(m_containerStorage.begin(), addressIndex));
 
@@ -6818,11 +6818,40 @@ namespace CryptoNote
     return {};
   }
 
-  // A random non-zero major index, so each alias gets its own subaddress.
-  uint32_t WalletGreen::randomAliasSubaddressMajor() {
-    uint32_t major = 0;
-    Crypto::generate_random_bytes(sizeof(major), reinterpret_cast<uint8_t*>(&major));
-    return major == 0 ? 1 : major;
+  void WalletGreen::forgetUnusedAliasSubaddress(const std::string& address)
+  {
+    try {
+      deleteAddress(address);
+    } catch (const std::exception& e) {
+      m_logger(WARNING, BRIGHT_YELLOW) << "Could not remove unused alias subaddress: " << e.what();
+    }
+  }
+
+  // The first alias-owner subaddress (ALIAS_SUBADDRESS_MAJOR, minor) that is
+  // neither in this container nor already an alias owner.
+  std::error_code WalletGreen::nextAliasSubaddress(const std::vector<INode::RegisteredAlias>& registered,
+                                                   std::string& address, uint32_t& minor)
+  {
+    std::set<std::string> ownerKeys;
+    for (const auto& entry : registered) {
+      AccountPublicAddress parsed;
+      bool isSubaddress = false;
+      if (m_currency.parseAccountAddressString(entry.ownerAddress, parsed, isSubaddress)) {
+        ownerKeys.insert(Common::podToHex(parsed.spendPublicKey) + Common::podToHex(parsed.viewPublicKey));
+      }
+    }
+    const WalletRecord& primary = m_walletsContainer.get<RandomAccessIndex>()[0];
+    for (minor = 1; minor <= CryptoNote::MAX_ALIAS_SUBADDRESS_MINOR; ++minor) {
+      const Crypto::SubAddressKeys keys = Crypto::deriveSubAddressKeysV2(
+          m_viewSecretKey, primary.spendPublicKey, nullptr, CryptoNote::ALIAS_SUBADDRESS_MAJOR, minor);
+      const AccountPublicAddress candidate{keys.spendPublicKey, keys.viewPublicKey};
+      address = m_currency.subAddressAsString(candidate);
+      if (!isMyAddress(address) &&
+          !ownerKeys.count(Common::podToHex(candidate.spendPublicKey) + Common::podToHex(candidate.viewPublicKey))) {
+        return {};
+      }
+    }
+    return make_error_code(error::ADDRESS_ALREADY_EXISTS);
   }
 
   std::error_code WalletGreen::registerAlias(const std::string& alias,
@@ -6831,24 +6860,35 @@ namespace CryptoNote
     throwIfNotInitialized();
     throwIfStopped();
 
-    CryptoNote::AccountPublicAddress callerAddress;
-    if (!m_currency.parseAccountAddressString(ownerAddress, callerAddress)) {
-      return make_error_code(std::errc::invalid_argument);
+    if (m_walletsContainer.get<RandomAccessIndex>().empty()) {
+      return make_error_code(std::errc::not_connected);
+    }
+    try {
+      if (!isMyAddress(ownerAddress)) {
+        return make_error_code(error::CHANGE_ADDRESS_NOT_FOUND);
+      }
+    } catch (const std::system_error& e) {
+      return e.code();
     }
     if (!CryptoNote::isValidAliasName(alias) || !CryptoNote::funsaSubaddressActivated(nextBlockMajorVersion())) {
       return make_error_code(std::errc::invalid_argument);
     }
-    if (m_walletsContainer.get<RandomAccessIndex>().empty()) {
-      return make_error_code(std::errc::not_connected);
-    }
 
-    // The alias is owned by a fresh subaddress, so an observer cannot link this
-    // wallet's registrations, and its owner hash is that subaddress's key hash.
+    // One request lists every alias, so the node never learns which candidate
+    // subaddresses belong to this wallet.
+    std::vector<INode::RegisteredAlias> registered;
+    if (std::error_code ec = m_node.getRegisteredAliases(registered)) {
+      return ec;
+    }
+    for (const auto& entry : registered) {
+      if (entry.alias == alias) {
+        return make_error_code(std::errc::address_in_use);
+      }
+    }
     std::string aliasOwner;
-    try {
-      aliasOwner = createSubAddress(randomAliasSubaddressMajor(), 0, 0);
-    } catch (const std::system_error& e) {
-      return e.code();
+    uint32_t aliasMinor = 0;
+    if (std::error_code ec = nextAliasSubaddress(registered, aliasOwner, aliasMinor)) {
+      return ec;
     }
 
     CryptoNote::WalletSendPlan plan;
@@ -6859,24 +6899,49 @@ namespace CryptoNote
     }
 
     TransactionParameters params;
+    uint64_t needed = plan.fee;
     for (const auto& transfer : plan.transfers) {
       WalletOrder order;
       order.address = transfer.address;
       order.amount = static_cast<uint64_t>(transfer.amount);
+      needed += order.amount;
       params.destinations.push_back(order);
+    }
+    if (getActualBalance() < needed) {
+      return make_error_code(error::WRONG_AMOUNT);
     }
     params.fee   = plan.fee;
     params.mixIn = m_currency.minMixin(CryptoNote::BLOCK_MAJOR_VERSION_10);
     params.extra = plan.extra;
     params.changeDestination = ownerAddress;
 
+    // The owner subaddress joins the container only for a registration that is
+    // sent; a send that fails leaves the container as it was.
+    try {
+      if (createSubAddress(CryptoNote::ALIAS_SUBADDRESS_MAJOR, aliasMinor, 0) != aliasOwner) {
+        forgetUnusedAliasSubaddress(aliasOwner);
+        return make_error_code(error::INTERNAL_WALLET_ERROR);
+      }
+    } catch (const std::system_error& e) {
+      return e.code();
+    }
+    // A send that recorded a transaction may have reached the node even though
+    // relaying reported an error, so its owner subaddress stays; one that failed
+    // before recording anything leaves the container as it was.
+    const size_t transactionsBefore = getTransactionCount();
     Crypto::SecretKey txSK;
     size_t txIdx;
     try {
       txIdx = transfer(params, txSK);
     } catch (const std::system_error& e) {
+      if (getTransactionCount() == transactionsBefore) {
+        forgetUnusedAliasSubaddress(aliasOwner);
+      }
       return e.code();
     } catch (...) {
+      if (getTransactionCount() == transactionsBefore) {
+        forgetUnusedAliasSubaddress(aliasOwner);
+      }
       return make_error_code(std::errc::io_error);
     }
 

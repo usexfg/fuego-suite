@@ -2996,6 +2996,14 @@ namespace PaymentService
       }
       Crypto::Hash txHash{};
       std::error_code ec = green->registerAlias(alias, addr, txHash);
+      // The alias owner subaddress joined the container; save it even when the
+      // relay reported an error, as the node may hold the registration. A save
+      // that fails is logged and never replaces the registration's result.
+      try {
+        saveWallet();
+      } catch (const std::exception& saveError) {
+        logger(Logging::WARNING) << "register_alias: wallet not saved: " << saveError.what();
+      }
       if (ec) {
         return ec;
       }

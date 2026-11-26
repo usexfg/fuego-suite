@@ -16,6 +16,7 @@
 
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "CryptoNoteCore/TransactionExtra.h"
@@ -34,6 +35,14 @@ struct WalletSendPlan {
 };
 
 // An alias is exactly 8 characters of [a-z0-9&].
+// Alias owners are the subaddresses (ALIAS_SUBADDRESS_MAJOR, 1..), apart from the
+// payment subaddresses under major 0. A restored wallet does not recreate them
+// by itself; they can be found by recreating (ALIAS_SUBADDRESS_MAJOR, 1..) and
+// matching the node's alias list. The console refuses to hand them out as
+// payment subaddresses.
+const uint32_t ALIAS_SUBADDRESS_MAJOR = 1;
+const uint32_t MAX_ALIAS_SUBADDRESS_MINOR = 1024;
+
 bool isValidAliasName(const std::string& alias);
 
 // Registers `alias` to `ownerSubaddress`, a subaddress derived for it, so the
@@ -52,7 +61,20 @@ WalletSendPlan planDevDonation(const Currency& currency, const std::string& ownA
 // orders were placed, stopped or withdrawn, and whether those withdraws settled.
 std::vector<WalletOrderTransaction> walletOrderHistory(IWalletLegacy& wallet);
 
-// An alias registration this wallet sent that has not confirmed or failed yet.
+struct SubaddressIndex {
+  uint32_t major = 0;
+  uint32_t minor = 0;
+};
+
+// The payment subaddress `gen_new_sub [major minor]` creates: the given index, or
+// with no arguments the next unused minor under major 0. Returns why the index is
+// refused (wrong arguments, the primary address, the alias major), else empty.
+std::string choosePaymentSubaddressIndex(const std::vector<std::string>& args,
+                                         const std::vector<std::pair<uint32_t, uint32_t>>& existing,
+                                         SubaddressIndex& index);
+
+// An alias registration this wallet sent (not one it received) that has not
+// confirmed or failed yet.
 bool hasPendingAliasRegistration(IWalletLegacy& wallet);
 
 }

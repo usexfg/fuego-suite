@@ -186,6 +186,16 @@ public:
     return std::make_error_code(std::errc::not_supported);
   }
 
+  struct RegisteredAlias {
+    std::string alias;
+    std::string ownerAddress;
+  };
+  // Every registered alias with its owner address.
+  virtual std::error_code getRegisteredAliases(std::vector<RegisteredAlias>& aliases) {
+    aliases.clear();
+    return std::make_error_code(std::errc::not_supported);
+  }
+
   virtual std::error_code getAmmPoolInfo(AmmPoolInfo& info) {
     return std::make_error_code(std::errc::not_supported);
   }

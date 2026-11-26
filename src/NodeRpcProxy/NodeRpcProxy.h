@@ -99,6 +99,7 @@ public:
   virtual std::error_code getAmmPoolReserves(AmmPoolReserves& out) override;
   virtual uint64_t getHearthTwap() override;
   virtual std::error_code getLimitDeposits(std::vector<LimitDepositRpcEntry>& deposits) override;
+  virtual std::error_code getRegisteredAliases(std::vector<RegisteredAlias>& aliases) override;
 
   unsigned int rpcTimeout() const { return m_rpcTimeout; }
   void rpcTimeout(unsigned int val) { m_rpcTimeout = val; }

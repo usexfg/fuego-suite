@@ -92,6 +92,7 @@ public:
   virtual uint64_t getHearthTwap() override;
   virtual std::error_code getAmmPoolInfo(AmmPoolInfo& info) override;
   virtual std::error_code getLimitDeposits(std::vector<LimitDepositRpcEntry>& deposits) override;
+  virtual std::error_code getRegisteredAliases(std::vector<RegisteredAlias>& aliases) override;
 
 private:
   virtual void peerCountUpdated(size_t count) override;

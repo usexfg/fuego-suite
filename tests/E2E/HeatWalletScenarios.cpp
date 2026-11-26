@@ -38,6 +38,7 @@
 #include "WalletLegacy/WalletLegacy.h"
 #include "WalletLegacy/WalletOperations.h"
 #include "Wallet/WalletGreen.h"
+#include "Wallet/WalletErrors.h"
 #include "System/Dispatcher.h"
 #include "System/Timer.h"
 
@@ -702,6 +703,17 @@ TEST_F(HeatWalletScenario, WalletdAliasIsOwnedByAFreshSubaddress) {
   confirm();
   ASSERT_TRUE(green.waitSyncedTo(nodeHeight()));
 
+  const size_t addressesBefore = green.api.getAddressCount();
+  Crypto::Hash refused;
+  EXPECT_EQ(make_error_code(error::CHANGE_ADDRESS_NOT_FOUND), green.wallet.registerAlias("foreignc", funder.wallet.getAddress(), refused))
+      << "change may only go to this wallet";
+  EXPECT_EQ(addressesBefore, green.api.getAddressCount()) << "a registration that is not sent adds no subaddress";
+  GreenScenarioWallet unfunded(currency, *inode, logger, dataDir + "/green-unfunded.wallet");
+  ASSERT_TRUE(unfunded.waitSyncedTo(nodeHeight()));
+  const size_t unfundedAddresses = unfunded.api.getAddressCount();
+  EXPECT_EQ(make_error_code(error::WRONG_AMOUNT), unfunded.wallet.registerAlias("nofunds1", unfunded.address, refused));
+  EXPECT_EQ(unfundedAddresses, unfunded.api.getAddressCount()) << "a registration it cannot pay adds no subaddress";
+
   const std::string alias = "greenali";
   Crypto::Hash registration;
   const std::error_code registered = green.wallet.registerAlias(alias, green.address, registration);
@@ -716,6 +728,15 @@ TEST_F(HeatWalletScenario, WalletdAliasIsOwnedByAFreshSubaddress) {
   const auto byAddress = nodeCore().getAliasByAddress(entry->ownerAddress);
   ASSERT_TRUE(byAddress.has_value());
   EXPECT_EQ(alias, byAddress->alias);
+  ASSERT_EQ(addressesBefore + 1, green.api.getAddressCount());
+  EXPECT_EQ(entry->ownerAddress, green.api.getAddress(addressesBefore));
+  EXPECT_THROW(green.wallet.createSubAddress(ALIAS_SUBADDRESS_MAJOR, 1), std::system_error)
+      << "the first alias is owned by subaddress (ALIAS_SUBADDRESS_MAJOR, 1), which a restored wallet can find";
+
+  const size_t addressesAfter = green.api.getAddressCount();
+  EXPECT_EQ(std::make_error_code(std::errc::address_in_use), green.wallet.registerAlias(alias, green.address, refused))
+      << "a taken alias is refused before any subaddress is added";
+  EXPECT_EQ(addressesAfter, green.api.getAddressCount());
 }
 
 // Each holder's only XFG sits on a funsa subaddress, so the mint, swap, order

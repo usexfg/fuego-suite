@@ -173,6 +173,17 @@ public:
     return {};
   }
 
+  struct RegisteredAlias {
+    std::string alias;
+    std::string ownerAddress;
+  };
+  // Every registered alias with its owner address. A node that cannot answer
+  // reports it, so a wallet never assumes an alias or address is free.
+  virtual std::error_code getRegisteredAliases(std::vector<RegisteredAlias>& aliases) {
+    aliases.clear();
+    return std::make_error_code(std::errc::not_supported);
+  }
+
   // AMM pool redemption price: returns (reserveXfg, reserveHeat) from the Hearth pool.
   // Wallet uses this to compute correct heatMinted = xfgBurned * reserveHeat / reserveXfg.
   // Default returns (1,1) so existing INode implementations compile.

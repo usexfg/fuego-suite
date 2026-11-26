@@ -118,7 +118,9 @@ public:
   // ALIAS_REGISTRATION_FEE output to the Fuego Developer Fund (mainnet only), and
   // submits the transaction.  On success, txHashOut receives the transaction hash.
   std::error_code registerAlias(const std::string& alias, const std::string& ownerAddress, Crypto::Hash& txHashOut);
-  static uint32_t randomAliasSubaddressMajor();
+  std::error_code nextAliasSubaddress(const std::vector<INode::RegisteredAlias>& registered, std::string& address,
+                                      uint32_t& minor);
+  void forgetUnusedAliasSubaddress(const std::string& address);
   // Burns `amount` XFG as a re-mint burn (TX_EXTRA_REMINT_BURN, v11+): its own
   // counter, re-minted to the dev fund each quarter in one coinbase output.
   // The only output is the network minimum back to this wallet.

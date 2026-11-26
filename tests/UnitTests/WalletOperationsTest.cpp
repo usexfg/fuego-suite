@@ -130,4 +130,28 @@ TEST_F(MainnetWalletOperations, DevDonationRefusesAmountsOutsideTheMoneySupply) 
   EXPECT_THROW(planDevDonation(currency, masterAddress, UINT64_MAX), std::invalid_argument);
 }
 
+TEST(PaymentSubaddressIndex, ExplicitIndexIsKept) {
+  SubaddressIndex index;
+  EXPECT_EQ("", choosePaymentSubaddressIndex({"2", "5"}, {{0, 1}, {0, 2}}, index));
+  EXPECT_EQ(2u, index.major);
+  EXPECT_EQ(5u, index.minor);
+}
+
+TEST(PaymentSubaddressIndex, NoArgumentsTakesTheNextMinorUnderMajorZero) {
+  SubaddressIndex index;
+  EXPECT_EQ("", choosePaymentSubaddressIndex({}, {{0, 1}, {0, 4}, {2, 9}, {1, 7}}, index));
+  EXPECT_EQ(0u, index.major);
+  EXPECT_EQ(5u, index.minor);
+}
+
+TEST(PaymentSubaddressIndex, RefusesTheAliasMajorThePrimaryAndBadArguments) {
+  SubaddressIndex index;
+  EXPECT_NE("", choosePaymentSubaddressIndex({std::to_string(ALIAS_SUBADDRESS_MAJOR), "3"}, {}, index));
+  EXPECT_NE("", choosePaymentSubaddressIndex({"0", "0"}, {}, index));
+  EXPECT_NE("", choosePaymentSubaddressIndex({"2"}, {}, index));
+  EXPECT_NE("", choosePaymentSubaddressIndex({"-1", "2"}, {}, index));
+  EXPECT_NE("", choosePaymentSubaddressIndex({"4294967296", "2"}, {}, index));
+  EXPECT_NE("", choosePaymentSubaddressIndex({}, {{0, UINT32_MAX}}, index));
+}
+
 }

@@ -889,7 +889,8 @@ TEST(JanusBaseEverywhere, BlockTemplateDropsAliasTagsAtV11) {
   block.majorVersion = BLOCK_MAJOR_VERSION_11;
   size_t totalSize = 0;
   uint64_t fee = 0;
-  ASSERT_TRUE(pool.fill_block_template(block, 1000000, 1000000, 0, totalSize, fee, v11Height + 1));
+  uint32_t templateHeight = v11Height + 1;
+  ASSERT_TRUE(pool.fill_block_template(block, 1000000, 1000000, 0, totalSize, fee, templateHeight));
   EXPECT_EQ((std::unordered_set<Hash>(block.transactionHashes.begin(), block.transactionHashes.end())),
             (std::unordered_set<Hash>{getObjectHash(plain)}));
 }

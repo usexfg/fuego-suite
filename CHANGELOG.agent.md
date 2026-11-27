@@ -21,7 +21,7 @@ Assumptions: pre-v12 wallet refusal covers v10 too, as the plan says (v10 mainne
 | Sign-off | Status |
 |---|---|
 | Build compiles | DONE (CI b7ac1889) |
-| Tests pass | DONE (CI b7ac1889; no mutation run: the v11 refusal test was not shown to fail with the refusal removed) |
+| Tests pass | CI to confirm (mutation results reasoned, not run: task 6) |
 | All tasks done | DONE |
 
 ## Merge master into PR #83 (claude/modest-ride-oevh0b)

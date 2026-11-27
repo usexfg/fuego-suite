@@ -1,9 +1,9 @@
 ## T1: real-chain harness, alt-chain reorg test, epoch cache (claude/pr83-chain-harness)
 
-**Resume**: tasks 1-3 written and pushed once CI-checked; next is the mutation run (revert `findAlternativeChainEntries` use and the journal persistence on this branch, expect C3 and C2b red, then restore). Branch `claude/pr83-chain-harness` off `claude/modest-ride-oevh0b` at `27d8ec89`; push only that branch.
+**Resume**: T1 done. Branch `claude/pr83-chain-harness` carries all three tasks, merged with master `3afe5ebf` (PR #83 merged). Nothing left but review; no PR opened.
 **Started**: 2026-11-27
 **Agent**: Claude Code (claude-sonnet-5-5)
-**Status**: IN PROGRESS. No Boost in the container; CI on the pushed branch is the build gate.
+**Status**: DONE; CI green on `aa62536c` (all 11 jobs). No Boost in the container; CI on the pushed branch is the build gate.
 **Scope**: `tests/CoreTests/V11ChainHarness.cpp`, `tests/CoreTests/v11_chain_checks.sh`, `tests/CMakeLists.txt`, `.github/workflows/check.yml`; task 3 also `src/CryptoNoteCore/Blockchain.cpp`.
 **Assumptions**: the harness mines coinbase-only chains (PR #83 seeds the pool at genesis, so epoch work, TWAP and the banking, commitment and alias indices advance without a wallet); the wallet-driven seedboot flow of brave-meitner is not ported; `captureOrderbookState` does not exist on PR #83, so the harness prints the orderbook getters and the snapshot journals instead.
 
@@ -11,16 +11,16 @@
 |---|------|-------|------|--------|
 | 1 | Port `V11ChainHarness.cpp` and `v11_chain_checks.sh` from brave-meitner-r8wmlt: mine/export/import/state commands, restart check C1, live reorg C2a; target in `tests/CMakeLists.txt`; CI step in the Ubuntu 24.04 job | Claude Code | 2026-11-27 | DONE (CI-checked; first run exposed the uninitialised snapshot counters, task 1a) |
 | 1a | `EpochStateSnapshot::vaultUtxoCount` and `vaultSpentCount` are never assigned or read, so each snapshot cached uninitialised stack bytes and two nodes at one height wrote different caches (CI: L vs R epochSnapshots digest mismatch). Both default to 0 | Claude Code | 2026-11-27 | DONE |
-| 2 | Alt-chain test C3: main chain M to 95; five competing chains forking from block 40, each one block longer (five switches); M to 125 (sixth switch). State of the node that lived through it equals a node that saw only M, both live. Asserts six switches and a peak of at least 60 alternative entries. A node refuses alternative blocks more than 60 below its tip (`Checkpoints::is_alternative_block_allowed`), which caps fork depth; a switch back also drops the old chain (too deep to re-enter the map), so the peak, not the final size, is measured. Five chains because the iterators go stale only when the insert that triggers the switch rehashes that block's submap. Sanitizers job builds and runs the harness. First mutation run (no re-find, one chain, state read after a cache reload): not detected. Mutation check with this version: pending | Claude Code | 2026-11-27 | IN PROGRESS |
-| 3 | Epoch cache: `BlockCacheSerializer` caches the newest `MAX_ROLLBACK_HISTORY` entries of `m_blockSwapFeeContributions` and `m_blockEpochDistributions`; cache version 23 to 24 (older caches replay once). Test C2b: replay L to 65, restart, reorg from block 39 across epoch boundaries 40, 50, 60; the live state of that restarted node equals the live state of a node that never restarted (treasury counter, epoch swap fees, journal digests). The state command reloads the cache, so the first version compared reloaded states and passed with the journals uncached (mutation not detected); live states fix that. Coinbase-only chains carry zero swap fees, so the journals' lengths, not their values, are what the test sees. Mutation check: pending | Claude Code | 2026-11-27 | IN PROGRESS |
+| 2 | Alt-chain test C3: eight phases, each forking from a main-chain block with five competing chains one block longer than the last (five switches), then M outgrows them (a sixth): 48 switches, peak 290 alternative entries. State of the node that lived through it equals a node that saw only M, both live. A node refuses alternative blocks more than 60 below its tip (`Checkpoints::is_alternative_block_allowed`), which caps fork depth at 55. The iterators go stale only when the insert that triggers a switch rehashes the submap holding the chain's blocks, by chance per hash: single-chain versions missed the mutation in 3 of 4 runs, hence 48 switches. Sanitizers job builds and runs the harness. Mutation (delete `alt_chain = findAlternativeChainEntries(altChainIds)`): Sanitizers job red, ASan heap-use-after-free in `switch_to_alternative_blockchain` (Blockchain.cpp:1888) in the C3 process and in C2a/C2b; unmutated run green | Claude Code | 2026-11-27 | DONE |
+| 3 | Epoch cache: `BlockCacheSerializer` caches the newest `MAX_ROLLBACK_HISTORY` entries of `m_blockSwapFeeContributions` and `m_blockEpochDistributions`; cache version 23 to 24 (older caches replay once). Test C2b: replay L to 65, restart, reorg from block 39 across epoch boundaries 40, 50, 60; the live state of that restarted node equals the live state of a node that never restarted. The `state` command reloads the cache, so the first version compared reloaded states and missed the mutation; live states fix that. Coinbase-only chains carry zero swap fees, so the journals' lengths and digests, not nonzero values of `treasuryLpPendingXfg` or `epochSwapFees`, are what the test sees. Mutation (remove the two `serializeNewestEntries` calls): only C2b red, `digest.swapFeeJournal` and `digest.epochDistJournal` n=81 vs n=41; unmutated run green | Claude Code | 2026-11-27 | DONE |
 
 Open (found by the harness, not fixed here): `CommitmentIndex::m_epochReports` is never popped on reorg, so a node that reorged across epoch boundaries keeps stale epoch reports (non-consensus, RPC-visible, cache-visible); the per-block TWAP journal and `m_blockLpRemoveAmounts` are not cached, so a restarted node undoes no TWAP contribution for popped non-boundary blocks until an epoch snapshot restore corrects it, and reverses no LP removal; the in-memory swap-fee and epoch-distribution journals are never trimmed, only the cache copy is capped.
 
 | Gate | Status | Signed |
 |------|--------|--------|
-| Build compiles | NOT RUN locally; CI | |
-| Tests pass | NOT RUN locally; CI | |
-| All tasks done | NO | |
+| Build compiles | CI green on aa62536c | |
+| Tests pass | CI green on aa62536c (harness C1, C2a, C2b, C3 under Ubuntu and ASan) | |
+| All tasks done | YES | |
 
 ---
 

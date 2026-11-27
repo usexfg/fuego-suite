@@ -9,7 +9,9 @@
 # cached, so a restarted node cannot undo the TWAP of non-boundary blocks, and only the
 # boundary block's snapshot restore corrects it.
 # C3 builds an alternative chain long enough to force m_alternative_chains to rehash while
-# it grows: main chain M to block 170 and then 210, alternative chain A from block 60 to 190.
+# it grows: main chain M to block 95 and then 125, alternative chain A from block 40 to 110.
+# A node refuses alternative blocks more than CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW (60) below its
+# tip, so A's first block sits 55 below M's tip and every later switch stays inside that window.
 # Usage: v11_chain_checks.sh <path-to-v11_chain_harness> <empty-workdir>
 set -u
 BIN=$(realpath "$1"); W=$2
@@ -51,7 +53,7 @@ grep -q "chain switches 1," import_Y.txt && echo "C2b switch PASS" || { FAILED=1
 same_state "C2b reorg across epoch boundaries 40, 50 and 60 after a restart (Y) vs fork node (F)" F Y
 
 echo "== C3 alternative chain: switch to A, switch back to M, state equals a node that saw only M"
-MAIN_TIP=170; ALT_TIP=190; WIN_TIP=210; ALT_FORK=60
+MAIN_TIP=95; ALT_TIP=110; WIN_TIP=125; ALT_FORK=40
 run mine M $WIN_TIP 1 0 | tail -1
 run export M 1 $WIN_TIP main.bin
 run import A main.bin 1 $ALT_FORK | tail -1
@@ -62,6 +64,6 @@ run import W main.bin 1 $WIN_TIP | tail -1
 for n in S W; do state $n; done
 grep -q "chain switches 2," import_S.txt && echo "C3 switches PASS" || { FAILED=1; echo "C3 switches FAIL"; cat import_S.txt; }
 ENTRIES=$(sed -n 's/.*alternative chain entries \([0-9]*\).*/\1/p' import_S.txt)
-[ "${ENTRIES:-0}" -ge 100 ] && echo "C3 rehash volume PASS ($ENTRIES alternative entries)" || { FAILED=1; echo "C3 rehash volume FAIL ($ENTRIES)"; }
+[ "${ENTRIES:-0}" -ge 60 ] && echo "C3 rehash volume PASS ($ENTRIES alternative entries)" || { FAILED=1; echo "C3 rehash volume FAIL ($ENTRIES)"; }
 same_state "C3 state after two switches (S) vs winning chain only (W)" W S
 exit $FAILED

@@ -13,6 +13,7 @@ Assumptions: pre-v12 wallet refusal covers v10 too, as the plan says (v10 mainne
 | 2 | Wallets refuse before v12: `WalletGreen::registerAlias` returns `ALIASES_NOT_ACTIVE`; console `register_alias` messages; `planAliasRegistration` throws. e2e alias scenarios start at `TESTNET_UPGRADE_HEIGHT_V12 + 2` (existing 1000, no new height) | Claude Code | 2026-11-27 | DONE |
 | 3 | Linked-owner fix: `ALIAS_MINOR_BASE = 0x80000000`; owners `(0, base + k)`; `choosePaymentSubaddressIndex` and walletd `create_subaddress` refuse major 0 minors from the base; auto minor ignores the range | Claude Code | 2026-11-27 | DONE |
 | 4 | Docs: AGENTS.md, V11 10.8, V12 item 4, rollout plan 4.4 (exact Valise rule) | Claude Code | 2026-11-27 | DONE |
+| 5 | Apply-path gate: `pushTransaction` skips the 0xEA, 0xEC and 0xED branches when `aliasTagsRefused(block.bl.majorVersion)` (v11), so a checkpointed v11 block (validation skipped) cannot register, release or transfer an alias. Test: `core_tests` `testAliasTagsNotAppliedByV11Block` pushes each tag through `VaultCoreTestAccess::pushTx` at v11 (alias index unchanged) and at v12 (applies, so the v11 result cannot be a rejection for another reason) | Claude Code | 2026-11-27 | DONE (CI to confirm) |
 
 | Sign-off | Status |
 |---|---|

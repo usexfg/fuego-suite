@@ -3025,6 +3025,49 @@ void testAliasTagsRefusedInV11Settlement() {
   TEST(t.chain.validateSettlement(settlementTx({2 * C}, {keyOut(C / 2)}, {}), v11Height, scratch, flows, fee, err));
 }
 
+// A checkpointed v11 block skips validation, so the apply path must itself
+// refuse to register, release or transfer an alias. The same tags at v12 apply.
+void testAliasTagsNotAppliedByV11Block() {
+  TestChain t("alias_v11_apply");
+  TEST(t.ok);
+  const uint64_t C = parameters::COIN;
+  auto push = [&](const std::vector<uint8_t>& extra, uint8_t version) {
+    auto block = VaultCoreTestAccess::blockWith(auntPolTx(2 * C, {keyOut(C / 2)}, extra), 100, version);
+    return VaultCoreTestAccess::pushTx(t.chain, block);
+  };
+
+  const std::vector<uint8_t> registrationExtra = aliasRegistrationExtra(aliasRegistration("applyreg", "owner-one"));
+  TEST(push(registrationExtra, BLOCK_MAJOR_VERSION_11));
+  TEST(!t.chain.getAliasByName("applyreg").has_value());
+  TEST(push(registrationExtra, BLOCK_MAJOR_VERSION_12));
+  TEST(t.chain.getAliasByName("applyreg").has_value());
+
+  AccountBase releaser;
+  releaser.generate();
+  const std::string releaserAddress = t.currency.accountAddressAsString(releaser.getAccountKeys().address);
+  TEST(VaultCoreTestAccess::indexAlias(t.chain, ownedAlias("applyrel", releaserAddress, releaser)));
+  std::vector<uint8_t> releaseExtra;
+  TEST(addAliasReleaseToExtra(releaseExtra, signedAliasRelease("applyrel", releaser, releaserAddress)));
+  TEST(push(releaseExtra, BLOCK_MAJOR_VERSION_11));
+  TEST(t.chain.getAliasByName("applyrel").has_value());
+  TEST(push(releaseExtra, BLOCK_MAJOR_VERSION_12));
+  TEST(!t.chain.getAliasByName("applyrel").has_value());
+
+  AccountBase oldOwner;
+  AccountBase newOwner;
+  oldOwner.generate();
+  newOwner.generate();
+  const std::string oldOwnerAddress = t.currency.accountAddressAsString(oldOwner.getAccountKeys().address);
+  const std::string newOwnerAddress = t.currency.accountAddressAsString(newOwner.getAccountKeys().address);
+  TEST(VaultCoreTestAccess::indexAlias(t.chain, ownedAlias("applyxfr", oldOwnerAddress, oldOwner)));
+  std::vector<uint8_t> transferExtra;
+  TEST(addAliasTransferToExtra(transferExtra, signedAliasTransfer("applyxfr", oldOwner, oldOwnerAddress, newOwner, newOwnerAddress)));
+  TEST(push(transferExtra, BLOCK_MAJOR_VERSION_11));
+  TEST(t.chain.getAliasByName("applyxfr")->addressHash == aliasOwnerKeyHash(oldOwner));
+  TEST(push(transferExtra, BLOCK_MAJOR_VERSION_12));
+  TEST(t.chain.getAliasByName("applyxfr")->addressHash == aliasOwnerKeyHash(newOwner));
+}
+
 void testAliasBurnOnlyWhenRegistrationSucceeds() {
   TestChain t("alias_burn_on_success");
   TEST(t.ok);
@@ -3577,6 +3620,7 @@ int main() {
   testOrderbookBootstrapEndsAtTheNetworksHeight();
   testAliasBurnOnlyWhenRegistrationSucceeds();
   testAliasTagsRefusedInV11Settlement();
+  testAliasTagsNotAppliedByV11Block();
   testAliasBurnsRemintedQuarterly();
   fprintf(stderr, "=== Treasury/Core Tests ===\nPassed: %d / %d\n", tests_passed, tests_run);
   return tests_passed == tests_run ? 0 : 1;

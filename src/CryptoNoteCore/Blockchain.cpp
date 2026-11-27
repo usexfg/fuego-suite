@@ -5337,7 +5337,7 @@ void CryptoNote::Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
           // REMOVED: 0xCB legacy bond registration and 0xCC bond claims.
           // No bond claims exist; new 0xCB/0xCC tags no longer parse.
           // Check for @ Alias Registration (0xEA)
-          else if (field.type() == typeid(TransactionExtraAliasRegistration)) {
+          else if (!aliasTagsRefused(block.bl.majorVersion) && field.type() == typeid(TransactionExtraAliasRegistration)) {
             const auto& aliasReg = boost::get<TransactionExtraAliasRegistration>(field);
 
             if (aliasReg.isValid()) {
@@ -5434,7 +5434,7 @@ void CryptoNote::Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
             }
           }
           // Check for @ Alias Release (0xEC)
-          else if (field.type() == typeid(TransactionExtraAliasRelease)) {
+          else if (!aliasTagsRefused(block.bl.majorVersion) && field.type() == typeid(TransactionExtraAliasRelease)) {
             const auto& aliasRel = boost::get<TransactionExtraAliasRelease>(field);
             const std::string rejection = aliasReleaseRejection(aliasRel, block.bl.majorVersion);
             const auto existingEntry = m_aliasIndex.getAliasByName(aliasRel.alias);
@@ -5452,7 +5452,7 @@ void CryptoNote::Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
             }
           }
           // Check for @ Alias Transfer (0xED)
-          else if (field.type() == typeid(TransactionExtraAliasTransfer)) {
+          else if (!aliasTagsRefused(block.bl.majorVersion) && field.type() == typeid(TransactionExtraAliasTransfer)) {
             const auto& aliasXfer = boost::get<TransactionExtraAliasTransfer>(field);
             const std::string rejection = aliasTransferRejection(aliasXfer, block.bl.majorVersion);
             const auto existingEntry = m_aliasIndex.getAliasByName(aliasXfer.alias);

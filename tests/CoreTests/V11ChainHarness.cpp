@@ -343,9 +343,17 @@ int main(int argc, char** argv) {
       if (argc != 6) { std::cerr << "usage: export <dir> <from> <to> <file>\n"; return 2; }
       Node n(dir);
       exportBlocks(n, std::stoul(argv[3]), std::stoul(argv[4]), argv[5]);
-    } else if (cmd == "import") {
-      // import <dir> (<file> <from> <to>)+: segments are fed in order within one process
-      if (argc < 6 || (argc - 3) % 3 != 0) { std::cerr << "usage: import <dir> (<file> <from> <to>)+\n"; return 2; }
+    } else if (cmd == "import" || cmd == "state") {
+      // import <dir> (<file> <from> <to>)+   feeds the segments in order within one process
+      // state <dir> [(<file> <from> <to>)+]  does the same if given segments, then prints the
+      //                                      consensus state of that live process (the import
+      //                                      report goes to stderr)
+      const bool printsState = cmd == "state";
+      const int segmentArgs = argc - 3;
+      if (segmentArgs % 3 != 0 || (!printsState && segmentArgs == 0)) {
+        std::cerr << "usage: import <dir> (<file> <from> <to>)+ | state <dir> [(<file> <from> <to>)+]\n";
+        return 2;
+      }
       Node n(dir);
       int total = 0, chainSwitches = 0;
       size_t peakAlternativeEntries = 0;
@@ -355,12 +363,11 @@ int main(int argc, char** argv) {
         if (imported < 0) return 1;
         total += imported;
       }
-      std::cout << "imported " << total << " blocks, height " << n.height() - 1 << ", chain switches " << chainSwitches
-                << ", peak alternative chain entries " << peakAlternativeEntries << "\n";
-    } else if (cmd == "state") {
-      // state <dir>: print the consensus state
-      Node n(dir);
-      VaultCoreTestAccess::printState(n.chain(), std::cout);
+      std::ostream& report = printsState ? std::cerr : std::cout;
+      if (segmentArgs > 0)
+        report << "imported " << total << " blocks, height " << n.height() - 1 << ", chain switches " << chainSwitches
+               << ", peak alternative chain entries " << peakAlternativeEntries << "\n";
+      if (printsState) VaultCoreTestAccess::printState(n.chain(), std::cout);
     } else {
       std::cerr << "unknown command\n";
       return 2;

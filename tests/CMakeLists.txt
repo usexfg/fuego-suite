@@ -488,6 +488,4 @@ target_link_libraries(v11_chain_harness PRIVATE
     Crypto
     System
     ${Boost_LIBRARIES}
-    OpenSSL::SSL
-    OpenSSL::Crypto
 )

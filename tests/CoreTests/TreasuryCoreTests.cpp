@@ -3009,12 +3009,13 @@ void testAliasTagsRefusedInV11Settlement() {
   TEST(addAliasTransferToExtra(transferExtra, signedAliasTransfer("v11refus", owner, ownerAddress, newOwner,
                                                                   t.currency.accountAddressAsString(newOwner.getAccountKeys().address))));
   const std::vector<uint8_t> registrationExtra = aliasRegistrationExtra(aliasRegistration("v11refus", "owner-one"));
-  for (const auto* extra : {&registrationExtra, &releaseExtra, &transferExtra}) {
+  const std::vector<std::vector<uint8_t>> extras{registrationExtra, releaseExtra, transferExtra};
+  for (const std::vector<uint8_t>& extra : extras) {
     Blockchain::SettlementScratch scratch;
     AssetFlows flows;
     uint64_t fee = 0;
     std::string err;
-    TEST(!t.chain.validateSettlement(settlementTx({2 * C}, {keyOut(C / 2)}, *extra), v11Height, scratch, flows, fee, err));
+    TEST(!t.chain.validateSettlement(settlementTx({2 * C}, {keyOut(C / 2)}, extra), v11Height, scratch, flows, fee, err));
     TEST(err.find("not accepted before v12") != std::string::npos);
   }
   Blockchain::SettlementScratch scratch;

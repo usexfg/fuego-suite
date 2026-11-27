@@ -91,16 +91,11 @@ WalletSendPlan planAliasRegistration(const Currency& currency, const std::string
 
   WalletSendPlan plan;
   plan.fee = currency.minimumFee();
-  const bool feeIsRemintBurn = !currency.isTestnet() && nextBlockMajorVersion >= BLOCK_MAJOR_VERSION_11;
-  if (feeIsRemintBurn) {
+  if (!currency.isTestnet()) {
     addRemintBurnToExtra(extra, parameters::ALIAS_REGISTRATION_FEE);
     plan.fee += parameters::ALIAS_REGISTRATION_FEE;
   }
-  if (currency.isTestnet() || feeIsRemintBurn) {
-    plan.transfers.push_back(transferTo(ownerSubaddress, currency.minimumFee()));
-  } else {
-    plan.transfers.push_back(transferTo(FUEGO_DEV_FUND_ADDRESS, parameters::ALIAS_REGISTRATION_FEE));
-  }
+  plan.transfers.push_back(transferTo(ownerSubaddress, currency.minimumFee()));
   plan.extra.assign(extra.begin(), extra.end());
   return plan;
 }

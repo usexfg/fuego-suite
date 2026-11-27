@@ -15,11 +15,13 @@
 #       block's snapshot restore corrects it. For the same reason C2b leaves the TWAP journal's
 #       size and digest out of the comparison.
 #   C3  m_alternative_chains rehashes while an alternative chain fills it, and the iterators
-#       handle_alternative_block holds across the insert go stale. Main chain M runs to block 95;
-#       five competing chains A1..A5 fork from block 40, each one block longer than the last, so
-#       the node switches five times; M then grows to block 125 and wins back. The final state
-#       must equal a node that only saw M. A node refuses alternative blocks more than
-#       CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW (60) below its tip, which caps the depth of the forks.
+#       handle_alternative_block holds across the insert go stale. The iterators are stale only
+#       when the insert that triggers a switch rehashes the submap holding the chain's blocks,
+#       which a given block hash does by chance, so the script makes 48 switches. Each of eight
+#       phases forks from a main-chain block, five competing chains each one block longer than
+#       the last (five switches), then M outgrows them (a sixth). The final state must equal a
+#       node that only saw M. A node refuses alternative blocks more than
+#       CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW (60) below its tip, which caps a fork at 55 blocks.
 # A harness process that exits non-zero (a sanitizer abort, a rejected block) fails the run, and
 # the script goes on, so one broken check does not hide the others.
 # Usage: v11_chain_checks.sh <path-to-v11_chain_harness> <empty-workdir>
@@ -53,6 +55,8 @@ report_has() {
 }
 
 TIP=65; RESTART=47; FORK=39; FORK_TIP=80
+FIRST_FORK=40; ALT_DEPTH=55; ALT_COUNT=5; PHASES=8; PHASE_STEP=$((ALT_DEPTH + ALT_COUNT + 1))
+WIN_TIP=$((FIRST_FORK + PHASE_STEP * (PHASES - 1) + PHASE_STEP))
 step mine L $TIP 1 0
 step export L 1 $TIP chain.bin
 step import R chain.bin 1 $RESTART
@@ -80,21 +84,29 @@ report_has Ylive "chain switches 1,"
 same_state "C2b reorg after a restart (Y live) vs no restart (X live)" Xlive Ylive '^journals\.|^digest\.twapJournal='
 
 
-echo "== C3 alternative chains: five switches, then back to M; state equals a node that saw only M"
-MAIN_TIP=95; ALT_FORK=40; WIN_TIP=125; ALT_COUNT=5
+echo "== C3 alternative chains: $((PHASES * 6)) switches in $PHASES phases; state equals a node that saw only M"
 step mine M $WIN_TIP 1 0
 step export M 1 $WIN_TIP main.bin
-SEGMENTS="main.bin 1 $MAIN_TIP"
-for k in $(seq 1 $ALT_COUNT); do
-  ALT_TIP=$((MAIN_TIP + k))
-  step import A$k main.bin 1 $ALT_FORK
-  step mine A$k $ALT_TIP 2 $((k + 2))
-  step export A$k $((ALT_FORK + 1)) $ALT_TIP alt$k.bin
-  SEGMENTS="$SEGMENTS alt$k.bin $((ALT_FORK + 1)) $ALT_TIP"
+SEGMENTS="main.bin 1 $((FIRST_FORK + ALT_DEPTH))"
+PREFIX_TO=0
+for p in $(seq 0 $((PHASES - 1))); do
+  FORK_AT=$((FIRST_FORK + PHASE_STEP * p))
+  step import G main.bin $((PREFIX_TO + 1)) $FORK_AT
+  PREFIX_TO=$FORK_AT
+  for k in $(seq 1 $ALT_COUNT); do
+    ALT_TIP=$((FORK_AT + ALT_DEPTH + k))
+    rm -rf "A_${p}_$k"; cp -r G "A_${p}_$k"
+    step mine "A_${p}_$k" $ALT_TIP 2 $((k + 2))
+    step export "A_${p}_$k" $((FORK_AT + 1)) $ALT_TIP "alt_${p}_$k.bin"
+    SEGMENTS="$SEGMENTS alt_${p}_$k.bin $((FORK_AT + 1)) $ALT_TIP"
+  done
+  MAIN_TO=$((FORK_AT + PHASE_STEP + ALT_DEPTH))
+  [ "$MAIN_TO" -gt "$WIN_TIP" ] && MAIN_TO=$WIN_TIP
+  SEGMENTS="$SEGMENTS main.bin $((FORK_AT + ALT_DEPTH + 1)) $MAIN_TO"
 done
-capture Slive S $SEGMENTS main.bin $((MAIN_TIP + 1)) $WIN_TIP
+capture Slive S $SEGMENTS
 capture Wlive W main.bin 1 $WIN_TIP
-report_has Slive "chain switches $((ALT_COUNT + 1)),"
+report_has Slive "chain switches $((PHASES * (ALT_COUNT + 1)))," 
 PEAK=$(sed -n 's/.*peak alternative chain entries \([0-9]*\).*/\1/p' report_Slive.txt)
 [ "${PEAK:-0}" -ge 60 ] && echo "C3 rehash volume PASS (peak $PEAK alternative entries)" || { FAILED=1; echo "C3 rehash volume FAIL ($PEAK)"; }
 same_state "C3 state after the switches (S live) vs the winning chain only (W live)" Wlive Slive

@@ -2,8 +2,12 @@
 # Restart and reorg equivalence on a real testnet chain driven by v11_chain_harness.
 # Each harness call is its own process, so a restart is a real one.
 # Chain L (65 blocks, past the v11 upgrade at 30 and the epoch boundaries at 40, 50 and 60) is
-# the reference. R replays L and restarts at block 47. F shares L up to block 35 and runs
-# to block 80 on a different miner.
+# the reference. R replays L and restarts at block 47. F shares L up to block 39 and runs
+# to block 80 on a different miner. Y replays L, restarts, and takes F's blocks 40 to 80, so
+# the reorg pops three epoch boundaries from the rollback journals the cache must carry.
+# The fork sits on the block before a boundary on purpose: the per-block TWAP journal is not
+# cached, so a restarted node cannot undo the TWAP of non-boundary blocks, and only the
+# boundary block's snapshot restore corrects it.
 # C3 builds an alternative chain long enough to force m_alternative_chains to rehash while
 # it grows: main chain M to block 170 and then 210, alternative chain A from block 60 to 190.
 # Usage: v11_chain_checks.sh <path-to-v11_chain_harness> <empty-workdir>
@@ -20,7 +24,7 @@ same_state() {
   else FAILED=1; echo "$name FAIL"; diff "state_$expected.txt" "state_$actual.txt"; fi
 }
 
-TIP=65; RESTART=47; FORK=35; FORK_TIP=80
+TIP=65; RESTART=47; FORK=39; FORK_TIP=80
 run mine L $TIP 1 0 | tail -1
 run export L 1 $TIP chain.bin
 run import R chain.bin 1 $RESTART | tail -1
@@ -29,7 +33,9 @@ run import F chain.bin 1 $FORK | tail -1
 run mine F $FORK_TIP 2 3 | tail -1
 run export F $((FORK + 1)) $FORK_TIP fork.bin
 run import X chain.bin 1 $TIP fork.bin $((FORK + 1)) $FORK_TIP | tee import_X.txt | tail -1
-for n in L R F X; do state $n; done
+run import Y chain.bin 1 $TIP | tail -1
+run import Y fork.bin $((FORK + 1)) $FORK_TIP | tee import_Y.txt | tail -1
+for n in L R F X Y; do state $n; done
 
 echo "== activity check: the chain crossed epoch boundaries with the genesis-seeded pool"
 grep -qE "^pool\.reserveXfg=[1-9]" state_L.txt && grep -qE "^journals\..*epochSnaps=[1-9]" state_L.txt \
@@ -41,6 +47,8 @@ diff state_L.txt state_F.txt > /dev/null && { FAILED=1; echo "distinct FAIL: L a
 
 same_state "C1 restart equivalence (L live vs R restarted at $RESTART)" L R
 same_state "C2a live reorg (X) vs fork node (F)" F X
+grep -q "chain switches 1," import_Y.txt && echo "C2b switch PASS" || { FAILED=1; echo "C2b switch FAIL"; cat import_Y.txt; }
+same_state "C2b reorg across epoch boundaries 40, 50 and 60 after a restart (Y) vs fork node (F)" F Y
 
 echo "== C3 alternative chain: switch to A, switch back to M, state equals a node that saw only M"
 MAIN_TIP=170; ALT_TIP=190; WIN_TIP=210; ALT_FORK=60

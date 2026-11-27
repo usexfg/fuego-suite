@@ -2434,7 +2434,6 @@ bool CryptoNote::Blockchain::handle_alternative_block(const Block& b, const Cryp
 
     m_orthanBlocksIndex.add(bei.bl);
 
-    alt_chain = findAlternativeChainEntries(altChainIds);
     alt_chain.push_back(m_alternative_chains.find(id));
 
     if (is_a_checkpoint) {

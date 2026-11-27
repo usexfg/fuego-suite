@@ -49,7 +49,7 @@ address that is not `fire…` with 98 characters.
 | V9 | Bump the `fuego-suite` submodule to the merged commit (CryptoNight and FFI build from it) | `fuego-suite` submodule | FFI build on each platform the `fuego-ffi` skill lists |
 
 | V10 | HEAT send to a funsa recipient: per-output keys for the recipient's commitment output, as `WalletTransactionSender::makeHeatTransferV10Request` does. V1–V9 shipped refusing it, short of V5 | `transaction_builder.rs` (`build_commitment_spend_transaction`), `wallet_service.rs` (`send_heat`) | a Valise HEAT send to a funsa address passes `validateSubaddressTxExtra` and is credited by fuego-suite |
-| V11 | Alias registration (section 4.4): `register_alias` builds the 0xEA field with a funsa owner at (0, next minor) and `addressHash = H(D ‖ C)`; refused before v11. Today `register_alias` always returns "not part of the transaction builder path" | `serialization.rs`, `wallet_service.rs`, Dart `alias_registration_screen.dart` | the registration passes F9 consensus in a suite test |
+| V11 | Alias registration (section 4.4): `register_alias` builds the 0xEA field with a funsa owner at (0, `ALIAS_MINOR_BASE` + next k) and `addressHash = H(D ‖ C)`; refused before v12. Today `register_alias` always returns "not part of the transaction builder path" | `serialization.rs`, `wallet_service.rs`, Dart `alias_registration_screen.dart` | the registration passes F9 consensus in a suite test |
 | V12 | View-only wallets, released with network v12: open from view secret + spend public key; scan with the main and 0x06 keys; credit V2 outputs flagged unverified (no Janus check without the spend secret); amounts only, no spend detection, since key images need the spend secret; v12 hidden amounts decrypt with the view key | `scanner.rs`, `wallet_service.rs`, Dart wallet import | view-only scan of the golden transactions credits the same amounts as the full wallet and flags every V2 output |
 | V13 | ProofV2 in `get_tx_proof`: one item per output key that paid the address `(tx key index, r_n·X, DLEQ signature)`, as `SubaddressTxProof.cpp` | `transaction_builder.rs`, `wallet_service.rs` | a Valise ProofV2 verifies through daemon `check_tx_proof` |
 
@@ -195,10 +195,10 @@ Problem, as of 467b8562:
 
 | Item | Rule |
 |---|---|
-| Consensus, from v11 | a transaction whose extra has a 0xEA registration is invalid unless `ownerAddress` parses as a funsa subaddress of this network and `addressHash == cn_fast_hash(D ‖ C)` of that owner. A 0xED transfer is invalid unless `newOwnerAddress` is a funsa subaddress of this network. Applied at mempool admission, block template and block validation, like `validateSubaddressTxExtra` |
+| Consensus, from v12 (owner decision 2026-11-27: v11 blocks and the pool refuse every alias tag) | a transaction whose extra has a 0xEA registration is invalid unless `ownerAddress` parses as a funsa subaddress of this network and `addressHash == cn_fast_hash(D ‖ C)` of that owner. A 0xED transfer is invalid unless `newOwnerAddress` is a funsa subaddress of this network. Applied at mempool admission, block template and block validation, like `validateSubaddressTxExtra` |
 | Before v11 | unchanged: blocks before v11 are history, and funsa does not exist yet. Wallets refuse to register before v11 rather than create an alias on a standard address |
 | Release, old owner | an alias registered before v11 keeps its standard owner; release and transfer still verify against it, and a transfer moves it to a funsa owner |
-| Wallet owner | the next unused minor index of major 0, the same lookahead a restore scans. Never a random index |
+| Wallet owner | owners are `(0, ALIAS_MINOR_BASE + k)` with `ALIAS_MINOR_BASE = 0x80000000` and k from 0: the first owner not in the wallet and not already an alias owner. Payment subaddresses are issued from minor 1 upward and never reach the base, so an owner is never a subaddress given to a payer, even after a restore. A restore scans a lookahead window at minor 1 and a second window starting at `ALIAS_MINOR_BASE`, each with its own gap limit. Valise adopts the same base. Never a random index |
 | Wallet hash | `addressHash` from the owner's own keys, never the master keys |
 | Ownership proof | release and transfer are signed with the owner's spend secret, `b + m` for a funsa owner. No wallet in these repositories builds 0xEC or 0xED today |
 

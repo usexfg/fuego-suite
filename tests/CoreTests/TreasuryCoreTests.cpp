@@ -3345,6 +3345,24 @@ void testCoinbaseCommitmentIsNoRingMemberFromV11() {
 // From v11 a pending registration whose owner is not a funsa subaddress bound to
 // its owner hash (F9) can never confirm, so pool cleanup drops it; the same
 // registration owned by a funsa subaddress stays.
+// Pool admission settles a transaction against the chain tip through
+// checkTransactionSettlement. At a v11 tip a registration owned by a funsa
+// subaddress, which meets every owner rule, is still refused for its tag.
+void testPoolSettlementRefusesAliasTagAtV11() {
+  const uint64_t C = parameters::COIN;
+  TestChain t("alias_v11_pool_settlement", true);
+  TEST(t.ok);
+  TEST(mineUpTo(t, newMinerAddress(), parameters::TESTNET_UPGRADE_HEIGHT_V11 + 2));
+  TEST(t.chain.getBlockMajorVersionForHeight(t.chain.getCurrentBlockchainHeight()) == BLOCK_MAJOR_VERSION_11);
+  AccountBase owner;
+  owner.generate();
+  const std::string funsaOwner = t.currency.subAddressAsString(owner.getAccountKeys().address);
+  uint64_t fee = 0;
+  TEST(!t.chain.checkTransactionSettlement(
+      settlementTx({2 * C}, {keyOut(C / 2)}, aliasRegistrationExtra(aliasRegistration("poolrefu", funsaOwner, owner))), fee));
+  TEST(t.chain.checkTransactionSettlement(settlementTx({2 * C}, {keyOut(C / 2)}, {}), fee));
+}
+
 void testPoolDropsRegistrationFailingTheOwnerRule() {
   const uint64_t C = parameters::COIN;
   const uint32_t v12Height = parameters::TESTNET_UPGRADE_HEIGHT_V11 + 5;
@@ -3564,6 +3582,7 @@ int main() {
   testCdActivationHeight();
   testTestnetRunsV11PastTheBootstrap();
   testStoredChainFromAnotherScheduleRollsBack();
+  testPoolSettlementRefusesAliasTagAtV11();
   testPoolDropsRegistrationFailingTheOwnerRule();
   testCoinbaseMintsOnlyKeyOutputsFromV11();
   testCoinbaseCommitmentIsNoRingMemberFromV11();

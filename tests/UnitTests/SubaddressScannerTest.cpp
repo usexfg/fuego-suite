@@ -858,4 +858,40 @@ TEST(JanusBaseEverywhere, BlockTemplateDropsTransactionWithoutJanusBaseOnceRequi
   EXPECT_EQ(templateAt(lastOptional + 1), (std::unordered_set<Hash>{getObjectHash(sealed)}));
 }
 
+TEST(JanusBaseEverywhere, BlockTemplateDropsAliasTagsAtV11) {
+  Logging::ConsoleLogger logger(Logging::ERROR);
+  const uint32_t v11Height = 100;
+  const Currency currency = currencyWithV11At(logger, v11Height);
+  AcceptingValidator validator;
+  validator.settledFee = currency.minimumFee();
+  FixedTime clock;
+  tx_memory_pool pool(currency, validator, clock, logger);
+  ASSERT_TRUE(pool.init(::testing::TempDir() + "alias_v11_template_pool_dir"));
+
+  TransactionExtraAliasRegistration registration;
+  registration.alias = "firenode";
+  registration.aliasHash = cn_fast_hash(registration.alias.data(), registration.alias.size());
+  registration.ownerAddress = "owner-address";
+  registration.addressHash = cn_fast_hash(registration.ownerAddress.data(), registration.ownerAddress.size());
+  registration.aliasType = 1;
+  ASSERT_TRUE(registration.isValid());
+  const KeyPair aliasKey = freshKeyPair();
+  std::vector<uint8_t> aliasExtra = mainKeyOnlyExtra(aliasKey);
+  ASSERT_TRUE(addAliasToExtra(aliasExtra, registration));
+  const Transaction registering = keyInputTransaction(aliasExtra);
+  const Transaction plain = keyInputTransaction(mainKeyOnlyExtra(freshKeyPair()));
+  for (const Transaction& tx : {registering, plain}) {
+    tx_verification_context tvc = boost::value_initialized<tx_verification_context>();
+    ASSERT_TRUE(pool.add_tx(tx, tvc, false, v11Height + 1));
+  }
+
+  Block block;
+  block.majorVersion = BLOCK_MAJOR_VERSION_11;
+  size_t totalSize = 0;
+  uint64_t fee = 0;
+  ASSERT_TRUE(pool.fill_block_template(block, 1000000, 1000000, 0, totalSize, fee, v11Height + 1));
+  EXPECT_EQ((std::unordered_set<Hash>(block.transactionHashes.begin(), block.transactionHashes.end())),
+            (std::unordered_set<Hash>{getObjectHash(plain)}));
+}
+
 } // namespace

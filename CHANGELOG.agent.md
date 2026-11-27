@@ -1,3 +1,26 @@
+## T1: real-chain harness, alt-chain reorg test, epoch cache (claude/pr83-chain-harness)
+
+**Resume**: next is task 1 CI; after it, task 2 (alt-chain test), then task 3 (epoch cache). Branch `claude/pr83-chain-harness` off `claude/modest-ride-oevh0b` at `27d8ec89`; push only that branch.
+**Started**: 2026-11-27
+**Agent**: Claude Code (claude-sonnet-5-5)
+**Status**: IN PROGRESS. No Boost in the container; CI on the pushed branch is the build gate.
+**Scope**: `tests/CoreTests/V11ChainHarness.cpp`, `tests/CoreTests/v11_chain_checks.sh`, `tests/CMakeLists.txt`, `.github/workflows/check.yml`; task 3 also `src/CryptoNoteCore/Blockchain.cpp`.
+**Assumptions**: the harness mines coinbase-only chains (PR #83 seeds the pool at genesis, so epoch work, TWAP and the banking, commitment and alias indices advance without a wallet); the wallet-driven seedboot flow of brave-meitner is not ported; `captureOrderbookState` does not exist on PR #83, so the harness prints the orderbook getters and the snapshot journals instead.
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Port `V11ChainHarness.cpp` and `v11_chain_checks.sh` from brave-meitner-r8wmlt: mine/export/import/state commands, restart check C1, live reorg C2a; target in `tests/CMakeLists.txt`; CI step in the Ubuntu 24.04 job | Claude Code | 2026-11-27 | IN PROGRESS |
+| 2 | Alt-chain test: 110-block alternative chain, switch, switch back, state equals a node that saw only the winning chain; mutation check on `findAlternativeChainEntries` | Claude Code | 2026-11-27 | TODO |
+| 3 | Epoch cache: persist `m_blockSwapFeeContributions` and `m_blockEpochDistributions` (newest `MAX_ROLLBACK_HISTORY`), cache version bump, reorg-after-restart test across an epoch boundary | Claude Code | 2026-11-27 | TODO |
+
+| Gate | Status | Signed |
+|------|--------|--------|
+| Build compiles | NOT RUN locally; CI | |
+| Tests pass | NOT RUN locally; CI | |
+| All tasks done | NO | |
+
+---
+
 ## Merge master into PR #83 (claude/modest-ride-oevh0b)
 
 **Started**: 2026-11-26

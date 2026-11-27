@@ -123,6 +123,9 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure -LE manual -j$(nproc)
 
+      - name: Real-chain harness
+        run: tests/CoreTests/v11_chain_checks.sh build/tests/v11_chain_harness "$RUNNER_TEMP/v11chain"
+
   build-ubuntu24-clang:
     name: Ubuntu 24.04 (Clang)
     runs-on: ubuntu-24.04

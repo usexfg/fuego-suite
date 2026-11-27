@@ -469,3 +469,25 @@ else()
   add_test(NAME heat_e2e_tests COMMAND heat_e2e_tests)
   set_tests_properties(heat_e2e_tests PROPERTIES TIMEOUT 1800)
 endif()
+
+# Real-chain harness: mines a testnet chain through the production core and
+# feeds it forks. tests/CoreTests/v11_chain_checks.sh runs it as separate
+# processes and compares consensus-state digests; CI runs that script.
+add_executable(v11_chain_harness
+    CoreTests/V11ChainHarness.cpp
+)
+target_include_directories(v11_chain_harness PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_link_libraries(v11_chain_harness PRIVATE
+    CryptoNoteCore
+    Serialization
+    Logging
+    Common
+    Crypto
+    System
+    ${Boost_LIBRARIES}
+    OpenSSL::SSL
+    OpenSSL::Crypto
+)

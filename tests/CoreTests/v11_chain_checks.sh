@@ -33,7 +33,8 @@ step() {
 }
 capture() {
   local name=$1; shift
-  "$BIN" state "$@" > "state_$name.txt" 2> "report_$name.txt" || { echo "harness failed: state $*"; cat "report_$name.txt"; exit 1; }
+  "$BIN" state "$@" > "raw_$name.txt" 2> "report_$name.txt" || { echo "harness failed: state $*"; cat "report_$name.txt"; exit 1; }
+  grep -Ev '^[0-9]{4}-[A-Z][a-z]{2}-[0-9]{2} |^SwappedVector ' "raw_$name.txt" > "state_$name.txt"
 }
 same_state() {
   local name=$1 expected=$2 actual=$3 ignore=${4:-'^$'}

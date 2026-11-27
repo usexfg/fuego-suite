@@ -3025,15 +3025,17 @@ void testAliasTagsRefusedInV11Settlement() {
   TEST(t.chain.validateSettlement(settlementTx({2 * C}, {keyOut(C / 2)}, {}), v11Height, scratch, flows, fee, err));
 }
 
-// A checkpointed v11 block skips validation, so the apply path must itself
-// refuse to register, release or transfer an alias. The same tags at v12 apply.
+// A checkpointed v11 block skips validation, so the apply path
+// (pushToBankingIndex, which indexes a block's alias tags) must itself refuse to register, release or transfer an alias. The same tags at v12 apply.
 void testAliasTagsNotAppliedByV11Block() {
   TestChain t("alias_v11_apply");
   TEST(t.ok);
   const uint64_t C = parameters::COIN;
+  uint32_t height = 100;
   auto push = [&](const std::vector<uint8_t>& extra, uint8_t version) {
-    auto block = VaultCoreTestAccess::blockWith(auntPolTx(2 * C, {keyOut(C / 2)}, extra), 100, version);
-    return VaultCoreTestAccess::pushTx(t.chain, block);
+    auto block = VaultCoreTestAccess::blockWith(auntPolTx(2 * C, {keyOut(C / 2)}, extra), height++, version);
+    VaultCoreTestAccess::bankBlock(t.chain, block);
+    return true;
   };
 
   const std::vector<uint8_t> registrationExtra = aliasRegistrationExtra(aliasRegistration("applyreg", "owner-one"));

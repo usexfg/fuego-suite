@@ -63,7 +63,7 @@ run import S main.bin 1 $MAIN_TIP alt.bin $((ALT_FORK + 1)) $ALT_TIP main.bin $(
 run import W main.bin 1 $WIN_TIP | tail -1
 for n in S W; do state $n; done
 grep -q "chain switches 2," import_S.txt && echo "C3 switches PASS" || { FAILED=1; echo "C3 switches FAIL"; cat import_S.txt; }
-ENTRIES=$(sed -n 's/.*alternative chain entries \([0-9]*\).*/\1/p' import_S.txt)
-[ "${ENTRIES:-0}" -ge 60 ] && echo "C3 rehash volume PASS ($ENTRIES alternative entries)" || { FAILED=1; echo "C3 rehash volume FAIL ($ENTRIES)"; }
+ENTRIES=$(sed -n 's/.*peak alternative chain entries \([0-9]*\).*/\1/p' import_S.txt)
+[ "${ENTRIES:-0}" -ge 60 ] && echo "C3 rehash volume PASS (peak $ENTRIES alternative entries)" || { FAILED=1; echo "C3 rehash volume FAIL ($ENTRIES)"; }
 same_state "C3 state after two switches (S) vs winning chain only (W)" W S
 exit $FAILED

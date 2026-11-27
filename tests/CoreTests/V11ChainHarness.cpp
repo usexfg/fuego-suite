@@ -280,7 +280,7 @@ void exportBlocks(Node& n, uint32_t from, uint32_t to, const std::string& file) 
 
 // Feeds blocks the way the protocol handler does for a relayed block: its
 // transactions first (kept_by_block), then the block blob.
-int importBlocks(Node& n, const std::string& file, uint32_t from, uint32_t to, int& chainSwitches) {
+int importBlocks(Node& n, const std::string& file, uint32_t from, uint32_t to, int& chainSwitches, size_t& peakAlternativeEntries) {
   std::ifstream is(file, std::ios::binary);
   uint32_t h, size, ntx;
   int imported = 0;
@@ -308,6 +308,7 @@ int importBlocks(Node& n, const std::string& file, uint32_t from, uint32_t to, i
       return -1;
     }
     if (bvc.m_switched_to_alt_chain) ++chainSwitches;
+    peakAlternativeEntries = std::max(peakAlternativeEntries, VaultCoreTestAccess::alternativeChainEntries(n.chain()));
     ++imported;
   }
   return imported;
@@ -347,13 +348,15 @@ int main(int argc, char** argv) {
       if (argc < 6 || (argc - 3) % 3 != 0) { std::cerr << "usage: import <dir> (<file> <from> <to>)+\n"; return 2; }
       Node n(dir);
       int total = 0, chainSwitches = 0;
+      size_t peakAlternativeEntries = 0;
       for (int i = 3; i < argc; i += 3) {
-        const int imported = importBlocks(n, argv[i], std::stoul(argv[i + 1]), std::stoul(argv[i + 2]), chainSwitches);
+        const int imported = importBlocks(n, argv[i], std::stoul(argv[i + 1]), std::stoul(argv[i + 2]), chainSwitches,
+                                          peakAlternativeEntries);
         if (imported < 0) return 1;
         total += imported;
       }
       std::cout << "imported " << total << " blocks, height " << n.height() - 1 << ", chain switches " << chainSwitches
-                << ", alternative chain entries " << VaultCoreTestAccess::alternativeChainEntries(n.chain()) << "\n";
+                << ", peak alternative chain entries " << peakAlternativeEntries << "\n";
     } else if (cmd == "state") {
       // state <dir>: print the consensus state
       Node n(dir);

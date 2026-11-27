@@ -193,6 +193,7 @@ namespace CryptoNote {
     bool removeTransactionInputs(const Crypto::Hash& id, const Transaction& tx, bool keptByBlock);
 
     tx_container_t::iterator removeTransaction(tx_container_t::iterator i);
+    bool aliasTagNoLongerApplies(const TransactionDetails &txd) const;
     bool removeExpiredTransactions();
     bool is_transaction_ready_to_go(const Transaction& tx, TransactionCheckInfo& txd) const;
     void buildIndices();

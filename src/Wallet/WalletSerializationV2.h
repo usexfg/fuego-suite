@@ -47,6 +47,7 @@ public:
     uint32_t transactionSoftLockTime
   );
 
+  bool transfersNeedRescan() const { return m_transfersNeedRescan; }
   void load(Common::IInputStream& source, uint8_t version);
   void save(Common::IOutputStream& destination, WalletSaveLevel saveLevel);
 
@@ -92,6 +93,7 @@ private:
 
   std::unordered_set<Crypto::PublicKey> m_addedKeys;
   std::unordered_set<Crypto::PublicKey> m_deletedKeys;
+  bool m_transfersNeedRescan = false;
 };
 
 } //namespace CryptoNote

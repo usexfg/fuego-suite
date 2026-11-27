@@ -17,6 +17,8 @@
 
 #include "InProcessNode.h"
 
+#include <algorithm>
+
 #include <functional>
 #include <boost/utility/value_init.hpp>
 #include <CryptoNoteCore/TransactionApi.h>
@@ -288,7 +290,7 @@ std::error_code InProcessNode::doGetRandomOutsByAmounts(std::vector<uint64_t>&& 
   return std::error_code();
 }
 
-void InProcessNode::getRandomCommitmentOutsForAmount(uint64_t amount, uint64_t outsCount, uint32_t maxHeight,
+void InProcessNode::getRandomCommitmentOutsForAmount(uint64_t amount, uint64_t outsCount, uint32_t maxHeight, uint32_t ringTerm,
     std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>& result, const Callback& callback)
 {
   std::unique_lock<std::mutex> lock(mutex);
@@ -299,18 +301,18 @@ void InProcessNode::getRandomCommitmentOutsForAmount(uint64_t amount, uint64_t o
   }
 
   boost::asio::post(ioService,
-    std::bind(&InProcessNode::getRandomCommitmentOutsForAmountAsync, this, amount, outsCount, maxHeight, std::ref(result), callback)
+    std::bind(&InProcessNode::getRandomCommitmentOutsForAmountAsync, this, amount, outsCount, maxHeight, ringTerm, std::ref(result), callback)
   );
 }
 
-void InProcessNode::getRandomCommitmentOutsForAmountAsync(uint64_t amount, uint64_t outsCount, uint32_t maxHeight,
+void InProcessNode::getRandomCommitmentOutsForAmountAsync(uint64_t amount, uint64_t outsCount, uint32_t maxHeight, uint32_t ringTerm,
     std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>& result, const Callback& callback)
 {
-  std::error_code ec = doGetRandomCommitmentOutsForAmount(amount, outsCount, maxHeight, result);
+  std::error_code ec = doGetRandomCommitmentOutsForAmount(amount, outsCount, maxHeight, ringTerm, result);
   callback(ec);
 }
 
-std::error_code InProcessNode::doGetRandomCommitmentOutsForAmount(uint64_t amount, uint64_t outsCount, uint32_t maxHeight,
+std::error_code InProcessNode::doGetRandomCommitmentOutsForAmount(uint64_t amount, uint64_t outsCount, uint32_t maxHeight, uint32_t ringTerm,
     std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>& result)
 {
   {
@@ -321,7 +323,7 @@ std::error_code InProcessNode::doGetRandomCommitmentOutsForAmount(uint64_t amoun
   }
 
   try {
-    if (!core.get_random_commitment_outs_for_amount(amount, outsCount, maxHeight, result)) {
+    if (!core.get_random_commitment_outs_for_amount(amount, outsCount, maxHeight, ringTerm, result)) {
       return make_error_code(CryptoNote::error::REQUEST_ERROR);
     }
   } catch (std::system_error& e) {
@@ -422,14 +424,7 @@ uint32_t InProcessNode::getLocalBlockCount() const {
 }
 
 uint32_t InProcessNode::getKnownBlockCount() const {
-  {
-    std::unique_lock<std::mutex> lock(mutex);
-    if (state != INITIALIZED) {
-      throw std::system_error(make_error_code(CryptoNote::error::NOT_INITIALIZED));
-    }
-  }
-
-  return protocol.getObservedHeight();
+  return getLastKnownBlockHeight() + 1;
 }
 
 uint32_t InProcessNode::getLastLocalBlockHeight() const {
@@ -456,7 +451,15 @@ uint32_t InProcessNode::getLastKnownBlockHeight() const {
     }
   }
 
-  return protocol.getObservedHeight() - 1;
+  // With no peer yet the observed height is 0; it must not wrap to the largest
+  // height (which reads as the newest block version), and the node's own tip is
+  // known regardless of peers.
+  const uint32_t observedHeight = protocol.getObservedHeight();
+  const uint32_t observedTip = observedHeight > 0 ? observedHeight - 1 : 0;
+  uint32_t localTip = 0;
+  Crypto::Hash localTipHash;
+  core.get_blockchain_top(localTip, localTipHash);
+  return std::max(observedTip, localTip);
 }
 
 uint64_t InProcessNode::getLastLocalBlockTimestamp() const {
@@ -1155,6 +1158,43 @@ uint64_t InProcessNode::getHearthTwap() {
   return core.getHearthTwap();
 }
 
+// The same list /get_limit_orders serves, so a wallet on an in-process node finds
+// its orders as one on fuegod does (withdraw, stop, auto-withdraw).
+std::error_code InProcessNode::getLimitDeposits(std::vector<LimitDepositRpcEntry>& deposits) {
+  std::vector<ICore::LimitOrderEntry> orders;
+  const std::error_code ec = core.getLimitOrders(orders);
+  if (ec) {
+    return ec;
+  }
+  deposits.clear();
+  deposits.reserve(orders.size());
+  for (const auto& order : orders) {
+    LimitDepositRpcEntry entry;
+    entry.order_id = Common::podToHex(order.orderId);
+    entry.address_hash = Common::podToHex(order.addressHash);
+    entry.side = order.side;
+    entry.amount = order.amount;
+    entry.proceeds_xfg = order.proceedsXfg;
+    entry.proceeds_heat = order.proceedsHeat;
+    entry.target_price = order.targetPrice;
+    entry.expiration = order.expiration;
+    entry.withdrawn = order.withdrawn || order.expired;
+    entry.expired = order.expired;
+    deposits.push_back(std::move(entry));
+  }
+  return {};
+}
+
+std::error_code InProcessNode::getRegisteredAliases(std::vector<RegisteredAlias>& aliases) {
+  std::vector<ICore::RegisteredAlias> registered;
+  const std::error_code ec = core.getRegisteredAliases(registered);
+  aliases.clear();
+  for (const auto& entry : registered) {
+    aliases.push_back({entry.alias, entry.ownerAddress});
+  }
+  return ec;
+}
+
 std::error_code InProcessNode::getAmmPoolInfo(AmmPoolInfo& info) {
   ICore::AmmPoolInfo coreInfo;
   auto ec = core.getAmmPoolInfo(coreInfo);
@@ -1162,6 +1202,8 @@ std::error_code InProcessNode::getAmmPoolInfo(AmmPoolInfo& info) {
   info.reserveXfg = coreInfo.reserveXfg;
   info.reserveHeat = coreInfo.reserveHeat;
   info.spotPrice = coreInfo.spotPrice;
+  info.totalLpShares = coreInfo.totalLpShares;
+  info.hearthTwap = core.getHearthTwap();
   return {};
 }
 } //namespace CryptoNote

@@ -55,6 +55,9 @@ namespace CryptoNote {
     // HEAT the next block may mint in total; block templates stop adding
     // mints once it is reached.
     virtual uint64_t blockMintCapHeat() { return UINT64_MAX; }
+    // True when the chain is loaded at v11 or later and an alias tag of tx can
+    // no longer apply to it (its alias or owner went to a confirmed claim).
+    virtual bool aliasTagsCannotApply(const CryptoNote::Transaction& tx) { return false; }
   };
 
 }

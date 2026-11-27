@@ -30,6 +30,8 @@
 #include "Serialization/BinaryInputStreamSerializer.h"
 #include "crypto/keccak.h"
 #include <memory>
+#include <unordered_map>
+#include <unordered_set>
 #include <sstream>
 #include <chrono>
 #include <iostream>
@@ -1838,6 +1840,15 @@ namespace CryptoNote
            Crypto::check_signature(authHash, spendPublicKey, proof);
   }
 
+  // Base-128 varint, the encoding Common::writeVarint produces and readVarint reads.
+  static void appendVarint(std::vector<uint8_t>& tx_extra, uint64_t value) {
+    while (value >= 0x80) {
+      tx_extra.push_back(static_cast<uint8_t>(value | 0x80));
+      value >>= 7;
+    }
+    tx_extra.push_back(static_cast<uint8_t>(value));
+  }
+
   bool addMarketBuyAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t xfgWanted, uint64_t maxHeatCost) {
     tx_extra.push_back(TX_EXTRA_MARKET_BUY_AUTH);
     for (int i = 0; i < 8; ++i) {
@@ -1851,16 +1862,12 @@ namespace CryptoNote
     return true;
   }
 
+  // The consensus parser (parseTransactionExtra, TX_EXTRA_MARKET_SELL_AUTH) reads
+  // both fields as base-128 varints.
   bool addMarketSellAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t xfgToSell, uint64_t minHeatReceive) {
     tx_extra.push_back(TX_EXTRA_MARKET_SELL_AUTH);
-    for (int i = 0; i < 8; ++i) {
-      tx_extra.push_back(static_cast<uint8_t>(xfgToSell & 0xFF));
-      xfgToSell >>= 8;
-    }
-    for (int i = 0; i < 8; ++i) {
-      tx_extra.push_back(static_cast<uint8_t>(minHeatReceive & 0xFF));
-      minHeatReceive >>= 8;
-    }
+    appendVarint(tx_extra, xfgToSell);
+    appendVarint(tx_extra, minHeatReceive);
     return true;
   }
 
@@ -1868,17 +1875,10 @@ namespace CryptoNote
     tx_extra.push_back(TX_EXTRA_LIMIT_DEPOSIT);
     tx_extra.push_back(side);
     // Consensus parser (parseTransactionExtra, TX_EXTRA_LIMIT_DEPOSIT) reads
-    // these fields as base-128 varints — mirror Common::writeVarint exactly.
-    auto pushVarint = [&tx_extra](uint64_t v) {
-      while (v >= 0x80) {
-        tx_extra.push_back(static_cast<uint8_t>(v | 0x80));
-        v >>= 7;
-      }
-      tx_extra.push_back(static_cast<uint8_t>(v));
-    };
-    pushVarint(amount);
-    pushVarint(targetPrice);
-    pushVarint(expiration);
+    // these fields as base-128 varints.
+    appendVarint(tx_extra, amount);
+    appendVarint(tx_extra, targetPrice);
+    appendVarint(tx_extra, expiration);
     for (size_t i = 0; i < sizeof(orderId.data); ++i) tx_extra.push_back(orderId.data[i]);
     for (size_t i = 0; i < sizeof(addressHash.data); ++i) tx_extra.push_back(addressHash.data[i]);
     return true;
@@ -1920,6 +1920,10 @@ namespace CryptoNote
     wipeBytes(key.data, sizeof(key.data));
   }
 
+  void wipeKeyDerivation(Crypto::KeyDerivation& derivation) {
+    wipeBytes(derivation.data, sizeof(derivation.data));
+  }
+
   void wipeLimitOrderSecret(LimitOrderKeys& keys) {
     wipeSecretKey(keys.spendSecretKey);
   }
@@ -1948,6 +1952,38 @@ namespace CryptoNote
                        const Crypto::Hash& addressHash) {
     const Crypto::Hash derived = limitOrderAddressHash(walletSpendSecret, orderId);
     return memcmp(derived.data, addressHash.data, sizeof(derived.data)) == 0;
+  }
+
+  std::vector<Crypto::Hash> limitOrdersDueForWithdraw(const std::vector<WalletOrderTransaction>& transactions,
+                                                      uint32_t nextHeight) {
+    std::unordered_map<Crypto::Hash, uint32_t> expirations;
+    std::unordered_set<Crypto::Hash> stopped, claimed;
+    for (const auto& transaction : transactions) {
+      std::vector<TransactionExtraField> fields;
+      if (transaction.failed ||
+          !parseTransactionExtra(std::vector<uint8_t>(transaction.extra.begin(), transaction.extra.end()), fields)) {
+        continue;
+      }
+      for (const auto& field : fields) {
+        if (field.type() == typeid(TransactionExtraLimitWithdraw)) {
+          claimed.insert(boost::get<TransactionExtraLimitWithdraw>(field).orderId);
+        } else if (transaction.confirmed && field.type() == typeid(TransactionExtraLimitDeposit)) {
+          const auto& deposit = boost::get<TransactionExtraLimitDeposit>(field);
+          expirations[deposit.orderId] = deposit.expiration;
+        } else if (transaction.confirmed && field.type() == typeid(TransactionExtraOrderCancel)) {
+          stopped.insert(boost::get<TransactionExtraOrderCancel>(field).orderId);
+        }
+      }
+    }
+    std::vector<Crypto::Hash> due;
+    for (const auto& order : expirations) {
+      const bool ended = stopped.count(order.first) > 0 || (order.second != 0 && order.second <= nextHeight);
+      if (ended && claimed.count(order.first) == 0) due.push_back(order.first);
+    }
+    std::sort(due.begin(), due.end(), [](const Crypto::Hash& a, const Crypto::Hash& b) {
+      return memcmp(a.data, b.data, sizeof(a.data)) < 0;
+    });
+    return due;
   }
 
   Crypto::Hash getLimitWithdrawAuthHash(const Crypto::Hash& orderId,

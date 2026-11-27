@@ -122,9 +122,8 @@ public:
   virtual TransactionId sendHeatV10(const AccountPublicAddress& recipient, uint64_t amount, uint64_t fee, uint64_t mixIn = 4, bool isSubaddress = false) override;
   virtual TransactionId ammSwapV10(uint8_t direction, uint64_t inputAmount, uint64_t outputAmount,
                                     uint64_t minOutput, uint64_t fee, uint64_t mixIn = 4) override;
-  virtual TransactionId lpAddV10(uint64_t amountXfg, uint64_t amountHeat, uint64_t fee, uint64_t mixIn = 4) override;
-  virtual TransactionId lpRemoveV10(uint64_t lpShares, uint64_t minXfg, uint64_t minHeat, uint64_t fee, uint64_t mixIn = 4) override;
-  virtual TransactionId lpClaimFeesV10(uint64_t lpShares, uint64_t minXfg, uint64_t minHeat, uint64_t fee, uint64_t mixIn = 4) override;
+  virtual TransactionId lpAddV10(uint64_t amountXfg, uint64_t amountHeat, uint64_t lpShares, uint64_t fee, uint64_t mixIn = 4) override;
+  virtual TransactionId lpRemoveV10(uint64_t lpShares, uint64_t payoutXfg, uint64_t payoutHeat, uint64_t fee, uint64_t mixIn = 4) override;
   virtual TransactionId heatDepositV10(uint64_t amount, uint32_t termEpochs, uint64_t bankingFee, uint64_t fee, uint64_t mixIn = 4) override;
   virtual TransactionId withdrawDeposits(const std::vector<DepositId>& depositIds, uint64_t fee) override;
   virtual TransactionId donateToTreasury(Crypto::SecretKey& transactionSK,
@@ -154,6 +153,7 @@ public:
   std::map<std::string, AfkLockSecret>& afkLockSecrets() { return m_afkLockSecrets; }
 
   private:
+  INode::LimitDepositRpcEntry findLimitOrder(const Crypto::Hash& orderId);
   virtual void synchronizationProgressUpdated(uint32_t current, uint32_t total) override;
   virtual void synchronizationCompleted(std::error_code result) override;
   virtual void onTransactionUpdated(ITransfersSubscription* object, const Crypto::Hash& transactionHash) override;
@@ -181,6 +181,7 @@ public:
   std::unique_ptr<WalletLegacyEvent> getPendingBalanceChangedEvent();
   uint64_t calculateActualDepositBalance();
   uint64_t calculateActualInvestmentBalance();
+  std::vector<TransactionOutputInformation> heatOutputsInEveryContainer(uint32_t stateFlags);
   uint64_t calculateActualHeatBalance();
   uint64_t calculatePendingDepositBalance();
   uint64_t calculatePendingInvestmentBalance();

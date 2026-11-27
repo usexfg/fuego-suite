@@ -16,6 +16,9 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "TransfersContainer.h"
+
+#include <algorithm>
+#include "CryptoNoteCore/AssetType.h"
 #include "IWalletLegacy.h"
 #include "Common/StdInputStream.h"
 #include "Common/StdOutputStream.h"
@@ -44,9 +47,19 @@ void serialize(TransactionInformation& ti, CryptoNote::ISerializer& s) {
 
 // 2: Commitment outputs also store their published commit key (see
 //    TransactionOutputInformationEx::serialize). Version 1 and 0 caches still load.
-const uint32_t TRANSFERS_CONTAINER_STORAGE_VERSION = 3;
+// 4: Same layout as 3. Caches written before 4 never marked a spent commitment
+//    output spent, so one holding commitment outputs is refused and rescanned.
+const uint32_t TRANSFERS_CONTAINER_STORAGE_VERSION = 4;
+const uint32_t FIRST_VERSION_TRACKING_COMMITMENT_SPENDS = 4;
 
 namespace {
+  template<typename TTransfers>
+  bool holdsCommitmentOutput(const TTransfers& transfers) {
+    return std::any_of(transfers.begin(), transfers.end(), [](const TransactionOutputInformation& transfer) {
+      return transfer.type == TransactionTypes::OutputType::Commitment;
+    });
+  }
+
   template<typename TIterator>
   class TransferIteratorList {
   public:
@@ -140,8 +153,18 @@ SpentOutputDescriptor::SpentOutputDescriptor(const TransactionOutputInformationI
     m_amount = transactionInfo.amount;
     m_globalOutputIndex = transactionInfo.globalOutputIndex;
   } else if (m_type == TransactionTypes::OutputType::Commitment) {
-    // Commitment outputs use keyImage for double-spend tracking (same as Key).
-    m_keyImage = &transactionInfo.keyImage;
+    // A commitment input names its output by key image, exactly as a key input
+    // does, so the output is indexed under the same key-image descriptor.
+    // Key images are unique per output, so key and commitment outputs never collide.
+    // A view-only wallet cannot derive an owner-bound key image and records zero;
+    // those outputs are identified by amount and global index instead (no input
+    // can name them: consensus rejects the zero key image).
+    if (transactionInfo.keyImage == Crypto::KeyImage{}) {
+      m_amount = transactionInfo.amount;
+      m_globalOutputIndex = transactionInfo.globalOutputIndex;
+    } else {
+      assign(&transactionInfo.keyImage);
+    }
   } else {
     assert(false);
   }
@@ -176,7 +199,7 @@ bool SpentOutputDescriptor::operator==(const SpentOutputDescriptor& other) const
   } else if (m_type == TransactionTypes::OutputType::Multisignature) {
     return other.m_type == m_type && other.m_amount == m_amount && other.m_globalOutputIndex == m_globalOutputIndex;
   } else if (m_type == TransactionTypes::OutputType::Commitment) {
-    return other.m_type == m_type && *other.m_keyImage == *m_keyImage;
+    return other.m_type == m_type && other.m_amount == m_amount && other.m_globalOutputIndex == m_globalOutputIndex;
   } else {
     assert(false);
     return false;
@@ -192,8 +215,9 @@ size_t SpentOutputDescriptor::hash() const {
     boost::hash_combine(hashValue, m_globalOutputIndex);
     return hashValue;
   } else if (m_type == TransactionTypes::OutputType::Commitment) {
-    static_assert(sizeof(size_t) < sizeof(*m_keyImage), "sizeof(size_t) < sizeof(*m_keyImage)");
-    return *reinterpret_cast<const size_t*>(m_keyImage->data);
+    size_t hashValue = boost::hash_value(m_amount);
+    boost::hash_combine(hashValue, m_globalOutputIndex);
+    return hashValue;
   } else {
     assert(false);
     return 0;
@@ -325,6 +349,45 @@ bool TransfersContainer::addTransactionOutputs(const TransactionBlockInfo& block
 
 /**
  * \pre m_mutex is locked.
+ * Commitment inputs (HEAT, CD, LP spends and CD transfers) name the spent
+ * output by key image, as key inputs do. Returns false for an output that is not
+ * this wallet's.
+ */
+bool TransfersContainer::spendCommitmentOutput(const TransactionBlockInfo& block, const ITransactionReader& tx,
+                                               size_t inputIndex, const Crypto::KeyImage& keyImage, uint64_t amount) {
+  SpentOutputDescriptor descriptor(&keyImage);
+  auto spentRange = m_spentTransfers.get<SpentOutputDescriptorIndex>().equal_range(descriptor);
+  if (std::distance(spentRange.first, spentRange.second) > 0) {
+    throw std::runtime_error("Spending already spent commitment transfer");
+  }
+
+  auto& outputDescriptorIndex = m_availableTransfers.get<SpentOutputDescriptorIndex>();
+  auto availableRange = outputDescriptorIndex.equal_range(descriptor);
+  if (availableRange.first == availableRange.second) {
+    auto unconfirmedRange = m_unconfirmedTransfers.get<SpentOutputDescriptorIndex>().equal_range(descriptor);
+    if (unconfirmedRange.first != unconfirmedRange.second) {
+      throw std::runtime_error("Spending unconfirmed commitment transfer");
+    }
+    return false;
+  }
+
+  auto iteratorList = createTransferIteratorList(availableRange);
+  iteratorList.sort();
+  auto spendingTransferIt = iteratorList.findFirstByAmount(amount);
+  if (spendingTransferIt == availableRange.second) {
+    throw std::runtime_error("Commitment input has invalid amount, corresponding output isn't found");
+  }
+
+  assert(spendingTransferIt->keyImage == keyImage);
+  deleteUnlockJob(*spendingTransferIt);
+  copyToSpent(block, tx, inputIndex, *spendingTransferIt);
+  outputDescriptorIndex.erase(spendingTransferIt);
+  updateTransfersVisibility(keyImage);
+  return true;
+}
+
+/**
+ * \pre m_mutex is locked.
  */
 bool TransfersContainer::addTransactionInputs(const TransactionBlockInfo& block, const ITransactionReader& tx) {
   bool inputsAdded = false;
@@ -390,49 +453,13 @@ bool TransfersContainer::addTransactionInputs(const TransactionBlockInfo& block,
         inputsAdded = true;
       }
     } else if (inputType == TransactionTypes::InputType::CommitmentSpend) {
-      // Commitment withdrawal: lookup by keyImage (same as Key inputs)
-      auto inputs = tx.getInputs();
-      const auto& csInput = boost::get<TransactionInputCommitmentSpend>(inputs[i]);
-
-      SpentOutputDescriptor descriptor(&csInput.keyImage);
-      auto spentRange = m_spentTransfers.get<SpentOutputDescriptorIndex>().equal_range(descriptor);
-      if (std::distance(spentRange.first, spentRange.second) > 0) {
-        throw std::runtime_error("Spending already spent commitment transfer");
-      }
-
-      auto availableRange = m_availableTransfers.get<SpentOutputDescriptorIndex>().equal_range(descriptor);
-      auto unconfirmedRange = m_unconfirmedTransfers.get<SpentOutputDescriptorIndex>().equal_range(descriptor);
-      size_t availableCount = std::distance(availableRange.first, availableRange.second);
-      size_t unconfirmedCount = std::distance(unconfirmedRange.first, unconfirmedRange.second);
-
-      if (availableCount == 0) {
-        if (unconfirmedCount > 0) {
-          throw std::runtime_error("Spending unconfirmed commitment transfer");
-        } else {
-          continue;
-        }
-      }
-
-      auto& outputDescriptorIndex = m_availableTransfers.get<SpentOutputDescriptorIndex>();
-      auto availableOutputsRange = outputDescriptorIndex.equal_range(SpentOutputDescriptor(&csInput.keyImage));
-
-      auto iteratorList = createTransferIteratorList(availableOutputsRange);
-      iteratorList.sort();
-      auto spendingTransferIt = iteratorList.findFirstByAmount(csInput.amount);
-
-      if (spendingTransferIt == availableOutputsRange.second) {
-        throw std::runtime_error("CommitmentSpend input has invalid amount, corresponding output isn't found");
-      }
-
-      assert(spendingTransferIt->keyImage == csInput.keyImage);
-      deleteUnlockJob(*spendingTransferIt);
-      copyToSpent(block, tx, i, *spendingTransferIt);
-      outputDescriptorIndex.erase(spendingTransferIt);
-      updateTransfersVisibility(csInput.keyImage);
-
-      inputsAdded = true;
+      const TransactionInputCommitmentSpend spend = boost::get<TransactionInputCommitmentSpend>(tx.getInputs()[i]);
+      inputsAdded = spendCommitmentOutput(block, tx, i, spend.keyImage, spend.amount) || inputsAdded;
+    } else if (inputType == TransactionTypes::InputType::CommitmentTransfer) {
+      const TransactionInputCommitmentTransfer transfer = boost::get<TransactionInputCommitmentTransfer>(tx.getInputs()[i]);
+      inputsAdded = spendCommitmentOutput(block, tx, i, transfer.keyImage, transfer.amount) || inputsAdded;
     } else {
-      assert(inputType == TransactionTypes::InputType::Generating);
+      assert(inputType == TransactionTypes::InputType::Generating || inputType == TransactionTypes::InputType::SwapEscrow);
     }
   }
 
@@ -974,6 +1001,12 @@ void TransfersContainer::load(std::istream& in) {
     rebuildTransfersUnlockJobs(transfersUnlockJobs, availableTransfers, spentTransfers);
   }
 
+  if (version < FIRST_VERSION_TRACKING_COMMITMENT_SPENDS &&
+      (holdsCommitmentOutput(unconfirmedTransfers) || holdsCommitmentOutput(availableTransfers) ||
+       holdsCommitmentOutput(spentTransfers))) {
+    throw TransfersCacheNeedsRescan("Transfers cache predates commitment spend tracking; rescan required");
+  }
+
   m_currentHeight = currentHeight;
   m_transactions = std::move(transactions);
   m_unconfirmedTransfers = std::move(unconfirmedTransfers);
@@ -1007,7 +1040,10 @@ bool TransfersContainer::isSpendTimeUnlocked(const TransactionOutputInformationE
     return current_time + m_currency.lockedTxAllowedDeltaSeconds_v2() >= info.unlockTime;
   }
 
-  if (isOuputUnlocked && (info.type == TransactionTypes::OutputType::Multisignature || info.type == TransactionTypes::OutputType::Commitment) && info.term != 0 && info.term != parameters::HEAT_TERM) {
+  const bool timeLockedDeposit =
+      (info.type == TransactionTypes::OutputType::Multisignature && info.term != 0) ||
+      (info.type == TransactionTypes::OutputType::Commitment && isCdCommitmentTerm(info.term));
+  if (isOuputUnlocked && timeLockedDeposit) {
     // Deposit matures when currentHeight >= creationHeight + term.
     // HEAT_TERM (0xFFFFFFFF) outputs are mints/burns, NOT time-locked CDs.
     // The +1 offset was removed to align with consensus (Blockchain.cpp:checkCommitmentSpendInput)
@@ -1038,7 +1074,8 @@ bool TransfersContainer::isIncluded(const TransactionOutputInformationEx& output
     ((flags & IncludeTypeKey) != 0            && output.type == TransactionTypes::OutputType::Key) ||
     ((flags & IncludeTypeMultisignature) != 0 && output.type == TransactionTypes::OutputType::Multisignature && output.term == 0) ||
     ((flags & IncludeTypeDeposit) != 0        && output.type == TransactionTypes::OutputType::Multisignature && output.term > 0) ||
-    ((flags & IncludeTypeDeposit) != 0        && output.type == TransactionTypes::OutputType::Commitment && output.term > 0 && output.term != parameters::HEAT_TERM)
+    ((flags & IncludeTypeDeposit) != 0        && output.type == TransactionTypes::OutputType::Commitment && output.term > 0 && output.term != parameters::HEAT_TERM) ||
+    ((flags & IncludeTypeHeat) != 0           && output.type == TransactionTypes::OutputType::Commitment && output.term == parameters::HEAT_TERM)
     )
     &&
     // filter by state

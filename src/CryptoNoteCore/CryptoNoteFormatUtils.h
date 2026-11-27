@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include "CryptoNoteConfig.h"
 #include <boost/utility/value_init.hpp>
 #include "../../include/CryptoNote.h"
 #include "CryptoNoteBasic.h"
@@ -103,7 +104,9 @@ bool get_block_longhash(Crypto::cn_context &context, const Block& b, Crypto::Has
 bool get_inputs_money_amount(const Transaction& tx, uint64_t& money);
 uint64_t get_outs_money_amount(const Transaction& tx);
 bool check_inputs_types_supported(const TransactionPrefix& tx);
-bool check_outs_valid(const TransactionPrefix& tx, std::string* error = 0);
+bool check_outs_valid(const TransactionPrefix& tx, std::string* error = 0,
+                      uint32_t depositMinTerm = parameters::DEPOSIT_MIN_TERM,
+                      uint32_t depositMaxTerm = parameters::DEPOSIT_MAX_TERM);
 bool checkMultisignatureInputsDiff(const TransactionPrefix& tx);
 bool checkSwapEscrowInputsDiff(const TransactionPrefix& tx);
 // H-1: rejects a transaction spending one key image in more than one input, across

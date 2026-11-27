@@ -6,6 +6,9 @@
 
 #include "TestWalletLegacy.h"
 
+#include <chrono>
+#include <thread>
+
 namespace Tests
 {
 namespace Common

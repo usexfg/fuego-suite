@@ -29,6 +29,8 @@
 
 #include <fstream>
 #include <memory>
+#include <set>
+#include <unordered_set>
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/member.hpp>
 #include <boost/multi_index/hashed_index.hpp>
@@ -36,6 +38,7 @@
 namespace CryptoNote
 {
 class IFusionManager;
+class WalletGreen;
 }
 
 namespace PaymentService
@@ -120,7 +123,7 @@ std::error_code getViewKey(std::string &viewSecretKey);
   std::error_code cancelLimitOrder(const std::string &orderIdHex, uint64_t mixin, bool stopOnly, std::string &transactionHash);
   std::error_code getLimitOrders(std::vector<GetLimitOrders::LimitOrderInfo> &orders);
   std::error_code registerAlias(const std::string &alias, const std::string &ownerAddress, std::string &transactionHash);
-  std::error_code devFundBurn(uint64_t amount, std::string &transactionHash);
+  std::error_code devDonate(uint64_t amount, std::string &transactionHash);
   std::error_code withdrawDeposit(uint64_t depositId, std::string &transactionHash);
   std::error_code giftDeposit(uint64_t amount, uint64_t term, std::string sourceAddress, std::string destinationAddress, std::string &transactionHash);
   std::error_code getDeposit(uint64_t depositId, uint64_t &amount, uint64_t &term, uint64_t &interest, std::string &creatingTransactionHash, std::string &spendingTransactionHash, bool &locked, uint64_t &height, uint64_t &unlockHeight, std::string &address);
@@ -152,6 +155,11 @@ std::error_code getViewKey(std::string &viewSecretKey);
 private:
   void refresh();
   void reset();
+  void withdrawEndedLimitOrders();
+  bool walletIsViewOnly();
+  std::vector<Crypto::Hash> limitOrdersToTryWithdrawing(uint32_t nextHeight);
+  bool fetchNodeLimitOrderIds(std::unordered_set<std::string> &orderIds);
+  void withdrawEndedLimitOrder(CryptoNote::WalletGreen &green, const Crypto::Hash &orderId);
 
   void loadWallet();
   void loadTransactionIdIndex();
@@ -182,6 +190,8 @@ private:
   System::ContextGroup refreshContext;
 
   std::map<std::string, size_t> transactionIdIndex;
+  std::map<std::string, uint32_t> limitOrderWithdrawRetryHeight;
+  std::set<std::string> limitOrdersUnknownToNode;
   
   // Staged unlock storage
 };

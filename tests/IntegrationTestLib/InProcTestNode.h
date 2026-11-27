@@ -38,6 +38,8 @@ public:
   virtual bool makeINode(std::unique_ptr<CryptoNote::INode>& node) override;
   virtual uint64_t getLocalHeight() override;
 
+  CryptoNote::core& getCore() { return *core; }
+
 private:
 
   void workerThread(std::promise<std::string>& initPromise);

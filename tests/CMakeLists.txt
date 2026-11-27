@@ -153,6 +153,103 @@ target_link_libraries(subaddress_wallet_tests PRIVATE
 )
 add_test(NAME subaddress_wallet_tests COMMAND subaddress_wallet_tests)
 
+# WalletLegacy holds a send's inputs from selection until it is built, sent or fails,
+# so sends started back to back never pick the same input.
+add_executable(wallet_input_reservation_tests
+    UnitTests/WalletInputReservationTest.cpp
+)
+target_include_directories(wallet_input_reservation_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/external/gtest/include
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_link_libraries(wallet_input_reservation_tests PRIVATE
+    Wallet
+    Transfers
+    CryptoNoteCore
+    Serialization
+    Logging
+    Common
+    Crypto
+    System
+    ${Boost_LIBRARIES}
+    gtest
+    gtest_main
+)
+add_test(NAME wallet_input_reservation_tests COMMAND wallet_input_reservation_tests)
+
+# What the console wallet's alias and dev-donation commands send, on the mainnet
+# schedule (testnet aliases pay no fee, so the e2e scenarios cannot cover it).
+add_executable(wallet_operations_tests
+    UnitTests/WalletOperationsTest.cpp
+)
+target_include_directories(wallet_operations_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/external/gtest/include
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_link_libraries(wallet_operations_tests PRIVATE
+    Wallet
+    Transfers
+    CryptoNoteCore
+    Serialization
+    Logging
+    Common
+    Crypto
+    System
+    ${Boost_LIBRARIES}
+    gtest
+    gtest_main
+)
+add_test(NAME wallet_operations_tests COMMAND wallet_operations_tests)
+
+# A transaction paying one funsa subaddress takes the single-key form (tx key
+# r·D, one janus base, change from the sender's view key) and refuses any other
+# destination.
+add_executable(single_subaddress_transaction_tests
+    UnitTests/SingleSubaddressTransactionTest.cpp
+)
+target_include_directories(single_subaddress_transaction_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/external/gtest/include
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_link_libraries(single_subaddress_transaction_tests PRIVATE
+    CryptoNoteCore
+    Serialization
+    Logging
+    Common
+    Crypto
+    System
+    ${Boost_LIBRARIES}
+    gtest
+    gtest_main
+)
+add_test(NAME single_subaddress_transaction_tests COMMAND single_subaddress_transaction_tests)
+
+# The pool drops a transaction whose alias tag lost its alias or owner to a
+# confirmed claim, instead of holding its inputs until it ages out.
+add_executable(pool_alias_eviction_tests
+    UnitTests/PoolAliasEvictionTest.cpp
+)
+target_include_directories(pool_alias_eviction_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/external/gtest/include
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_link_libraries(pool_alias_eviction_tests PRIVATE
+    CryptoNoteCore
+    Serialization
+    Logging
+    Common
+    Crypto
+    System
+    ${Boost_LIBRARIES}
+    gtest
+    gtest_main
+)
+add_test(NAME pool_alias_eviction_tests COMMAND pool_alias_eviction_tests)
+
 # walletd JSON-RPC subaddress methods through PaymentServiceJsonRpcServer.
 add_executable(walletd_subaddress_rpc_tests
     UnitTests/WalletdSubaddressRpcTest.cpp
@@ -224,13 +321,18 @@ target_link_libraries(funsa_vectors PRIVATE
     ${Boost_LIBRARIES}
 )
 
+
 # Persistence of the published commitment key. The signer cannot choose between the
 # owner-bound and legacy derivations without it, and it used to be lost on every
 # wallet save/reload. Also covers loading pre-version-2 caches.
 add_executable(commitment_persistence_tests
     UnitTests/CommitmentPersistenceTest.cpp
 )
-target_include_directories(commitment_persistence_tests PRIVATE ${CMAKE_SOURCE_DIR}/external/gtest/include)
+target_include_directories(commitment_persistence_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/external/gtest/include
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include
+)
 target_link_libraries(commitment_persistence_tests PRIVATE
     Transfers
     CryptoNoteCore
@@ -238,6 +340,8 @@ target_link_libraries(commitment_persistence_tests PRIVATE
     Logging
     Common
     Crypto
+    System
+    ${Boost_LIBRARIES}
     gtest
     gtest_main
 )
@@ -338,3 +442,30 @@ target_link_libraries(fci_oracle_json_tests PRIVATE
     gtest_main
 )
 add_test(NAME fci_oracle_json_tests COMMAND fci_oracle_json_tests)
+
+# In-process multi-node framework (plan docs/V11_LAUNCH_TODO.md item 9.2).
+file(GLOB IntegrationTestLibSources IntegrationTestLib/*.cpp)
+add_library(IntegrationTestLib STATIC ${IntegrationTestLibSources})
+target_include_directories(IntegrationTestLib PUBLIC
+    ${CMAKE_SOURCE_DIR}/external/gtest/include
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)
+target_link_libraries(IntegrationTestLib PUBLIC
+    InProcessNode NodeRpcProxy P2P Rpc Http Wallet Transfers CryptoNoteCore
+    Serialization Logging Common Crypto System ${Boost_LIBRARIES} gtest)
+
+
+# End-to-end HEAT scenarios on a real in-process node with real wallets.
+# $<LINK_GROUP> needs CMake 3.24; older CMake skips this suite and says so.
+if(CMAKE_VERSION VERSION_LESS 3.24)
+  message(WARNING "heat_e2e_tests needs CMake 3.24 or newer; not built")
+else()
+  file(GLOB HeatE2ESources E2E/*.cpp)
+  add_executable(heat_e2e_tests ${HeatE2ESources})
+  # Wallet, Transfers, P2P and CryptoNoteCore reference each other; link them as one group.
+  target_link_libraries(heat_e2e_tests PRIVATE IntegrationTestLib gtest_main "$<LINK_GROUP:RESCAN,Wallet,Transfers,P2P,CryptoNoteCore>")
+  add_test(NAME heat_e2e_tests COMMAND heat_e2e_tests)
+  set_tests_properties(heat_e2e_tests PROPERTIES TIMEOUT 1800)
+endif()

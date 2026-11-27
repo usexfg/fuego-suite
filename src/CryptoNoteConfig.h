@@ -449,6 +449,7 @@ const uint64_t LIMIT_ORDER_MIN_HEAT = COIN / 10;    // smallest BUY_XFG deposit 
 const uint32_t LIMIT_ORDER_MAX_TTL_BLOCKS = 5400;   // ~30 days: expiry required, at most this far out
 const uint32_t LIMIT_ORDER_DEFAULT_TTL_BLOCKS = 1260; // ~7 days when a wallet caller names no expiry
 const uint32_t LIMIT_DEPOSITS_MAX_PER_BLOCK = 100;
+const uint32_t LIMIT_ORDER_WITHDRAW_RETRY_BLOCKS = 10; // wallet waits this long before retrying a failed auto-withdraw
 const uint64_t HEARTH_BACKSTOP_MAX_BPS =
     800; // backstop fills per block ≤ the lower of 8× auction volume and 8% of the pool's XFG reserve
 constexpr uint64_t HEARTH_POOL_SEED_XFG =
@@ -524,9 +525,9 @@ const size_t CRYPTONOTE_OPTIMIZE_SIZE =
     100; /* proportional to CRYPTONOTE_MAX_TX_SIZE_LIMIT */
 
 const uint64_t CRYPTONOTE_MEMPOOL_TX_LIVETIME =
-    (60 * 60 * 12); /* 1 hour in seconds */
+    (60 * 60 * 12); /* 12 hours in seconds */
 const uint64_t CRYPTONOTE_MEMPOOL_TX_FROM_ALT_BLOCK_LIVETIME =
-    (60 * 60 * 12); /* 24 hours in seconds */
+    (60 * 60 * 12); /* 12 hours in seconds */
 const uint64_t CRYPTONOTE_NUMBER_OF_PERIODS_TO_FORGET_TX_DELETED_FROM_POOL =
     7; /* CRYPTONOTE_NUMBER_OF_PERIODS_TO_FORGET_TX_DELETED_FROM_POOL *
           CRYPTONOTE_MEMPOOL_TX_LIVETIME  = time to forget tx */
@@ -552,6 +553,20 @@ const uint32_t UPGRADE_HEIGHT_V12 =
     2666666; //{SILENTFIRE}  HEAT CDs + unified outputs + hidden amounts + MLSAG
              //+ BP+
 const uint32_t CD_ACTIVATION_HEIGHT = UPGRADE_HEIGHT_V12;
+// Testnet schedule. v12 starts after 1000 so v11 rules (Hearth auction after the
+// 72-block bootstrap, re-mint quarters, FCI vote tallies) run long enough to test.
+const uint32_t TESTNET_UPGRADE_HEIGHT_V2 = 2;
+const uint32_t TESTNET_UPGRADE_HEIGHT_V3 = 3;
+const uint32_t TESTNET_UPGRADE_HEIGHT_V4 = 4;
+const uint32_t TESTNET_UPGRADE_HEIGHT_V5 = 5;
+const uint32_t TESTNET_UPGRADE_HEIGHT_V6 = 6;
+const uint32_t TESTNET_UPGRADE_HEIGHT_V7 = 17;
+const uint32_t TESTNET_UPGRADE_HEIGHT_V8 = 18;
+const uint32_t TESTNET_UPGRADE_HEIGHT_V9 = 19;
+const uint32_t TESTNET_UPGRADE_HEIGHT_V10 = 25;
+const uint32_t TESTNET_UPGRADE_HEIGHT_V11 = 30;
+const uint32_t TESTNET_UPGRADE_HEIGHT_V12 = 1000;
+const uint64_t TESTNET_DIFFICULTY_TARGET = DIFFICULTY_TARGET_TESTNET;
 const uint32_t HEATWAVE_TAG_CUTOFF_HEIGHT = UPGRADE_HEIGHT_V11;
 const uint32_t JANUS_BASE_GRACE_BLOCKS = 720; // F8: 0x09 optional for this many blocks after v11
              // upgradekit

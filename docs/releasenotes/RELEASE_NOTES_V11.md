@@ -6,7 +6,7 @@
 | **Block Version** | `BLOCK_MAJOR_VERSION_11` |
 | **Activation Height** | 1,111,111 |
 | **Release Version** | v1.11.00 |
-| **Testnet Activation** | Block 25 |
+| **Testnet Activation** | Block 30 (v12 at block 1000; CDs from block 1001). Testnet relaunched 2026-11-19: every node must wipe its testnet data |
 | **Previous** | v1.10.02 Wildfire (height 1,003,000) |
 | **Next** | v1.12.00 SILENTFIRE (height 2,666,666) — HEAT CDs + unified outputs |
 
@@ -22,7 +22,7 @@ treasury-vault drain primitive.
 - Minting burns XFG at the Hearth pool TWAP price. The launch ratio is 1 HEAT = 8 XFG.
 - From v11, every mint carries a 1% premium (`HEAT_MINT_PREMIUM_BPS = 100`). The premium is a haircut inside the declared burn, not a surcharge: the withheld premium XFG is credited to the AuntPoL XFG leg (`m_treasuryLpPendingXfg`) and is not burned, while the HEAT it buys is minted to the AuntPoL HEAT leg (`m_treasuryHeatReserve`). Total HEAT created still equals the HEAT value of the full burn.
 - The launch premium is otherwise 0%, and the PI controller has been removed.
-- The Hearthstone reference is $1.58 USD at launch (`FCI_HEARTHSTONE_INITIAL_CENTS = 158`), re-based quarterly from the on-chain Fuego Cost Index.
+- The Hearthstone reference is $1.58 USD at launch (`FCI_HEARTHSTONE_INITIAL_CENTS = 158`). It stays there through v11; quarterly re-basing from the on-chain Fuego Cost Index starts at v12.
 
 ---
 
@@ -44,7 +44,7 @@ treasury-vault drain primitive.
 - Balanced LP deposits only (single-sided mints no shares — no dilution).
 - The taker pays a 1% fee (`HEARTH_FEE_BPS = 100`). The split is versioned so that reorg replay recomputes the split the block settled. At v11, 30% accrues in the HEAT-denominated `cdHearthFeeAccumulator` and is minted into `CD_APY_POOL` at the epoch boundary, while 70% is the maker rebate paid to auction makers (or to LPs when the pool is the counterparty). At v12 the split flips to 70% CD and 30% maker.
 - Consumed XFG is burned 50/50 between the Eternal Flame and the SWF.
-- The bootstrap window runs 144 blocks of AMM-only operation after the upgrade.
+- The bootstrap window runs `bootstrapBlocks()` blocks of AMM-only operation after the upgrade (mainnet 144, testnet 72), from the first v11 block; the call auction starts at the next block. It is a function of height, so nodes agree however they reached a block.
 - The **Treasury LP Manager (AuntPoL)** maintains the protocol's own ratio-paired LP position. **Both legs are funded by the 1% mint premium**: the withheld premium XFG is the XFG leg, and the HEAT it buys is the HEAT leg (plus HEAT donations). The two legs are never cross-converted, and no SWF transfer is involved. The position compounds and drives bootstrap repayment through the two-leg owned-reserves check.
 
 ---
@@ -57,8 +57,9 @@ Miner-voted consumer basket, priced in integer cents (power in milli-USD/kWh).
 - Weights: power 30, gas 25, rice 15, milk 10, bread 10, eggs 10 (sum 100).
 - Baselines (cents): power 120 milli-USD/kWh, gas 350, rice 50, milk 100, bread 250, eggs 300.
 - Miners vote via `TX_EXTRA_MINER_BASKET_VOTE`; trimmed median per category.
-- Quarterly re-base gate: 3 of 6 categories must clear quorum within the trailing
+- Quarterly re-base gate (applied from v12): 3 of 6 categories must clear quorum within the trailing
   quarter (`FCI_MIN_FRESH_QUORUM = 3`); 5.04% max quarterly move.
+- Under v11 the FCI records miner votes and runs every step (epoch close, trimmed medians, quorum, freshness, the index) but does not change the hearthstone and pays no DIGM rewards to FCI-voting blocks; both are reserved for v12.
 - Per-category last-quorum epochs carried in the reorg snapshot.
 - Rice appended as mask bit 5 (bits 0–4 unchanged; five-category votes serialize
   byte-identically to pre-rice format).
@@ -139,6 +140,21 @@ Miner-voted consumer basket, priced in integer cents (power in milli-USD/kWh).
 
 - Dandelion++ stem-fluff transaction relay (continued from v10).
 - Alias registration privacy (per-tx sub-address rotation, ring mixin).
+- HEAT sent to one funsa subaddress takes the single-key form XFG payments use
+  (tx key r·D, one janus base, no per-output keys), so it reads like any other
+  transaction. Both wallets (console and walletd). HEAT amounts stay public
+  in v11, so the payment output is identifiable by its amount.
+
+## Aliases
+
+- From v11 an alias registration that would not register (alias taken or
+  reserved, owner already holding an alias, built for another network, or a
+  second claim on the same alias or owner in one block) makes its transaction
+  invalid. The 1 XFG re-mint burn is therefore kept only for an alias the
+  registrant gets; losing a race for an alias costs nothing. Alias releases
+  and transfers that would not apply are invalid too, the coinbase may carry
+  no alias tag, and a registration's owner hash must match its owner address.
+- `/get_alias_by_address` finds aliases owned by funsa subaddresses.
 
 ---
 

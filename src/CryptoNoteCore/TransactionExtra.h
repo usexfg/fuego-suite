@@ -652,10 +652,22 @@ struct LimitOrderKeys {
 };
 LimitOrderKeys deriveLimitOrderKeys(const Crypto::SecretKey& walletSpendSecret, const Crypto::Hash& orderId);
 void wipeSecretKey(Crypto::SecretKey& key);
+void wipeKeyDerivation(Crypto::KeyDerivation& derivation);
 void wipeLimitOrderSecret(LimitOrderKeys& keys);
 Crypto::Hash limitOrderAddressHash(const Crypto::SecretKey& walletSpendSecret, const Crypto::Hash& orderId);
 bool isOwnLimitOrder(const Crypto::SecretKey& walletSpendSecret, const Crypto::Hash& orderId,
                      const Crypto::Hash& addressHash);
+
+// One of a wallet's own transactions, as its history records it.
+struct WalletOrderTransaction {
+  std::string extra;
+  bool confirmed;
+  bool failed;
+};
+// The wallet's limit orders that have expired by `nextHeight` or been stopped,
+// and that none of its own withdraws, pending or confirmed, has claimed.
+std::vector<Crypto::Hash> limitOrdersDueForWithdraw(const std::vector<WalletOrderTransaction>& transactions,
+                                                    uint32_t nextHeight);
 
 Crypto::Hash getLimitWithdrawAuthHash(const Crypto::Hash& orderId,
                                       const Crypto::Hash& addressHash,

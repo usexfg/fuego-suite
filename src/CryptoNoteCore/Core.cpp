@@ -399,7 +399,7 @@ bool core::check_tx_semantic(const Transaction& tx, bool keeped_by_block, uint32
   }
 
   std::string errmsg;
-  if (!check_outs_valid(tx, &errmsg)) {
+  if (!check_outs_valid(tx, &errmsg, m_currency.depositMinTerm(), m_currency.depositMaxTerm())) {
     logger(ERROR) << "tx with invalid outputs, rejected for tx id= " << getObjectHash(tx) << ": " << errmsg;
     return false;
   }
@@ -447,7 +447,12 @@ bool core::check_tx_semantic(const Transaction& tx, bool keeped_by_block, uint32
     }
   }
 
-  if (hasAmmSwapAuth || hasHeatMintAuth) {
+  // From v11 the pool and block validation balance every asset against the
+  // transaction's declared sources and sinks (checkTransactionSettlement), so
+  // pool, escrow and LP payouts may exceed the inputs; the checks below are
+  // pre-v11 rules.
+  const bool settledPerAsset = extraMajorVersion >= BLOCK_MAJOR_VERSION_11;
+  if (!settledPerAsset && (hasAmmSwapAuth || hasHeatMintAuth)) {
     // AMM swap or HEAT mint: check per-asset conservation instead of aggregate.
     // HEAT mint is equivalent to direction 0 (XFG→HEAT): XFG inputs cover XFG outputs + fee, HEAT is minted.
     // AMM direction 0 (XFG→HEAT): XFG inputs must cover XFG outputs + fee.
@@ -473,7 +478,7 @@ bool core::check_tx_semantic(const Transaction& tx, bool keeped_by_block, uint32
         return false;
       }
     }
-  } else if (amount_in < amount_out) {
+  } else if (!settledPerAsset && amount_in < amount_out) {
     logger(ERROR) << "tx with wrong amounts: ins " << amount_in << ", outs " << amount_out << ", rejected for tx id= " << getObjectHash(tx);
     return false;
   }
@@ -867,8 +872,8 @@ bool core::get_random_outs_for_amounts(const COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_
   return m_blockchain.getRandomOutsByAmount(req, res);
 }
 
-bool core::get_random_commitment_outs_for_amount(uint64_t amount, uint64_t count, uint32_t maxHeight, std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS_out_entry>& result) {
-  return m_blockchain.getRandomCommitmentOutputsForAmount(amount, count, result, maxHeight);
+bool core::get_random_commitment_outs_for_amount(uint64_t amount, uint64_t count, uint32_t maxHeight, uint32_t ringTerm, std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS_out_entry>& result) {
+  return m_blockchain.getRandomCommitmentOutputsForAmount(amount, count, result, maxHeight, ringTerm);
 }
 
 bool core::get_output_heights(const std::vector<std::pair<uint64_t, uint32_t>>& queries,
@@ -1733,10 +1738,39 @@ uint64_t core::getPoolTwap() const {
   return m_blockchain.getPoolTwap();
 }
 
+std::error_code core::getRegisteredAliases(std::vector<ICore::RegisteredAlias>& aliases) {
+  aliases.clear();
+  for (const auto& entry : m_blockchain.getAllAliases()) {
+    aliases.push_back({entry.alias, entry.ownerAddress});
+  }
+  return {};
+}
+
+std::error_code core::getLimitOrders(std::vector<ICore::LimitOrderEntry>& orders) {
+  orders.clear();
+  m_blockchain.visitLimitDeposits([&orders](const Crypto::Hash& orderId, const auto& order) {
+    ICore::LimitOrderEntry entry;
+    entry.orderId = orderId;
+    entry.addressHash = order.addressHash;
+    entry.side = order.side;
+    entry.amount = order.amount;
+    entry.proceedsXfg = order.proceedsXfg;
+    entry.proceedsHeat = order.proceedsHeat;
+    entry.targetPrice = order.targetPrice;
+    entry.expiration = order.expiration;
+    entry.withdrawn = order.withdrawn;
+    entry.expired = order.expired;
+    orders.push_back(entry);
+    return true;
+  });
+  return {};
+}
+
 std::error_code core::getAmmPoolInfo(ICore::AmmPoolInfo& info) {
   const auto& pool = m_blockchain.getAmmPool();
   info.reserveXfg = pool.reserveXfg;
   info.reserveHeat = pool.reserveHeat;
+  info.totalLpShares = pool.totalLpShares;
    info.spotPrice = m_blockchain.getHearthSpotPrice();
    return {};
 }

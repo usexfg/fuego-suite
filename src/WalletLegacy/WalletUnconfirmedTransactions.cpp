@@ -21,6 +21,8 @@
 #include "CryptoNoteCore/CryptoNoteTools.h"
 #include "Serialization/ISerializer.h"
 #include "Serialization/SerializationOverloads.h"
+#include <algorithm>
+#include <iterator>
 
 using namespace Crypto;
 
@@ -42,6 +44,7 @@ bool WalletUnconfirmedTransactions::serialize(ISerializer& s) {
 
   if (s.type() == ISerializer::INPUT) {
     collectUsedOutputs();
+    stampSpentDepositsOnLoad();
   }
 
   return true;
@@ -81,8 +84,10 @@ bool WalletUnconfirmedTransactions::findUnconfirmedDepositSpendingTransactionId(
   return true;
 }
 
+// A commitment spend is recorded in both maps under one hash; both entries go.
 void WalletUnconfirmedTransactions::erase(const Hash& hash) {
-  eraseUnconfirmedTransaction(hash) || eraseDepositSpendingTransaction(hash);
+  eraseUnconfirmedTransaction(hash);
+  eraseDepositSpendingTransaction(hash);
 }
 
 bool WalletUnconfirmedTransactions::eraseUnconfirmedTransaction(const Crypto::Hash& hash) {
@@ -104,6 +109,7 @@ bool WalletUnconfirmedTransactions::eraseDepositSpendingTransaction(const Crypto
   }
 
   m_spentDeposits.erase(it);
+  m_spentDepositsRecordedAt.erase(hash);
 
   return true;
 }
@@ -111,6 +117,7 @@ bool WalletUnconfirmedTransactions::eraseDepositSpendingTransaction(const Crypto
 void WalletUnconfirmedTransactions::add(const Transaction& tx, TransactionId transactionId, 
   uint64_t amount, const std::vector<TransactionOutputInformation>& usedOutputs) {
 
+  releaseReservedOutputs(transactionId);
   UnconfirmedTransferDetails& utd = m_unconfirmedTxs[getObjectHash(tx)];
 
   utd.amount = amount;
@@ -145,6 +152,19 @@ void WalletUnconfirmedTransactions::addCreatedDeposit(DepositId id, uint64_t tot
 void WalletUnconfirmedTransactions::addDepositSpendingTransaction(const Hash& transactionHash, const UnconfirmedSpentDepositDetails& details) {
   assert(m_spentDeposits.count(transactionHash) == 0);
   m_spentDeposits.emplace(transactionHash, details);
+  m_spentDepositsRecordedAt[transactionHash] = time(nullptr);
+}
+
+// The saved file does not carry when a deposit spend was recorded. A commitment
+// spend's unconfirmed record, saved under the same hash, carries its send time; a
+// spend without one (legacy multisig withdraw) counts from the load.
+void WalletUnconfirmedTransactions::stampSpentDepositsOnLoad() {
+  const time_t loadTime = time(nullptr);
+  m_spentDepositsRecordedAt.clear();
+  for (const auto& kv : m_spentDeposits) {
+    const auto unconfirmed = m_unconfirmedTxs.find(kv.first);
+    m_spentDepositsRecordedAt[kv.first] = unconfirmed != m_unconfirmedTxs.end() ? unconfirmed->second.sentTime : loadTime;
+  }
 }
 
 void WalletUnconfirmedTransactions::eraseCreatedDeposit(DepositId id) {
@@ -200,7 +220,27 @@ uint64_t WalletUnconfirmedTransactions::countUnconfirmedTransactionsAmount() con
 }
 
 bool WalletUnconfirmedTransactions::isUsed(const TransactionOutputInformation& out) const {
-  return m_usedOutputs.find(getOutputId(out)) != m_usedOutputs.end();
+  const TransactionOutputId id = getOutputId(out);
+  return m_usedOutputs.count(id) != 0 || m_reservedOutputs.count(id) != 0;
+}
+
+bool WalletUnconfirmedTransactions::reserveOutputs(TransactionId transactionId,
+                                                   const std::vector<TransactionOutputInformation>& outputs) {
+  const bool anyHeld = std::any_of(outputs.begin(), outputs.end(),
+                                   [this](const TransactionOutputInformation& out) { return isUsed(out); });
+  if (anyHeld) {
+    return false;
+  }
+  for (const auto& out : outputs) {
+    m_reservedOutputs.emplace(getOutputId(out), transactionId);
+  }
+  return true;
+}
+
+void WalletUnconfirmedTransactions::releaseReservedOutputs(TransactionId transactionId) {
+  for (auto it = m_reservedOutputs.begin(); it != m_reservedOutputs.end();) {
+    it = it->second == transactionId ? m_reservedOutputs.erase(it) : std::next(it);
+  }
 }
 
 void WalletUnconfirmedTransactions::collectUsedOutputs() {
@@ -214,6 +254,10 @@ void WalletUnconfirmedTransactions::collectUsedOutputs() {
 void WalletUnconfirmedTransactions::reset() {
   m_unconfirmedTxs.clear();
   m_usedOutputs.clear();
+  m_reservedOutputs.clear();
+  m_createdDeposits.clear();
+  m_spentDeposits.clear();
+  m_spentDepositsRecordedAt.clear();
 }
 
 void WalletUnconfirmedTransactions::deleteUsedOutputs(const std::vector<TransactionOutputId>& usedOutputs) {
@@ -233,6 +277,25 @@ std::vector<TransactionId> WalletUnconfirmedTransactions::deleteOutdatedTransact
       deleteUsedOutputs(it->second.usedOutputs);
       deletedTransactions.push_back(it->second.transactionId);
       it = m_unconfirmedTxs.erase(it);
+    } else {
+      ++it;
+    }
+  }
+
+  // A deposit spend the node dropped never confirms; past the live time its
+  // deposits must return to the wallet like any other expired send.
+  for (auto it = m_spentDeposits.begin(); it != m_spentDeposits.end();) {
+    const auto recorded = m_spentDepositsRecordedAt.find(it->first);
+    const bool spendingTransactionExpired =
+        std::find(deletedTransactions.begin(), deletedTransactions.end(), it->second.transactionId) != deletedTransactions.end();
+    const bool expired = spendingTransactionExpired || recorded == m_spentDepositsRecordedAt.end() ||
+                         static_cast<uint64_t>(recorded->second) <= now - m_uncofirmedTransactionsLiveTime;
+    if (expired) {
+      if (!spendingTransactionExpired) {
+        deletedTransactions.push_back(it->second.transactionId);
+      }
+      m_spentDepositsRecordedAt.erase(it->first);
+      it = m_spentDeposits.erase(it);
     } else {
       ++it;
     }

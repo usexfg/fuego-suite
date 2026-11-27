@@ -16,6 +16,7 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "TransactionPool.h"
+#include "AliasIndex.h"
 
 #include <algorithm>
 #include <cstring>
@@ -69,6 +70,8 @@ namespace CryptoNote
       uint64_t mintHeat = 0;
       Crypto::Hash depositId{};
       Crypto::Hash withdrawId{};
+      std::vector<std::string> aliasNames;
+      std::vector<Crypto::Hash> aliasAddressHashes;
     };
 
     PoolTouch getPoolTouch(const Transaction &tx)
@@ -105,6 +108,22 @@ namespace CryptoNote
         {
           touch.hasWithdraw = true;
           touch.withdrawId = boost::get<TransactionExtraOrderCancel>(f).orderId;
+        }
+        else if (f.type() == typeid(TransactionExtraAliasRegistration))
+        {
+          const auto &registration = boost::get<TransactionExtraAliasRegistration>(f);
+          touch.aliasNames.push_back(AliasIndex::canonicalName(registration.alias));
+          touch.aliasAddressHashes.push_back(registration.addressHash);
+        }
+        else if (f.type() == typeid(TransactionExtraAliasTransfer))
+        {
+          const auto &transfer = boost::get<TransactionExtraAliasTransfer>(f);
+          touch.aliasNames.push_back(AliasIndex::canonicalName(transfer.alias));
+          touch.aliasAddressHashes.push_back(transfer.newAddressHash);
+        }
+        else if (f.type() == typeid(TransactionExtraAliasRelease))
+        {
+          touch.aliasNames.push_back(AliasIndex::canonicalName(boost::get<TransactionExtraAliasRelease>(f).alias));
         }
       }
       return touch;
@@ -625,7 +644,14 @@ namespace CryptoNote
 
     bool reservesMoved = false;
     uint64_t mintCapHeatLeft = m_validator.blockMintCapHeat();
-    std::set<Crypto::Hash, HashLess> depositIds, withdrawIds;
+    std::set<Crypto::Hash, HashLess> depositIds, withdrawIds, aliasAddressHashes;
+    std::set<std::string> aliasNames;
+    auto claimsAliasTakenInTemplate = [&](const PoolTouch &touch) {
+      return std::any_of(touch.aliasNames.begin(), touch.aliasNames.end(),
+                         [&](const std::string &name) { return aliasNames.count(name) > 0; }) ||
+             std::any_of(touch.aliasAddressHashes.begin(), touch.aliasAddressHashes.end(),
+                         [&](const Crypto::Hash &hash) { return aliasAddressHashes.count(hash) > 0; });
+    };
     for (auto it = m_fee_index.rbegin(); it != m_fee_index.rend(); ++it)
     {
       const auto &txd = *it;
@@ -665,7 +691,7 @@ namespace CryptoNote
       if ((touch.movesReserves && reservesMoved) || touch.mintHeat > mintCapHeatLeft ||
           (touch.hasDeposit && (depositIds.count(touch.depositId) ||
                                 depositIds.size() >= parameters::LIMIT_DEPOSITS_MAX_PER_BLOCK)) ||
-          (touch.hasWithdraw && withdrawIds.count(touch.withdrawId)))
+          (touch.hasWithdraw && withdrawIds.count(touch.withdrawId)) || claimsAliasTakenInTemplate(touch))
       {
         continue;
       }
@@ -687,6 +713,8 @@ namespace CryptoNote
         mintCapHeatLeft -= touch.mintHeat;
         if (touch.hasDeposit) depositIds.insert(touch.depositId);
         if (touch.hasWithdraw) withdrawIds.insert(touch.withdrawId);
+        aliasNames.insert(touch.aliasNames.begin(), touch.aliasNames.end());
+        aliasAddressHashes.insert(touch.aliasAddressHashes.begin(), touch.aliasAddressHashes.end());
         logger(DEBUGGING) << "Transaction " << txd.id << " included in the block template";
       }
       else
@@ -836,10 +864,15 @@ namespace CryptoNote
 
         auto ttlIt = m_ttlIndex.find(it->id);
         bool ttlExpired = (ttlIt != m_ttlIndex.end() && ttlIt->second <= now);
+        const bool aliasTagLost = !remove && !ttlExpired && aliasTagNoLongerApplies(*it);
 
-        if (remove || ttlExpired)
+        if (remove || ttlExpired || aliasTagLost)
         {
-          if (ttlExpired)
+          if (aliasTagLost)
+          {
+            logger(INFO) << "Tx " << it->id << " removed from tx pool: its alias tag can no longer apply";
+          }
+          else if (ttlExpired)
           {
             logger(INFO) << "Tx " << it->id << " removed from tx pool due to expired TTL, TTL : " << ttlIt->second;
           }
@@ -848,7 +881,12 @@ namespace CryptoNote
             logger(INFO) << "Tx " << it->id << " removed from tx pool due to outdated, age: " << txAge;
           }
 
-          m_recentlyDeletedTransactions.emplace(it->id, now);
+          // A reorg can undo the claim that beat an alias tag, so its transaction
+          // may be relayed again.
+          if (!aliasTagLost)
+          {
+            m_recentlyDeletedTransactions.emplace(it->id, now);
+          }
           it = removeTransaction(it);
           somethingRemoved = true;
         }
@@ -865,6 +903,23 @@ namespace CryptoNote
     }
 
     return true;
+  }
+
+  // An alias tag that lost its name or owner to a confirmed claim never applies
+  // again on this chain, so its transaction would hold its inputs until it ages
+  // out. A transaction a popped block returned may apply again; it stays.
+  bool tx_memory_pool::aliasTagNoLongerApplies(const TransactionDetails &txd) const
+  {
+    if (txd.keptByBlock)
+    {
+      return false;
+    }
+    const PoolTouch touch = getPoolTouch(txd.tx);
+    if (touch.aliasNames.empty() && touch.aliasAddressHashes.empty())
+    {
+      return false;
+    }
+    return m_validator.aliasTagsCannotApply(txd.tx);
   }
 
   tx_memory_pool::tx_container_t::iterator tx_memory_pool::removeTransaction(tx_memory_pool::tx_container_t::iterator i)

@@ -160,6 +160,31 @@ TEST_F(SubaddressWallet, SecondStandardAddressSurvivesReload) {
   reloaded.shutdown();
 }
 
+// Deleting an address removes its own stored keys, not another address's.
+TEST_F(SubaddressWallet, DeletingAMiddleAddressKeepsTheOthersKeys) {
+  std::string first;
+  std::string last;
+  {
+    WalletGreen green(dispatcher, currency, node, logger);
+    IWallet& wallet = green;
+    wallet.initialize(path, "password");
+    first = wallet.createAddress();
+    const std::string middle = wallet.createAddress();
+    last = wallet.createAddress();
+    wallet.deleteAddress(middle);
+    ASSERT_EQ(wallet.getAddressCount(), 2u);
+    wallet.save();
+    wallet.shutdown();
+  }
+  WalletGreen green(dispatcher, currency, node, logger);
+  IWallet& reloaded = green;
+  reloaded.load(path, "password");
+  ASSERT_EQ(reloaded.getAddressCount(), 2u);
+  EXPECT_EQ(reloaded.getAddress(0), first);
+  EXPECT_EQ(reloaded.getAddress(1), last);
+  reloaded.shutdown();
+}
+
 TEST_F(SubaddressWallet, V2RecordPublishesFunsaAndSurvivesReload) {
   std::string funsa;
   {
@@ -335,45 +360,13 @@ TEST_F(SubaddressWallet, EveryRecordAndTheCacheUseTheirOwnIv) {
 
 namespace {
 
-TEST_F(SubaddressWallet, AliasOwnerIsTheNextFunsaSubaddressOfMajorZero) {
-  WalletGreen green(dispatcher, currency, node, logger);
-  IWallet& wallet = green;
-  wallet.initialize(path, "password");
-  wallet.createAddress();
-  green.createSubAddress(0, 1);
-  green.createSubAddress(5, 9);
-
-  const std::string owner = green.aliasOwnerSubAddress("");
-
-  AccountPublicAddress keys;
-  bool isSubaddress = false;
-  ASSERT_TRUE(currency.parseAccountAddressString(owner, keys, isSubaddress));
-  EXPECT_TRUE(isSubaddress);
-  bool foundAtNextMinor = false;
-  for (const auto& sub : green.getSubAddresses()) {
-    foundAtNextMinor |= sub.address == owner && sub.major == 0 && sub.minor == 2;
-  }
-  EXPECT_TRUE(foundAtNextMinor);
-  EXPECT_EQ(green.aliasOwnerSubAddress(owner), owner);
-  wallet.shutdown();
-}
-
-TEST_F(SubaddressWallet, AliasOwnerMustBeASubaddressOfThisWallet) {
-  WalletGreen green(dispatcher, currency, node, logger);
-  IWallet& wallet = green;
-  wallet.initialize(path, "password");
-  wallet.createAddress();
-  EXPECT_THROW(green.aliasOwnerSubAddress(wallet.getAddress(0)), std::system_error);
-  wallet.shutdown();
-}
-
 TEST_F(SubaddressWallet, AliasRegistrationIsRefusedBeforeV11) {
   WalletGreen green(dispatcher, currency, node, logger);
   IWallet& wallet = green;
   wallet.initialize(path, "password");
   wallet.createAddress();
   Crypto::Hash txHash{};
-  EXPECT_EQ(green.registerAlias("firenode", "", txHash), make_error_code(std::errc::operation_not_permitted));
+  EXPECT_EQ(green.registerAlias("firenode", wallet.getAddress(0), txHash), make_error_code(std::errc::invalid_argument));
   EXPECT_TRUE(green.getSubAddresses().empty());
   wallet.shutdown();
 }

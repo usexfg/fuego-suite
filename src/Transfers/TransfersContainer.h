@@ -246,6 +246,12 @@ struct KeyOutputInfo {
   size_t count;
 };
 
+// A saved transfers cache that cannot be trusted and must be rebuilt by a rescan.
+class TransfersCacheNeedsRescan : public std::runtime_error {
+public:
+  using std::runtime_error::runtime_error;
+};
+
 class TransfersContainer : public ITransfersContainer {
 
 public:
@@ -409,6 +415,8 @@ private:
   bool addTransactionOutputs(const TransactionBlockInfo& block, const ITransactionReader& tx,
                              const std::vector<TransactionOutputInformationIn>& transfers);
   bool addTransactionInputs(const TransactionBlockInfo& block, const ITransactionReader& tx);
+  bool spendCommitmentOutput(const TransactionBlockInfo& block, const ITransactionReader& tx, size_t inputIndex,
+                             const Crypto::KeyImage& keyImage, uint64_t amount);
   void deleteTransactionTransfers(const Crypto::Hash& transactionHash);
   bool isSpendTimeUnlocked(const TransactionOutputInformationEx& info) const;
   bool isIncluded(const TransactionOutputInformationEx& info, uint32_t flags) const;

@@ -82,52 +82,53 @@ bool AliasIndex::isValidRegularAlias(const std::string& alias) {
 // REGISTRATION
 // ============================================================================
 
+// Aliases are stored lowercase with the hash of that form, so lookups and
+// storage agree whatever capitalization the caller used.
+std::string AliasIndex::canonicalName(const std::string& alias) {
+  std::string canonical = alias;
+  std::transform(canonical.begin(), canonical.end(), canonical.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return canonical;
+}
+
+AliasEntry AliasIndex::canonicalEntry(const AliasEntry& entry) {
+  AliasEntry canonical = entry;
+  canonical.alias = canonicalName(entry.alias);
+  canonical.aliasHash = Crypto::cn_fast_hash(canonical.alias.data(), canonical.alias.size());
+  return canonical;
+}
+
+std::string AliasIndex::rejectionOf(const AliasEntry& canonical) const {
+  for (size_t i = 0; i < RESERVED_ALIASES_COUNT; ++i) {
+    if (canonical.alias == RESERVED_ALIASES[i].name) {
+      return "reserved";
+    }
+  }
+  if (canonical.aliasType != 1 || !isValidRegularAlias(canonical.alias)) {
+    return "not a regular alias";
+  }
+  if (m_aliases.find(canonical.alias) != m_aliases.end()) {
+    return "taken";
+  }
+  if (m_addrHashToAlias.find(Common::podToHex(canonical.addressHash)) != m_addrHashToAlias.end()) {
+    return "its owner already has an alias";
+  }
+  return {};
+}
+
+std::string AliasIndex::registrationRejection(const AliasEntry& entry) const {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  return rejectionOf(canonicalEntry(entry));
+}
+
 bool AliasIndex::registerAlias(const AliasEntry& entry) {
   std::lock_guard<std::mutex> lock(m_mutex);
-
-  // Normalize alias to lowercase so lookups and storage are case-consistent.
-  // Callers may pass mixed-case input; we canonicalize here so the index
-  // never stores two aliases that differ only in case.
-  AliasEntry normalizedEntry = entry;
-  std::transform(normalizedEntry.alias.begin(), normalizedEntry.alias.end(),
-                 normalizedEntry.alias.begin(), ::tolower);
-  // Recompute aliasHash from the normalized (lowercase) form so hash lookups
-  // are consistent regardless of the caller's capitalization.
-  normalizedEntry.aliasHash = Crypto::cn_fast_hash(
-      normalizedEntry.alias.data(), normalizedEntry.alias.size());
-
-  // Reject reserved aliases first — before any other validation.
-  for (size_t i = 0; i < RESERVED_ALIASES_COUNT; ++i) {
-    if (normalizedEntry.alias == RESERVED_ALIASES[i].name) {
-      return false;  // Reserved — cannot be registered by users
-    }
+  const AliasEntry canonical = canonicalEntry(entry);
+  if (!rejectionOf(canonical).empty()) {
+    return false;
   }
-
-  // Reject duplicate alias names
-  if (m_aliases.find(normalizedEntry.alias) != m_aliases.end()) {
-    return false;  // Alias already taken
-  }
-
-  // Check address hash does not already have an alias (no raw address stored)
-  std::string addrHashHex = Common::podToHex(normalizedEntry.addressHash);
-  if (m_addrHashToAlias.find(addrHashHex) != m_addrHashToAlias.end()) {
-    return false;  // Address already has an alias
-  }
-
-  // Validate alias format based on type
-  if (normalizedEntry.aliasType == 0) {
-    return false;  // aliasType 0 not supported
-  } else if (normalizedEntry.aliasType == 1) {
-    if (!isValidRegularAlias(normalizedEntry.alias)) {
-      return false;
-    }
-  } else {
-    return false;  // Unknown alias type
-  }
-
-  // Store the alias — reverse map uses addressHash hex, not raw address
-  m_aliases[normalizedEntry.alias] = normalizedEntry;
-  m_addrHashToAlias[addrHashHex] = normalizedEntry.alias;
+  m_aliases[canonical.alias] = canonical;
+  m_addrHashToAlias[Common::podToHex(canonical.addressHash)] = canonical.alias;
   return true;
 }
 
@@ -147,40 +148,16 @@ bool AliasIndex::aliasExists(const std::string& alias) const {
   return m_aliases.find(alias) != m_aliases.end();
 }
 
-bool AliasIndex::addressHasAlias(const std::string& address) const {
-  std::lock_guard<std::mutex> lock(m_mutex);
-  Crypto::Hash addrHash = Crypto::cn_fast_hash(address.data(), address.size());
-  return m_addrHashToAlias.find(Common::podToHex(addrHash)) != m_addrHashToAlias.end();
-}
-
 std::optional<AliasEntry> AliasIndex::getAliasByName(const std::string& alias) const {
   std::lock_guard<std::mutex> lock(m_mutex);
 
   // Normalize to lowercase so lookups are case-insensitive (aliases are stored
   // in lowercase canonical form since registerAlias normalizes on insertion).
-  std::string normalizedAlias = alias;
-  std::transform(normalizedAlias.begin(), normalizedAlias.end(),
-                 normalizedAlias.begin(), ::tolower);
+  const std::string normalizedAlias = canonicalName(alias);
 
   auto it = m_aliases.find(normalizedAlias);
   if (it != m_aliases.end()) {
     return it->second;
-  }
-  return std::nullopt;
-}
-
-std::optional<AliasEntry> AliasIndex::getAliasByAddress(const std::string& address) const {
-  std::lock_guard<std::mutex> lock(m_mutex);
-
-  Crypto::Hash addrHash = Crypto::cn_fast_hash(address.data(), address.size());
-  auto alias_it = m_addrHashToAlias.find(Common::podToHex(addrHash));
-  if (alias_it == m_addrHashToAlias.end()) {
-    return std::nullopt;
-  }
-
-  auto entry_it = m_aliases.find(alias_it->second);
-  if (entry_it != m_aliases.end()) {
-    return entry_it->second;
   }
   return std::nullopt;
 }
@@ -225,9 +202,7 @@ bool AliasIndex::removeAlias(const std::string& alias) {
   std::lock_guard<std::mutex> lock(m_mutex);
 
   // Normalize to lowercase
-  std::string normalizedAlias = alias;
-  std::transform(normalizedAlias.begin(), normalizedAlias.end(),
-                 normalizedAlias.begin(), ::tolower);
+  const std::string normalizedAlias = canonicalName(alias);
 
   auto aliasIt = m_aliases.find(normalizedAlias);
   if (aliasIt == m_aliases.end()) {
@@ -249,9 +224,7 @@ bool AliasIndex::replaceAliasOwnership(const std::string& alias,
   std::lock_guard<std::mutex> lock(m_mutex);
 
   // Normalize to lowercase
-  std::string normalizedAlias = alias;
-  std::transform(normalizedAlias.begin(), normalizedAlias.end(),
-                 normalizedAlias.begin(), ::tolower);
+  const std::string normalizedAlias = canonicalName(alias);
 
   auto aliasIt = m_aliases.find(normalizedAlias);
   if (aliasIt == m_aliases.end()) {

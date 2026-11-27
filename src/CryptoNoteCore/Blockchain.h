@@ -21,6 +21,7 @@
 #include "Common/Int128.h"
 
 #include <atomic>
+#include <functional>
 #include <cstring>
 #include <deque>
 #include <set>
@@ -58,6 +59,7 @@
 #include "MessageQueue.h"
 #include "BlockchainMessages.h"
 #include "IntrusiveLinkedList.h"
+#include "TransactionExtra.h"
 
 #include "../Logging/LoggerRef.h"
 
@@ -92,6 +94,7 @@ namespace CryptoNote {
     virtual bool haveSpentKeyImages(const CryptoNote::Transaction& tx) override;
     virtual bool checkTransactionSize(size_t blobSize) override;
     virtual bool checkTransactionSettlement(const CryptoNote::Transaction& tx, uint64_t& fee) override;
+    virtual bool aliasTagsCannotApply(const CryptoNote::Transaction& tx) override;
     virtual uint64_t blockMintCapHeat() override;
     // The Hearth state the next block must commit to (see HearthState).
     HearthState currentHearthState() const;
@@ -168,6 +171,7 @@ namespace CryptoNote {
     // Orderbook (v11+) — reads from block finalization state
     uint64_t getOrderbookClearingPrice() const;
     bool isOrderbookInBootstrap() const;
+    uint32_t orderbookBootstrapBlocksRemaining() const;
 
     // Hearth spot price: 30-block P_clear average, fallback to pool ratio
     uint64_t getHearthSpotPrice() const;
@@ -213,6 +217,10 @@ namespace CryptoNote {
       };
       std::set<Crypto::Hash, HashLess> limitDepositIds;
       std::set<Crypto::Hash, HashLess> limitWithdrawIds;
+      // Alias names and owner address hashes claimed by earlier transactions
+      // of this block (registrations and transfers).
+      std::set<std::string> aliasNames;
+      std::set<Crypto::Hash, HashLess> aliasAddressHashes;
       // Pool spot price when the block opened (HEAT per XFG × COIN); swaps
       // must keep the price inside HEARTH_MAX_BLOCK_PRICE_MOVE_PCT of it.
       // 0 checks no band.
@@ -229,6 +237,15 @@ namespace CryptoNote {
     // block template all go through here.
     bool validateSettlement(const Transaction& tx, uint32_t height, SettlementScratch& scratch,
                             AssetFlows& flows, uint64_t& xfgFee, std::string& error) const;
+    // v11+: every alias registration, release and transfer in the transaction
+    // must apply when the block is applied (against the index and against earlier
+    // claims in the block), so a registration's re-mint burn is never kept for an
+    // alias it did not get and no tag that cannot apply claims a name or owner.
+    bool aliasTagsApply(const std::vector<TransactionExtraField>& fields, uint8_t blockMajorVersion,
+                        SettlementScratch& scratch, std::string& error) const;
+    // Empty when the tag applies to the current alias index, else why it does not.
+    std::string aliasReleaseRejection(const TransactionExtraAliasRelease& release, uint8_t blockMajorVersion) const;
+    std::string aliasTransferRejection(const TransactionExtraAliasTransfer& transfer, uint8_t blockMajorVersion) const;
     uint64_t getCdYieldPool() const { return m_cdYieldPool; }
     uint64_t getTreasuryLpYield() const { return m_treasuryLpYield; }
     uint64_t getBootstrapRepaymentVault() const { return m_bootstrapRepaymentVault; }
@@ -320,7 +337,8 @@ namespace CryptoNote {
       uint32_t& totalBlockCount, uint32_t& startBlockIndex);
     bool handleGetObjects(NOTIFY_REQUEST_GET_OBJECTS_request& arg, NOTIFY_RESPONSE_GET_OBJECTS_request& rsp); //Deprecated. Should be removed with CryptoNoteProtocolHandler.
     bool getRandomOutsByAmount(const COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS_request& req, COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS_response& res);
-    bool getRandomCommitmentOutputsForAmount(uint64_t amount, uint64_t count, std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS_out_entry>& result, uint32_t max_height = 0);
+    bool getRandomCommitmentOutputsForAmount(uint64_t amount, uint64_t count, std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS_out_entry>& result, uint32_t max_height = 0, uint32_t ringTerm = 0);
+    bool ringMayHoldDecoy(const CommitmentOutputRef& ref, uint32_t ringTerm, uint32_t currentHeight) const;
     // Bulk lookup of creation block heights for (amount, global_index) pairs.
     // heights is sized to queries.size(); 0 for unknown/invalid.
     bool getOutputHeights(const std::vector<std::pair<uint64_t, uint32_t>>& queries,
@@ -701,6 +719,15 @@ namespace CryptoNote {
       bool expired = false; // auto-returned on expiry (remaining claimable)
     };
     std::map<Crypto::Hash, LimitDepositInfo, HashLess> m_limitDeposits;
+    // Derived from m_limitDeposits by indexLimitOrder, never saved: the orders
+    // each block's expiry, auction and backstop passes walk (neither withdrawn
+    // nor expired), and the withdrawn ones the prune pass walks. Expired orders
+    // nobody withdraws stay claimable in m_limitDeposits and cost no block work.
+    std::set<Crypto::Hash, HashLess> m_restingLimitOrders;
+    std::set<Crypto::Hash, HashLess> m_withdrawnLimitOrders;
+    void indexLimitOrder(const Crypto::Hash& orderId);
+    void rebuildLimitOrderIndex();
+    void reverseOrderFillsFor(uint32_t poppedHeight);
 
     // Rollback-history depth for per-block fill/epoch/orderbook records.
     // Testnet has no checkpoints, so reorg depth is unbounded there; keep the
@@ -757,6 +784,17 @@ namespace CryptoNote {
 
   public:
     const std::map<Crypto::Hash, LimitDepositInfo, HashLess>& getLimitDeposits() const { return m_limitDeposits; }
+    // A copy taken under the blockchain lock, for readers on other threads (RPC,
+    // in-process wallets) while blocks are being added.
+    // Visits orders in id order under the chain lock until the visitor returns false.
+    void visitLimitDeposits(const std::function<bool(const Crypto::Hash&, const LimitDepositInfo&)>& visitor) {
+      std::lock_guard<decltype(m_blockchain_lock)> lock(m_blockchain_lock);
+      for (const auto& order : m_limitDeposits) {
+        if (!visitor(order.first, order.second)) {
+          return;
+        }
+      }
+    }
   private:
     // Track auto-returned deposits for block rollback
 
@@ -862,6 +900,8 @@ namespace CryptoNote {
 
 
     bool switch_to_alternative_blockchain(std::list<blocks_ext_by_hash::iterator> &alt_chain, bool discard_disconnected_chain);
+    static std::vector<Crypto::Hash> alternativeChainIds(const std::list<blocks_ext_by_hash::iterator>& altChain);
+    std::list<blocks_ext_by_hash::iterator> findAlternativeChainEntries(const std::vector<Crypto::Hash>& ids);
     bool handle_alternative_block(const Block &b, const Crypto::Hash &id, block_verification_context &bvc, bool sendNewAlternativeBlockMessage = true);
     // Lets the core tests exercise prevalidate_miner_transaction, which guards the
     // coinbase against settlement tags. It was previously untested, which is how
@@ -918,6 +958,8 @@ namespace CryptoNote {
     void rebuildFciState(uint32_t blockCount);
     void rollbackFciBlock(uint32_t poppedHeight);
     void seedHearthPool();
+    void resetOrderbookState();
+    uint32_t callAuctionStartHeight() const;
     void accumulateTwap(const Block& block, uint32_t height);
     void popTransaction(const Transaction &transaction, const Crypto::Hash &transactionHash,
                         uint32_t height, uint8_t majorVersion);
@@ -932,10 +974,13 @@ namespace CryptoNote {
     // block being validated, so a +1 there applied the next height's rules to this
     // block.
     bool checkCommitmentSpendInput(const TransactionInputCommitmentSpend& txin, const Crypto::Hash& tx_prefix_hash, const std::vector<Crypto::Signature>& sig, uint32_t* pmax_related_block_height = nullptr, uint8_t blockMajorVersion = 0);
-    bool checkCommitmentTransferInput(const TransactionInputCommitmentTransfer& txin, const Crypto::Hash& tx_prefix_hash, const std::vector<Crypto::Signature>& sig, uint32_t* pmax_related_block_height = nullptr);
+    bool checkCommitmentTransferInput(const TransactionInputCommitmentTransfer& txin, const Crypto::Hash& tx_prefix_hash, const std::vector<Crypto::Signature>& sig, uint32_t* pmax_related_block_height = nullptr, uint8_t blockMajorVersion = 0);
+    bool isUnspendableAfterHeatwave(const CommitmentOutputRef& ref) const;
+    static bool isTimeLockedRingMember(const CommitmentOutputRef& ref, uint8_t blockMajorVersion);
     bool removeLastBlock();
     bool checkCheckpoints(uint32_t &lastValidCheckpointHeight);
     bool checkUpgradeHeight(const UpgradeDetector& upgradeDetector);
+    uint32_t firstBlockWithWrongMajorVersion();
 
     bool storeBlockchainIndices();
     bool loadBlockchainIndices();

@@ -28,6 +28,22 @@
 
 namespace CryptoNote {
 
+size_t DynamicRingSizeCalculator::commitmentRingSize(size_t availableSameAmount, size_t maxRingSize,
+                                                     size_t minRingSizeMainnet) {
+  if (availableSameAmount == 0) {
+    return 1;
+  }
+  const std::vector<OutputInfo> available{OutputInfo(0, availableSameAmount)};
+  const size_t approved = calculateOptimalRingSize(0, available, BLOCK_MAJOR_VERSION_10, 0, maxRingSize);
+  if (approved == 0) {
+    return std::min(availableSameAmount, maxRingSize);
+  }
+  if (approved < minRingSizeMainnet && availableSameAmount >= minRingSizeMainnet) {
+    return minRingSizeMainnet;
+  }
+  return approved;
+}
+
 size_t DynamicRingSizeCalculator::calculateOptimalRingSize(
   uint64_t amount,
   const std::vector<OutputInfo>& availableOutputs,

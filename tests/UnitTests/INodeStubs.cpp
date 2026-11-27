@@ -195,8 +195,7 @@ void INodeTrivialRefreshStub::doGetRandomOutsByAmounts(std::vector<uint64_t> amo
   ContextCounterHolder counterHolder(m_asyncCounter);
   std::unique_lock<std::mutex> lock(m_walletLock);
 
-  std::sort(amounts.begin(), amounts.end());
-
+  // One set per requested amount, in request order, as the node answers.
   for (uint64_t amount: amounts)
   {
     COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount out;

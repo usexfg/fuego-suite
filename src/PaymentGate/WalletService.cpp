@@ -74,6 +74,7 @@
 #include "Common/StringTools.h"
 #include "Common/PathTools.h"
 #include "CryptoNoteProtocol/CryptoNoteProtocolHandler.h"
+#include "WalletLegacy/WalletOperations.h"
 
 using namespace CryptoNote;
 
@@ -2153,6 +2154,10 @@ namespace PaymentService
             size_t transactionId = event.transactionCreated.transactionIndex;
             transactionIdIndex.emplace(Common::podToHex(wallet.getTransaction(transactionId).hash), transactionId);
           }
+          else if (event.type == CryptoNote::SYNC_COMPLETED)
+          {
+            withdrawEndedLimitOrders();
+          }
         }
       }
       catch (std::system_error &e)
@@ -2915,7 +2920,95 @@ namespace PaymentService
     return std::error_code();
   }
 
-  std::error_code WalletService::devFundBurn(uint64_t amount, std::string &transactionHash)
+  void WalletService::withdrawEndedLimitOrders()
+  {
+    const bool walletBusyWithRequest = !readyEvent.get();
+    if (walletBusyWithRequest) {
+      return;
+    }
+    try {
+      System::EventLock lk(readyEvent);
+      auto *green = dynamic_cast<CryptoNote::WalletGreen *>(&wallet);
+      if (!green || wallet.getAddressCount() == 0 || walletIsViewOnly()) {
+        return;
+      }
+      const uint32_t nextHeight = node.getLastKnownBlockHeight() + 1;
+      const std::vector<Crypto::Hash> ordersToTry = limitOrdersToTryWithdrawing(nextHeight);
+      if (ordersToTry.empty()) {
+        return;
+      }
+      std::unordered_set<std::string> nodeOrderIds;
+      if (!fetchNodeLimitOrderIds(nodeOrderIds)) {
+        return;
+      }
+      for (const Crypto::Hash &orderId : ordersToTry) {
+        const std::string orderIdHex = Common::podToHex(orderId);
+        if (nodeOrderIds.count(orderIdHex) == 0) {
+          limitOrdersUnknownToNode.insert(orderIdHex);
+          logger(Logging::WARNING, Logging::BRIGHT_YELLOW) << "Ended limit order " << orderIdHex
+                                                           << " is not known to the node; withdraw it manually";
+          continue;
+        }
+        limitOrderWithdrawRetryHeight[orderIdHex] = nextHeight + CryptoNote::parameters::LIMIT_ORDER_WITHDRAW_RETRY_BLOCKS;
+        withdrawEndedLimitOrder(*green, orderId);
+      }
+    } catch (std::exception &x) {
+      logger(Logging::WARNING, Logging::BRIGHT_YELLOW) << "Ended limit order withdrawals skipped: " << x.what();
+    }
+  }
+
+  bool WalletService::walletIsViewOnly()
+  {
+    CryptoNote::KeyPair spendKeys = wallet.getAddressSpendKey(0);
+    const bool viewOnly = spendKeys.secretKey == CryptoNote::NULL_SECRET_KEY;
+    CryptoNote::wipeSecretKey(spendKeys.secretKey);
+    return viewOnly;
+  }
+
+  std::vector<Crypto::Hash> WalletService::limitOrdersToTryWithdrawing(uint32_t nextHeight)
+  {
+    const std::vector<CryptoNote::WalletOrderTransaction> history = CryptoNote::walletOrderHistory(wallet);
+    std::vector<Crypto::Hash> ordersToTry;
+    for (const Crypto::Hash &orderId : CryptoNote::limitOrdersDueForWithdraw(history, nextHeight)) {
+      const std::string orderIdHex = Common::podToHex(orderId);
+      const auto retry = limitOrderWithdrawRetryHeight.find(orderIdHex);
+      const bool waitingToRetry = retry != limitOrderWithdrawRetryHeight.end() && retry->second > nextHeight;
+      if (!waitingToRetry && limitOrdersUnknownToNode.count(orderIdHex) == 0) {
+        ordersToTry.push_back(orderId);
+      }
+    }
+    return ordersToTry;
+  }
+
+  bool WalletService::fetchNodeLimitOrderIds(std::unordered_set<std::string> &orderIds)
+  {
+    std::vector<CryptoNote::INode::LimitDepositRpcEntry> deposits;
+    const std::error_code lookupError = node.getLimitDeposits(deposits);
+    if (lookupError) {
+      logger(Logging::DEBUGGING) << "Limit order lookup failed: " << lookupError.message();
+      return false;
+    }
+    for (const auto &deposit : deposits) {
+      orderIds.insert(deposit.order_id);
+    }
+    return true;
+  }
+
+  void WalletService::withdrawEndedLimitOrder(CryptoNote::WalletGreen &green, const Crypto::Hash &orderId)
+  {
+    const std::string orderIdHex = Common::podToHex(orderId);
+    try {
+      std::string transactionHash;
+      green.cancelLimitOrderV13(orderId, currency.minimumFee(), CryptoNote::parameters::MIN_TX_MIXIN_SIZE,
+                                transactionHash, false);
+      logger(Logging::INFO) << "Withdrawing ended limit order " << orderIdHex << " in transaction " << transactionHash;
+    } catch (std::exception &x) {
+      logger(Logging::WARNING, Logging::BRIGHT_YELLOW) << "Could not withdraw ended limit order " << orderIdHex
+                                                       << ": " << x.what();
+    }
+  }
+
+  std::error_code WalletService::devDonate(uint64_t amount, std::string &transactionHash)
   {
     try
     {
@@ -2925,7 +3018,7 @@ namespace PaymentService
         return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
       }
       Crypto::Hash txHash{};
-      std::error_code ec = green->devFundBurn(amount, txHash);
+      std::error_code ec = green->devDonate(amount, txHash);
       if (ec) {
         return ec;
       }
@@ -2933,7 +3026,7 @@ namespace PaymentService
     }
     catch (std::system_error &x)
     {
-      logger(Logging::WARNING) << "dev_fund_burn: " << x.what();
+      logger(Logging::WARNING) << "dev_donate: " << x.what();
       return x.code();
     }
     return std::error_code();
@@ -2951,8 +3044,20 @@ namespace PaymentService
       if (!green) {
         return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
       }
+      std::string addr = ownerAddress;
+      if (addr.empty() && wallet.getAddressCount() > 0) {
+        addr = wallet.getAddress(0);
+      }
       Crypto::Hash txHash{};
-      std::error_code ec = green->registerAlias(alias, ownerAddress, txHash);
+      std::error_code ec = green->registerAlias(alias, addr, txHash);
+      // The alias owner subaddress joined the container; save it even when the
+      // relay reported an error, as the node may hold the registration. A save
+      // that fails is logged and never replaces the registration's result.
+      try {
+        saveWallet();
+      } catch (const std::exception& saveError) {
+        logger(Logging::WARNING) << "register_alias: wallet not saved: " << saveError.what();
+      }
       if (ec) {
         return ec;
       }

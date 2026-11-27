@@ -85,6 +85,9 @@ namespace CryptoNote
     struct TransactionHashIndex
     {
     };
+    struct DepositOutputIndex
+    {
+    };
     struct TransactionIndex
     {
     };
@@ -123,8 +126,11 @@ namespace CryptoNote
         CryptoNote::Deposit,
         boost::multi_index::indexed_by<
             boost::multi_index::random_access<boost::multi_index::tag<RandomAccessIndex>>,
-            boost::multi_index::hashed_unique<boost::multi_index::tag<TransactionIndex>,
-                                              boost::multi_index::member<CryptoNote::Deposit, Crypto::Hash, &CryptoNote::Deposit::transactionHash>>,
+            boost::multi_index::hashed_unique<boost::multi_index::tag<DepositOutputIndex>,
+                                              boost::multi_index::composite_key<
+                                                  CryptoNote::Deposit,
+                                                  boost::multi_index::member<CryptoNote::Deposit, Crypto::Hash, &CryptoNote::Deposit::transactionHash>,
+                                                  boost::multi_index::member<CryptoNote::Deposit, uint32_t, &CryptoNote::Deposit::outputInTransaction>>>,
             boost::multi_index::ordered_non_unique<boost::multi_index::tag<BlockHeightIndex>,
                                                    boost::multi_index::member<CryptoNote::Deposit, uint64_t, &CryptoNote::Deposit::height>>>>
          WalletDeposits;

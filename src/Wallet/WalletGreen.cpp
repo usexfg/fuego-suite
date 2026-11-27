@@ -16,6 +16,7 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "WalletGreen.h"
+#include "WalletLegacy/WalletOperations.h"
 
 #include <algorithm>
 #include <array>
@@ -70,30 +71,6 @@ using namespace Logging;
 
 namespace
 {
-  // Dynamax for commitment/HEAT rings: probe at maxMixin, settle on largest of
-  // {32,16,8} achievable from available same-amount outs (including the real).
-  // When the HEAT decoy pool is empty at launch, allow ring size 1 (real only)
-  // so txs can still clear — pool grows as mints/deposits land.
-  size_t pickDynamaxCommitmentRingSize(size_t availableSameAmount, size_t maxRing, size_t minRingMainnet) {
-    if (availableSameAmount == 0) {
-      return 1; // should not happen (at least the real exists when building)
-    }
-    std::vector<CryptoNote::OutputInfo> infos;
-    infos.emplace_back(0, availableSameAmount);
-    // minRing=0 allows bootstrap below 8 when pool is thin (HEAT launch)
-    size_t opt = CryptoNote::DynamicRingSizeCalculator::calculateOptimalRingSize(
-      0, infos, CryptoNote::BLOCK_MAJOR_VERSION_10, /*minRing*/0, maxRing);
-    if (opt == 0) {
-      // No approved 8/16/32 fit — use whatever we have (bootstrap), at least 1
-      return std::min(availableSameAmount, maxRing);
-    }
-    // Prefer not to go below mainnet min when pool can support it
-    if (opt < minRingMainnet && availableSameAmount >= minRingMainnet) {
-      return minRingMainnet;
-    }
-    return opt;
-  }
-
   uint64_t normalizeMixinProbe(uint64_t mixin, size_t maxMixin) {
     // Clients may pass 0 meaning "default"; treat as max probe for dynamax.
     if (mixin == 0) {
@@ -176,22 +153,6 @@ namespace
   {
     bool isSubaddress = false;
     parseAddressString(string, currency, address, isSubaddress);
-  }
-
-  void publishPerOutputTxKeys(CryptoNote::ITransaction &transaction, CryptoNote::SubaddressTxKeys keys)
-  {
-    const Crypto::PublicKey mainTxPublicKey = transaction.getTransactionPublicKey();
-    while (keys.additionalPubKeys.size() < transaction.getOutputCount())
-    {
-      keys.additionalPubKeys.push_back(mainTxPublicKey);
-      keys.janusBases.push_back(CryptoNote::unlinkableJanusFiller());
-    }
-    std::vector<uint8_t> encoded;
-    if (!CryptoNote::encodeSubaddressTxKeys(keys, encoded))
-    {
-      throw std::system_error(make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR), "subaddress tx keys extra failed");
-    }
-    transaction.appendExtra(CryptoNote::BinaryArray(encoded.begin(), encoded.end()));
   }
 
   uint64_t countNeededMoney(
@@ -447,7 +408,7 @@ namespace CryptoNote
       }
       if (claimInfo.bonusVaultBalance < claimInfo.claimableBonus) {
         m_logger(WARNING, BRIGHT_YELLOW)
-            << "Bonus vault cannot back the full tier bonus for deposit "
+            << "Bonus vault cannot back the full yield-floor bonus for deposit "
             << depositId << " (" << claimInfo.claimableBonus << " bonus, "
             << claimInfo.bonusVaultBalance << " HEAT BV backing) — rare event.";
       }
@@ -575,7 +536,7 @@ namespace CryptoNote
       std::error_code nodeError;
 
       throwIfStopped();
-      m_node.getRandomCommitmentOutsForAmount(deposit.amount, m_currency.maxMixin(), deposit.height, decoys,
+      m_node.getRandomCommitmentOutsForAmount(deposit.amount, m_currency.maxMixin(), deposit.height, deposit.term, decoys,
         [&requestFinished, &nodeError, this](std::error_code ec) {
           nodeError = ec;
           this->m_dispatcher.remoteSpawn(std::bind(asyncRequestCompletion, std::ref(requestFinished)));
@@ -869,7 +830,7 @@ namespace CryptoNote
       std::error_code nodeError;
 
       throwIfStopped();
-      m_node.getRandomCommitmentOutsForAmount(deposit.amount, m_currency.maxMixin(), deposit.height, decoys,
+      m_node.getRandomCommitmentOutsForAmount(deposit.amount, m_currency.maxMixin(), deposit.height, deposit.term, decoys,
         [&requestFinished, &nodeError, this](std::error_code ec) {
           nodeError = ec;
           this->m_dispatcher.remoteSpawn(std::bind(asyncRequestCompletion, std::ref(requestFinished)));
@@ -1086,7 +1047,7 @@ namespace CryptoNote
       std::error_code nodeError;
 
       throwIfStopped();
-      m_node.getRandomCommitmentOutsForAmount(deposit.amount, m_currency.maxMixin(), deposit.height, decoys,
+      m_node.getRandomCommitmentOutsForAmount(deposit.amount, m_currency.maxMixin(), deposit.height, deposit.term, decoys,
         [&requestFinished, &nodeError, this](std::error_code ec) {
           nodeError = ec;
           this->m_dispatcher.remoteSpawn(std::bind(asyncRequestCompletion, std::ref(requestFinished)));
@@ -1445,16 +1406,17 @@ namespace CryptoNote
       auto decoys = decoysByAmount.find(dep.amount);
       if (decoys == decoysByAmount.end()) {
         std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry> fetched;
+        const uint32_t anyCreationHeight = 0;
         System::Event requestFinished(m_dispatcher);
         std::error_code nodeError;
-        m_node.getRandomCommitmentOutsForAmount(dep.amount, mixin, dep.height, fetched,
+        m_node.getRandomCommitmentOutsForAmount(dep.amount, mixin, anyCreationHeight, dep.term, fetched,
           [&requestFinished, &nodeError, this](std::error_code ec) {
             nodeError = ec;
             this->m_dispatcher.remoteSpawn(std::bind(asyncRequestCompletion, std::ref(requestFinished)));
           });
         requestFinished.wait();
         if (nodeError) {
-          fetched.clear();  // no HEAT decoys yet at launch: bootstrap ring
+          throw std::system_error(nodeError, "Unable to fetch HEAT ring members");
         }
         decoys = decoysByAmount.emplace(dep.amount, std::move(fetched)).first;
       }
@@ -1481,7 +1443,7 @@ namespace CryptoNote
           candidates.push_back(d);
         }
       }
-      const size_t targetRing = pickDynamaxCommitmentRingSize(
+      const size_t targetRing = CryptoNote::DynamicRingSizeCalculator::commitmentRingSize(
         candidates.size() + 1, m_currency.maxMixin(), m_currency.minMixin(CryptoNote::BLOCK_MAJOR_VERSION_10));
       const size_t numDecoys = std::min(candidates.size(), targetRing > 0 ? targetRing - 1 : 0);
       const size_t ringSize = numDecoys + 1;
@@ -1533,7 +1495,7 @@ namespace CryptoNote
       }
     }
     std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount> mixinResult;
-    requestMixinOuts(selectedTransfers, mixin, mixinResult);
+    mixin = requestMixinOuts(selectedTransfers, mixin, mixinResult);
     prepareInputs(selectedTransfers, mixinResult, mixin, keysInfo);
   }
 
@@ -1666,7 +1628,7 @@ namespace CryptoNote
     // XFG inputs with KeyInput ring signatures (dynamax probe mixin)
     typedef CryptoNote::COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount outs_for_amount;
     std::vector<outs_for_amount> mixinResult;
-    requestMixinOuts(selectedTransfers, mixin, mixinResult);
+    mixin = requestMixinOuts(selectedTransfers, mixin, mixinResult);
 
     std::vector<InputInfo> keysInfo;
     prepareInputs(selectedTransfers, mixinResult, mixin, keysInfo);
@@ -1784,7 +1746,7 @@ namespace CryptoNote
 
     typedef CryptoNote::COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount outs_for_amount;
     std::vector<outs_for_amount> mixinResult;
-    requestMixinOuts(selectedTransfers, mixin, mixinResult);
+    mixin = requestMixinOuts(selectedTransfers, mixin, mixinResult);
     std::vector<InputInfo> keysInfo;
     prepareInputs(selectedTransfers, mixinResult, mixin, keysInfo);
     for (auto &input : keysInfo) {
@@ -1921,7 +1883,7 @@ namespace CryptoNote
     transaction->appendExtra(CryptoNote::BinaryArray(extra.begin(), extra.end()));
     typedef CryptoNote::COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount outs_for_amount;
     std::vector<outs_for_amount> mixinResult;
-    requestMixinOuts(selectedTransfers, mixin, mixinResult);
+    mixin = requestMixinOuts(selectedTransfers, mixin, mixinResult);
     std::vector<InputInfo> keysInfo;
     prepareInputs(selectedTransfers, mixinResult, mixin, keysInfo);
     for (auto &input : keysInfo) {
@@ -2137,14 +2099,13 @@ namespace CryptoNote
     poolOut.term = parameters::DEPOSIT_TERM_POOL_HEAT;
     transaction->addOutput(inputAmount, poolOut);
 
-    // User receives XFG commitment (SWRX)
-    uint64_t netXfg = (outputAmount > fee) ? (outputAmount - fee) : 0;
-    if (netXfg > 0) {
-      const size_t commitIdx = static_cast<size_t>(transaction->getOutputCount());
-      CryptoNote::TransactionOutputCommitment receiveOut;
-      receiveOut.commitKey = deriveSelfCommitmentKey(*transaction, commitIdx);
-      receiveOut.term = parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG;
-      transaction->addOutput(netXfg, receiveOut);
+    // The proceeds, net of the network fee, are ordinary XFG.
+    if (outputAmount <= fee) {
+      throw std::system_error(make_error_code(error::WRONG_AMOUNT), "Swap proceeds do not cover the network fee");
+    }
+    const auto &primaryWallet = m_walletsContainer.get<RandomAccessIndex>()[0];
+    for (uint64_t chunk : split(outputAmount - fee, m_currency.defaultDustThreshold())) {
+      transaction->addOutput(chunk, standardDerivationAddressFor(primaryWallet));
     }
 
     // HEAT change (FOREVER)
@@ -2224,34 +2185,20 @@ namespace CryptoNote
     std::unique_ptr<ITransaction> transaction = createOutgoingTransaction(m_currency, m_node.getLastKnownBlockHeight());
     uint64_t changeAmount = (totalHeat > amount) ? (totalHeat - amount) : 0;
 
-    Crypto::SecretKey txSecret;
-    if (!transaction->getTransactionSecretKey(txSecret)) {
-      throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR),
-                              "HEAT send: missing tx secret key");
-    }
-
-    const size_t rcptIdx = static_cast<size_t>(transaction->getOutputCount());
-    SubaddressTxKeys outputTxKeys;
-    Crypto::KeyDerivation rcptEcdh;
     if (recipientIsSubaddress) {
-      OutputTxKey rcptKey;
-      if (!deriveOutputTxKey(txSecret, rcptIdx, recipientAddr, true, rcptKey)) {
-        throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR),
-                                "HEAT send: subaddress tx key derivation failed");
+      AccountKeys sender;
+      sender.address = AccountPublicAddress{m_walletsContainer.get<RandomAccessIndex>().front().spendPublicKey, m_viewPublicKey};
+      sender.viewSecretKey = m_viewSecretKey;
+      try {
+        transaction->sendToOneSubaddress(recipientAddr, sender);
+      } catch (...) {
+        CryptoNote::wipeSecretKey(sender.viewSecretKey);
+        throw;
       }
-      rcptEcdh = rcptKey.derivation;
-      outputTxKeys.additionalPubKeys.push_back(rcptKey.txPublicKey);
-      outputTxKeys.janusBases.push_back(rcptKey.janusBase);
-    } else if (!Crypto::generate_key_derivation(recipientAddr.viewPublicKey, txSecret, rcptEcdh)) {
-      throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR),
-                              "HEAT send: ECDH derivation failed");
+      CryptoNote::wipeSecretKey(sender.viewSecretKey);
     }
     CryptoNote::TransactionOutputCommitment rcptOut;
-    if (!CryptoNote::deriveCommitmentOutputKey(
-          rcptEcdh, rcptIdx, recipientAddr.spendPublicKey, rcptOut.commitKey)) {
-      throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR),
-                              "HEAT send: commitment key derivation failed");
-    }
+    rcptOut.commitKey = deriveCommitmentKeyFor(*transaction, transaction->getOutputCount(), recipientAddr, recipientIsSubaddress);
     rcptOut.term = parameters::HEAT_TERM;
     transaction->addOutput(amount, rcptOut);
 
@@ -2276,9 +2223,6 @@ namespace CryptoNote
     // before any is signed.
     std::vector<InputInfo> keysInfo;
     prepareXfgInputs(*transaction, fee, mixin, keysInfo);
-    if (recipientIsSubaddress) {
-      publishPerOutputTxKeys(*transaction, outputTxKeys);
-    }
     addAndSignInputs(*transaction, keysInfo, prepareHeatSpends(selectedDepositIds, mixin));
 
     transactionHash = Common::podToHex(transaction->getTransactionHash());
@@ -2940,7 +2884,8 @@ namespace CryptoNote
     containerData.assign(decrypted.begin() + 32, decrypted.end());
   }
 
-  void WalletGreen::loadWalletCache(std::unordered_set<Crypto::PublicKey> &addedKeys, std::unordered_set<Crypto::PublicKey> &deletedKeys, std::string &extra)
+  void WalletGreen::loadWalletCache(std::unordered_set<Crypto::PublicKey> &addedKeys, std::unordered_set<Crypto::PublicKey> &deletedKeys, std::string &extra,
+                                    bool &transfersNeedRescan)
   {
     assert(m_containerStorage.isOpened());
 
@@ -2969,6 +2914,7 @@ namespace CryptoNote
     s.load(containerStream, reinterpret_cast<const ContainerStoragePrefix *>(m_containerStorage.prefix())->version);
     addedKeys = std::move(s.addedKeys());
     deletedKeys = std::move(s.deletedKeys());
+    transfersNeedRescan = s.transfersNeedRescan();
 
     m_logger(INFO) << "Container cache loaded";
   }
@@ -3247,13 +3193,16 @@ namespace CryptoNote
         {
           std::unordered_set<Crypto::PublicKey> addedSpendKeys;
           std::unordered_set<Crypto::PublicKey> deletedSpendKeys;
-          loadWalletCache(addedSpendKeys, deletedSpendKeys, extra);
+          bool transfersNeedRescan = false;
+          loadWalletCache(addedSpendKeys, deletedSpendKeys, extra, transfersNeedRescan);
           recordAddressKindsFromCache();
           applySubaddressJanusPolicy();
 
-          if (!addedSpendKeys.empty())
+          if (!addedSpendKeys.empty() || transfersNeedRescan)
           {
-            m_logger(WARNING, BRIGHT_YELLOW) << "Found addresses not saved in container cache. Resynchronize container";
+            m_logger(WARNING, BRIGHT_YELLOW) << (transfersNeedRescan
+                ? "Transfers cache predates commitment spend tracking. Resynchronize container"
+                : "Found addresses not saved in container cache. Resynchronize container");
             clearCaches(false, true);
             subscribeWallets();
           }
@@ -3264,7 +3213,7 @@ namespace CryptoNote
             deleteOrphanTransactions(deletedSpendKeys);
           }
 
-          if (!addedSpendKeys.empty() || !deletedSpendKeys.empty())
+          if (!addedSpendKeys.empty() || !deletedSpendKeys.empty() || transfersNeedRescan)
           {
             saveWalletCache(m_containerStorage, m_key, WalletSaveLevel::SAVE_ALL, extra);
           }
@@ -3815,25 +3764,6 @@ namespace CryptoNote
     return doCreateAddress(subaddress);
   }
 
-  // An alias owner is a funsa subaddress of this wallet: the one the caller
-  // names, or the next unused minor of major 0, which a restore scans.
-  std::string WalletGreen::aliasOwnerSubAddress(const std::string& requestedOwner)
-  {
-    const std::vector<SubAddressInfo> owned = getSubAddresses();
-    if (!requestedOwner.empty()) {
-      for (const auto& sub : owned) {
-        if (sub.address == requestedOwner) return requestedOwner;
-      }
-      throw std::system_error(make_error_code(error::BAD_ADDRESS),
-                              "Alias owner must be a funsa subaddress of this wallet");
-    }
-    uint32_t nextMinor = 1;
-    for (const auto& sub : owned) {
-      if (sub.major == 0 && sub.minor >= nextMinor) nextMinor = sub.minor + 1;
-    }
-    return createSubAddress(0, nextMinor);
-  }
-
   std::vector<SubAddressInfo> WalletGreen::getSubAddresses() const
   {
     throwIfNotInitialized();
@@ -3874,10 +3804,10 @@ namespace CryptoNote
     std::vector<size_t> updatedTransactions = deleteTransfersForAddress(recordAddress, deletedTransactions);
     deleteFromUncommitedTransactions(deletedTransactions);
 
-    m_walletsContainer.get<KeysIndex>().erase(it);
-
-    auto addressIndex = std::distance(
+    // The position is read before the erase: the iterator is invalid after it.
+    const auto addressIndex = std::distance(
         m_walletsContainer.get<RandomAccessIndex>().begin(), m_walletsContainer.project<RandomAccessIndex>(it));
+    m_walletsContainer.get<KeysIndex>().erase(it);
 
     m_containerStorage.erase(std::next(m_containerStorage.begin(), addressIndex));
 
@@ -3961,9 +3891,10 @@ namespace CryptoNote
     throwIfNotInitialized();
     throwIfStopped();
 
+    const uint32_t currentHeight = getBlockCount();
     uint64_t total = 0;
     for (const auto& dep : m_deposits.get<RandomAccessIndex>()) {
-      if (dep.depositType == Deposit::Type::HEAT && dep.locked)
+      if (isWalletHeatTerm(dep.term) && dep.spendingTransactionId == WALLET_INVALID_TRANSACTION_ID && dep.unlockHeight > currentHeight)
         total += dep.amount + dep.interest;
     }
     return total;
@@ -3974,9 +3905,10 @@ namespace CryptoNote
     throwIfNotInitialized();
     throwIfStopped();
 
+    const uint32_t currentHeight = getBlockCount();
     uint64_t total = 0;
     for (const auto& dep : m_deposits.get<RandomAccessIndex>()) {
-      if (dep.depositType == Deposit::Type::HEAT && !dep.locked)
+      if (isWalletHeatTerm(dep.term) && dep.spendingTransactionId == WALLET_INVALID_TRANSACTION_ID && dep.unlockHeight <= currentHeight)
         total += dep.amount + dep.interest;
     }
     return total;
@@ -4105,7 +4037,7 @@ namespace CryptoNote
 
     if (mixIn != 0)
     {
-      requestMixinOuts(selectedTransfers, mixIn, mixinResult);
+      mixIn = requestMixinOuts(selectedTransfers, mixIn, mixinResult);
     }
 
     std::vector<InputInfo> keysInfo;
@@ -4973,7 +4905,9 @@ namespace CryptoNote
     return keys;
   }
 
-  void WalletGreen::requestMixinOuts(
+  // Returns the ring size the inputs take: the requested one, or on testnet,
+  // whose output pool is small, the fewest decoys the node had for any input.
+  uint64_t WalletGreen::requestMixinOuts(
       const std::vector<OutputToTransfer> &selectedTransfers,
       uint64_t mixIn,
       std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount> &mixinResult)
@@ -4997,11 +4931,41 @@ namespace CryptoNote
 
     requestFinished.wait();
 
-    checkIfEnoughMixins(mixinResult, mixIn);
-
     if (mixinError)
     {
       throw std::system_error(mixinError);
+    }
+
+    throwIfDecoysDoNotMatch(selectedTransfers, mixinResult, mixIn);
+    if (m_currency.isTestnet()) {
+      for (const auto &decoys : mixinResult) {
+        mixIn = std::min<uint64_t>(mixIn, decoys.outs.size());
+      }
+    }
+    checkIfEnoughMixins(mixinResult, mixIn);
+    return mixIn;
+  }
+
+  // The node answers one decoy set per selected input, in request order, for that
+  // input's amount. prepareInputs indexes the answer by input, so a node that
+  // answers fewer sets, or for other amounts, would be read past its end.
+  void WalletGreen::throwIfDecoysDoNotMatch(
+      const std::vector<OutputToTransfer> &selectedTransfers,
+      const std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount> &mixinResult,
+      uint64_t mixIn)
+  {
+    if (mixIn == 0 && mixinResult.empty())
+    {
+      return;
+    }
+    bool matches = mixinResult.size() == selectedTransfers.size();
+    for (size_t i = 0; matches && i < mixinResult.size(); ++i)
+    {
+      matches = mixinResult[i].amount == selectedTransfers[i].out.amount;
+    }
+    if (!matches)
+    {
+      throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR), "Node answered decoys that do not match the selected inputs");
     }
   }
 
@@ -5551,47 +5515,18 @@ namespace CryptoNote
            depositOutput.type == TransactionTypes::OutputType::Multisignature);
     assert(depositOutput.term != 0);
 
+    const bool timeLocked = isCdCommitmentTerm(depositOutput.term);
     Deposit deposit;
     deposit.amount = depositOutput.amount;
     deposit.creatingTransactionId = creatingTransactionId;
     deposit.term = depositOutput.term;
     deposit.spendingTransactionId = WALLET_INVALID_TRANSACTION_ID;
-    // Interest calculation removed - no on-chain interest
+    deposit.interest = 0;
     deposit.height = height;
-    deposit.unlockHeight = height + depositOutput.term;
-    deposit.locked = true;
-
-    // Populate depositType and extra from transaction extra field
+    deposit.unlockHeight = timeLocked ? height + depositOutput.term : height;
+    deposit.locked = timeLocked;
     deposit.extra = std::string(transactionExtra.begin(), transactionExtra.end());
-
-    // Parse transaction extra to determine deposit type and lock state
-    bool isMintAuth = false;
-    std::vector<TransactionExtraField> extraFields;
-    if (parseTransactionExtra(transactionExtra, extraFields)) {
-      for (const auto& field : extraFields) {
-        if (field.type() == typeid(TransactionExtraHeatMintAuth)) {
-          deposit.depositType = Deposit::Type::HEAT;
-          isMintAuth = true;
-          break;
-        } else if (field.type() == typeid(TransactionExtraHeatSendAuth)) {
-          deposit.depositType = Deposit::Type::HEAT;
-          break;
-        }
-        // REMOVED: 0xCB legacy bond detection (deposits default to HEAT below)
-        // REMOVED: COLD deposit type detection
-        // } else if (field.type() == typeid(TransactionExtraSimpleCD)) {
-        //   deposit.depositType = Deposit::Type::COLD;
-        //   break;
-        // }
-      }
-    } else {
-      deposit.depositType = Deposit::Type::HEAT;  // Default to HEAT (COLD removed)
-    }
-
-    // Mint outputs are spendable HEAT, not time-locked CDs.
-    if (isMintAuth) {
-      deposit.locked = false;
-    }
+    deposit.depositType = Deposit::Type::HEAT;
 
     return insertDeposit(deposit, depositOutput.outputInTransaction, depositOutput.transactionHash);
   }
@@ -5668,8 +5603,10 @@ namespace CryptoNote
 
     for (auto containerAmounts : containerAmountsList)
     {
-      auto newDepositOuts = containerAmounts.container->getTransactionOutputs(transactionInfo.transactionHash, ITransfersContainer::IncludeTypeDeposit | ITransfersContainer::IncludeStateAll);
-      auto spentDepositOutputs = containerAmounts.container->getTransactionInputs(transactionInfo.transactionHash, ITransfersContainer::IncludeTypeDeposit);
+      auto newDepositOuts = containerAmounts.container->getTransactionOutputs(transactionInfo.transactionHash,
+          ITransfersContainer::IncludeTypeDeposit | ITransfersContainer::IncludeTypeHeat | ITransfersContainer::IncludeStateAll);
+      auto spentDepositOutputs = containerAmounts.container->getTransactionInputs(transactionInfo.transactionHash,
+          ITransfersContainer::IncludeTypeDeposit | ITransfersContainer::IncludeTypeHeat);
 
       std::vector<DepositId> updatedDepositIds;
 
@@ -5682,6 +5619,10 @@ namespace CryptoNote
         {
           continue;
         }
+        if (getDepositId(newDepositOuts[i].transactionHash, newDepositOuts[i].outputInTransaction) != WALLET_INVALID_DEPOSIT_ID)
+        {
+          continue;
+        }
         auto id = insertNewDeposit(newDepositOuts[i], transactionId, m_currency, transactionInfo.blockHeight, transactionInfo.extra);
         updatedDepositIds.push_back(id);
       }
@@ -5689,11 +5630,10 @@ namespace CryptoNote
       /* Now check for any deposit withdrawals in the transactions */
       for (size_t i = 0; i < spentDepositOutputs.size(); i++)
       {
-        auto depositId = getDepositId(spentDepositOutputs[i].transactionHash);
-        assert(depositId != WALLET_INVALID_DEPOSIT_ID);
+        auto depositId = getDepositId(spentDepositOutputs[i].transactionHash, spentDepositOutputs[i].outputInTransaction);
         if (depositId == WALLET_INVALID_DEPOSIT_ID)
         {
-          throw std::invalid_argument("processSpentDeposits error: requested deposit doesn't exist");
+          continue;
         }
 
         auto info = m_deposits[depositId];
@@ -5765,11 +5705,12 @@ namespace CryptoNote
     return txId;
   }
 
-  size_t WalletGreen::getDepositId(const Hash &transactionHash) const
+  size_t WalletGreen::getDepositId(const Hash &transactionHash, uint32_t outputInTransaction) const
   {
-    auto it = m_deposits.get<TransactionIndex>().find(transactionHash);
+    const auto &outputIndex = m_deposits.get<DepositOutputIndex>();
+    auto it = outputIndex.find(boost::make_tuple(transactionHash, outputInTransaction));
 
-    if (it == m_deposits.get<TransactionIndex>().end())
+    if (it == outputIndex.end())
     {
       return WALLET_INVALID_DEPOSIT_ID;
     }
@@ -5890,7 +5831,8 @@ namespace CryptoNote
     bool updated = false;
 
     /* First get the available and pending balances from the container */
-    uint64_t actual = container->balance(ITransfersContainer::IncludeAllUnlocked);
+    uint64_t actual = container->balance(ITransfersContainer::IncludeTypeKey | ITransfersContainer::IncludeTypeMultisignature |
+                                         ITransfersContainer::IncludeStateUnlocked);
     uint64_t pending = container->balance(ITransfersContainer::IncludeKeyNotUnlocked);
 
     /* Now update the overall balance (getBalance without parameters) */
@@ -6064,54 +6006,23 @@ namespace CryptoNote
       throw std::system_error(make_error_code(error::WRONG_PARAMETERS),
                               "cannot derive a commitment output without an address");
     }
-
-    Crypto::SecretKey txSecretKey;
-    if (!transaction.getTransactionSecretKey(txSecretKey))
-    {
-      throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR),
-                              "commitment output: could not retrieve tx secret key");
-    }
-
-    Crypto::KeyDerivation ecdh;
-    if (!Crypto::generate_key_derivation(m_viewPublicKey, txSecretKey, ecdh))
-    {
-      throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR),
-                              "commitment output: ECDH derivation failed");
-    }
-
-    Crypto::PublicKey commitKey;
-    if (!CryptoNote::deriveCommitmentOutputKey(
-          ecdh, outputIndex, wallets.front().spendPublicKey, commitKey))
-    {
-      throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR),
-                              "commitment output: owner-bound key derivation failed");
-    }
-    return commitKey;
+    return deriveCommitmentKeyFor(transaction, outputIndex,
+                                  AccountPublicAddress{wallets.front().spendPublicKey, m_viewPublicKey}, false);
   }
 
-  Crypto::PublicKey WalletGreen::deriveRecipientCommitmentKey(
+  // The derivation comes from the transaction, so a commitment output follows
+  // its tx key form: the main key, or the single-subaddress form.
+  Crypto::PublicKey WalletGreen::deriveCommitmentKeyFor(
       const ITransaction& transaction,
       size_t outputIndex,
-      const Crypto::PublicKey& recipientViewPublicKey,
-      const Crypto::PublicKey& recipientSpendPublicKey)
+      const AccountPublicAddress& to,
+      bool toSubaddress)
   {
-    Crypto::SecretKey txSecretKey;
-    if (!transaction.getTransactionSecretKey(txSecretKey))
-    {
-      throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR),
-                              "commitment output: could not retrieve tx secret key");
-    }
-
-    Crypto::KeyDerivation ecdh;
-    if (!Crypto::generate_key_derivation(recipientViewPublicKey, txSecretKey, ecdh))
-    {
-      throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR),
-                              "commitment output: ECDH derivation failed");
-    }
-
+    Crypto::KeyDerivation ecdh = transaction.outputDerivation(to, toSubaddress);
     Crypto::PublicKey commitKey;
-    if (!CryptoNote::deriveCommitmentOutputKey(
-          ecdh, outputIndex, recipientSpendPublicKey, commitKey))
+    const bool derived = CryptoNote::deriveCommitmentOutputKey(ecdh, outputIndex, to.spendPublicKey, commitKey);
+    CryptoNote::wipeKeyDerivation(ecdh);
+    if (!derived)
     {
       throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR),
                               "commitment output: owner-bound key derivation failed");
@@ -6213,7 +6124,7 @@ namespace CryptoNote
     std::vector<outs_for_amount> mixinResult;
     if (mixin != 0)
     {
-      requestMixinOuts(fusionInputs, mixin, mixinResult);
+      mixin = requestMixinOuts(fusionInputs, mixin, mixinResult);
     }
 
     std::vector<InputInfo> keysInfo;
@@ -6405,12 +6316,13 @@ namespace CryptoNote
     auto walletOuts = sourceAddresses.empty() ? pickWalletsWithMoney() : pickWallets(sourceAddresses);
     std::array<size_t, std::numeric_limits<uint64_t>::digits10 + 1> bucketSizes;
     bucketSizes.fill(0);
+    const uint32_t knownHeight = m_node.getLastKnownBlockHeight();
     for (size_t walletIndex = 0; walletIndex < walletOuts.size(); ++walletIndex)
     {
       for (auto &out : walletOuts[walletIndex].outs)
       {
         uint8_t powerOfTen = 0;
-        if (m_currency.isAmountApplicableInFusionTransactionInput(out.amount, threshold, powerOfTen, m_node.getLastKnownBlockHeight()))
+        if (m_currency.isAmountApplicableInFusionTransactionInput(out.amount, threshold, powerOfTen, knownHeight))
         {
           assert(powerOfTen < std::numeric_limits<uint64_t>::digits10 + 1);
           bucketSizes[powerOfTen]++;
@@ -6439,12 +6351,13 @@ namespace CryptoNote
     auto walletOuts = addresses.empty() ? pickWalletsWithMoney() : pickWallets(addresses);
     std::array<size_t, std::numeric_limits<uint64_t>::digits10 + 1> bucketSizes;
     bucketSizes.fill(0);
+    const uint32_t knownHeight = m_node.getLastKnownBlockHeight();
     for (size_t walletIndex = 0; walletIndex < walletOuts.size(); ++walletIndex)
     {
       for (auto &out : walletOuts[walletIndex].outs)
       {
         uint8_t powerOfTen = 0;
-        if (m_currency.isAmountApplicableInFusionTransactionInput(out.amount, threshold, powerOfTen, m_node.getLastKnownBlockHeight()))
+        if (m_currency.isAmountApplicableInFusionTransactionInput(out.amount, threshold, powerOfTen, knownHeight))
         {
           allFusionReadyOuts.push_back({std::move(out), walletOuts[walletIndex].wallet});
           assert(powerOfTen < std::numeric_limits<uint64_t>::digits10 + 1);
@@ -6939,7 +6852,7 @@ namespace CryptoNote
     return m_currency.blockMajorVersionAtHeight(m_node.getLastKnownBlockHeight() + 1);
   }
 
-  std::error_code WalletGreen::devFundBurn(uint64_t amount, Crypto::Hash& txHashOut) {
+  std::error_code WalletGreen::devDonate(uint64_t amount, Crypto::Hash& txHashOut) {
     throwIfNotInitialized();
     throwIfTrackingMode();
     throwIfStopped();
@@ -6974,72 +6887,130 @@ namespace CryptoNote
     return {};
   }
 
+  void WalletGreen::forgetUnusedAliasSubaddress(const std::string& address)
+  {
+    try {
+      deleteAddress(address);
+    } catch (const std::exception& e) {
+      m_logger(WARNING, BRIGHT_YELLOW) << "Could not remove unused alias subaddress: " << e.what();
+    }
+  }
+
+  // The first alias-owner subaddress (ALIAS_SUBADDRESS_MAJOR, minor) that is
+  // neither in this container nor already an alias owner.
+  std::error_code WalletGreen::nextAliasSubaddress(const std::vector<INode::RegisteredAlias>& registered,
+                                                   std::string& address, uint32_t& minor)
+  {
+    std::set<std::string> ownerKeys;
+    for (const auto& entry : registered) {
+      AccountPublicAddress parsed;
+      bool isSubaddress = false;
+      if (m_currency.parseAccountAddressString(entry.ownerAddress, parsed, isSubaddress)) {
+        ownerKeys.insert(Common::podToHex(parsed.spendPublicKey) + Common::podToHex(parsed.viewPublicKey));
+      }
+    }
+    const WalletRecord& primary = m_walletsContainer.get<RandomAccessIndex>()[0];
+    for (minor = 1; minor <= CryptoNote::MAX_ALIAS_SUBADDRESS_MINOR; ++minor) {
+      const Crypto::SubAddressKeys keys = Crypto::deriveSubAddressKeysV2(
+          m_viewSecretKey, primary.spendPublicKey, nullptr, CryptoNote::ALIAS_SUBADDRESS_MAJOR, minor);
+      const AccountPublicAddress candidate{keys.spendPublicKey, keys.viewPublicKey};
+      address = m_currency.subAddressAsString(candidate);
+      if (!isMyAddress(address) &&
+          !ownerKeys.count(Common::podToHex(candidate.spendPublicKey) + Common::podToHex(candidate.viewPublicKey))) {
+        return {};
+      }
+    }
+    return make_error_code(error::ADDRESS_ALREADY_EXISTS);
+  }
+
   std::error_code WalletGreen::registerAlias(const std::string& alias,
                                               const std::string& ownerAddress,
                                               Crypto::Hash& txHashOut) {
     throwIfNotInitialized();
     throwIfStopped();
 
-    if (!CryptoNote::funsaSubaddressActivated(nextBlockMajorVersion())) {
-      return make_error_code(std::errc::operation_not_permitted);
+    if (m_walletsContainer.get<RandomAccessIndex>().empty()) {
+      return make_error_code(std::errc::not_connected);
     }
-
-    std::string owner;
     try {
-      owner = aliasOwnerSubAddress(ownerAddress);
+      if (!isMyAddress(ownerAddress)) {
+        return make_error_code(error::CHANGE_ADDRESS_NOT_FOUND);
+      }
     } catch (const std::system_error& e) {
       return e.code();
     }
-    CryptoNote::AccountPublicAddress ownerKeys;
-    bool ownerIsSubaddress = false;
-    if (!m_currency.parseAccountAddressString(owner, ownerKeys, ownerIsSubaddress) || !ownerIsSubaddress) {
+    if (!CryptoNote::isValidAliasName(alias) || !CryptoNote::funsaSubaddressActivated(nextBlockMajorVersion())) {
       return make_error_code(std::errc::invalid_argument);
     }
 
-    CryptoNote::TransactionExtraAliasRegistration aliasReg;
-    aliasReg.version      = 1;
-    aliasReg.alias        = alias;
-    aliasReg.aliasHash    = Crypto::cn_fast_hash(alias.data(), alias.size());
-    aliasReg.addressHash  = CryptoNote::aliasOwnerHash(ownerKeys);
-    aliasReg.ownerAddress = owner;
+    // One request lists every alias, so the node never learns which candidate
+    // subaddresses belong to this wallet.
+    std::vector<INode::RegisteredAlias> registered;
+    if (std::error_code ec = m_node.getRegisteredAliases(registered)) {
+      return ec;
+    }
+    for (const auto& entry : registered) {
+      if (entry.alias == alias) {
+        return make_error_code(std::errc::address_in_use);
+      }
+    }
+    std::string aliasOwner;
+    uint32_t aliasMinor = 0;
+    if (std::error_code ec = nextAliasSubaddress(registered, aliasOwner, aliasMinor)) {
+      return ec;
+    }
 
-    aliasReg.aliasType = 1;      // Regular user alias [a-z0-9&]
-    aliasReg.networkId = m_currency.getFuegoNetworkId();
-
-    if (!aliasReg.isValid()) {
+    CryptoNote::WalletSendPlan plan;
+    try {
+      plan = CryptoNote::planAliasRegistration(m_currency, alias, aliasOwner, nextBlockMajorVersion());
+    } catch (const std::invalid_argument&) {
       return make_error_code(std::errc::invalid_argument);
     }
-
-    std::vector<uint8_t> extraVec;
-    if (!CryptoNote::addAliasToExtra(extraVec, aliasReg)) {
-      return make_error_code(std::errc::invalid_argument);
-    }
-
-    // From v11 the registration fee is a re-mint burn: it rides in the
-    // transaction fee and consensus withholds it, so no output pays the dev
-    // wallet.
-    const bool burnsFee = !m_currency.isTestnet();
-    if (burnsFee) {
-      CryptoNote::addRemintBurnToExtra(extraVec, CryptoNote::parameters::ALIAS_REGISTRATION_FEE);
-    }
-    std::string extra(extraVec.begin(), extraVec.end());
 
     TransactionParameters params;
-    WalletOrder selfOutput;
-    selfOutput.address = aliasReg.ownerAddress;
-    selfOutput.amount  = m_currency.minimumFee();
-    params.destinations.push_back(selfOutput);
-    params.fee   = m_currency.minimumFee() + (burnsFee ? CryptoNote::parameters::ALIAS_REGISTRATION_FEE : 0);
+    uint64_t needed = plan.fee;
+    for (const auto& transfer : plan.transfers) {
+      WalletOrder order;
+      order.address = transfer.address;
+      order.amount = static_cast<uint64_t>(transfer.amount);
+      needed += order.amount;
+      params.destinations.push_back(order);
+    }
+    if (getActualBalance() < needed) {
+      return make_error_code(error::WRONG_AMOUNT);
+    }
+    params.fee   = plan.fee;
     params.mixIn = m_currency.minMixin(CryptoNote::BLOCK_MAJOR_VERSION_10);
-    params.extra = extra;
+    params.extra = plan.extra;
+    params.changeDestination = ownerAddress;
 
+    // The owner subaddress joins the container only for a registration that is
+    // sent; a send that fails leaves the container as it was.
+    try {
+      if (createSubAddress(CryptoNote::ALIAS_SUBADDRESS_MAJOR, aliasMinor) != aliasOwner) {
+        forgetUnusedAliasSubaddress(aliasOwner);
+        return make_error_code(error::INTERNAL_WALLET_ERROR);
+      }
+    } catch (const std::system_error& e) {
+      return e.code();
+    }
+    // A send that recorded a transaction may have reached the node even though
+    // relaying reported an error, so its owner subaddress stays; one that failed
+    // before recording anything leaves the container as it was.
+    const size_t transactionsBefore = getTransactionCount();
     Crypto::SecretKey txSK;
     size_t txIdx;
     try {
       txIdx = transfer(params, txSK);
     } catch (const std::system_error& e) {
+      if (getTransactionCount() == transactionsBefore) {
+        forgetUnusedAliasSubaddress(aliasOwner);
+      }
       return e.code();
     } catch (...) {
+      if (getTransactionCount() == transactionsBefore) {
+        forgetUnusedAliasSubaddress(aliasOwner);
+      }
       return make_error_code(std::errc::io_error);
     }
 

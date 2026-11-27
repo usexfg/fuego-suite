@@ -117,13 +117,14 @@ public:
   // Register an 8-character alias on-chain.  Builds the 0xEA extra, adds the mandatory
   // ALIAS_REGISTRATION_FEE output to the Fuego Developer Fund (mainnet only), and
   // submits the transaction.  On success, txHashOut receives the transaction hash.
-  // ownerAddress: empty for a new funsa subaddress, or one this wallet holds.
   std::error_code registerAlias(const std::string& alias, const std::string& ownerAddress, Crypto::Hash& txHashOut);
-  std::string aliasOwnerSubAddress(const std::string& requestedOwner);
+  std::error_code nextAliasSubaddress(const std::vector<INode::RegisteredAlias>& registered, std::string& address,
+                                      uint32_t& minor);
+  void forgetUnusedAliasSubaddress(const std::string& address);
   // Burns `amount` XFG as a re-mint burn (TX_EXTRA_REMINT_BURN, v11+): its own
   // counter, re-minted to the dev fund each quarter in one coinbase output.
   // The only output is the network minimum back to this wallet.
-  std::error_code devFundBurn(uint64_t amount, Crypto::Hash& txHashOut);
+  std::error_code devDonate(uint64_t amount, Crypto::Hash& txHashOut);
 
   // Look up the alias registered for a given wallet address.
   // Delegates to m_node via /get_alias_by_address (INode::getAliasByAddress if available,
@@ -242,14 +243,14 @@ protected:
   // output in this wallet routes through here so none can silently fall back to
   // the sender/view-key-spendable legacy derivation.
   Crypto::PublicKey deriveSelfCommitmentKey(const ITransaction& transaction, size_t outputIndex);
-  // Same, but for an output owned by a third party. `recipientViewPublicKey`
-  // drives the ECDH (delivery) and `recipientSpendPublicKey` binds ownership,
-  // so the recipient can spend the output but the sender cannot.
-  Crypto::PublicKey deriveRecipientCommitmentKey(
+  // Same, for an output to `to`. The transaction supplies the ECDH derivation, so
+  // the key follows its tx key form; `to`'s spend key binds ownership, so the
+  // recipient can spend the output but the sender cannot.
+  Crypto::PublicKey deriveCommitmentKeyFor(
     const ITransaction& transaction,
     size_t outputIndex,
-    const Crypto::PublicKey& recipientViewPublicKey,
-    const Crypto::PublicKey& recipientSpendPublicKey);
+    const AccountPublicAddress& to,
+    bool toSubaddress);
   // Recovers the scalar and key image needed to sign a CommitmentSpend for an
   // existing deposit. Owner-bound outputs require the recipient spend secret;
   // legacy outputs fall back to the original ECDH-derived scalar so pre-v11
@@ -373,7 +374,7 @@ protected:
   void applySubaddressJanusPolicy();
   AccountKeys makeAccountKeys(const WalletRecord &wallet) const;
   size_t getTransactionId(const Crypto::Hash &transactionHash) const;
-  size_t getDepositId(const Crypto::Hash &transactionHash) const;
+  size_t getDepositId(const Crypto::Hash &transactionHash, uint32_t outputInTransaction) const;
   void pushEvent(const WalletEvent &event);
   bool isFusionTransaction(const WalletTransaction &walletTx) const;
 
@@ -435,7 +436,9 @@ protected:
   void addAndSignInputs(ITransaction &transaction, std::vector<InputInfo> &keysInfo,
                         const std::vector<HeatSpend> &heatSpends);
 
-  void requestMixinOuts(const std::vector<OutputToTransfer> &selectedTransfers,
+  static void throwIfDecoysDoNotMatch(const std::vector<OutputToTransfer>& selectedTransfers,
+      const std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount>& mixinResult, uint64_t mixIn);
+  uint64_t requestMixinOuts(const std::vector<OutputToTransfer> &selectedTransfers,
                         uint64_t mixIn,
                         std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount> &mixinResult);
 
@@ -489,7 +492,8 @@ protected:
   void initTransactionPool();
   static void loadAndDecryptContainerData(ContainerStorage& storage, const Crypto::chacha8_key& key, BinaryArray& containerData);
   static void encryptAndSaveContainerData(ContainerStorage& storage, const Crypto::chacha8_key& key, const void* containerData, size_t containerDataSize);
-  void loadWalletCache(std::unordered_set<Crypto::PublicKey>& addedKeys, std::unordered_set<Crypto::PublicKey>& deletedKeys, std::string& extra);
+  void loadWalletCache(std::unordered_set<Crypto::PublicKey>& addedKeys, std::unordered_set<Crypto::PublicKey>& deletedKeys, std::string& extra,
+                       bool& transfersNeedRescan);
 
   void copyContainerStorageKeys(ContainerStorage& src, const Crypto::chacha8_key& srcKey, ContainerStorage& dst, const Crypto::chacha8_key& dstKey);
   static void copyContainerStoragePrefix(ContainerStorage& src, const Crypto::chacha8_key& srcKey, ContainerStorage& dst, const Crypto::chacha8_key& dstKey);

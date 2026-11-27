@@ -350,11 +350,13 @@ struct COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS {
     uint64_t amount;
     uint64_t outs_count;
     uint32_t max_height = 0;
+    uint32_t ring_term = 0;
 
     void serialize(ISerializer& s) {
       KV_MEMBER(amount)
       KV_MEMBER(outs_count)
       KV_MEMBER(max_height)
+      KV_MEMBER(ring_term)
     }
   };
 
@@ -1278,9 +1280,9 @@ struct COMMAND_RPC_CANCEL_LIMIT_ORDER {
 };
 struct COMMAND_RPC_GET_LIMIT_ORDERS {
   struct request {
-    bool active_only;
-    uint32_t limit;
-    uint32_t offset;
+    bool active_only = false;
+    uint32_t limit = 0;
+    uint32_t offset = 0;
     void serialize(ISerializer &s) {
       KV_MEMBER(active_only)
       KV_MEMBER(limit)
@@ -2063,7 +2065,7 @@ struct COMMAND_RPC_GET_FEE_POOL_INFO {
   struct response {
     uint64_t fee_pool_balance;          // 69% CD yield pool
     uint64_t treasury_balance;          // 20% treasury reserve
-    uint64_t bonus_vault_balance;       // 11% bonus vault (loyalty + tier bonuses)
+    uint64_t bonus_vault_balance;       // Bonus Vault: minimum CD yield in lean epochs
     uint64_t rollover_vault_balance;    // deprecated, kept for compat
     uint64_t current_epoch_swap_fees;
     uint64_t total_cd_locked;
@@ -2146,7 +2148,7 @@ struct COMMAND_RPC_ESTIMATE_CD_YIELD {
     uint64_t fee_pool_balance = 0;       // HEAT backing available for CD interest claims
     uint64_t cd_apy_vault_balance = 0;   // CD_APY_POOL vault partition, HEAT
     uint64_t claimable_interest = 0;     // min(estimated, pool, vault) — what consensus accepts
-    uint64_t base_interest = 0;          // v13+: pool-backed base portion (no loyalty)
+    uint64_t base_interest = 0;          // pool-backed base portion
     uint64_t bonus_interest = 0;         // v13+: BV-backed tier bonus (realized inflows)
     uint64_t bonus_vault_balance = 0;    // v13+: BONUS_VAULT counter, HEAT
     uint64_t claimable_bonus = 0;        // v13+: min(bonus_interest, bonus vault)
@@ -2180,7 +2182,7 @@ struct COMMAND_RPC_GET_TREASURY_INFO {
     uint64_t treasury_counter_xfg;  // unconverted treasury fee share (LP pairing source)
     uint64_t treasury_heat_reserve; // HEAT leg for Treasury LP Manager
     uint64_t swf_burned_xfg_pending_heat; // already-burned XFG held only by SWF
-    uint64_t bonus_vault_balance;   // HEAT-denominated CD loyalty vault (v12+)
+    uint64_t bonus_vault_balance;   // Bonus Vault: minimum CD yield in lean epochs (v12+)
     uint64_t fee_pool_balance;      // HEAT backing CD interest claims
     uint64_t total_burned_xfg;      // overall burn tally
     std::string status;
@@ -2793,17 +2795,17 @@ struct COMMAND_RPC_AMM_POOL_INFO {
   typedef EMPTY_STRUCT request;
 
   struct response {
-    uint64_t reserve_xfg;
-    uint64_t reserve_heat;
-    uint64_t total_lp_shares;
-    uint64_t spot_price;
-    uint64_t epoch_swap_fees;
-    uint64_t hearth_twap;
-    uint64_t height;
+    uint64_t reserve_xfg = 0;
+    uint64_t reserve_heat = 0;
+    uint64_t total_lp_shares = 0;
+    uint64_t spot_price = 0;
+    uint64_t epoch_swap_fees = 0;
+    uint64_t hearth_twap = 0;
+    uint64_t height = 0;
     // Taker-fee split in force at `height`: the CD share of the 1% Hearth fee
     // (percent). v11 = 30, v12 = 70. Wallets quote against this rather than
     // assuming one version's split.
-    uint64_t hearth_cd_share_pct;
+    uint64_t hearth_cd_share_pct = 0;
     std::string status;
     void serialize(ISerializer &s) {
       KV_MEMBER(reserve_xfg)

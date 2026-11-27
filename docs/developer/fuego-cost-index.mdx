@@ -1,11 +1,11 @@
 ---
 title: Fuego Cost Index (FCI)
-description: How miners vote consumer prices into the basket that re-bases HEAT's hearthstone quarterly, and how to participate.
+description: How miners vote consumer prices into the basket that will re-base HEAT's hearthstone quarterly from v12, and how to participate.
 ---
 
 # Fuego Cost Index (FCI)
 
-The FCI is the basket that re-bases HEAT's hearthstone quarterly. Miners vote six consumer prices; the daemon aggregates them into a single index and the chain re-bases the hearthstone from it. This page explains how to participate as a miner.
+The FCI is the basket that re-bases HEAT's hearthstone quarterly. Miners vote six consumer prices; the daemon aggregates them into a single index and, from v12, the chain re-bases the hearthstone from it. Under v11 the FCI records miner votes and runs every step (epoch close, trimmed medians, quorum, freshness, the index) but does not change the hearthstone and pays no DIGM rewards to FCI-voting blocks; both are reserved for v12. This page explains how to participate as a miner.
 
 ## Who this is for
 
@@ -104,7 +104,8 @@ It fetches the BLS headline series for all six commodities plus the headline CPI
 - Each block, miners with a configured basket include their vote in the coinbase transaction.
 - Per epoch (900 blocks mainnet, 10 testnet), votes are aggregated: per category a trimmed median (25% tail trimmed), requiring at least 351 miners.
 - A category counts as "fresh" for the quarter only if at least 3 of the 6 categories cleared their quorum that epoch.
-- Quarterly (18 epochs), the index re-bases HEAT's hearthstone, but only if at least 3 of the 6 categories were fresh in the quarter. The drift per quarter is capped at 5.04%.
+- From v12, quarterly (18 epochs), the index re-bases HEAT's hearthstone, but only if at least 3 of the 6 categories were fresh in the quarter. The drift per quarter is capped at 5.04%. Under v11 the quarter boundary is reached and the gate is evaluated, but the hearthstone stays at 158¢.
+- DIGM rewards to blocks that carry an FCI vote are reserved for v12; v11 pays none.
 - The hearthstone is anchored to the Day-0 basket, not compounded: `hearthstone = 158¢ × index ÷ 100`.
 
 ## Common mistakes

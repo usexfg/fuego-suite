@@ -472,8 +472,9 @@ TEST(CommitmentResolver, OwnerBoundOutputResolvesToOwnerBoundKeys) {
   }
 }
 
-// The legacy form is spendable by the sender and by any view-key holder, so since
-// 33e787a5 nothing resolves it: such an output is refused, not signed.
+// The legacy form is spendable by the sender and by any view-key holder, so the
+// wallet no longer resolves it (owner decision 2026-11-08, CHANGELOG.agent.md
+// "Remove legacy commitment derivation"). A legacy-keyed output is refused.
 TEST(CommitmentResolver, LegacyOutputIsRefused) {
   ResolverFixture f;
   for (size_t index : guideIndices()) {
@@ -483,8 +484,8 @@ TEST(CommitmentResolver, LegacyOutputIsRefused) {
   }
 }
 
-// A cache written before commit keys were recorded reads back an all-zero key; it
-// no longer falls back to the legacy form.
+// A record without a commit key cannot be matched to the owner-bound form, and there
+// is no legacy fallback to resolve it to.
 TEST(CommitmentResolver, UnrecordedKeyIsRefused) {
   ResolverFixture f;
   for (size_t index : guideIndices()) {
@@ -494,9 +495,9 @@ TEST(CommitmentResolver, UnrecordedKeyIsRefused) {
   }
 }
 
-// An owner-bound spend never produces the key image the legacy form would, so an
-// owner-bound output cannot be blocked by anyone who derived the legacy image.
-TEST(CommitmentResolver, OwnerBoundKeyImageDiffersFromTheLegacyImage) {
+// The owner-bound key image never equals the legacy one for the same (D, i), so an
+// output created in either form cannot block the other's spend.
+TEST(CommitmentResolver, FormsProduceDistinctKeyImages) {
   ResolverFixture f;
   for (size_t index : guideIndices()) {
     CommitmentSpendKeys ownerKeys;
@@ -546,35 +547,35 @@ TEST(CommitmentResolver, SenderMaterialCannotOpenOwnerBoundOutput) {
   }
 }
 
-// The scanner records a key image; the signer must reproduce exactly that image,
-// and both refuse the legacy form.
+// The scanner records a key image; the signer must reproduce exactly that image.
 TEST(CommitmentResolver, ScannerAndSignerAgreeOnTheKeyImage) {
   ResolverFixture f;
   for (size_t index : guideIndices()) {
+    const Crypto::PublicKey published = f.ownerBound(index);
     Crypto::KeyImage recorded;
-    ASSERT_TRUE(deriveRecordedCommitmentKeyImage(f.derivation, index, f.ownerBound(index), &f.owner.spendSecret, recorded))
+    ASSERT_TRUE(deriveRecordedCommitmentKeyImage(f.derivation, index, published, &f.owner.spendSecret, recorded))
       << "index " << index;
-    CommitmentSpendKeys keys;
-    ASSERT_TRUE(resolveCommitmentSpendKeys(f.derivation, index, f.ownerBound(index), f.owner.spendSecret, keys));
-    EXPECT_EQ(recorded, keys.keyImage) << "index " << index;
 
-    EXPECT_FALSE(deriveRecordedCommitmentKeyImage(f.derivation, index, f.legacy(index).commitKey, &f.owner.spendSecret, recorded))
-      << "index " << index;
-    EXPECT_FALSE(resolveCommitmentSpendKeys(f.derivation, index, f.legacy(index).commitKey, f.owner.spendSecret, keys))
-      << "index " << index;
+    CommitmentSpendKeys keys;
+    ASSERT_TRUE(resolveCommitmentSpendKeys(f.derivation, index, published, f.owner.spendSecret, keys));
+    EXPECT_EQ(recorded, keys.keyImage) << "index " << index;
   }
 }
 
-// A view-only wallet no longer gets a key image from the view key alone: that was
-// the legacy form's weakness. It records a defined zero image instead.
-TEST(CommitmentResolver, ViewOnlyWalletRecordsNoLegacyKeyImage) {
+// The scanner records no key image for a legacy-keyed output, with or without the
+// spend secret, and leaves the image zeroed.
+TEST(CommitmentResolver, ScannerRecordsNoLegacyKeyImage) {
   ResolverFixture f;
   for (size_t index : guideIndices()) {
-    Crypto::KeyImage recorded;
-    memset(recorded.data, 0xEE, sizeof(recorded.data));
-    EXPECT_FALSE(deriveRecordedCommitmentKeyImage(f.derivation, index, f.legacy(index).commitKey, nullptr, recorded))
-      << "index " << index;
-    EXPECT_EQ(Crypto::KeyImage{}, recorded) << "index " << index;
+    const Crypto::PublicKey legacyKey = f.legacy(index).commitKey;
+    const Crypto::SecretKey* const spendSecrets[] = { &f.owner.spendSecret, nullptr };
+    for (const Crypto::SecretKey* spendSecret : spendSecrets) {
+      Crypto::KeyImage recorded;
+      memset(recorded.data, 0xEE, sizeof(recorded.data));
+      EXPECT_FALSE(deriveRecordedCommitmentKeyImage(f.derivation, index, legacyKey, spendSecret, recorded))
+        << "index " << index;
+      EXPECT_EQ(Crypto::KeyImage{}, recorded) << "index " << index;
+    }
   }
 }
 

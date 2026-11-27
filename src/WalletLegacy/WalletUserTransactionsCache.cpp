@@ -19,6 +19,8 @@
 
 #include "crypto/hash.h"
 #include "CryptoNoteConfig.h"
+#include "CryptoNoteCore/AssetType.h"
+#include "CryptoNoteCore/CryptoNoteTools.h"
 #include "CryptoNoteCore/TransactionExtra.h"
 #include "Wallet/WalletErrors.h"
 #include "WalletLegacy/WalletUserTransactionsCache.h"
@@ -130,9 +132,26 @@ bool WalletUserTransactionsCache::serialize(CryptoNote::ISerializer& s) {
     deleteOutdatedTransactions();
     restoreTransactionOutputToBankingIndex();
     rebuildPaymentsIndex();
+    releaseDepositsOfUnsentTransactions();
   }
 
   return true;
+}
+
+// A send saved while it was still waiting for decoys was never built: it has no
+// hash and can never reach the network. It is marked failed so its deposits
+// return to the wallet instead of staying held by a send that no longer exists.
+void WalletUserTransactionsCache::releaseDepositsOfUnsentTransactions() {
+  for (TransactionId id = 0; id < m_transactions.size(); ++id) {
+    WalletLegacyTransaction& transaction = m_transactions[id];
+    if (transaction.state == WalletLegacyTransactionState::Sending && transaction.hash == NULL_HASH) {
+      transaction.state = WalletLegacyTransactionState::Failed;
+    }
+    if (transaction.state == WalletLegacyTransactionState::Failed || transaction.state == WalletLegacyTransactionState::Cancelled ||
+        transaction.state == WalletLegacyTransactionState::Deleted) {
+      releaseDepositsSpentBy(id);
+    }
+  }
 }
 
 void WalletUserTransactionsCache::deserializeLegacyV1(CryptoNote::ISerializer& s) {
@@ -242,6 +261,7 @@ TransactionId WalletUserTransactionsCache::addNewTransaction(uint64_t amount,
   transaction.sentTime = time(nullptr);
   transaction.isCoinbase = false;
   transaction.timestamp = 0;
+  transaction.hash = NULL_HASH;
   transaction.extra = extra;
   transaction.blockHeight = WALLET_LEGACY_UNCONFIRMED_TRANSACTION_HEIGHT;
   transaction.state = WalletLegacyTransactionState::Sending;
@@ -259,6 +279,7 @@ void WalletUserTransactionsCache::updateTransaction(
   // update extra field from created transaction
   auto& txInfo = m_transactions.at(transactionId);
   txInfo.extra.assign(tx.extra.begin(), tx.extra.end());
+  txInfo.hash = getObjectHash(tx);
   m_unconfirmedTransactions.add(tx, transactionId, amount, usedOutputs);
 }
 
@@ -267,9 +288,12 @@ void WalletUserTransactionsCache::updateTransactionSendingState(TransactionId tr
   if (ec) {
     txInfo.state = ec.value() == error::TX_CANCELLED ? WalletLegacyTransactionState::Cancelled : WalletLegacyTransactionState::Failed;
     m_unconfirmedTransactions.erase(txInfo.hash);
+    m_unconfirmedTransactions.releaseReservedOutputs(transactionId);
+    releaseDepositsSpentBy(transactionId);
   } else {
     txInfo.sentTime = time(nullptr); // update sending time
     txInfo.state = WalletLegacyTransactionState::Active;
+    m_unconfirmedTransactions.releaseReservedOutputs(transactionId);
   }
 }
 
@@ -316,12 +340,7 @@ std::deque<std::unique_ptr<WalletLegacyEvent>> WalletUserTransactionsCache::onTr
     id = insertTransaction(std::move(transaction));
 
     events.push_back(std::unique_ptr<WalletLegacyEvent>(new WalletExternalTransactionCreatedEvent(id)));
-    auto updatedDepositIds = createNewDeposits(id, newDepositOutputs, currency, transaction.blockHeight);
-    if (!updatedDepositIds.empty()) {
-      auto& tx = getTransaction(id);
-      tx.firstDepositId = updatedDepositIds[0];
-      tx.depositCount = updatedDepositIds.size();
-    }
+    auto updatedDepositIds = recordConfirmedDeposits(id, newDepositOutputs, currency, txInfo.blockHeight);
 
     auto spentDepositIds = processSpentDeposits(id, spentDepositOutputs);
     updatedDepositIds.insert(updatedDepositIds.end(), spentDepositIds.begin(), spentDepositIds.end());
@@ -331,6 +350,7 @@ std::deque<std::unique_ptr<WalletLegacyEvent>> WalletUserTransactionsCache::onTr
     }
   } else {
     WalletLegacyTransaction& tr = getTransaction(id);
+    tr.hash = txInfo.transactionHash;
     tr.blockHeight = txInfo.blockHeight;
     tr.timestamp = txInfo.timestamp;
     tr.state = WalletLegacyTransactionState::Active;
@@ -345,6 +365,15 @@ std::deque<std::unique_ptr<WalletLegacyEvent>> WalletUserTransactionsCache::onTr
         m_unconfirmedTransactions.eraseCreatedDeposit(id);
       }
     }
+
+    auto recordedDepositIds = recordConfirmedDeposits(id, newDepositOutputs, currency, txInfo.blockHeight);
+    // A withdraw released after expiry or a pool drop and then confirmed is
+    // marked spent again here.
+    auto spentDepositIds = processSpentDeposits(id, spentDepositOutputs);
+    recordedDepositIds.insert(recordedDepositIds.end(), spentDepositIds.begin(), spentDepositIds.end());
+    if (!recordedDepositIds.empty()) {
+      events.push_back(std::unique_ptr<WalletLegacyEvent>(new WalletDepositsUpdatedEvent(std::move(recordedDepositIds))));
+    }
   }
 
   if (canInsertTransactionToIndex(getTransaction(id)) && paymentIdIsSet(txInfo.paymentId)) {
@@ -358,8 +387,6 @@ std::deque<std::unique_ptr<WalletLegacyEvent>> WalletUserTransactionsCache::onTr
   TransactionId id = CryptoNote::WALLET_LEGACY_INVALID_TRANSACTION_ID;
   if (m_unconfirmedTransactions.findTransactionId(transactionHash, id)) {
     m_unconfirmedTransactions.erase(transactionHash);
-    // LOG_ERROR("Unconfirmed transaction is deleted: id = " << id << ", hash = " << transactionHash);
-    assert(false);
   } else {
     id = findTransactionByHash(transactionHash);
   }
@@ -431,12 +458,6 @@ std::vector<DepositId> WalletUserTransactionsCache::unlockDeposits(const std::ve
     }
 
     auto id = it->second;
-
-    // FOREVER (burn) deposits are permanently locked — never unlock them
-    if (m_deposits[id].deposit.term == CryptoNote::parameters::HEAT_TERM) {
-      continue;
-    }
-
     unlockedDeposits.push_back(id);
     m_deposits[id].deposit.locked = false;
   }
@@ -551,6 +572,11 @@ bool WalletUserTransactionsCache::isUsed(const TransactionOutputInformation& out
   return m_unconfirmedTransactions.isUsed(out);
 }
 
+bool WalletUserTransactionsCache::reserveOutputs(TransactionId transactionId,
+                                                 const std::vector<TransactionOutputInformation>& outputs) {
+  return m_unconfirmedTransactions.reserveOutputs(transactionId, outputs);
+}
+
 WalletLegacyTransaction& WalletUserTransactionsCache::getTransaction(TransactionId transactionId) {
   return m_transactions.at(transactionId);
 }
@@ -575,6 +601,9 @@ WalletLegacyTransfer& WalletUserTransactionsCache::getTransfer(TransferId transf
 void WalletUserTransactionsCache::reset() {
   m_transactions.clear();
   m_transfers.clear();
+  m_deposits.clear();
+  m_transactionOutputToBankingIndex.clear();
+  m_paymentsIndex.clear();
   m_unconfirmedTransactions.reset();
 }
 
@@ -582,19 +611,29 @@ std::vector<TransactionId> WalletUserTransactionsCache::deleteOutdatedTransactio
   auto deletedTransactions = m_unconfirmedTransactions.deleteOutdatedTransactions();
 
   for (auto id: deletedTransactions) {
-    assert(id < m_transactions.size());
+    if (id >= m_transactions.size()) {
+      continue;
+    }
     m_transactions[id].state = WalletLegacyTransactionState::Deleted;
+    releaseDepositsSpentBy(id);
   }
 
   return deletedTransactions;
 }
 
+// The saved deposit record keeps neither its height nor its transaction hash;
+// both follow from the creating transaction, and the unlock height from them.
 void WalletUserTransactionsCache::restoreTransactionOutputToBankingIndex() {
   m_transactionOutputToBankingIndex.clear();
 
   DepositId id = 0;
-  for (const auto& d: m_deposits) {
-    WalletLegacyTransaction transaction = m_transactions[d.deposit.creatingTransactionId];
+  for (auto& d: m_deposits) {
+    const WalletLegacyTransaction& transaction = m_transactions.at(d.deposit.creatingTransactionId);
+    d.deposit.transactionHash = transaction.hash;
+    d.deposit.outputInTransaction = d.outputInTransaction;
+    d.deposit.height = transaction.blockHeight;
+    d.deposit.unlockHeight = isCdCommitmentTerm(d.deposit.term) ? transaction.blockHeight + d.deposit.term
+                                                                 : transaction.blockHeight;
     m_transactionOutputToBankingIndex[std::tie(transaction.hash, d.outputInTransaction)] = id;
     ++id;
   }
@@ -627,15 +666,29 @@ bool WalletUserTransactionsCache::getDepositInTransactionInfo(DepositId depositI
   return true;
 }
 
-std::vector<DepositId> WalletUserTransactionsCache::createNewDeposits(TransactionId creatingTransactionId, const std::vector<TransactionOutputInformation>& depositOutputs,
-    const Currency& currency, uint32_t height) {
-  std::vector<DepositId> deposits;
-
-  for (size_t i = 0; i < depositOutputs.size(); i++) {
-    auto id = insertNewDeposit(depositOutputs[i], creatingTransactionId, currency, height);
-    deposits.push_back(id);
+std::vector<DepositId> WalletUserTransactionsCache::recordConfirmedDeposits(TransactionId creatingTransactionId,
+    const std::vector<TransactionOutputInformation>& depositOutputs, const Currency& currency, uint32_t height) {
+  std::vector<DepositId> recorded;
+  if (height == WALLET_LEGACY_UNCONFIRMED_TRANSACTION_HEIGHT) {
+    return recorded;
   }
-  return deposits;
+  for (const auto& output : depositOutputs) {
+    if (getDepositId(output.transactionHash, output.outputInTransaction) == WALLET_LEGACY_INVALID_DEPOSIT_ID) {
+      recorded.push_back(insertNewDeposit(output, creatingTransactionId, currency, height));
+    }
+  }
+  auto& transaction = getTransaction(creatingTransactionId);
+  if (!recorded.empty() && transaction.firstDepositId == WALLET_LEGACY_INVALID_DEPOSIT_ID) {
+    transaction.firstDepositId = recorded.front();
+    transaction.depositCount = recorded.size();
+  }
+  return recorded;
+}
+
+bool WalletUserTransactionsCache::isUnspentDepositRecord(const Hash& creatingTransactionHash, uint32_t outputInTransaction) const {
+  const auto it = m_transactionOutputToBankingIndex.find(std::tie(creatingTransactionHash, outputInTransaction));
+  return it != m_transactionOutputToBankingIndex.end() &&
+         m_deposits[it->second].deposit.spendingTransactionId == WALLET_LEGACY_INVALID_TRANSACTION_ID;
 }
 
 DepositId WalletUserTransactionsCache::insertNewDeposit(const TransactionOutputInformation& depositOutput, TransactionId creatingTransactionId,
@@ -659,8 +712,9 @@ DepositId WalletUserTransactionsCache::insertNewDeposit(const TransactionOutputI
   deposit.spendingTransactionId = WALLET_LEGACY_INVALID_TRANSACTION_ID;
   deposit.interest = 0;
   deposit.height = height;
-  deposit.unlockHeight = (depositOutput.term == parameters::HEAT_TERM) ? 0 : height + depositOutput.term;
-  deposit.locked = true;
+  const bool timeLocked = isCdCommitmentTerm(depositOutput.term);
+  deposit.unlockHeight = timeLocked ? height + depositOutput.term : height;
+  deposit.locked = timeLocked;
   deposit.outputInTransaction = depositOutput.outputInTransaction;
   deposit.transactionHash = depositOutput.transactionHash;
 
@@ -673,9 +727,8 @@ std::vector<DepositId> WalletUserTransactionsCache::processSpentDeposits(Transac
 
   for (size_t i = 0; i < spentDepositOutputs.size(); i++) {
     auto depositId = getDepositId(spentDepositOutputs[i].transactionHash, spentDepositOutputs[i].outputInTransaction);
-    assert(depositId != WALLET_LEGACY_INVALID_DEPOSIT_ID);
     if (depositId == WALLET_LEGACY_INVALID_DEPOSIT_ID) {
-      throw std::invalid_argument("processSpentDeposits error: requested deposit doesn't exist");
+      continue;
     }
 
     auto& d = m_deposits[depositId];
@@ -692,6 +745,12 @@ DepositId WalletUserTransactionsCache::getDepositId(const Hash& creatingTransact
   }
 
   return it->second;
+}
+
+void WalletUserTransactionsCache::releaseDepositsSpentBy(TransactionId transactionId) {
+  for (DepositId id : getDepositIdsBySpendingTransaction(transactionId)) {
+    m_deposits[id].deposit.spendingTransactionId = WALLET_LEGACY_INVALID_TRANSACTION_ID;
+  }
 }
 
 std::vector<DepositId> WalletUserTransactionsCache::getDepositIdsBySpendingTransaction(TransactionId transactionId) {

@@ -20,6 +20,8 @@
 #       the node switches five times; M then grows to block 125 and wins back. The final state
 #       must equal a node that only saw M. A node refuses alternative blocks more than
 #       CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW (60) below its tip, which caps the depth of the forks.
+# A harness process that exits non-zero (a sanitizer abort, a rejected block) fails the run, and
+# the script goes on, so one broken check does not hide the others.
 # Usage: v11_chain_checks.sh <path-to-v11_chain_harness> <empty-workdir>
 set -u
 BIN=$(realpath "$1"); W=$2
@@ -28,17 +30,20 @@ mkdir -p "$W"; cd "$W"
 FAILED=0
 
 step() {
-  "$BIN" "$@" > step.out 2>&1 || { echo "harness failed: $*"; cat step.out; exit 1; }
+  "$BIN" "$@" > step.out 2>&1 || { FAILED=1; echo "harness failed: $*"; tail -40 step.out; return 0; }
   tail -1 step.out
 }
 capture() {
   local name=$1; shift
-  "$BIN" state "$@" > "raw_$name.txt" 2> "report_$name.txt" || { echo "harness failed: state $*"; cat "report_$name.txt"; exit 1; }
+  : > "raw_$name.txt"; : > "report_$name.txt"
+  "$BIN" state "$@" > "raw_$name.txt" 2> "report_$name.txt" || { FAILED=1; echo "harness failed: state $*"; tail -40 "report_$name.txt"; }
   grep -Ev '^[0-9]{4}-[A-Z][a-z]{2}-[0-9]{2} |^SwappedVector ' "raw_$name.txt" > "state_$name.txt"
 }
 same_state() {
   local name=$1 expected=$2 actual=$3 ignore=${4:-'^$'}
-  if diff <(grep -Ev "$ignore" "state_$expected.txt") <(grep -Ev "$ignore" "state_$actual.txt") > /dev/null; then echo "$name PASS"
+  if ! grep -q '^height=' "state_$expected.txt" || ! grep -q '^height=' "state_$actual.txt"; then
+    FAILED=1; echo "$name FAIL: a state is missing"
+  elif diff <(grep -Ev "$ignore" "state_$expected.txt") <(grep -Ev "$ignore" "state_$actual.txt") > /dev/null; then echo "$name PASS"
   else FAILED=1; echo "$name FAIL"; diff <(grep -Ev "$ignore" "state_$expected.txt") <(grep -Ev "$ignore" "state_$actual.txt"); fi
 }
 report_has() {

@@ -1317,6 +1317,7 @@ public:
     CommitmentOutputRef ref{};
     ref.term = term;
     ref.transactionIndex.block = height;
+    ref.transactionIndex.transaction = 1;
     ref.commitKey = commitKey;
     chain.m_indexManager.commitmentOutputs()[amount].push_back(ref);
   }
@@ -1349,6 +1350,7 @@ public:
   static void addHeatRingMember(Blockchain& chain, uint64_t amount) {
     CommitmentOutputRef ref{};
     ref.term = parameters::HEAT_TERM;
+    ref.transactionIndex.transaction = 1;
     chain.m_indexManager.commitmentOutputs()[amount].push_back(ref);
   }
   static void markExpired(Blockchain& chain, const Crypto::Hash& orderId) {

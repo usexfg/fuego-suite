@@ -3678,8 +3678,9 @@ bool simple_wallet::register_alias(const std::vector<std::string> &args) {
 
   std::string alias = args[0];
 
-  if (!CryptoNote::funsaSubaddressActivated(nextBlockMajorVersion())) {
-    fail_msg_writer() << "Alias registration opens at v11: an alias is owned by a funsa subaddress, which exists from v11.";
+  if (!CryptoNote::aliasOwnerRulesApply(nextBlockMajorVersion())) {
+    fail_msg_writer() << "Alias registration opens at block " << m_currency.upgradeHeight(CryptoNote::BLOCK_MAJOR_VERSION_12) + 1
+                      << " (v12). v11 blocks carry no alias tag.";
     return true;
   }
 
@@ -3740,8 +3741,8 @@ bool simple_wallet::register_alias(const std::vector<std::string> &args) {
     return true;
   }
 
-  if (!CryptoNote::funsaSubaddressActivated(nextBlockMajorVersion())) {
-    fail_msg_writer() << "Aliases map to a funsa subaddress, valid from block " << m_currency.upgradeHeight(CryptoNote::BLOCK_MAJOR_VERSION_11) + 1;
+  if (!CryptoNote::aliasOwnerRulesApply(nextBlockMajorVersion())) {
+    fail_msg_writer() << "Aliases open at block " << m_currency.upgradeHeight(CryptoNote::BLOCK_MAJOR_VERSION_12) + 1 << " (v12).";
     return true;
   }
 
@@ -3779,19 +3780,20 @@ bool simple_wallet::register_alias(const std::vector<std::string> &args) {
   const uint32_t aliasMajor = CryptoNote::ALIAS_SUBADDRESS_MAJOR;
   uint32_t aliasMinor = 0;
   try {
-    aliasMinor = 1;
+    aliasMinor = CryptoNote::ALIAS_MINOR_BASE;
     for (const auto& e : m_subAddresses) {
-      if (std::get<0>(e) == aliasMajor) {
+      if (std::get<0>(e) == aliasMajor && std::get<1>(e) >= CryptoNote::ALIAS_MINOR_BASE) {
         aliasMinor = std::max(aliasMinor, std::get<1>(e) + 1);
       }
     }
     const std::map<std::string, std::string> aliasOwners = aliasesByOwnerAddress();
-    if (aliasMinor > CryptoNote::MAX_ALIAS_SUBADDRESS_MINOR) {
+    const uint32_t lastAliasMinor = CryptoNote::ALIAS_MINOR_BASE + CryptoNote::MAX_ALIAS_OWNER_OFFSET;
+    if (aliasMinor > lastAliasMinor) {
       fail_msg_writer() << "No free alias subaddress index left under major " << aliasMajor << ".";
       return true;
     }
     const uint32_t lastMinorTried =
-        std::min<uint32_t>(aliasMinor + MAX_ALIAS_SUBADDRESS_ATTEMPTS, CryptoNote::MAX_ALIAS_SUBADDRESS_MINOR + 1);
+        std::min<uint32_t>(aliasMinor + MAX_ALIAS_SUBADDRESS_ATTEMPTS, lastAliasMinor + 1);
     for (; aliasMinor < lastMinorTried; ++aliasMinor) {
       walletAddress = m_wallet->registerSubAddress(aliasMajor, aliasMinor);
       if (walletAddress.empty() || walletAddress.size() < 10) {

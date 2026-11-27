@@ -66,8 +66,8 @@ protected:
   const std::string masterAddress;
 };
 
-TEST_F(MainnetWalletOperations, AliasFromV11BurnsTheRegistrationFee) {
-  const WalletSendPlan plan = planAliasRegistration(currency, "firenode", subaddress, BLOCK_MAJOR_VERSION_11);
+TEST_F(MainnetWalletOperations, AliasFromV12BurnsTheRegistrationFee) {
+  const WalletSendPlan plan = planAliasRegistration(currency, "firenode", subaddress, BLOCK_MAJOR_VERSION_12);
   EXPECT_EQ(currency.minimumFee() + parameters::ALIAS_REGISTRATION_FEE, plan.fee);
   ASSERT_EQ(1u, plan.transfers.size());
   EXPECT_EQ(subaddress, plan.transfers[0].address);
@@ -91,17 +91,11 @@ TEST_F(MainnetWalletOperations, AliasFromV11BurnsTheRegistrationFee) {
       << "the owner hash is the published subaddress's key hash";
 }
 
-TEST_F(MainnetWalletOperations, AliasBeforeV11RefusesASubaddressOwner) {
-  EXPECT_THROW(planAliasRegistration(currency, "firenode", subaddress, BLOCK_MAJOR_VERSION_10), std::invalid_argument);
-}
-
-TEST_F(MainnetWalletOperations, AliasBeforeV11PaysTheDevFund) {
-  const WalletSendPlan plan = planAliasRegistration(currency, "firenode", masterAddress, BLOCK_MAJOR_VERSION_10);
-  EXPECT_EQ(currency.minimumFee(), plan.fee);
-  ASSERT_EQ(1u, plan.transfers.size());
-  EXPECT_EQ(FUEGO_DEV_FUND_ADDRESS, plan.transfers[0].address);
-  EXPECT_EQ(static_cast<int64_t>(parameters::ALIAS_REGISTRATION_FEE), plan.transfers[0].amount);
-  EXPECT_EQ(nullptr, findField<TransactionExtraRemintBurn>(extraFieldsOf(plan)));
+TEST_F(MainnetWalletOperations, AliasBeforeV12IsRefused) {
+  for (uint8_t version : {BLOCK_MAJOR_VERSION_10, BLOCK_MAJOR_VERSION_11}) {
+    EXPECT_THROW(planAliasRegistration(currency, "firenode", subaddress, version), std::invalid_argument);
+    EXPECT_THROW(planAliasRegistration(currency, "firenode", masterAddress, version), std::invalid_argument);
+  }
 }
 
 TEST_F(MainnetWalletOperations, AliasNamesFollowTheConsensusRule) {
@@ -109,7 +103,7 @@ TEST_F(MainnetWalletOperations, AliasNamesFollowTheConsensusRule) {
   EXPECT_FALSE(isValidAliasName("Firenode"));
   EXPECT_FALSE(isValidAliasName("firenod"));
   EXPECT_FALSE(isValidAliasName("firenodes"));
-  EXPECT_THROW(planAliasRegistration(currency, "fire-nod", subaddress, BLOCK_MAJOR_VERSION_11), std::invalid_argument);
+  EXPECT_THROW(planAliasRegistration(currency, "fire-nod", subaddress, BLOCK_MAJOR_VERSION_12), std::invalid_argument);
 }
 
 TEST_F(MainnetWalletOperations, DevDonationBurnsTheAmountOnTopOfTheFee) {
@@ -150,7 +144,18 @@ TEST(PaymentSubaddressIndex, RefusesThePrimaryAndBadArguments) {
   EXPECT_NE("", choosePaymentSubaddressIndex({"2"}, {}, index));
   EXPECT_NE("", choosePaymentSubaddressIndex({"-1", "2"}, {}, index));
   EXPECT_NE("", choosePaymentSubaddressIndex({"4294967296", "2"}, {}, index));
-  EXPECT_NE("", choosePaymentSubaddressIndex({}, {{0, UINT32_MAX}}, index));
+  EXPECT_NE("", choosePaymentSubaddressIndex({}, {{0, ALIAS_MINOR_BASE - 1}}, index));
+}
+
+TEST(PaymentSubaddressIndex, NeverReachesTheAliasOwnerRange) {
+  SubaddressIndex index;
+  EXPECT_NE("", choosePaymentSubaddressIndex({"0", "2147483648"}, {}, index));
+  EXPECT_NE("", choosePaymentSubaddressIndex({"0", "4294967295"}, {}, index));
+  EXPECT_EQ("", choosePaymentSubaddressIndex({"0", "2147483647"}, {}, index));
+  EXPECT_EQ("", choosePaymentSubaddressIndex({"1", "2147483648"}, {}, index));
+  EXPECT_EQ("", choosePaymentSubaddressIndex({}, {{0, 1}, {0, ALIAS_MINOR_BASE}, {0, ALIAS_MINOR_BASE + 3}}, index));
+  EXPECT_EQ(0u, index.major);
+  EXPECT_EQ(2u, index.minor);
 }
 
 }

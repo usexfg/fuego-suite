@@ -1457,6 +1457,9 @@ namespace PaymentService
     try
     {
       System::EventLock lk(readyEvent);
+      if (major == CryptoNote::ALIAS_SUBADDRESS_MAJOR && minor >= CryptoNote::ALIAS_MINOR_BASE) {
+        return make_error_code(CryptoNote::error::WRONG_PARAMETERS);
+      }
       address = wallet.createSubAddress(major, minor);
     }
     catch (std::system_error &x)

@@ -63,6 +63,9 @@ bool isValidAliasName(const std::string& alias) {
 
 WalletSendPlan planAliasRegistration(const Currency& currency, const std::string& alias,
                                      const std::string& ownerSubaddress, uint8_t nextBlockMajorVersion) {
+  if (!aliasOwnerRulesApply(nextBlockMajorVersion)) {
+    throw std::invalid_argument("aliases open at block major version 12");
+  }
   if (!isValidAliasName(alias)) {
     throw std::invalid_argument("alias must be exactly 8 characters of [a-z0-9&]");
   }
@@ -70,9 +73,6 @@ WalletSendPlan planAliasRegistration(const Currency& currency, const std::string
   bool ownerIsSubaddress = false;
   if (!currency.parseAccountAddressString(ownerSubaddress, owner, ownerIsSubaddress)) {
     throw std::invalid_argument("alias owner is not a valid address");
-  }
-  if (ownerIsSubaddress && !funsaSubaddressActivated(nextBlockMajorVersion)) {
-    throw std::invalid_argument("subaddress alias owners are valid from block major version 11");
   }
 
   TransactionExtraAliasRegistration registration;
@@ -204,16 +204,16 @@ std::string choosePaymentSubaddressIndex(const std::vector<std::string>& args,
   } else {
     index.minor = 1;
     for (const auto& used : existing) {
-      if (used.first == 0 && used.second >= index.minor) {
-        if (used.second == UINT32_MAX) {
-          return "No unused minor index left under major 0.";
-        }
+      if (used.first == 0 && used.second < ALIAS_MINOR_BASE && used.second >= index.minor) {
         index.minor = used.second + 1;
       }
     }
   }
   if (index.major == 0 && index.minor == 0) {
     return "Index (0,0) is the primary address. Use minor >= 1.";
+  }
+  if (index.major == ALIAS_SUBADDRESS_MAJOR && index.minor >= ALIAS_MINOR_BASE) {
+    return "Minor indexes from 0x80000000 under major 0 are reserved for alias owners.";
   }
   return {};
 }

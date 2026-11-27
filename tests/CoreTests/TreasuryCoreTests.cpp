@@ -2925,42 +2925,8 @@ void testAliasBurnTotalPushPop() {
   TEST(t.chain.getRemintBurnedXfg() == 0);
 }
 
-// Owner decision 2026-11-27: v11 settlement refuses every alias tag, so no
-// registration, release or transfer reaches a v11 block or the pool.
-void testAliasTagsRefusedInV11Settlement() {
-  TestChain t("alias_v11_refused");
-  TEST(t.ok);
-  const uint64_t C = parameters::COIN;
-  const uint32_t v11Height = t.currency.upgradeHeight(BLOCK_MAJOR_VERSION_11) + 1;
-  TEST(t.currency.blockMajorVersionAtHeight(v11Height) == BLOCK_MAJOR_VERSION_11);
-  AccountBase owner;
-  owner.generate();
-  const std::string ownerAddress = t.currency.accountAddressAsString(owner.getAccountKeys().address);
-  std::vector<uint8_t> releaseExtra;
-  TEST(addAliasReleaseToExtra(releaseExtra, signedAliasRelease("v11refus", owner, ownerAddress)));
-  AccountBase newOwner;
-  newOwner.generate();
-  std::vector<uint8_t> transferExtra;
-  TEST(addAliasTransferToExtra(transferExtra, signedAliasTransfer("v11refus", owner, ownerAddress, newOwner,
-                                                                  t.currency.accountAddressAsString(newOwner.getAccountKeys().address))));
-  const std::vector<uint8_t> registrationExtra = aliasRegistrationExtra(aliasRegistration("v11refus", "owner-one"));
-  for (const auto* extra : {&registrationExtra, &releaseExtra, &transferExtra}) {
-    Blockchain::SettlementScratch scratch;
-    AssetFlows flows;
-    uint64_t fee = 0;
-    std::string err;
-    TEST(!t.chain.validateSettlement(settlementTx({2 * C}, {keyOut(C / 2)}, *extra), v11Height, scratch, flows, fee, err));
-    TEST(err.find("not accepted before v12") != std::string::npos);
-  }
-  Blockchain::SettlementScratch scratch;
-  AssetFlows flows;
-  uint64_t fee = 0;
-  std::string err;
-  TEST(t.chain.validateSettlement(settlementTx({2 * C}, {keyOut(C / 2)}, {}), v11Height, scratch, flows, fee, err));
-}
-
 // Owner decision 2026-11-26: a registration's re-mint burn is kept only when the
-// alias registers. From v11 a registration that would fail (alias taken or
+// alias registers. From v12 a registration that would fail (alias taken or
 // reserved, owner already holding an alias, another network, or a second claim
 // on the same alias or owner in the block) makes its transaction invalid.
 TransactionExtraAliasRegistration aliasRegistration(const std::string& alias, const std::string& owner) {
@@ -3022,6 +2988,40 @@ std::vector<uint8_t> aliasRegistrationExtra(const TransactionExtraAliasRegistrat
   addAliasToExtra(extra, registration);
   addRemintBurnToExtra(extra, parameters::ALIAS_REGISTRATION_FEE);
   return extra;
+}
+
+// Owner decision 2026-11-27: v11 settlement refuses every alias tag, so no
+// registration, release or transfer reaches a v11 block or the pool.
+void testAliasTagsRefusedInV11Settlement() {
+  TestChain t("alias_v11_refused");
+  TEST(t.ok);
+  const uint64_t C = parameters::COIN;
+  const uint32_t v11Height = t.currency.upgradeHeight(BLOCK_MAJOR_VERSION_11) + 1;
+  TEST(t.currency.blockMajorVersionAtHeight(v11Height) == BLOCK_MAJOR_VERSION_11);
+  AccountBase owner;
+  owner.generate();
+  const std::string ownerAddress = t.currency.accountAddressAsString(owner.getAccountKeys().address);
+  std::vector<uint8_t> releaseExtra;
+  TEST(addAliasReleaseToExtra(releaseExtra, signedAliasRelease("v11refus", owner, ownerAddress)));
+  AccountBase newOwner;
+  newOwner.generate();
+  std::vector<uint8_t> transferExtra;
+  TEST(addAliasTransferToExtra(transferExtra, signedAliasTransfer("v11refus", owner, ownerAddress, newOwner,
+                                                                  t.currency.accountAddressAsString(newOwner.getAccountKeys().address))));
+  const std::vector<uint8_t> registrationExtra = aliasRegistrationExtra(aliasRegistration("v11refus", "owner-one"));
+  for (const auto* extra : {&registrationExtra, &releaseExtra, &transferExtra}) {
+    Blockchain::SettlementScratch scratch;
+    AssetFlows flows;
+    uint64_t fee = 0;
+    std::string err;
+    TEST(!t.chain.validateSettlement(settlementTx({2 * C}, {keyOut(C / 2)}, *extra), v11Height, scratch, flows, fee, err));
+    TEST(err.find("not accepted before v12") != std::string::npos);
+  }
+  Blockchain::SettlementScratch scratch;
+  AssetFlows flows;
+  uint64_t fee = 0;
+  std::string err;
+  TEST(t.chain.validateSettlement(settlementTx({2 * C}, {keyOut(C / 2)}, {}), v11Height, scratch, flows, fee, err));
 }
 
 void testAliasBurnOnlyWhenRegistrationSucceeds() {

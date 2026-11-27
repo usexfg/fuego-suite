@@ -3205,9 +3205,6 @@ bool mineUpTo(TestChain& t, const AccountPublicAddress& miner, uint32_t nextHeig
   return true;
 }
 
-// A testnet node upgraded across a schedule change without wiping its data holds
-// blocks of the wrong version. On start it rolls back to the last block the
-// current schedule accepts, instead of building on a chain no peer accepts.
 // From v11 a coinbase pays only key outputs: a commitment output would be HEAT,
 // CD principal or LP shares with nothing burned behind it.
 void testCoinbaseMintsOnlyKeyOutputsFromV11() {
@@ -3284,6 +3281,9 @@ void testPoolDropsRegistrationFailingTheOwnerRule() {
   TEST(!t.chain.aliasTagsCannotApply(funsaOwned));
 }
 
+// A testnet node upgraded across a schedule change without wiping its data holds
+// blocks of the wrong version. On start it rolls back to the last block the
+// current schedule accepts, instead of building on a chain no peer accepts.
 void testStoredChainFromAnotherScheduleRollsBack() {
   const uint32_t oldV12Height = parameters::TESTNET_UPGRADE_HEIGHT_V11 + 5;
   std::filesystem::path dir;

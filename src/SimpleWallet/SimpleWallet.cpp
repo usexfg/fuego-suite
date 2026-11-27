@@ -3629,6 +3629,15 @@ bool simple_wallet::dev_donate(const std::vector<std::string> &args) {
 
 // Every registered alias keyed by its owner's keys, fetched in one request so
 // the daemon never learns which candidate subaddresses belong to this wallet.
+// An unreachable daemon counts as an owner, so an alias owner is never handed out on a guess.
+bool simple_wallet::isAliasOwnerAddress(const std::string& address) {
+  try {
+    return aliasesByOwnerAddress().count(address) > 0;
+  } catch (const std::exception&) {
+    return true;
+  }
+}
+
 // Throws when the daemon cannot answer, so a registration never proceeds on a guess.
 std::map<std::string, std::string> simple_wallet::aliasesByOwnerAddress() {
   HttpClient httpClient(m_dispatcher, m_daemon_host, m_daemon_port);
@@ -4019,6 +4028,10 @@ bool simple_wallet::gen_new_sub(const std::vector<std::string>& args) {
   // Check for duplicate.
   for (const auto& e : m_subAddresses) {
     if (std::get<0>(e) == major && std::get<1>(e) == minor) {
+      if (isAliasOwnerAddress(std::get<2>(e))) {
+        fail_msg_writer() << "Sub-address [" << major << "," << minor << "] owns an alias; giving it out as a payment address would link payments to the alias.";
+        return true;
+      }
       success_msg_writer() << "Sub-address [" << major << "," << minor << "] already exists:";
       success_msg_writer() << std::get<2>(e);
       return true;

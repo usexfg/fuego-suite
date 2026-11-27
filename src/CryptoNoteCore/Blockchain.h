@@ -561,8 +561,8 @@ namespace CryptoNote {
       uint64_t ammReserveXfg;
       uint64_t ammReserveHeat;
       uint64_t ammTotalLpShares;
-      uint64_t vaultUtxoCount;
-      uint64_t vaultSpentCount;
+      uint64_t vaultUtxoCount = 0;
+      uint64_t vaultSpentCount = 0;
       uint64_t treasurySwapFeeXfg;
       uint64_t treasuryLpPendingXfg;
       uint64_t swfHeatBalance;

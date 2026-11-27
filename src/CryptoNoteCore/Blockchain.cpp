@@ -258,6 +258,15 @@ uint64_t aliasRegistrationFees(const std::vector<CryptoNote::TransactionExtraFie
   return burn;
 }
 
+bool carriesAliasTag(const std::vector<CryptoNote::TransactionExtraField>& fields) {
+  using namespace CryptoNote;
+  return std::any_of(fields.begin(), fields.end(), [](const TransactionExtraField& f) {
+    return f.type() == typeid(TransactionExtraAliasRegistration) ||
+           f.type() == typeid(TransactionExtraAliasRelease) ||
+           f.type() == typeid(TransactionExtraAliasTransfer);
+  });
+}
+
 uint64_t declaredRemintBurn(const CryptoNote::Transaction& tx) {
   using namespace CryptoNote;
   std::vector<TransactionExtraField> fields;
@@ -8820,6 +8829,10 @@ std::string CryptoNote::Blockchain::aliasTransferRejection(const TransactionExtr
 
 bool CryptoNote::Blockchain::aliasTagsApply(const std::vector<TransactionExtraField>& fields, uint8_t blockMajorVersion,
                                             SettlementScratch& scratch, std::string& error) const {
+  if (aliasTagsRefused(blockMajorVersion) && carriesAliasTag(fields)) {
+    error = "alias tags are not accepted before v12";
+    return false;
+  }
   for (const auto& field : fields) {
     if (field.type() == typeid(TransactionExtraAliasRelease)) {
       const auto& release = boost::get<TransactionExtraAliasRelease>(field);
@@ -8899,6 +8912,9 @@ bool CryptoNote::Blockchain::aliasTagsCannotApply(const Transaction& tx) {
   std::vector<TransactionExtraField> fields;
   if (!parseTransactionExtra(tx.extra, fields)) {
     return false;
+  }
+  if (aliasTagsRefused(majorVersion)) {
+    return carriesAliasTag(fields);
   }
   if (!validateAliasOwners(tx, majorVersion, m_currency, nullptr)) {
     return true;

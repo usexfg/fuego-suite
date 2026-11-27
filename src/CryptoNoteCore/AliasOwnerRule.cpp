@@ -57,7 +57,7 @@ Crypto::Hash aliasOwnerHash(const AccountPublicAddress& owner) {
 
 bool validateAliasOwners(const Transaction& tx, uint8_t blockMajorVersion,
                          const Currency& currency, std::string* error) {
-  if (!funsaSubaddressActivated(blockMajorVersion)) {
+  if (!aliasTagsRefused(blockMajorVersion) && !aliasOwnerRulesApply(blockMajorVersion)) {
     return true;
   }
   std::vector<TransactionExtraField> fields;
@@ -65,11 +65,17 @@ bool validateAliasOwners(const Transaction& tx, uint8_t blockMajorVersion,
     return true;
   }
   for (const auto& field : fields) {
-    if (field.type() == typeid(TransactionExtraAliasRegistration)) {
+    const bool isRegistration = field.type() == typeid(TransactionExtraAliasRegistration);
+    const bool isTransfer = field.type() == typeid(TransactionExtraAliasTransfer);
+    if (aliasTagsRefused(blockMajorVersion) &&
+        (isRegistration || isTransfer || field.type() == typeid(TransactionExtraAliasRelease))) {
+      return refuse(error, "alias tags are not accepted before v12");
+    }
+    if (isRegistration) {
       if (!registrationNamesFunsaOwner(boost::get<TransactionExtraAliasRegistration>(field), currency, error)) {
         return false;
       }
-    } else if (field.type() == typeid(TransactionExtraAliasTransfer)) {
+    } else if (isTransfer) {
       if (!transferNamesFunsaOwner(boost::get<TransactionExtraAliasTransfer>(field), currency, error)) {
         return false;
       }

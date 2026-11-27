@@ -438,7 +438,7 @@ TEST_F(SubaddressScanner, ValiseBuiltAliasRegistrationMeetsTheAliasOwnerRule) {
   const Transaction tx = transactionFromHex(ALIAS_REGISTRATION_TX);
   std::string error;
   EXPECT_TRUE(validateSubaddressTxExtra(tx, BLOCK_MAJOR_VERSION_11, true, &error)) << error;
-  EXPECT_TRUE(validateAliasOwners(tx, BLOCK_MAJOR_VERSION_11, currency, &error)) << error;
+  EXPECT_TRUE(validateAliasOwners(tx, BLOCK_MAJOR_VERSION_12, currency, &error)) << error;
 
   TransactionExtraAliasRegistration registration;
   ASSERT_TRUE(getAliasFromExtra(tx.extra, registration));

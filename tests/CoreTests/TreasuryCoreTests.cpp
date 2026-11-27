@@ -1459,14 +1459,14 @@ void testCoinbaseRejectsEverySettlementTag() {
   const uint64_t reserveXfgBefore = VaultCoreTestAccess::ammReserveXfg(t.chain);
   const uint64_t reserveHeatBefore = VaultCoreTestAccess::ammReserveHeat(t.chain);
 
-  auto coinbaseWith = [&](const std::vector<uint8_t>& extra) {
+  auto coinbaseWith = [&](const std::vector<uint8_t>& extra, uint8_t version = BLOCK_MAJOR_VERSION_11) {
     // Must be a VALID coinbase apart from the extra, otherwise prevalidate returns
     // false early (input count/type, blockIndex, unlockTime, outputs) and the
     // settlement-tag check never runs -- which would make every assertion below
     // pass for the wrong reason.
     const uint32_t h = 1;
     Block b{};
-    b.majorVersion = BLOCK_MAJOR_VERSION_11;
+    b.majorVersion = version;
     b.minorVersion = BLOCK_MINOR_VERSION_1;
     b.timestamp = 1;
     b.baseTransaction.inputs.push_back(BaseInput{h});
@@ -1506,6 +1506,8 @@ void testCoinbaseRejectsEverySettlementTag() {
   std::vector<uint8_t> aliasExtra;
   TEST(addAliasToExtra(aliasExtra, coinbaseAlias));
   TEST(!VaultCoreTestAccess::prevalidateCoinbase(t.chain, coinbaseWith(aliasExtra), 1));
+  TEST(VaultCoreTestAccess::prevalidateCoinbase(t.chain, coinbaseWith({}, BLOCK_MAJOR_VERSION_12), 1));
+  TEST(!VaultCoreTestAccess::prevalidateCoinbase(t.chain, coinbaseWith(aliasExtra, BLOCK_MAJOR_VERSION_12), 1));
   // Nor may it release or transfer one: it is applied first in its block, ahead
   // of registrations settlement already admitted.
   TransactionExtraAliasTransfer coinbaseTransfer;
@@ -2752,6 +2754,10 @@ void testOrderbookBootstrapEndsAtTheNetworksHeight() {
   TEST(fresh.chain.isOrderbookInBootstrap());
 }
 
+uint32_t firstAliasHeight(const TestChain& t) {
+  return t.currency.upgradeHeight(BLOCK_MAJOR_VERSION_12) + 1;
+}
+
 // Owner decision 2026-11-12: the re-mint burn (TX_EXTRA_REMINT_BURN) is its
 // own burn type with its own counter, apart from HEAT, the SWF and the Eternal
 // Flame. Any transaction may burn; an alias registration pays its fee with one,
@@ -2769,7 +2775,7 @@ void testAliasRegistrationFeeBurned() {
     if (burn > 0) addRemintBurnToExtra(extra, burn);
     Blockchain::SettlementScratch scratch;
     AssetFlows flows;
-    return t.chain.validateSettlement(settlementTx({xfgIn}, {keyOut(C / 2)}, extra), 100, scratch, flows, fee, err);
+    return t.chain.validateSettlement(settlementTx({xfgIn}, {keyOut(C / 2)}, extra), firstAliasHeight(t), scratch, flows, fee, err);
   };
   uint64_t fee = 0;
   std::string err;
@@ -2908,7 +2914,7 @@ void testAliasBurnTotalPushPop() {
   TEST(addRemintBurnToExtra(aliasExtra, parameters::ALIAS_REGISTRATION_FEE));
   std::vector<uint8_t> burnExtra;
   TEST(addRemintBurnToExtra(burnExtra, 3 * C));
-  auto aliasBlock = VaultCoreTestAccess::blockWith(auntPolTx(2 * C, {keyOut(C / 2)}, aliasExtra), 100, BLOCK_MAJOR_VERSION_11);
+  auto aliasBlock = VaultCoreTestAccess::blockWith(auntPolTx(2 * C, {keyOut(C / 2)}, aliasExtra), 100, BLOCK_MAJOR_VERSION_12);
   auto burnBlock = VaultCoreTestAccess::blockWith(auntPolTx(4 * C, {keyOut(C / 2)}, burnExtra), 101, BLOCK_MAJOR_VERSION_11);
   TEST(t.chain.getRemintBurnedXfg() == 0);
   TEST(VaultCoreTestAccess::pushTx(t.chain, aliasBlock));
@@ -2920,7 +2926,7 @@ void testAliasBurnTotalPushPop() {
 }
 
 // Owner decision 2026-11-26: a registration's re-mint burn is kept only when the
-// alias registers. From v11 a registration that would fail (alias taken or
+// alias registers. From v12 a registration that would fail (alias taken or
 // reserved, owner already holding an alias, another network, or a second claim
 // on the same alias or owner in the block) makes its transaction invalid.
 TransactionExtraAliasRegistration aliasRegistration(const std::string& alias, const std::string& owner) {
@@ -2984,6 +2990,86 @@ std::vector<uint8_t> aliasRegistrationExtra(const TransactionExtraAliasRegistrat
   return extra;
 }
 
+// Owner decision 2026-11-27: v11 settlement refuses every alias tag, so no
+// registration, release or transfer reaches a v11 block or the pool.
+void testAliasTagsRefusedInV11Settlement() {
+  TestChain t("alias_v11_refused");
+  TEST(t.ok);
+  const uint64_t C = parameters::COIN;
+  const uint32_t v11Height = t.currency.upgradeHeight(BLOCK_MAJOR_VERSION_11) + 1;
+  TEST(t.currency.blockMajorVersionAtHeight(v11Height) == BLOCK_MAJOR_VERSION_11);
+  AccountBase owner;
+  owner.generate();
+  const std::string ownerAddress = t.currency.accountAddressAsString(owner.getAccountKeys().address);
+  std::vector<uint8_t> releaseExtra;
+  TEST(addAliasReleaseToExtra(releaseExtra, signedAliasRelease("v11refus", owner, ownerAddress)));
+  AccountBase newOwner;
+  newOwner.generate();
+  std::vector<uint8_t> transferExtra;
+  TEST(addAliasTransferToExtra(transferExtra, signedAliasTransfer("v11refus", owner, ownerAddress, newOwner,
+                                                                  t.currency.accountAddressAsString(newOwner.getAccountKeys().address))));
+  const std::vector<uint8_t> registrationExtra = aliasRegistrationExtra(aliasRegistration("v11refus", "owner-one"));
+  const std::vector<std::vector<uint8_t>> extras{registrationExtra, releaseExtra, transferExtra};
+  for (const std::vector<uint8_t>& extra : extras) {
+    Blockchain::SettlementScratch scratch;
+    AssetFlows flows;
+    uint64_t fee = 0;
+    std::string err;
+    TEST(!t.chain.validateSettlement(settlementTx({2 * C}, {keyOut(C / 2)}, extra), v11Height, scratch, flows, fee, err));
+    TEST(err.find("not accepted before v12") != std::string::npos);
+  }
+  Blockchain::SettlementScratch scratch;
+  AssetFlows flows;
+  uint64_t fee = 0;
+  std::string err;
+  TEST(t.chain.validateSettlement(settlementTx({2 * C}, {keyOut(C / 2)}, {}), v11Height, scratch, flows, fee, err));
+}
+
+// A checkpointed v11 block skips validation, so the apply path
+// (pushToBankingIndex, which indexes a block's alias tags) must itself refuse to register, release or transfer an alias. The same tags at v12 apply.
+void testAliasTagsNotAppliedByV11Block() {
+  TestChain t("alias_v11_apply");
+  TEST(t.ok);
+  const uint64_t C = parameters::COIN;
+  uint32_t height = 100;
+  auto push = [&](const std::vector<uint8_t>& extra, uint8_t version) {
+    auto block = VaultCoreTestAccess::blockWith(auntPolTx(2 * C, {keyOut(C / 2)}, extra), height++, version);
+    VaultCoreTestAccess::bankBlock(t.chain, block);
+    return true;
+  };
+
+  const std::vector<uint8_t> registrationExtra = aliasRegistrationExtra(aliasRegistration("applyreg", "owner-one"));
+  TEST(push(registrationExtra, BLOCK_MAJOR_VERSION_11));
+  TEST(!t.chain.getAliasByName("applyreg").has_value());
+  TEST(push(registrationExtra, BLOCK_MAJOR_VERSION_12));
+  TEST(t.chain.getAliasByName("applyreg").has_value());
+
+  AccountBase releaser;
+  releaser.generate();
+  const std::string releaserAddress = t.currency.accountAddressAsString(releaser.getAccountKeys().address);
+  TEST(VaultCoreTestAccess::indexAlias(t.chain, ownedAlias("applyrel", releaserAddress, releaser)));
+  std::vector<uint8_t> releaseExtra;
+  TEST(addAliasReleaseToExtra(releaseExtra, signedAliasRelease("applyrel", releaser, releaserAddress)));
+  TEST(push(releaseExtra, BLOCK_MAJOR_VERSION_11));
+  TEST(t.chain.getAliasByName("applyrel").has_value());
+  TEST(push(releaseExtra, BLOCK_MAJOR_VERSION_12));
+  TEST(!t.chain.getAliasByName("applyrel").has_value());
+
+  AccountBase oldOwner;
+  AccountBase newOwner;
+  oldOwner.generate();
+  newOwner.generate();
+  const std::string oldOwnerAddress = t.currency.accountAddressAsString(oldOwner.getAccountKeys().address);
+  const std::string newOwnerAddress = t.currency.accountAddressAsString(newOwner.getAccountKeys().address);
+  TEST(VaultCoreTestAccess::indexAlias(t.chain, ownedAlias("applyxfr", oldOwnerAddress, oldOwner)));
+  std::vector<uint8_t> transferExtra;
+  TEST(addAliasTransferToExtra(transferExtra, signedAliasTransfer("applyxfr", oldOwner, oldOwnerAddress, newOwner, newOwnerAddress)));
+  TEST(push(transferExtra, BLOCK_MAJOR_VERSION_11));
+  TEST(t.chain.getAliasByName("applyxfr")->addressHash == aliasOwnerKeyHash(oldOwner));
+  TEST(push(transferExtra, BLOCK_MAJOR_VERSION_12));
+  TEST(t.chain.getAliasByName("applyxfr")->addressHash == aliasOwnerKeyHash(newOwner));
+}
+
 void testAliasBurnOnlyWhenRegistrationSucceeds() {
   TestChain t("alias_burn_on_success");
   TEST(t.ok);
@@ -2991,7 +3077,7 @@ void testAliasBurnOnlyWhenRegistrationSucceeds() {
   auto settles = [&](Blockchain::SettlementScratch& scratch, const std::vector<uint8_t>& extra, std::string& err) {
     AssetFlows flows;
     uint64_t fee = 0;
-    return t.chain.validateSettlement(settlementTx({2 * C}, {keyOut(C / 2)}, extra), 100, scratch, flows, fee, err);
+    return t.chain.validateSettlement(settlementTx({2 * C}, {keyOut(C / 2)}, extra), firstAliasHeight(t), scratch, flows, fee, err);
   };
   std::string err;
   TEST(VaultCoreTestAccess::indexAlias(t.chain, aliasRegistration("firenode", "owner-one")));
@@ -3083,7 +3169,7 @@ void testAliasBurnsRemintedQuarterly() {
     addAliasToExtra(extra, reg);
     addRemintBurnToExtra(extra, parameters::ALIAS_REGISTRATION_FEE);
     auto block = VaultCoreTestAccess::blockWith(auntPolTx(2 * parameters::COIN, {keyOut(parameters::COIN / 2)}, extra),
-                                                height, BLOCK_MAJOR_VERSION_11);
+                                                height, BLOCK_MAJOR_VERSION_12);
     return getObjectHash(block.transactions[1].tx) != NULL_HASH && VaultCoreTestAccess::pushTx(t.chain, block);
   };
   TEST(registerAlias("remint01", 100));
@@ -3261,12 +3347,32 @@ void testCoinbaseCommitmentIsNoRingMemberFromV11() {
 // From v11 a pending registration whose owner is not a funsa subaddress bound to
 // its owner hash (F9) can never confirm, so pool cleanup drops it; the same
 // registration owned by a funsa subaddress stays.
-void testPoolDropsRegistrationFailingTheOwnerRule() {
+// Pool admission settles a transaction against the chain tip through
+// checkTransactionSettlement. At a v11 tip a registration owned by a funsa
+// subaddress, which meets every owner rule, is still refused for its tag.
+void testPoolSettlementRefusesAliasTagAtV11() {
   const uint64_t C = parameters::COIN;
-  TestChain t("alias_owner_rule_pool", true);
+  TestChain t("alias_v11_pool_settlement", true);
   TEST(t.ok);
   TEST(mineUpTo(t, newMinerAddress(), parameters::TESTNET_UPGRADE_HEIGHT_V11 + 2));
-  TEST(t.chain.getBlockMajorVersionForHeight(t.chain.getCurrentBlockchainHeight()) >= BLOCK_MAJOR_VERSION_11);
+  TEST(t.chain.getBlockMajorVersionForHeight(t.chain.getCurrentBlockchainHeight()) == BLOCK_MAJOR_VERSION_11);
+  AccountBase owner;
+  owner.generate();
+  const std::string funsaOwner = t.currency.subAddressAsString(owner.getAccountKeys().address);
+  uint64_t fee = 0;
+  TEST(!t.chain.checkTransactionSettlement(
+      settlementTx({2 * C}, {keyOut(C / 2)}, aliasRegistrationExtra(aliasRegistration("poolrefu", funsaOwner, owner))), fee));
+  TEST(t.chain.checkTransactionSettlement(settlementTx({2 * C}, {keyOut(C / 2)}, {}), fee));
+}
+
+void testPoolDropsRegistrationFailingTheOwnerRule() {
+  const uint64_t C = parameters::COIN;
+  const uint32_t v12Height = parameters::TESTNET_UPGRADE_HEIGHT_V11 + 5;
+  TestChain t("alias_owner_rule_pool", [v12Height](CurrencyBuilder& builder) {
+    builder.testnet(true).upgradeHeightV12(v12Height);
+  });
+  TEST(t.ok);
+  const AccountPublicAddress miner = newMinerAddress();
 
   AccountBase owner;
   owner.generate();
@@ -3276,11 +3382,36 @@ void testPoolDropsRegistrationFailingTheOwnerRule() {
 
   const Transaction standardOwned =
       settlementTx({2 * C}, {keyOut(C / 2)}, aliasRegistrationExtra(aliasRegistration("stdowner", standardOwner, owner)));
-  TEST(t.chain.aliasTagsCannotApply(standardOwned));
-
   const Transaction funsaOwned =
       settlementTx({2 * C}, {keyOut(C / 2)}, aliasRegistrationExtra(aliasRegistration("funsaown", funsaOwner, owner)));
+  std::vector<uint8_t> releaseExtra;
+  TEST(addAliasReleaseToExtra(releaseExtra, signedAliasRelease("stdowner", owner, standardOwner)));
+  const Transaction releasing = settlementTx({2 * C}, {keyOut(C / 2)}, releaseExtra);
+  const Transaction plain = settlementTx({2 * C}, {keyOut(C / 2)}, {});
+
+  TEST(mineUpTo(t, miner, parameters::TESTNET_UPGRADE_HEIGHT_V11 + 2));
+  TEST(t.chain.getBlockMajorVersionForHeight(t.chain.getCurrentBlockchainHeight()) == BLOCK_MAJOR_VERSION_11);
+  TEST(t.chain.aliasTagsCannotApply(standardOwned));
+  TEST(t.chain.aliasTagsCannotApply(funsaOwned));
+  TEST(t.chain.aliasTagsCannotApply(releasing));
+  TEST(!t.chain.aliasTagsCannotApply(plain));
+
+  TEST(mineUpTo(t, miner, v12Height + 2));
+  TEST(t.chain.getBlockMajorVersionForHeight(t.chain.getCurrentBlockchainHeight()) == BLOCK_MAJOR_VERSION_12);
+  TEST(t.chain.aliasTagsCannotApply(standardOwned));
   TEST(!t.chain.aliasTagsCannotApply(funsaOwned));
+  TEST(!t.chain.aliasTagsCannotApply(plain));
+}
+
+// Settlement refuses a user order whose id carries the pool prefix, so wallet
+// order ids never do. 20,000 draws would hit the prefix about 78 times if the
+// redraw were missing.
+void testUserOrderIdsNeverCarryThePoolPrefix() {
+  bool sawPrefix = false;
+  for (int i = 0; i < 20000; ++i) {
+    sawPrefix = sawPrefix || randomUserOrderId().data[0] == POOL_ORDER_ID_PREFIX;
+  }
+  TEST(!sawPrefix);
 }
 
 // A testnet node upgraded across a schedule change without wiping its data holds
@@ -3464,6 +3595,8 @@ int main() {
   testCdActivationHeight();
   testTestnetRunsV11PastTheBootstrap();
   testStoredChainFromAnotherScheduleRollsBack();
+  testUserOrderIdsNeverCarryThePoolPrefix();
+  testPoolSettlementRefusesAliasTagAtV11();
   testPoolDropsRegistrationFailingTheOwnerRule();
   testCoinbaseMintsOnlyKeyOutputsFromV11();
   testCoinbaseCommitmentIsNoRingMemberFromV11();
@@ -3519,6 +3652,8 @@ int main() {
   testAliasBurnTotalPushPop();
   testOrderbookBootstrapEndsAtTheNetworksHeight();
   testAliasBurnOnlyWhenRegistrationSucceeds();
+  testAliasTagsRefusedInV11Settlement();
+  testAliasTagsNotAppliedByV11Block();
   testAliasBurnsRemintedQuarterly();
   fprintf(stderr, "=== Treasury/Core Tests ===\nPassed: %d / %d\n", tests_passed, tests_run);
   return tests_passed == tests_run ? 0 : 1;

@@ -2,8 +2,9 @@
 //
 // This file is part of Fuego.
 //
-// F9: from v11 an alias belongs to a funsa subaddress, and its addressHash is
+// F9: from v12 an alias belongs to a funsa subaddress, and its addressHash is
 // that owner's own keys, so no alias points at, or reveals, a primary address.
+// v11 blocks carry no alias tag.
 
 #include <string>
 
@@ -55,6 +56,16 @@ protected:
     return tx;
   }
 
+  Transaction releasing() const {
+    TransactionExtraAliasRelease release;
+    release.alias = "firenode";
+    release.aliasHash = Crypto::cn_fast_hash(release.alias.data(), release.alias.size());
+    release.ownerAddress = mainnet.accountAddressAsString(keys.primary);
+    Transaction tx;
+    EXPECT_TRUE(addAliasReleaseToExtra(tx.extra, release));
+    return tx;
+  }
+
   Transaction transferringTo(const std::string& newOwner) const {
     TransactionExtraAliasTransfer transfer;
     transfer.alias = "firenode";
@@ -66,7 +77,7 @@ protected:
     return tx;
   }
 
-  bool accepted(const Transaction& tx, uint8_t version = BLOCK_MAJOR_VERSION_11) const {
+  bool accepted(const Transaction& tx, uint8_t version = BLOCK_MAJOR_VERSION_12) const {
     return validateAliasOwners(tx, version, mainnet, nullptr);
   }
 
@@ -80,17 +91,17 @@ TEST_F(AliasOwnerRule, FunsaOwnerWithItsOwnKeyHashIsAccepted) {
   EXPECT_TRUE(accepted(registering(mainnet.subAddressAsString(keys.funsa), aliasOwnerHash(keys.funsa))));
 }
 
-TEST_F(AliasOwnerRule, StandardOwnerIsRefusedFromV11) {
+TEST_F(AliasOwnerRule, StandardOwnerIsRefusedFromV12) {
   const Transaction tx = registering(mainnet.accountAddressAsString(keys.primary), aliasOwnerHash(keys.primary));
   std::string error;
-  EXPECT_FALSE(validateAliasOwners(tx, BLOCK_MAJOR_VERSION_11, mainnet, &error));
+  EXPECT_FALSE(validateAliasOwners(tx, BLOCK_MAJOR_VERSION_12, mainnet, &error));
   EXPECT_NE(error.find("not a funsa subaddress"), std::string::npos);
 }
 
 TEST_F(AliasOwnerRule, HashOfThePrimaryKeysIsRefused) {
   std::string error;
   const Transaction tx = registering(mainnet.subAddressAsString(keys.funsa), aliasOwnerHash(keys.primary));
-  EXPECT_FALSE(validateAliasOwners(tx, BLOCK_MAJOR_VERSION_11, mainnet, &error));
+  EXPECT_FALSE(validateAliasOwners(tx, BLOCK_MAJOR_VERSION_12, mainnet, &error));
   EXPECT_NE(error.find("addressHash"), std::string::npos);
 }
 
@@ -101,7 +112,24 @@ TEST_F(AliasOwnerRule, OwnerOfAnotherNetworkIsRefused) {
 TEST_F(AliasOwnerRule, BlocksBeforeV11KeepTheirRules) {
   const Transaction standardOwner = registering(mainnet.accountAddressAsString(keys.primary), Crypto::Hash{});
   EXPECT_TRUE(accepted(standardOwner, BLOCK_MAJOR_VERSION_10));
-  EXPECT_FALSE(accepted(standardOwner, BLOCK_MAJOR_VERSION_11));
+  EXPECT_FALSE(accepted(standardOwner, BLOCK_MAJOR_VERSION_12));
+}
+
+TEST_F(AliasOwnerRule, V11RefusesEveryAliasTag) {
+  const Transaction funsaRegistration =
+      registering(mainnet.subAddressAsString(keys.funsa), aliasOwnerHash(keys.funsa));
+  const Transaction funsaTransfer = transferringTo(mainnet.subAddressAsString(keys.funsa));
+  for (const Transaction& tx : {funsaRegistration, funsaTransfer, releasing()}) {
+    std::string error;
+    EXPECT_FALSE(validateAliasOwners(tx, BLOCK_MAJOR_VERSION_11, mainnet, &error));
+    EXPECT_NE(error.find("not accepted before v12"), std::string::npos);
+    EXPECT_TRUE(accepted(tx, BLOCK_MAJOR_VERSION_10));
+  }
+}
+
+TEST_F(AliasOwnerRule, V12AcceptsAReleaseWithoutAnOwnerRule) {
+  EXPECT_TRUE(accepted(releasing(), BLOCK_MAJOR_VERSION_12));
+  EXPECT_TRUE(accepted(releasing(), BLOCK_MAJOR_VERSION_10));
 }
 
 TEST_F(AliasOwnerRule, TransferMustMoveTheAliasToAFunsaOwner) {

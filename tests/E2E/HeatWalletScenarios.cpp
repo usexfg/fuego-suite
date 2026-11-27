@@ -416,6 +416,15 @@ protected:
     return currency.upgradeHeight(BLOCK_MAJOR_VERSION_11) + 3;
   }
 
+  uint32_t firstAliasHeight() const {
+    return currency.upgradeHeight(BLOCK_MAJOR_VERSION_12) + 2;
+  }
+
+  void enterAliasEra() {
+    ASSERT_TRUE(mineTo(minerAddress, firstAliasHeight()));
+    ASSERT_TRUE(syncAll());
+  }
+
   Logging::ConsoleLogger logger;
   Currency currency;
   const uint64_t chainClockStart = static_cast<uint64_t>(std::time(nullptr)) - kChainClockLeadSeconds;
@@ -858,6 +867,7 @@ TEST_F(HeatWalletScenario, WalletdHeatToFunsaReadsLikeAnyPayment) {
 // hash is the registration's owner hash, so it confirms and resolves by address.
 TEST_F(HeatWalletScenario, WalletdAliasIsOwnedByAFreshSubaddress) {
   ScenarioWallet& funder = fundedActor(kActorFunding);
+  enterAliasEra();
   GreenScenarioWallet green(currency, *inode, logger, dataDir + "/green-alias.wallet");
   Crypto::SecretKey transactionSecret;
   WalletLegacyTransfer funding{green.address, static_cast<int64_t>(50 * parameters::COIN)};
@@ -892,8 +902,8 @@ TEST_F(HeatWalletScenario, WalletdAliasIsOwnedByAFreshSubaddress) {
   EXPECT_EQ(alias, byAddress->alias);
   ASSERT_EQ(addressesBefore + 1, green.api.getAddressCount());
   EXPECT_EQ(entry->ownerAddress, green.api.getAddress(addressesBefore));
-  EXPECT_THROW(green.wallet.createSubAddress(ALIAS_SUBADDRESS_MAJOR, 1), std::system_error)
-      << "the first alias is owned by subaddress (ALIAS_SUBADDRESS_MAJOR, 1), which a restored wallet can find";
+  EXPECT_THROW(green.wallet.createSubAddress(ALIAS_SUBADDRESS_MAJOR, ALIAS_MINOR_BASE), std::system_error)
+      << "the first alias is owned by subaddress (ALIAS_SUBADDRESS_MAJOR, ALIAS_MINOR_BASE), which a restored wallet can find";
 
   const size_t addressesAfter = green.api.getAddressCount();
   EXPECT_EQ(std::make_error_code(std::errc::address_in_use), green.wallet.registerAlias(alias, green.address, refused))
@@ -968,11 +978,12 @@ TEST_F(HeatWalletScenario, DevDonationIsBurnedAndRemintedAtTheQuarter) {
 // the wallet's master address.
 TEST_F(HeatWalletScenario, RegisteredAliasResolvesToItsSubaddress) {
   ScenarioWallet& holder = fundedActor(kActorFunding);
-  const std::string aliasAddress = holder.wallet.registerSubAddress(0, 1);
+  enterAliasEra();
+  const std::string aliasAddress = holder.wallet.registerSubAddress(0, ALIAS_MINOR_BASE);
   const std::string alias = "firenode";
   ASSERT_FALSE(nodeCore().aliasExists(alias));
   EXPECT_FALSE(hasPendingAliasRegistration(holder.wallet));
-  send(holder, planAliasRegistration(currency, alias, aliasAddress, BLOCK_MAJOR_VERSION_11));
+  send(holder, planAliasRegistration(currency, alias, aliasAddress, BLOCK_MAJOR_VERSION_12));
   EXPECT_TRUE(hasPendingAliasRegistration(holder.wallet));
   confirm();
   EXPECT_FALSE(hasPendingAliasRegistration(holder.wallet));
@@ -985,13 +996,14 @@ TEST_F(HeatWalletScenario, RegisteredAliasResolvesToItsSubaddress) {
   ASSERT_TRUE(byAddress.has_value()) << "the funsa owner finds its alias";
   EXPECT_EQ(alias, byAddress->alias);
   EXPECT_FALSE(nodeCore().getAliasByAddress(holder.wallet.getAddress()).has_value());
-  EXPECT_THROW(planAliasRegistration(currency, "Firenode", aliasAddress, BLOCK_MAJOR_VERSION_11), std::invalid_argument);
+  EXPECT_THROW(planAliasRegistration(currency, "Firenode", aliasAddress, BLOCK_MAJOR_VERSION_12), std::invalid_argument);
 }
 
 // Two registrations of one alias wait in the pool together: the block takes one,
 // and only that registration's burn is kept. The other never confirms.
 TEST_F(HeatWalletScenario, RacingAliasRegistrationsBurnOnlyForTheWinner) {
   ScenarioWallet& first = fundedActor(kActorFunding);
+  enterAliasEra();
   ScenarioWallet& second = addWallet();
   Crypto::SecretKey transactionSecret;
   WalletLegacyTransfer funding{second.wallet.getAddress(), static_cast<int64_t>(100 * parameters::COIN)};
@@ -1000,7 +1012,7 @@ TEST_F(HeatWalletScenario, RacingAliasRegistrationsBurnOnlyForTheWinner) {
 
   const std::string alias = "racealia";
   auto registrationWithBurn = [&](ScenarioWallet& holder) {
-    WalletSendPlan plan = planAliasRegistration(currency, alias, holder.wallet.registerSubAddress(0, 1), BLOCK_MAJOR_VERSION_11);
+    WalletSendPlan plan = planAliasRegistration(currency, alias, holder.wallet.registerSubAddress(0, ALIAS_MINOR_BASE), BLOCK_MAJOR_VERSION_12);
     std::vector<uint8_t> extra(plan.extra.begin(), plan.extra.end());
     addRemintBurnToExtra(extra, parameters::ALIAS_REGISTRATION_FEE);
     plan.extra.assign(extra.begin(), extra.end());

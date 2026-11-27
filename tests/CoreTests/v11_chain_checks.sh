@@ -4,6 +4,8 @@
 # Chain L (65 blocks, past the v11 upgrade at 30 and the epoch boundaries at 40, 50 and 60) is
 # the reference. R replays L and restarts at block 47. F shares L up to block 35 and runs
 # to block 80 on a different miner.
+# C3 builds an alternative chain long enough to force m_alternative_chains to rehash while
+# it grows: main chain M to block 170 and then 210, alternative chain A from block 60 to 190.
 # Usage: v11_chain_checks.sh <path-to-v11_chain_harness> <empty-workdir>
 set -u
 BIN=$(realpath "$1"); W=$2
@@ -29,9 +31,9 @@ run export F $((FORK + 1)) $FORK_TIP fork.bin
 run import X chain.bin 1 $TIP fork.bin $((FORK + 1)) $FORK_TIP | tee import_X.txt | tail -1
 for n in L R F X; do state $n; done
 
-echo "== activity check: the chain crossed the epoch boundaries and L's HEAT supply is non-zero"
-grep -qE "^heatSupply=[1-9]" state_L.txt && grep -qE "^journals\..*epochSnaps=[1-9]" state_L.txt \
-  && echo "activity PASS" || { FAILED=1; echo "activity FAIL"; grep -E "^heatSupply|^journals" state_L.txt; }
+echo "== activity check: the chain crossed epoch boundaries with the genesis-seeded pool"
+grep -qE "^pool\.reserveXfg=[1-9]" state_L.txt && grep -qE "^journals\..*epochSnaps=[1-9]" state_L.txt \
+  && echo "activity PASS" || { FAILED=1; echo "activity FAIL"; grep -E "^pool|^journals" state_L.txt; }
 echo "== reorg check: X switched to the fork once"
 grep -q "chain switches 1," import_X.txt && echo "switch PASS" || { FAILED=1; echo "switch FAIL"; cat import_X.txt; }
 echo "== distinct chains: L and F differ"
@@ -39,4 +41,19 @@ diff state_L.txt state_F.txt > /dev/null && { FAILED=1; echo "distinct FAIL: L a
 
 same_state "C1 restart equivalence (L live vs R restarted at $RESTART)" L R
 same_state "C2a live reorg (X) vs fork node (F)" F X
+
+echo "== C3 alternative chain: switch to A, switch back to M, state equals a node that saw only M"
+MAIN_TIP=170; ALT_TIP=190; WIN_TIP=210; ALT_FORK=60
+run mine M $WIN_TIP 1 0 | tail -1
+run export M 1 $WIN_TIP main.bin
+run import A main.bin 1 $ALT_FORK | tail -1
+run mine A $ALT_TIP 2 3 | tail -1
+run export A $((ALT_FORK + 1)) $ALT_TIP alt.bin
+run import S main.bin 1 $MAIN_TIP alt.bin $((ALT_FORK + 1)) $ALT_TIP main.bin $((MAIN_TIP + 1)) $WIN_TIP | tee import_S.txt | tail -1
+run import W main.bin 1 $WIN_TIP | tail -1
+for n in S W; do state $n; done
+grep -q "chain switches 2," import_S.txt && echo "C3 switches PASS" || { FAILED=1; echo "C3 switches FAIL"; cat import_S.txt; }
+ENTRIES=$(sed -n 's/.*alternative chain entries \([0-9]*\).*/\1/p' import_S.txt)
+[ "${ENTRIES:-0}" -ge 100 ] && echo "C3 rehash volume PASS ($ENTRIES alternative entries)" || { FAILED=1; echo "C3 rehash volume FAIL ($ENTRIES)"; }
+same_state "C3 state after two switches (S) vs winning chain only (W)" W S
 exit $FAILED

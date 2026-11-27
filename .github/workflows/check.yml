@@ -313,12 +313,12 @@ jobs:
 
       - name: Build with sanitizers
         run: |
-          cmake -B build-san -DCMAKE_BUILD_TYPE=Debug -DUSE_VENDORED_SECP256K1=OFF \
+          cmake -B build-san -DCMAKE_BUILD_TYPE=Debug -DUSE_VENDORED_SECP256K1=OFF -DBUILD_TESTS=ON \
             -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
             -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
             -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined" \
             -G Ninja
-          cmake --build build-san -j$(nproc) --target CryptoNoteCore core_tests test_orderbook
+          cmake --build build-san -j$(nproc) --target CryptoNoteCore core_tests test_orderbook v11_chain_harness
 
       - name: Run core tests under sanitizers
         run: |
@@ -326,6 +326,11 @@ jobs:
             ./build-san/src/test_daemons/core_tests
           ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
             ./build-san/src/test_daemons/test_orderbook
+
+      - name: Run the real-chain harness under sanitizers
+        run: |
+          ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 \
+            tests/CoreTests/v11_chain_checks.sh build-san/tests/v11_chain_harness "$RUNNER_TEMP/v11chain-san"
 
   build-macos:
     name: macOS

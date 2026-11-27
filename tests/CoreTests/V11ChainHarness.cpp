@@ -124,7 +124,10 @@ public:
     }
     os << "digest.bankingIndex=" << serializedDigest(bc.m_bankingIndex) << "\n";
     os << "digest.commitmentIndexRoot=" << Common::podToHex(bc.m_commitmentIndex.computeMerkleRoot()) << "\n";
-    os << "digest.commitmentIndex=" << serializedDigest(bc.m_commitmentIndex) << " size=" << bc.m_commitmentIndex.size() << "\n";
+    std::vector<EpochFeeRateEntry> feeRates;
+    for (uint64_t epoch = 0; epoch < bc.m_commitmentIndex.getEpochCount(); ++epoch)
+      feeRates.push_back(bc.m_commitmentIndex.getEpochFeeRateEntry(epoch));
+    os << "digest.commitmentFeeRates=" << orderedDigest(feeRates) << " commitments=" << bc.m_commitmentIndex.size() << "\n";
     os << "digest.aliasIndex=" << serializedDigest(bc.m_aliasIndex) << " size=" << bc.m_aliasIndex.size() << "\n";
     os << "digest.aliasUndoLog=" << orderedDigest(bc.m_aliasUndoLog) << "\n";
     os << "digest.vaultSpentByTx=" << unorderedDigest(bc.m_vaultSpentByTx) << "\n";

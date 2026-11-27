@@ -26,6 +26,8 @@ Open (guardian, pre-existing unless noted): release/transfer ownership challenge
 
 Decided: alias owners at major 0 (task 7).
 
+Resume point (2026-11-27): commit b16702a3 (tasks 7-10) is on backup branch `wip/claude-pr83-ports`, not yet on the PR #83 branch. Next: fuego-guardian review of `git diff d0c7028d b16702a3 -- src tests`, fix findings, push to `claude/modest-ride-oevh0b`, wait for CI, merge PR #83 to master. Then the Valise atomic-swaps branch (`fuego-valise` `claude/fuego-docs-atomic-swaps-0ta1n9`, 146 ahead of master, 0 behind) and a separate swap e2e testnet harness.
+
 | Gate | Status | Signed |
 |------|--------|--------|
 | Build compiles | NOT RUN locally; CI | |

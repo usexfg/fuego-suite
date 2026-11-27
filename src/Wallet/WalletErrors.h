@@ -69,7 +69,8 @@ enum WalletErrorCodes {
   DESTINATION_ADDRESS_NOT_FOUND,
   DAEMON_NOT_SYNCED,
   INSUFFICIENT_OUTPUTS_FOR_RING_SIZE,
-  INVALID_DEPOSIT_TYPE
+  INVALID_DEPOSIT_TYPE,
+  ALIASES_NOT_ACTIVE
 };
 
 
@@ -131,6 +132,7 @@ public:
     case DAEMON_NOT_SYNCED:        return "Daemon is not synchronized";
     case INSUFFICIENT_OUTPUTS_FOR_RING_SIZE: return "Insufficient outputs for transaction amount. Please run wallet optimizer to consolidate outputs.";
     case INVALID_DEPOSIT_TYPE:     return "Invalid deposit type for this operation";
+    case ALIASES_NOT_ACTIVE:       return "Aliases open at block major version 12; the next block is earlier";
         default:
       return "Unknown error";
     }

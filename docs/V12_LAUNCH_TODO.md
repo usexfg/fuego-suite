@@ -74,6 +74,11 @@ The Bonus Vault is the protocol's minimum CD yield for lean epochs. The code alr
 ### 3. Re-mint burn and quarterly re-mint — DONE (2026-11-12)
 `TX_EXTRA_REMINT_BURN` is its own burn type and counter; alias registrations pay their fee with one. Each FCI quarter boundary (from v11) the coinbase must end with one output paying the not-yet-re-minted total to the dev fund (`Blockchain::remintDue` / `coinbasePaysRemint`). `testBlockConnectEnforcesHearthStateAndRemint` mines testnet blocks through `pushBlock` / `popBlock` across the quarter boundary.
 
+### 4. Aliases open at v12 (owner decision 2026-11-27) — DONE
+Rule: `aliasTagsRefused(v)` for v11 (every 0xEA/0xEC/0xED tag invalid in blocks, pool, template); `aliasOwnerRulesApply(v)` from v12 (funsa owner, owner hash binding, `aliasTagsApply` claim checks, re-mint burn fee). Wallets refuse before v12 (`ALIASES_NOT_ACTIVE`, `planAliasRegistration`). Owners are `(0, ALIAS_MINOR_BASE + k)`; payment subaddresses never reach `ALIAS_MINOR_BASE` (`docs/developer/funsa-subaddress-rollout-plan.md` 4.4). The e2e alias scenarios run from `TESTNET_UPGRADE_HEIGHT_V12 + 2`. Verify: `alias_owner_rule_test`, `wallet_operations_test`, `core_tests` (`testAliasTagsRefusedInV11Settlement`, `testPoolDropsRegistrationFailingTheOwnerRule`), e2e `HeatWalletScenario`.
+- Testnet wipe: `pushTransaction` refuses alias tags at v11, but a testnet chain that already holds v11 blocks with alias tags (registered under the earlier v11 rule) replays them as unregistered and no longer matches the aliases its wallets and peers saw. Wipe such testnet chains before v12.
+- Restore scan: Fuego wallets (WalletGreen, SimpleWallet, walletd) have no restore-scan code, so nothing in this repo scans for alias owners after a restore. The scan window for alias owners is major 0, minors `ALIAS_MINOR_BASE + k` (0x80000000 + k), next to the payment range from minor 1. It applies to Valise and to any Fuego restore scan added later.
+
 ## Should do
 
 - Standalone dev donation command: DONE 2026-11-12, named `dev_donate` 2026-11-17 (SimpleWallet command and walletd JSON-RPC). The quarterly re-mint amount is only uninformative about alias count once people actually send standalone burns.

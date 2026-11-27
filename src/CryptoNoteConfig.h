@@ -660,6 +660,16 @@ inline bool funsaSubaddressActivated(uint8_t blockMajorVersion) {
   return blockMajorVersion >= BLOCK_MAJOR_VERSION_11;
 }
 
+// Owner decision 2026-11-27: v11 blocks and the pool carry no alias tag (0xEA,
+// 0xEC, 0xED). Aliases open at v12 under the F9 rules; blocks before v11 keep
+// the rules they were mined under.
+inline bool aliasTagsRefused(uint8_t blockMajorVersion) {
+  return blockMajorVersion >= BLOCK_MAJOR_VERSION_11 && blockMajorVersion < BLOCK_MAJOR_VERSION_12;
+}
+inline bool aliasOwnerRulesApply(uint8_t blockMajorVersion) {
+  return blockMajorVersion >= BLOCK_MAJOR_VERSION_12;
+}
+
 // Hearth taker-fee split for a block major version. Consensus paths must pass
 // the version of the block they are settling, never a default: a reorg replays
 // the block's own version and must recompute the same split.

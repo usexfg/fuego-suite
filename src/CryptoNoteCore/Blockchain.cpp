@@ -78,7 +78,7 @@ bool operator<(const Crypto::KeyImage& keyImage1, const Crypto::KeyImage& keyIma
 }
 }
 
-#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 24  // v24: the swap-fee and epoch-distribution rollback journals are cached (forces replay: a v23 cache has none, and a pop across an epoch boundary after a restart skipped popEpochFeeRate and the treasury reversal). v23: re-mint burns are a generic tag (remint_burned_xfg, reminted_xfg, remint_by_height). v22: quarterly alias re-mint to the dev fund (reminted_xfg, remint_by_height). v21: alias registration fees burned from v11 (remint_burned_xfg). v20: HEAT supply counts only XFG-valued CD fees as new (cd_fee_heat_from_xfg). v19: limit deposits carry withdrawnHeight; orderbook snapshots carry pruned deposits. v18: v18: orderbook auction state and its rollback records are cached (forces replay: a v17 cache has none, and a node restarted from one re-entered bootstrap and forked)
+#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 25  // v25: the swap-fee and epoch-distribution rollback journals are cached (forces replay: an older cache has none, and a pop across an epoch boundary after a restart skipped popEpochFeeRate and the treasury reversal). v24: alias tags in v11 blocks are not applied (a cache built before keeps them). v23: re-mint burns are a generic tag (remint_burned_xfg, reminted_xfg, remint_by_height). v22: quarterly alias re-mint to the dev fund (reminted_xfg, remint_by_height). v21: alias registration fees burned from v11 (remint_burned_xfg). v20: HEAT supply counts only XFG-valued CD fees as new (cd_fee_heat_from_xfg). v19: limit deposits carry withdrawnHeight; orderbook snapshots carry pruned deposits. v18: v18: orderbook auction state and its rollback records are cached (forces replay: a v17 cache has none, and a node restarted from one re-entered bootstrap and forked)
 #define CURRENT_BLOCKCHAININDICES_STORAGE_ARCHIVE_VER 1
 
 namespace CryptoNote {
@@ -256,6 +256,15 @@ uint64_t aliasRegistrationFees(const std::vector<CryptoNote::TransactionExtraFie
     if (reg.isValid() && reg.aliasType != 0) burn += parameters::ALIAS_REGISTRATION_FEE;
   }
   return burn;
+}
+
+bool carriesAliasTag(const std::vector<CryptoNote::TransactionExtraField>& fields) {
+  using namespace CryptoNote;
+  return std::any_of(fields.begin(), fields.end(), [](const TransactionExtraField& f) {
+    return f.type() == typeid(TransactionExtraAliasRegistration) ||
+           f.type() == typeid(TransactionExtraAliasRelease) ||
+           f.type() == typeid(TransactionExtraAliasTransfer);
+  });
 }
 
 uint64_t declaredRemintBurn(const CryptoNote::Transaction& tx) {
@@ -5344,7 +5353,7 @@ void CryptoNote::Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
           // REMOVED: 0xCB legacy bond registration and 0xCC bond claims.
           // No bond claims exist; new 0xCB/0xCC tags no longer parse.
           // Check for @ Alias Registration (0xEA)
-          else if (field.type() == typeid(TransactionExtraAliasRegistration)) {
+          else if (!aliasTagsRefused(block.bl.majorVersion) && field.type() == typeid(TransactionExtraAliasRegistration)) {
             const auto& aliasReg = boost::get<TransactionExtraAliasRegistration>(field);
 
             if (aliasReg.isValid()) {
@@ -5441,7 +5450,7 @@ void CryptoNote::Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
             }
           }
           // Check for @ Alias Release (0xEC)
-          else if (field.type() == typeid(TransactionExtraAliasRelease)) {
+          else if (!aliasTagsRefused(block.bl.majorVersion) && field.type() == typeid(TransactionExtraAliasRelease)) {
             const auto& aliasRel = boost::get<TransactionExtraAliasRelease>(field);
             const std::string rejection = aliasReleaseRejection(aliasRel, block.bl.majorVersion);
             const auto existingEntry = m_aliasIndex.getAliasByName(aliasRel.alias);
@@ -5459,7 +5468,7 @@ void CryptoNote::Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
             }
           }
           // Check for @ Alias Transfer (0xED)
-          else if (field.type() == typeid(TransactionExtraAliasTransfer)) {
+          else if (!aliasTagsRefused(block.bl.majorVersion) && field.type() == typeid(TransactionExtraAliasTransfer)) {
             const auto& aliasXfer = boost::get<TransactionExtraAliasTransfer>(field);
             const std::string rejection = aliasTransferRejection(aliasXfer, block.bl.majorVersion);
             const auto existingEntry = m_aliasIndex.getAliasByName(aliasXfer.alias);
@@ -8836,6 +8845,10 @@ std::string CryptoNote::Blockchain::aliasTransferRejection(const TransactionExtr
 
 bool CryptoNote::Blockchain::aliasTagsApply(const std::vector<TransactionExtraField>& fields, uint8_t blockMajorVersion,
                                             SettlementScratch& scratch, std::string& error) const {
+  if (aliasTagsRefused(blockMajorVersion) && carriesAliasTag(fields)) {
+    error = "alias tags are not accepted before v12";
+    return false;
+  }
   for (const auto& field : fields) {
     if (field.type() == typeid(TransactionExtraAliasRelease)) {
       const auto& release = boost::get<TransactionExtraAliasRelease>(field);
@@ -8915,6 +8928,9 @@ bool CryptoNote::Blockchain::aliasTagsCannotApply(const Transaction& tx) {
   std::vector<TransactionExtraField> fields;
   if (!parseTransactionExtra(tx.extra, fields)) {
     return false;
+  }
+  if (aliasTagsRefused(majorVersion)) {
+    return carriesAliasTag(fields);
   }
   if (!validateAliasOwners(tx, majorVersion, m_currency, nullptr)) {
     return true;

@@ -36,10 +36,13 @@ struct WalletSendPlan {
 };
 
 // An alias is exactly 8 characters of [a-z0-9&].
-// Alias owners are the next unused subaddresses (0, 1..), the range a restored
+// Alias owners are (0, ALIAS_MINOR_BASE + k), k from 0, the range a restored
 // wallet scans and Valise uses (docs/developer/funsa-subaddress-rollout-plan.md 4.4).
+// Payment subaddresses are issued from minor 1 and stay below the base, so an
+// alias owner is never a subaddress given to a payer.
 const uint32_t ALIAS_SUBADDRESS_MAJOR = 0;
-const uint32_t MAX_ALIAS_SUBADDRESS_MINOR = 1024;
+const uint32_t ALIAS_MINOR_BASE = 0x80000000;
+const uint32_t MAX_ALIAS_OWNER_OFFSET = 1024;
 
 bool isValidAliasName(const std::string& alias);
 
@@ -67,7 +70,8 @@ struct SubaddressIndex {
 
 // The payment subaddress `gen_new_sub [major minor]` creates: the given index, or
 // with no arguments the next unused minor under major 0. Returns why the index is
-// refused (wrong arguments, the primary address, the alias major), else empty.
+// refused (wrong arguments, the primary address, a major 0 minor in the alias
+// owner range), else empty.
 std::string choosePaymentSubaddressIndex(const std::vector<std::string>& args,
                                          const std::vector<std::pair<uint32_t, uint32_t>>& existing,
                                          SubaddressIndex& index);

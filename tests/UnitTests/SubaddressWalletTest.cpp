@@ -360,13 +360,13 @@ TEST_F(SubaddressWallet, EveryRecordAndTheCacheUseTheirOwnIv) {
 
 namespace {
 
-TEST_F(SubaddressWallet, AliasRegistrationIsRefusedBeforeV11) {
+TEST_F(SubaddressWallet, AliasRegistrationIsRefusedBeforeV12) {
   WalletGreen green(dispatcher, currency, node, logger);
   IWallet& wallet = green;
   wallet.initialize(path, "password");
   wallet.createAddress();
   Crypto::Hash txHash{};
-  EXPECT_EQ(green.registerAlias("firenode", wallet.getAddress(0), txHash), make_error_code(std::errc::invalid_argument));
+  EXPECT_EQ(green.registerAlias("firenode", wallet.getAddress(0), txHash), make_error_code(CryptoNote::error::ALIASES_NOT_ACTIVE));
   EXPECT_TRUE(green.getSubAddresses().empty());
   wallet.shutdown();
 }

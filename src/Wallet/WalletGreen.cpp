@@ -54,6 +54,7 @@
 #include "CryptoNoteCore/TransactionApi.h"
 #include <CryptoNoteCore/TransactionExtra.h>
 #include "CryptoNoteCore/CommitmentIndex.h"
+#include "CryptoNoteCore/OrderbookAuction.h"
 #include "INode.h"
 #include "crypto/crypto.h"
 #include "crypto/keccak.h"
@@ -1694,8 +1695,7 @@ namespace CryptoNote
       // The order belongs to the wallet holding the HEAT that funds it.
       const Deposit firstDeposit = m_deposits.get<RandomAccessIndex>()[heatDepositIds[0]];
       const auto &owner = getWalletRecord(getTransactionTransfer(firstDeposit.creatingTransactionId, 0).address);
-      Crypto::Hash orderId{};
-      Crypto::generate_random_bytes(sizeof(orderId.data), orderId.data);
+      const Crypto::Hash orderId = randomUserOrderId();
       const Crypto::Hash addressHash = limitOrderAddressHash(owner.spendSecretKey, orderId);
       std::vector<uint8_t> extra;
       addLimitDepositToExtra(extra, side, amount, targetPrice, expiration, orderId, addressHash);
@@ -1736,8 +1736,7 @@ namespace CryptoNote
     }
     transaction->setUnlockTime(0);
 
-    Crypto::Hash orderId{};
-    Crypto::generate_random_bytes(sizeof(orderId.data), orderId.data);
+    const Crypto::Hash orderId = randomUserOrderId();
     const Crypto::Hash addressHash =
         limitOrderAddressHash(selectedTransfers[0].wallet->spendSecretKey, orderId);
     std::vector<uint8_t> extra;
@@ -6896,8 +6895,8 @@ namespace CryptoNote
     }
   }
 
-  // The first alias-owner subaddress (ALIAS_SUBADDRESS_MAJOR, minor) that is
-  // neither in this container nor already an alias owner.
+  // The first alias-owner subaddress (ALIAS_SUBADDRESS_MAJOR, ALIAS_MINOR_BASE + k)
+  // that is neither in this container nor already an alias owner.
   std::error_code WalletGreen::nextAliasSubaddress(const std::vector<INode::RegisteredAlias>& registered,
                                                    std::string& address, uint32_t& minor)
   {
@@ -6910,7 +6909,8 @@ namespace CryptoNote
       }
     }
     const WalletRecord& primary = m_walletsContainer.get<RandomAccessIndex>()[0];
-    for (minor = 1; minor <= CryptoNote::MAX_ALIAS_SUBADDRESS_MINOR; ++minor) {
+    for (minor = CryptoNote::ALIAS_MINOR_BASE;
+         minor <= CryptoNote::ALIAS_MINOR_BASE + CryptoNote::MAX_ALIAS_OWNER_OFFSET; ++minor) {
       const Crypto::SubAddressKeys keys = Crypto::deriveSubAddressKeysV2(
           m_viewSecretKey, primary.spendPublicKey, nullptr, CryptoNote::ALIAS_SUBADDRESS_MAJOR, minor);
       const AccountPublicAddress candidate{keys.spendPublicKey, keys.viewPublicKey};
@@ -6939,7 +6939,10 @@ namespace CryptoNote
     } catch (const std::system_error& e) {
       return e.code();
     }
-    if (!CryptoNote::isValidAliasName(alias) || !CryptoNote::funsaSubaddressActivated(nextBlockMajorVersion())) {
+    if (!CryptoNote::aliasOwnerRulesApply(nextBlockMajorVersion())) {
+      return make_error_code(error::ALIASES_NOT_ACTIVE);
+    }
+    if (!CryptoNote::isValidAliasName(alias)) {
       return make_error_code(std::errc::invalid_argument);
     }
 

@@ -1,3 +1,49 @@
+## Wallet order ids avoid the pool prefix; cache v24 for v11 aliases
+
+**Started**: 2026-11-27
+**Agent**: Claude Code (claude-opus-5-5)
+**Status**: DONE (CI to confirm)
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Cause of the intermittent `HeatWalletScenario.FunsaHeldXfgPaysForMintSwapAndOrders` / `WalletdScenario.LimitOrdersFillStopAndWithdraw` failures (independent guardian review; CI job 140403493468 logs `orderId uses the reserved pool prefix`): wallets drew a fully random order id, and settlement refuses one starting with `POOL_ORDER_ID_PREFIX` (0xF0), so 1 order in 256 was rejected for real users. `randomUserOrderId()` (OrderbookAuction.h) redraws; used by WalletTransactionSender (`placeOrderV13`) and both WalletGreen order paths. Test `testUserOrderIdsNeverCarryThePoolPrefix` (20,000 draws; without the redraw about 78 hit the prefix) | Claude Code | 2026-11-27 | DONE |
+| 2 | Guardian A-1: `CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER` 23 -> 24, so a testnet node whose cache applied v11 alias tags rebuilds and agrees with fresh nodes. `claude/pr83-chain-harness` also bumps to 24; whichever merges second must go to 25 | Claude Code | 2026-11-27 | DONE |
+| 3 | Merged into `claude/pr83-chain-harness` after PR #86: cache version 25 covers both the v11 alias rebuild and the cached journals | Claude Code | 2026-11-27 | DONE |
+
+| Gate | Status | Signed |
+|------|--------|--------|
+| Build compiles | CI | |
+| Tests pass | CI | |
+| All tasks done | YES | Claude Code 2026-11-27 |
+
+---
+
+## PR #83 T2: aliases from v12, linked-owner fix (claude/pr83-aliases-v12)
+
+**Started**: 2026-11-27
+**Agent**: Claude Code
+**Status**: DONE. Resume: nothing open. CI green on b7ac1889 (Ubuntu, Ubuntu Clang, Sanitizers, macOS 15 and 26, Windows, transport gates); no Boost in the container, so CI was the build gate.
+**Scope**: `src/CryptoNoteConfig.h`, `src/CryptoNoteCore/{AliasOwnerRule,Blockchain}.*`, `src/Wallet/{WalletErrors.h,WalletGreen.cpp}`, `src/PaymentGate/WalletService.cpp`, `src/SimpleWallet/SimpleWallet.cpp`, `src/WalletLegacy/WalletOperations.*`, tests, docs.
+
+Assumptions: pre-v12 wallet refusal covers v10 too, as the plan says (v10 mainnet registrations stop in these wallets; nodes still replay and accept pre-v11 alias blocks). The coinbase alias-tag ban stays at v11+ (it covers the v11 refusal and the v12 rule). The `gen_new_sub` alias-owner guard stays: a payment-range subaddress can still be named as owner by a third-party registration, so it is reachable. The legacy dev-fund fee branch in `planAliasRegistration` is now dead code (not removed).
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Consensus: `aliasTagsRefused` (v11) and `aliasOwnerRulesApply` (v12+) in `CryptoNoteConfig.h`; `validateAliasOwners` refuses all three tags at v11 and applies F9 from v12 (block, pool admission, template share it); `aliasTagsApply` refuses at v11; `aliasTagsCannotApply` drops any alias tx at v11. Tests: `AliasOwnerRuleTest`, `testAliasTagsRefusedInV11Settlement`, `testPoolDropsRegistrationFailingTheOwnerRule` (v11 then v12), settlement alias tests at the first v12 height | Claude Code | 2026-11-27 | DONE |
+| 2 | Wallets refuse before v12: `WalletGreen::registerAlias` returns `ALIASES_NOT_ACTIVE`; console `register_alias` messages; `planAliasRegistration` throws. e2e alias scenarios start at `TESTNET_UPGRADE_HEIGHT_V12 + 2` (existing 1000, no new height) | Claude Code | 2026-11-27 | DONE |
+| 3 | Linked-owner fix: `ALIAS_MINOR_BASE = 0x80000000`; owners `(0, base + k)`; `choosePaymentSubaddressIndex` and walletd `create_subaddress` refuse major 0 minors from the base; auto minor ignores the range | Claude Code | 2026-11-27 | DONE |
+| 4 | Docs: AGENTS.md, V11 10.8, V12 item 4, rollout plan 4.4 (exact Valise rule) | Claude Code | 2026-11-27 | DONE |
+| 5 | Apply-path gate: `pushToBankingIndex` (the alias apply, called by `pushBlock`; `pushTransaction` never indexes aliases) skips the 0xEA, 0xEC and 0xED branches when `aliasTagsRefused(block.bl.majorVersion)` (v11), so a checkpointed v11 block (validation skipped) cannot register, release or transfer an alias. Test: `core_tests` `testAliasTagsNotAppliedByV11Block` applies each tag through `VaultCoreTestAccess::bankBlock` at v11 (alias index unchanged) and at v12 (applies, so the v11 result cannot be a rejection for another reason) | Claude Code | 2026-11-27 | DONE (CI to confirm) |
+| 6 | Mutation pass on the v11 refusal (reasoned through each test path; no local build, so nothing was executed). Added tests where none would fail. mutation: validateAliasOwners v11 refusal (`AliasOwnerRule.cpp`) -> `AliasOwnerRule.V11RefusesEveryAliasTag` fails (funsa registration and transfer then return true; `EXPECT_FALSE` fires). mutation: `aliasTagsApply` v11 refusal -> `testAliasTagsRefusedInV11Settlement` fails (its fake-owner registration then errors with "owner hash", not "not accepted before v12"), but a funsa-owned registration would settle, so added `testPoolSettlementRefusesAliasTagAtV11` (pool admission calls `checkTransactionSettlement` at the chain tip; a funsa-owned registration at a mined v11 tip must be refused; fails without the gate). mutation: template `validateAliasOwners` call (`TransactionPool.cpp`) -> no test failed, added `BlockTemplateDropsAliasTagsAtV11` (`SubaddressScannerTest.cpp`: registration in the pool, v11 template keeps only the plain transaction). mutation: new apply gate -> `testAliasTagsNotAppliedByV11Block` fails (v11 push registers or releases or transfers, so the first `!has_value` or unchanged-owner check fires). Equivalent mutant: the v11 branch of `aliasTagsCannotApply` (any alias tag at v11 already fails `validateAliasOwners` in the next statement), no test can distinguish it. Not covered: the `validateAliasOwners` call sites in `Core::check_tx_semantic` and block validation (`Blockchain.cpp` ~4299); no test builds a `core` or a full block through them, both are shadowed by the settlement gate | Claude Code | 2026-11-27 | DONE (CI to confirm) |
+| 7 | `planAliasRegistration` (`src/WalletLegacy/WalletOperations.cpp`): removed the dev-fund fee branch, dead since the planner throws before v12 and v12 pays by re-mint burn (mainnet) or free (testnet); the burn condition drops its always-true `>= v11` term. Nothing else used the branch; consensus validation of pre-v11 dev-fund-paid registrations (`Blockchain.cpp` fee check) is untouched | Claude Code | 2026-11-27 | DONE (CI to confirm) |
+| 8 | `docs/V12_LAUNCH_TODO.md` item 4: testnet chains with v11-block aliases need a wipe; the `(0, 0x80000000+k)` restore-scan window applies to Valise and any future Fuego restore scan (Fuego wallets have no restore-scan code) | Claude Code | 2026-11-27 | DONE |
+
+| Sign-off | Status |
+|---|---|
+| Build compiles | DONE (CI b7ac1889) |
+| Tests pass | CI to confirm (mutation results reasoned, not run: task 6) |
+| All tasks done | DONE |
+
 ## T1: real-chain harness, alt-chain reorg test, epoch cache (claude/pr83-chain-harness)
 
 **Resume**: T1 done. Branch `claude/pr83-chain-harness` carries all three tasks, merged with master `3afe5ebf` (PR #83 merged). Nothing left but review; no PR opened.

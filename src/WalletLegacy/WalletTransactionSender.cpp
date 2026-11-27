@@ -45,6 +45,7 @@
 #include <random>
 #include <set>
 #include "CryptoNoteCore/TransactionExtra.h"
+#include "CryptoNoteCore/OrderbookAuction.h"
 
 using namespace Crypto;
 
@@ -2306,8 +2307,7 @@ namespace CryptoNote
     const uint64_t xfgSpent = escrowsXfg ? getSumWithOverflowCheck(amount, fee) : fee;
     selectXfg(*context, xfgSpent);
 
-    Crypto::Hash orderId;
-    Crypto::generate_random_bytes(sizeof(orderId.data), orderId.data);
+    const Crypto::Hash orderId = randomUserOrderId();
     context->isV11LimitDeposit = true;
     context->v11DepositSide = side;
     context->v11DepositAmount = amount;

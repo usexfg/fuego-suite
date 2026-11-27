@@ -78,7 +78,7 @@ bool operator<(const Crypto::KeyImage& keyImage1, const Crypto::KeyImage& keyIma
 }
 }
 
-#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 23  // v23: re-mint burns are a generic tag (remint_burned_xfg, reminted_xfg, remint_by_height). v22: quarterly alias re-mint to the dev fund (reminted_xfg, remint_by_height). v21: alias registration fees burned from v11 (remint_burned_xfg). v20: HEAT supply counts only XFG-valued CD fees as new (cd_fee_heat_from_xfg). v19: limit deposits carry withdrawnHeight; orderbook snapshots carry pruned deposits. v18: v18: orderbook auction state and its rollback records are cached (forces replay: a v17 cache has none, and a node restarted from one re-entered bootstrap and forked)
+#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 24  // v24: the swap-fee and epoch-distribution rollback journals are cached (forces replay: a v23 cache has none, and a pop across an epoch boundary after a restart skipped popEpochFeeRate and the treasury reversal). v23: re-mint burns are a generic tag (remint_burned_xfg, reminted_xfg, remint_by_height). v22: quarterly alias re-mint to the dev fund (reminted_xfg, remint_by_height). v21: alias registration fees burned from v11 (remint_burned_xfg). v20: HEAT supply counts only XFG-valued CD fees as new (cd_fee_heat_from_xfg). v19: limit deposits carry withdrawnHeight; orderbook snapshots carry pruned deposits. v18: v18: orderbook auction state and its rollback records are cached (forces replay: a v17 cache has none, and a node restarted from one re-entered bootstrap and forked)
 #define CURRENT_BLOCKCHAININDICES_STORAGE_ARCHIVE_VER 1
 
 namespace CryptoNote {
@@ -618,6 +618,9 @@ public:
 
       m_bs.serializeOrderbookState(s);
 
+      serializeNewestEntries(s, m_bs.m_blockSwapFeeContributions, "swap_fee_contributions");
+      serializeNewestEntries(s, m_bs.m_blockEpochDistributions, "epoch_distributions");
+
     auto dur = std::chrono::steady_clock::now() - start;
 
     logger(INFO) << "Serialization time: " << std::chrono::duration_cast<std::chrono::milliseconds>(dur).count() << "ms";
@@ -630,6 +633,19 @@ public:
   }
 
 private:
+
+  // popBlock pops one entry per block from these journals, newest first, so
+  // only the newest MAX_ROLLBACK_HISTORY entries are kept, the depth the other
+  // rollback records are capped at.
+  template <typename Entry>
+  static void serializeNewestEntries(ISerializer& s, std::deque<Entry>& journal, Common::StringView name) {
+    const size_t kept = std::min(journal.size(), Blockchain::MAX_ROLLBACK_HISTORY);
+    std::vector<Entry> newest(journal.end() - static_cast<std::ptrdiff_t>(kept), journal.end());
+    s(newest, name);
+    if (s.type() == ISerializer::INPUT) {
+      journal.assign(newest.begin(), newest.end());
+    }
+  }
 
   LoggerRef logger;
   bool m_loaded;

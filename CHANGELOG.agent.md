@@ -1,6 +1,6 @@
 ## T1: real-chain harness, alt-chain reorg test, epoch cache (claude/pr83-chain-harness)
 
-**Resume**: next is task 1 CI; after it, task 2 (alt-chain test), then task 3 (epoch cache). Branch `claude/pr83-chain-harness` off `claude/modest-ride-oevh0b` at `27d8ec89`; push only that branch.
+**Resume**: tasks 1-3 written and pushed once CI-checked; next is the mutation run (revert `findAlternativeChainEntries` use and the journal persistence on this branch, expect C3 and C2b red, then restore). Branch `claude/pr83-chain-harness` off `claude/modest-ride-oevh0b` at `27d8ec89`; push only that branch.
 **Started**: 2026-11-27
 **Agent**: Claude Code (claude-sonnet-5-5)
 **Status**: IN PROGRESS. No Boost in the container; CI on the pushed branch is the build gate.
@@ -9,9 +9,12 @@
 
 | # | Task | Owner | Date | Status |
 |---|------|-------|------|--------|
-| 1 | Port `V11ChainHarness.cpp` and `v11_chain_checks.sh` from brave-meitner-r8wmlt: mine/export/import/state commands, restart check C1, live reorg C2a; target in `tests/CMakeLists.txt`; CI step in the Ubuntu 24.04 job | Claude Code | 2026-11-27 | IN PROGRESS |
-| 2 | Alt-chain test: 110-block alternative chain, switch, switch back, state equals a node that saw only the winning chain; mutation check on `findAlternativeChainEntries` | Claude Code | 2026-11-27 | TODO |
-| 3 | Epoch cache: persist `m_blockSwapFeeContributions` and `m_blockEpochDistributions` (newest `MAX_ROLLBACK_HISTORY`), cache version bump, reorg-after-restart test across an epoch boundary | Claude Code | 2026-11-27 | TODO |
+| 1 | Port `V11ChainHarness.cpp` and `v11_chain_checks.sh` from brave-meitner-r8wmlt: mine/export/import/state commands, restart check C1, live reorg C2a; target in `tests/CMakeLists.txt`; CI step in the Ubuntu 24.04 job | Claude Code | 2026-11-27 | DONE (CI-checked; first run exposed the uninitialised snapshot counters, task 1a) |
+| 1a | `EpochStateSnapshot::vaultUtxoCount` and `vaultSpentCount` are never assigned or read, so each snapshot cached uninitialised stack bytes and two nodes at one height wrote different caches (CI: L vs R epochSnapshots digest mismatch). Both default to 0 | Claude Code | 2026-11-27 | DONE |
+| 2 | Alt-chain test C3: main chain to 170, 130-block alternative chain from 60 (110 stored before the first switch), switch to it, then main to 210 and switch back; state equals a node that saw only the main chain; asserts two switches and at least 100 alternative entries. Sanitizers job builds and runs the harness. Mutation check on `findAlternativeChainEntries`: pending | Claude Code | 2026-11-27 | IN PROGRESS |
+| 3 | Epoch cache: `BlockCacheSerializer` caches the newest `MAX_ROLLBACK_HISTORY` entries of `m_blockSwapFeeContributions` and `m_blockEpochDistributions`; cache version 23 to 24 (older caches replay once). Test C2b: replay L to 65, restart, reorg from block 39 across epoch boundaries 40, 50, 60; state equals the fork node (compares `treasuryLpPendingXfg`, `epochSwapFees`, journals and the commitment fee-rate list). Mutation check: pending | Claude Code | 2026-11-27 | IN PROGRESS |
+
+Open (found by the harness, not fixed here): `CommitmentIndex::m_epochReports` is never popped on reorg, so a node that reorged across epoch boundaries keeps stale epoch reports (non-consensus, RPC-visible, cache-visible); the per-block TWAP journal and `m_blockLpRemoveAmounts` are not cached, so a restarted node undoes no TWAP contribution for popped non-boundary blocks until an epoch snapshot restore corrects it, and reverses no LP removal; the in-memory swap-fee and epoch-distribution journals are never trimmed, only the cache copy is capped.
 
 | Gate | Status | Signed |
 |------|--------|--------|

@@ -2,23 +2,23 @@
 
 **Started**: 2026-11-27
 **Agent**: Claude Code
-**Status**: IN PROGRESS. Resume: tasks 1-4 written, not yet built; CI on the pushed branch is the build gate (no Boost in the container). Next: push, poll CI, fix failures.
+**Status**: DONE. Resume: nothing open. CI green on b7ac1889 (Ubuntu, Ubuntu Clang, Sanitizers, macOS 15 and 26, Windows, transport gates); no Boost in the container, so CI was the build gate.
 **Scope**: `src/CryptoNoteConfig.h`, `src/CryptoNoteCore/{AliasOwnerRule,Blockchain}.*`, `src/Wallet/{WalletErrors.h,WalletGreen.cpp}`, `src/PaymentGate/WalletService.cpp`, `src/SimpleWallet/SimpleWallet.cpp`, `src/WalletLegacy/WalletOperations.*`, tests, docs.
 
 Assumptions: pre-v12 wallet refusal covers v10 too, as the plan says (v10 mainnet registrations stop in these wallets; nodes still replay and accept pre-v11 alias blocks). The coinbase alias-tag ban stays at v11+ (it covers the v11 refusal and the v12 rule). The `gen_new_sub` alias-owner guard stays: a payment-range subaddress can still be named as owner by a third-party registration, so it is reachable. The legacy dev-fund fee branch in `planAliasRegistration` is now dead code (not removed).
 
 | # | Task | Owner | Date | Status |
 |---|------|-------|------|--------|
-| 1 | Consensus: `aliasTagsRefused` (v11) and `aliasOwnerRulesApply` (v12+) in `CryptoNoteConfig.h`; `validateAliasOwners` refuses all three tags at v11 and applies F9 from v12 (block, pool admission, template share it); `aliasTagsApply` refuses at v11; `aliasTagsCannotApply` drops any alias tx at v11. Tests: `AliasOwnerRuleTest`, `testAliasTagsRefusedInV11Settlement`, `testPoolDropsRegistrationFailingTheOwnerRule` (v11 then v12), settlement alias tests at the first v12 height | Claude Code | 2026-11-27 | DONE (CI pending) |
-| 2 | Wallets refuse before v12: `WalletGreen::registerAlias` returns `ALIASES_NOT_ACTIVE`; console `register_alias` messages; `planAliasRegistration` throws. e2e alias scenarios start at `TESTNET_UPGRADE_HEIGHT_V12 + 2` (existing 1000, no new height) | Claude Code | 2026-11-27 | DONE (CI pending) |
-| 3 | Linked-owner fix: `ALIAS_MINOR_BASE = 0x80000000`; owners `(0, base + k)`; `choosePaymentSubaddressIndex` and walletd `create_subaddress` refuse major 0 minors from the base; auto minor ignores the range | Claude Code | 2026-11-27 | DONE (CI pending) |
+| 1 | Consensus: `aliasTagsRefused` (v11) and `aliasOwnerRulesApply` (v12+) in `CryptoNoteConfig.h`; `validateAliasOwners` refuses all three tags at v11 and applies F9 from v12 (block, pool admission, template share it); `aliasTagsApply` refuses at v11; `aliasTagsCannotApply` drops any alias tx at v11. Tests: `AliasOwnerRuleTest`, `testAliasTagsRefusedInV11Settlement`, `testPoolDropsRegistrationFailingTheOwnerRule` (v11 then v12), settlement alias tests at the first v12 height | Claude Code | 2026-11-27 | DONE |
+| 2 | Wallets refuse before v12: `WalletGreen::registerAlias` returns `ALIASES_NOT_ACTIVE`; console `register_alias` messages; `planAliasRegistration` throws. e2e alias scenarios start at `TESTNET_UPGRADE_HEIGHT_V12 + 2` (existing 1000, no new height) | Claude Code | 2026-11-27 | DONE |
+| 3 | Linked-owner fix: `ALIAS_MINOR_BASE = 0x80000000`; owners `(0, base + k)`; `choosePaymentSubaddressIndex` and walletd `create_subaddress` refuse major 0 minors from the base; auto minor ignores the range | Claude Code | 2026-11-27 | DONE |
 | 4 | Docs: AGENTS.md, V11 10.8, V12 item 4, rollout plan 4.4 (exact Valise rule) | Claude Code | 2026-11-27 | DONE |
 
 | Sign-off | Status |
 |---|---|
-| Build compiles | TODO (CI) |
-| Tests pass | TODO (CI) |
-| All tasks done | TODO |
+| Build compiles | DONE (CI b7ac1889) |
+| Tests pass | DONE (CI b7ac1889; no mutation run: the v11 refusal test was not shown to fail with the refusal removed) |
+| All tasks done | DONE |
 
 ## Merge master into PR #83 (claude/modest-ride-oevh0b)
 

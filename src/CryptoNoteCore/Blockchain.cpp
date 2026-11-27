@@ -78,7 +78,7 @@ bool operator<(const Crypto::KeyImage& keyImage1, const Crypto::KeyImage& keyIma
 }
 }
 
-#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 23  // v23: re-mint burns are a generic tag (remint_burned_xfg, reminted_xfg, remint_by_height). v22: quarterly alias re-mint to the dev fund (reminted_xfg, remint_by_height). v21: alias registration fees burned from v11 (remint_burned_xfg). v20: HEAT supply counts only XFG-valued CD fees as new (cd_fee_heat_from_xfg). v19: limit deposits carry withdrawnHeight; orderbook snapshots carry pruned deposits. v18: v18: orderbook auction state and its rollback records are cached (forces replay: a v17 cache has none, and a node restarted from one re-entered bootstrap and forked)
+#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 24  // v24: alias tags in v11 blocks are not applied (a cache built before keeps them). v23: re-mint burns are a generic tag (remint_burned_xfg, reminted_xfg, remint_by_height). v22: quarterly alias re-mint to the dev fund (reminted_xfg, remint_by_height). v21: alias registration fees burned from v11 (remint_burned_xfg). v20: HEAT supply counts only XFG-valued CD fees as new (cd_fee_heat_from_xfg). v19: limit deposits carry withdrawnHeight; orderbook snapshots carry pruned deposits. v18: v18: orderbook auction state and its rollback records are cached (forces replay: a v17 cache has none, and a node restarted from one re-entered bootstrap and forked)
 #define CURRENT_BLOCKCHAININDICES_STORAGE_ARCHIVE_VER 1
 
 namespace CryptoNote {

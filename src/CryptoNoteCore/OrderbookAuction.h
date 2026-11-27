@@ -11,6 +11,7 @@
 
 #include <cstdint>
 #include <vector>
+#include "crypto/crypto.h"
 #include "crypto/hash.h"
 
 namespace CryptoNote {
@@ -19,6 +20,16 @@ namespace CryptoNote {
 // both the auction and settlement validation agree on one value; a user deposit
 // carrying this prefix would be dispatched to the pool-as-maker branch.
 constexpr uint8_t POOL_ORDER_ID_PREFIX = 0xF0;
+
+// Settlement refuses a user order carrying the pool prefix, so a wallet redraws
+// instead of losing one order in 256.
+inline Crypto::Hash randomUserOrderId() {
+  Crypto::Hash orderId;
+  do {
+    Crypto::generate_random_bytes(sizeof(orderId.data), orderId.data);
+  } while (orderId.data[0] == POOL_ORDER_ID_PREFIX);
+  return orderId;
+}
 
 struct AuctionOrder {
   Crypto::Hash orderId;

@@ -54,6 +54,7 @@
 #include "CryptoNoteCore/TransactionApi.h"
 #include <CryptoNoteCore/TransactionExtra.h>
 #include "CryptoNoteCore/CommitmentIndex.h"
+#include "CryptoNoteCore/OrderbookAuction.h"
 #include "INode.h"
 #include "crypto/crypto.h"
 #include "crypto/keccak.h"
@@ -1694,8 +1695,7 @@ namespace CryptoNote
       // The order belongs to the wallet holding the HEAT that funds it.
       const Deposit firstDeposit = m_deposits.get<RandomAccessIndex>()[heatDepositIds[0]];
       const auto &owner = getWalletRecord(getTransactionTransfer(firstDeposit.creatingTransactionId, 0).address);
-      Crypto::Hash orderId{};
-      Crypto::generate_random_bytes(sizeof(orderId.data), orderId.data);
+      const Crypto::Hash orderId = randomUserOrderId();
       const Crypto::Hash addressHash = limitOrderAddressHash(owner.spendSecretKey, orderId);
       std::vector<uint8_t> extra;
       addLimitDepositToExtra(extra, side, amount, targetPrice, expiration, orderId, addressHash);
@@ -1736,8 +1736,7 @@ namespace CryptoNote
     }
     transaction->setUnlockTime(0);
 
-    Crypto::Hash orderId{};
-    Crypto::generate_random_bytes(sizeof(orderId.data), orderId.data);
+    const Crypto::Hash orderId = randomUserOrderId();
     const Crypto::Hash addressHash =
         limitOrderAddressHash(selectedTransfers[0].wallet->spendSecretKey, orderId);
     std::vector<uint8_t> extra;

@@ -3403,6 +3403,17 @@ void testPoolDropsRegistrationFailingTheOwnerRule() {
   TEST(!t.chain.aliasTagsCannotApply(plain));
 }
 
+// Settlement refuses a user order whose id carries the pool prefix, so wallet
+// order ids never do. 20,000 draws would hit the prefix about 78 times if the
+// redraw were missing.
+void testUserOrderIdsNeverCarryThePoolPrefix() {
+  bool sawPrefix = false;
+  for (int i = 0; i < 20000; ++i) {
+    sawPrefix = sawPrefix || randomUserOrderId().data[0] == POOL_ORDER_ID_PREFIX;
+  }
+  TEST(!sawPrefix);
+}
+
 // A testnet node upgraded across a schedule change without wiping its data holds
 // blocks of the wrong version. On start it rolls back to the last block the
 // current schedule accepts, instead of building on a chain no peer accepts.
@@ -3584,6 +3595,7 @@ int main() {
   testCdActivationHeight();
   testTestnetRunsV11PastTheBootstrap();
   testStoredChainFromAnotherScheduleRollsBack();
+  testUserOrderIdsNeverCarryThePoolPrefix();
   testPoolSettlementRefusesAliasTagAtV11();
   testPoolDropsRegistrationFailingTheOwnerRule();
   testCoinbaseMintsOnlyKeyOutputsFromV11();

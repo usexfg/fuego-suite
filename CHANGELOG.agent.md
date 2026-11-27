@@ -1,3 +1,22 @@
+## Wallet order ids avoid the pool prefix; cache v24 for v11 aliases
+
+**Started**: 2026-11-27
+**Agent**: Claude Code (claude-opus-5-5)
+**Status**: DONE (CI to confirm)
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Cause of the intermittent `HeatWalletScenario.FunsaHeldXfgPaysForMintSwapAndOrders` / `WalletdScenario.LimitOrdersFillStopAndWithdraw` failures (independent guardian review; CI job 140403493468 logs `orderId uses the reserved pool prefix`): wallets drew a fully random order id, and settlement refuses one starting with `POOL_ORDER_ID_PREFIX` (0xF0), so 1 order in 256 was rejected for real users. `randomUserOrderId()` (OrderbookAuction.h) redraws; used by WalletTransactionSender (`placeOrderV13`) and both WalletGreen order paths. Test `testUserOrderIdsNeverCarryThePoolPrefix` (20,000 draws; without the redraw about 78 hit the prefix) | Claude Code | 2026-11-27 | DONE |
+| 2 | Guardian A-1: `CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER` 23 -> 24, so a testnet node whose cache applied v11 alias tags rebuilds and agrees with fresh nodes. `claude/pr83-chain-harness` also bumps to 24; whichever merges second must go to 25 | Claude Code | 2026-11-27 | DONE |
+
+| Gate | Status | Signed |
+|------|--------|--------|
+| Build compiles | CI | |
+| Tests pass | CI | |
+| All tasks done | YES | Claude Code 2026-11-27 |
+
+---
+
 ## PR #83 T2: aliases from v12, linked-owner fix (claude/pr83-aliases-v12)
 
 **Started**: 2026-11-27
